@@ -1,0 +1,121 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { Workspace } from '../src/core/workspace';
+import { editCard, readCard, revision, readBoard, writeBoard } from '../src/core/format';
+import { UndoHistory } from '../src/renderer/history';
+
+async function fixture() {
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-door-test-'));
+  const root=join(folder,'notes'),cache=join(folder,'cache');
+  await fs.mkdir(root);
+  return {folder,root,cache};
+}
+test('cards, boards, shared undo and external edits preserve file identity and content',async t => {
+  const f=await fixture(); const w=await Workspace.open(f.root,f.cache);
+  t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });
+  const undo=new UndoHistory();
+  const created=await w.create('','untitled',20,30); undo.record('Create',created.edits);
+  const card=await w.card('untitled.md');
+  const content='# A thought\n\nSome **formatted** text.\n';
+  const edited=await w.saveCard(card.path,content,card.revision); undo.record('Write',edited.edits);
+  const board=structuredClone(w.snapshot().boards[0]); board.cards[0].x=500;
+  const moved=await w.saveBoard(board,board.revision); undo.record('Move',moved.edits);
+  await undo.travel(false,changes => w.write(changes));
+  assert.equal(w.snapshot().boards[0].cards[0].x,20);
+  assert.equal((await w.card(card.path)).body,content);
+  await undo.travel(false,changes => w.write(changes));
+  assert.equal((await w.card(card.path)).body,'');
+  await undo.travel(true,changes => w.write(changes));
+  assert.equal((await w.card(card.path)).body,content);
+  const second=await w.create('','untitled',500,30);
+  assert.equal(second.snapshot.cards.length,2); assert.ok(second.snapshot.cards.some(c => c.path === 'untitled_1.md'));
+  assert.equal('body' in second.snapshot.cards[0],false,'metadata snapshots do not transfer note bodies');
+  await fs.rename(join(f.root,card.path),join(f.root,'renamed.md'));
+  await w.refresh(card.path); await w.refresh('renamed.md');
+  const renamed=await w.card('renamed.md'); assert.equal(renamed.id,card.id);
+  assert.equal(w.snapshot().boards[0].cards[0].cardId,renamed.id);
+  await fs.writeFile(join(f.root,'renamed.md'),await w.read('renamed.md')+'\nExternal edit');
+  await assert.rejects(() => w.saveCard('renamed.md','stale app edit',renamed.revision),/External changes/);
+  assert.match(await w.read('renamed.md'),/External edit/);
+  // A stale undo never removes an external edit or drops its undo entry.
+  await assert.rejects(() => undo.travel(false,changes => w.write(changes)),/External changes/);
+  assert.equal(undo.past.at(-1)?.label,'Write');
+});
+test('metadata survives edits and backlinks ignore fenced examples',async t => {
+  const f=await fixture(); const w=await Workspace.open(f.root,f.cache);
+  t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });
+  const raw='---\n# keep this comment\ncard-id: known-id\ntags: [project]\ncustom: yes\n---\n# Before';
+  const updated=editCard(raw,readCard('sample.md',raw),'# After');
+  assert.equal(updated,raw.replace('# Before','# After'));
+  const legacy='---\ncustom: keep\n---\nLegacy';
+  assert.match(editCard(legacy,readCard('legacy.md',legacy),'Changed'),/custom: keep/);
+  await w.write([{path:'sample.md',expected:null,content:updated+'\n[Target](card:target-id)\n\n```md\n[Example](card:fake-id)\n```\n'}]);
+  assert.equal(w.query('After').length,1);
+  assert.equal(w.query('backlinks:target-id').length,1);
+  assert.equal(w.query('backlinks:fake-id').length,0);
+  assert.deepEqual(w.query('" OR 1=1'),[]);
+});
+test('workspace path boundaries, malformed boards and duplicate creates fail without overwrites',async t => {
+  const f=await fixture(); const w=await Workspace.open(f.root,f.cache);
+  t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });
+  await assert.rejects(() => w.read('../secret.md'),/Invalid/);
+  await assert.rejects(() => w.read(join(f.root,'absolute.md')),/Invalid/);
+  await assert.rejects(() => w.read('.git/config'),/Invalid/);
+  await fs.writeFile(join(f.folder,'secret.md'),'private');
+  await fs.symlink(join(f.folder,'secret.md'),join(f.root,'linked.md'));
+  await assert.rejects(() => w.read('linked.md'),/Symbolic/);
+  await assert.rejects(() => w.create('','CON',0,0),/valid filename/);
+  await w.create('','untitled',0,0);
+  await assert.rejects(() => w.write([{path:'untitled.md',content:'overwrite',expected:null}]),/External changes/);
+  const board=w.snapshot().boards[0];
+  const file=writeBoard(board); assert.deepEqual(readBoard(board.path,file).cards,board.cards);
+  assert.throws(() => readBoard('bad.whiteboard',file.replace('"version": 1','"version": 2')),/Unsupported/);
+});
+test('a interrupted multi-file write rolls back before indexing',async t => {
+  const f=await fixture(); let w=await Workspace.open(f.root,f.cache);
+  t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });
+  await w.create('','untitled',0,0);
+  const original=await w.read('untitled.md');
+  w.close();
+  await fs.writeFile(join(f.cache,'transaction.json'),JSON.stringify([{path:'untitled.md',before:original,after:original+'Partial'},{path:'new.md',before:null,after:'New'}]));
+  await fs.writeFile(join(f.root,'untitled.md'),original+'Partial');
+  w=await Workspace.open(f.root,f.cache);
+  assert.equal(await w.read('untitled.md'),original);
+  await assert.rejects(() => fs.access(join(f.root,'new.md')));
+});
+test('Git checkpoints retain alternate futures across navigation and restart',async t => {
+  const f=await fixture(); let w=await Workspace.open(f.root,f.cache);
+  t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });
+  await w.create('','untitled',0,0); await w.history.checkpoint('A');
+  for (const body of ['B','C']) { const c=await w.card('untitled.md'); await w.saveCard(c.path,body,c.revision); await w.history.checkpoint(body); }
+  const before=await w.history.list(); const b=before.find(c => c.label === 'B')!,c=before.find(c => c.label === 'C')!;
+  await w.history.restore(b.id); await w.scan();
+  assert.equal((await w.card('untitled.md')).body,'B');
+  const card=await w.card('untitled.md'); await w.saveCard(card.path,'D',card.revision); await w.history.checkpoint('D');
+  const after=await w.history.list(); assert.ok(after.some(h => h.id === c.id));
+  assert.equal(after.find(h => h.label === 'D')!.parents[0],b.id);
+  w.close(); w=await Workspace.open(f.root,f.cache);
+  assert.ok((await w.history.list()).some(h => h.id === c.id));
+  await fs.writeFile(join(f.root,'staged.md'),'Staged user work');
+  execFileSync('git',['add','staged.md'],{cwd:f.root});
+  await assert.rejects(() => w.history.checkpoint('Do not steal the index'),/staged/);
+  assert.equal(execFileSync('git',['diff','--cached','--name-only'],{cwd:f.root,encoding:'utf8'}).trim(),'staged.md');
+});
+test('foreign Git repositories are never adopted, and typing groups stop at board actions',async t => {
+  const f=await fixture(); execFileSync('git',['init','-q'],{cwd:f.root});
+  const w=await Workspace.open(f.root,f.cache);
+  t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });
+  assert.equal(w.history.available,false);
+  const history=new UndoHistory();
+  history.record('Write',[{path:'a.md',before:'a',after:'b'}],true,100);
+  history.record('Write',[{path:'a.md',before:'b',after:'c'}],true,600);
+  assert.equal(history.past.length,1);
+  history.record('Move',[{path:'board.whiteboard',before:'a',after:'b'}],false,700);
+  history.record('Write',[{path:'a.md',before:'c',after:'d'}],true,800);
+  assert.equal(history.past.length,3);
+  assert.equal(revision('a'),revision('a'));
+});
