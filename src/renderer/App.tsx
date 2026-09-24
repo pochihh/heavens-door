@@ -50,12 +50,12 @@ export function App() {
   },[board,snapshot]);
   const editCard=useCallback((body:string) => session.edit(body),[]);
   const finishCard=useCallback(() => attempt(session.select(null)),[]);
-  const saveBoard=useCallback((board:Board,label:string) => attempt(session.board(board,label)),[]);
+  const saveBoard=useCallback((board:Board,label:string,base?:Board) => session.board(board,label,base),[]);
   const create=useCallback((x?:number,y?:number) => attempt(session.create(board?.folder ?? '',stem,x ?? (board?.cards.at(-1)?.x ?? -280)+380,y ?? board?.cards.at(-1)?.y ?? 100)),[board,stem]);
   const emptyBoard: Board=useMemo(() => ({path:'',folder:'',name:snapshot?.name ?? '',revision:'',cards:[],edges:[]}),[snapshot?.name]);
   const cardDetails=draft && <details className="card-details"><summary>Linked from · {backlinks.length}</summary>
     {backlinks.map(path => <button key={path} onClick={() => openCard(path)}>↗ {path}</button>)}
-    {board && !board.cards.some(p => p.cardId === draft.card.id) && <button disabled={draft.card.legacy} onClick={() => saveBoard({...board,cards:[...board.cards,{id:crypto.randomUUID(),cardId:draft.card.id,x:120,y:120,width:340,height:280}]},'Place card reference')}>+ Place on this whiteboard</button>}
+    {board && !board.cards.some(p => p.cardId === draft.card.id) && <button disabled={draft.card.legacy} onClick={() => attempt(saveBoard({...board,cards:[...board.cards,{id:crypto.randomUUID(),cardId:draft.card.id,x:120,y:120,width:340,height:280}]},'Place card reference'))}>+ Place on this whiteboard</button>}
   </details>;
   return <div className="app">
     {snapshot ? <>

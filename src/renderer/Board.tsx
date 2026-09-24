@@ -35,7 +35,7 @@ const Preview = memo(function Preview({ card, onOpen, cache }: {
   }} dangerouslySetInnerHTML={{ __html: html || '<p class="empty-text">An unwritten idea…</p>' }} />;
 });
 interface Props {
-  board: Board; cards: CardInfo[]; onSave: (board: Board, label: string) => void;
+  board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
   onOpen: (path: string) => void; onCreate: (x: number, y: number) => void;
   draft?: { card: Card; body: string } | null; onEdit?: (body: string) => void; onFinish?: () => void; cardDetails?: ReactNode;
 }
@@ -54,6 +54,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const navigation = useRef<BoardNavigation | null>(null);
   const spaceDown = useRef(false);
   const gesture = useRef<Gesture | null>(null);
+  const pendingSave = useRef<Board | null>(null);
+  const dragFrame = useRef<number | null>(null);
+  const dragPoint = useRef({ x: 0, y: 0 });
   const cache = useRef(new Map<string, string>());
   const [size, setSize] = useState({ width: 1000, height: 800 });
   const [view, setView] = useState<Camera>({ x: 20, y: 20, zoom: 0.85 });
@@ -72,7 +75,6 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const latest = useRef({ board: current, onFinish });
   latest.current = { board: current, onFinish };
 
-  useEffect(() => { if (!gesture.current) setWorking(null); }, [board.revision]);
   useLayoutEffect(() => {
     const element = viewport.current!;
     const nav = new BoardNavigation(element, world.current!, grid.current!, zoomInput.current!, setView);
@@ -109,6 +111,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     element.ownerDocument.defaultView!.addEventListener('blur', blur);
     return () => {
       observer.disconnect(); nav.dispose(); navigation.current = null;
+      if (dragFrame.current !== null) element.ownerDocument.defaultView!.cancelAnimationFrame(dragFrame.current);
       element.removeEventListener('wheel', wheel, true);
       element.ownerDocument.removeEventListener('keydown', keydown);
       element.ownerDocument.removeEventListener('keyup', keyup);
@@ -130,7 +133,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const element = viewport.current!, nav = navigation.current!;
     nav.flush();
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
-    gesture.current = { type, ids, x: e.clientX, y: e.clientY, board: current,
+    gesture.current = { type, ids, x: e.clientX, y: e.clientY, board: pendingSave.current ?? current,
       camera: { ...nav.current }, rect: element.getBoundingClientRect(),
       additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected };
     // Keep card clicks on the card; viewport capture would turn double-clicks into card creation.
@@ -154,7 +157,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   function startCard(e: PointerEvent, id: string) {
     if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor')) return;
     if (connecting && selected.length === 1 && id !== selected[0]) {
-      onSave({ ...board, edges: [...board.edges, { id: crypto.randomUUID(), from: selected[0], to: id }] }, 'Connect cards');
+      save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: id }] }, 'Connect cards');
       setConnecting(false); e.stopPropagation(); return;
     }
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
@@ -194,7 +197,13 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
     if (g.type === 'pan') navigation.current!.set({ ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy });
     else if (g.type === 'select') { if (Math.abs(dx) + Math.abs(dy) > 3) selectRegion(g, e.clientX, e.clientY); }
-    else setWorking(movedBoard(g, e.clientX, e.clientY));
+    else {
+      dragPoint.current = { x: e.clientX, y: e.clientY };
+      if (dragFrame.current === null) dragFrame.current = viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(() => {
+        dragFrame.current = null;
+        if (gesture.current === g) setWorking(movedBoard(g, dragPoint.current.x, dragPoint.current.y));
+      });
+    }
   }
   function end(e: PointerEvent) {
     const g = gesture.current; if (!g) return;
@@ -205,15 +214,28 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       if (moved) selectRegion(g, e.clientX, e.clientY); else if (!g.additive) setSelected([]);
     } else if (moved) {
       // The last pointer event may arrive before React renders the last move.
-      onSave(movedBoard(g, e.clientX, e.clientY), g.type === 'move' ? 'Move cards' : 'Resize card');
+      save(movedBoard(g, e.clientX, e.clientY), g.type === 'move' ? 'Move cards' : 'Resize card', g.board);
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
   }
   function cancel() {
-    gesture.current = null; setWorking(null);
+    gesture.current = null; setWorking(pendingSave.current);
+    if (dragFrame.current !== null) {
+      viewport.current!.ownerDocument.defaultView!.cancelAnimationFrame(dragFrame.current); dragFrame.current = null;
+    }
     if (viewport.current) delete viewport.current.dataset.panning;
     if (selectionBox.current) selectionBox.current.style.display = 'none';
+  }
+  function save(next: Board, label: string, base = current) {
+    // Keep the latest local layout until its own save settles, even if earlier saves reply mid-drag.
+    pendingSave.current = next; setWorking(next);
+    const settled = () => {
+      if (pendingSave.current !== next) return;
+      pendingSave.current = null;
+      if (!gesture.current) setWorking(null);
+    };
+    void Promise.resolve(onSave(next, label, base)).then(settled, settled);
   }
   function fit() {
     const nav = navigation.current, element = viewport.current;
@@ -226,7 +248,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const zoom = Math.min(1.6, Math.max(0.25, Math.min((element.clientWidth - 120) / width, (element.clientHeight - 120) / height)));
     nav.flush(); nav.set({ zoom, x: element.clientWidth / 2 - (left + width / 2) * zoom, y: element.clientHeight / 2 - (top + height / 2) * zoom });
   }
-  const visible = current.cards.filter(p => p.id === active?.id || isVisible(p, view, size.width, size.height, Math.max(size.width, size.height)));
+  const visible = current.cards.filter(p => p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible(p, view, size.width, size.height, Math.max(size.width, size.height)));
   return <div className="board-shell">
     <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label="Whiteboard canvas"
       onPointerDownCapture={capture} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel}
@@ -263,10 +285,10 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       <div className="selection-box" ref={selectionBox}/>
       {!board.cards.length && <div className="canvas-empty"><span>✧</span><h2>Give an idea some space.</h2><p>Create your first card to start this whiteboard.</p><button className="primary" onClick={() => onCreate(100, 100)}>+ New card</button></div>}
       {!!selected.length && !active && <div className="selection-tools"><span>{selected.length} selected</span><button disabled={selected.length > 2} onClick={() => {
-        if (selected.length === 2) onSave({ ...board, edges: [...board.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, 'Connect cards');
+        if (selected.length === 2) save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, 'Connect cards');
         else setConnecting(!connecting);
       }}>{connecting ? 'Select another card…' : 'Connect'}</button><button onClick={() => {
-        onSave({ ...board, cards: board.cards.filter(p => !selected.includes(p.id)), edges: board.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, 'Remove placement'); setSelected([]);
+        save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, 'Remove placement'); setSelected([]);
       }}>Remove placement</button></div>}
       <div className="canvas-controls">
         <button title="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}>−</button>

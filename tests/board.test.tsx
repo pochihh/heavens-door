@@ -63,3 +63,57 @@ test('plugin pointer navigation selects with left drag, pans with middle/right/S
   assert.equal(saved.length,1,'navigation does not create edit history');
   await act(async () => root.unmount());assert.deepEqual(errors,[]);dom.window.close();
 });
+
+test('dragged cards keep their latest position through delayed saves, consecutive gestures and cancellation',async () => {
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
+  dom.window.HTMLElement.prototype.setPointerCapture=() => undefined;
+  dom.window.HTMLElement.prototype.hasPointerCapture=() => false;
+  const frames=new Map<number,FrameRequestCallback>();let nextId=0;
+  dom.window.requestAnimationFrame=callback => {frames.set(++nextId,callback);return nextId;};
+  dom.window.cancelAnimationFrame=id => {frames.delete(id);};
+  const frame=async () => act(async () => {const callbacks=[...frames.values()];frames.clear();callbacks.forEach(c => c(0));});
+  const {Whiteboard}=await import('../src/renderer/Board');
+  const {useState}=await import('react');
+  const board:Board={path:'test.whiteboard',folder:'',name:'Test',revision:'r0',cards:[{id:'p',cardId:'c',x:0,y:0,width:340,height:280}],edges:[]};
+  const saves:{board:Board;base:Board;finish:()=>void}[]=[];
+  function Fixture() {
+    const [saved,setSaved]=useState(board);
+    return <Whiteboard board={saved} cards={[]} onOpen={() => undefined} onCreate={() => undefined} onSave={(next,_label,base) => new Promise<void>(resolve => {
+      const revision=`r${saves.length+1}`;
+      saves.push({board:next,base,finish:() => {setSaved({...next,revision});resolve();}});
+    })}/>;
+  }
+  const root=createRoot(document.getElementById('root')!);
+  try {
+    await act(async () => root.render(<Fixture/>));
+    const canvas=document.querySelector('.canvas')!;
+    const card=() => document.querySelector<HTMLElement>('[data-placement="p"]')!;
+    const pointer=(target:Element,type:string,x:number,y=100) => target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
+    const down=async () => act(async () => {pointer(card().querySelector('.card-grip')!,'pointerdown',100);});
+    const up=async (x:number) => act(async () => {pointer(canvas,'pointerup',x);});
+    await down();await up(185);
+    assert.equal(card().style.left,'100px','dropping must not flash back while saving');
+    await down();
+    await act(async () => {for (let x=101;x<=270;x++) pointer(canvas,'pointermove',x);});
+    assert.equal(frames.size,1,'pointer movement is painted at most once per frame');
+    await frame();assert.equal(card().style.left,'300px');
+    await act(async () => saves[0].finish());
+    assert.equal(card().style.left,'300px','an earlier save cannot reset an ongoing drag');
+    await up(270);
+    assert.equal(saves[1].base.cards[0].x,100);
+    assert.equal(card().style.left,'300px');
+    await down();await up(185);assert.equal(card().style.left,'400px');
+    await act(async () => saves[1].finish());
+    assert.equal(card().style.left,'400px','an earlier acknowledgement cannot roll back a later completed drag');
+    await act(async () => saves[2].finish());assert.equal(card().style.left,'400px');
+    await act(async () => {pointer(card().querySelector('.resize-handle')!,'pointerdown',100);pointer(canvas,'pointerup',185);});
+    assert.equal(card().style.width,'440px','resize also stays visible while saving');
+    await down();await act(async () => {pointer(canvas,'pointermove',4100);});await frame();
+    assert.ok(card(),'the dragged card stays mounted even outside the viewport');
+    await act(async () => {pointer(canvas,'pointercancel',4100);});
+    assert.equal(card().style.left,'400px');assert.equal(card().style.width,'440px','cancelling a gesture preserves the earlier pending save');
+    await act(async () => saves[3].finish());assert.equal(card().style.width,'440px');
+    assert.equal(saves.length,4);
+  } finally {await act(async () => root.unmount());dom.window.close();}
+});

@@ -81,3 +81,36 @@ test('typing in the previous card while the next card loads is saved before swit
   session.edit('A final keystroke in A');release();await switching;
   assert.equal((await w.card('a.md')).body,'A final keystroke in A');assert.equal(session.state.draft?.card.path,'b.md');
 });
+
+test('rapid board edits save against their predecessor and remain undoable without overwriting external edits',async t => {
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-door-drag-'));
+  const root=join(folder,'notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));await w.create('','a',0,0);
+  let release:()=>void=() => undefined,started:()=>void=() => undefined;
+  const gate=new Promise<void>(resolve => {release=resolve;}),saving=new Promise<void>(resolve => {started=resolve;});
+  let writes=0;
+  const bridge={request:async request => {
+    if (request.kind === 'saveBoard') {if (++writes === 1) {started();await gate;}return w.saveBoard(request.board,request.expected);}
+    if (request.kind === 'write') return w.write(request.changes);
+    if (request.kind === 'snapshot') return w.snapshot();
+    throw new Error('Unexpected request');
+  }} as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});
+  t.after(async () => {session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  const original=w.snapshot().boards[0];
+  // Property order may change when the board is serialized and read back.
+  const first={...original,cards:original.cards.map(({cardId,...p}) => ({cardId,...p,x:100}))};
+  const second={...first,cards:first.cards.map(p => ({...p,x:200}))};
+  const a=session.board(first,'Move cards',original);await saving;
+  const b=session.board(second,'Move cards',first);release();await Promise.all([a,b]);
+  assert.equal(w.snapshot().boards[0].cards[0].x,200);assert.equal(session.state.error,'');
+  assert.equal(session.undoHistory.past.length,2);
+  await session.undo();assert.equal(w.snapshot().boards[0].cards[0].x,100);
+  await session.undo();assert.equal(w.snapshot().boards[0].cards[0].x,0);
+  await session.undo(true);await session.undo(true);assert.equal(w.snapshot().boards[0].cards[0].x,200);
+  const before=w.snapshot().boards[0],external={...before,cards:before.cards.map(p => ({...p,y:500}))};
+  await w.saveBoard(external,before.revision);await session.refresh();
+  await assert.rejects(() => session.board({...before,cards:before.cards.map(p => ({...p,x:300}))},'Move cards',before),/changed|changes/i);
+  assert.equal(w.snapshot().boards[0].cards[0].y,500,'a refreshed external edit is not overwritten');
+  assert.equal(w.snapshot().boards[0].cards[0].x,200);
+});

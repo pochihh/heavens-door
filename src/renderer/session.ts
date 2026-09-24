@@ -1,6 +1,12 @@
 import type { Board, Bridge, Card, Checkpoint, Mutation, Snapshot } from '../shared';
 import { UndoHistory } from './history';
 
+function layout(board: Board) {
+  return JSON.stringify([board.name,
+    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height]),
+    board.edges.map(e => [e.id,e.from,e.to])]);
+}
+
 interface State {
   snapshot: Snapshot | null;
   draft: {card:Card;body:string;dirty:boolean} | null;
@@ -110,10 +116,16 @@ export class Session {
       this.update({draft:{card,body:card.body,dirty:false}});
     });
   }
-  board(board: Board,label: string) {
+  board(board: Board,label: string,base = this.state.snapshot?.boards.find(b => b.path === board.path)) {
     return this.run(async () => {
       await this.flush();
-      const result=await this.bridge.request<Mutation>({kind:'saveBoard',board,expected:board.revision});
+      const current=this.state.snapshot?.boards.find(b => b.path === board.path);
+      // Earlier local saves may have advanced the revision since this gesture began.
+      // Only advance it when the starting layout still matches; disk writes retain their hash check.
+      if (!base || !current || layout(base) !== layout(current)) {
+        throw new Error(`The whiteboard changed while you were editing ${board.path}. Your move has not overwritten those changes.`);
+      }
+      const result=await this.bridge.request<Mutation>({kind:'saveBoard',board,expected:current.revision});
       this.accept(result,label);
     });
   }
