@@ -1,0 +1,15 @@
+# Local planning and agent configuration stay outside product history.
+/product-requirements.md
+/implementation-discussion.md
+/research-notes.md
+/.local/
+/.codex/
+
+node_modules/
+dist/
+out/
+release/
+coverage/
+*.tsbuildinfo
+.DS_Store
+*.log
