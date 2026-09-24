@@ -40,7 +40,7 @@ interface Props {
   draft?: { card: Card; body: string } | null; onEdit?: (body: string) => void; onFinish?: () => void; cardDetails?: ReactNode;
 }
 interface Gesture {
-  type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number;
+  type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
   board: Board; camera: Camera; rect: DOMRect; additive: boolean; initialSelection: string[];
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
@@ -72,8 +72,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const openReference = useCallback((id: string) => {
     const target = lookup.get(id); if (target) onOpen(target.path);
   }, [lookup, onOpen]);
-  const latest = useRef({ board: current, onFinish });
-  latest.current = { board: current, onFinish };
+  const latest = useRef({ board: current, onFinish, move, end });
+  latest.current = { board: current, onFinish, move, end };
 
   useLayoutEffect(() => {
     const element = viewport.current!;
@@ -104,6 +104,14 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const keyup = (event: KeyboardEvent) => {
       if (event.code === 'Space') { spaceDown.current = false; delete element.dataset.space; }
     };
+    // Capture can be lost before mouse-up on macOS. It is not a cancellation:
+    // keep tracking this pointer through the document until release or pointercancel.
+    const pointermove = (event: globalThis.PointerEvent) => latest.current.move(event);
+    const pointerup = (event: globalThis.PointerEvent) => latest.current.end(event);
+    const pointercancel = (event: globalThis.PointerEvent) => { if (gesture.current?.pointerId === event.pointerId) cancel(); };
+    element.ownerDocument.addEventListener('pointermove', pointermove, true);
+    element.ownerDocument.addEventListener('pointerup', pointerup, true);
+    element.ownerDocument.addEventListener('pointercancel', pointercancel, true);
     const blur = () => { spaceDown.current = false; delete element.dataset.space; cancel(); };
     element.addEventListener('wheel', wheel, { passive: false, capture: true });
     element.ownerDocument.addEventListener('keydown', keydown);
@@ -115,6 +123,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       element.removeEventListener('wheel', wheel, true);
       element.ownerDocument.removeEventListener('keydown', keydown);
       element.ownerDocument.removeEventListener('keyup', keyup);
+      element.ownerDocument.removeEventListener('pointermove', pointermove, true);
+      element.ownerDocument.removeEventListener('pointerup', pointerup, true);
+      element.ownerDocument.removeEventListener('pointercancel', pointercancel, true);
       element.ownerDocument.defaultView!.removeEventListener('blur', blur);
     };
   }, []);
@@ -133,7 +144,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const element = viewport.current!, nav = navigation.current!;
     nav.flush();
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
-    gesture.current = { type, ids, x: e.clientX, y: e.clientY, board: pendingSave.current ?? current,
+    gesture.current = { type, ids, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: pendingSave.current ?? current,
       camera: { ...nav.current }, rect: element.getBoundingClientRect(),
       additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected };
     // Keep card clicks on the card; viewport capture would turn double-clicks into card creation.
@@ -192,8 +203,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
       { ...p, x: p.x + dx, y: p.y + dy } : { ...p, width: Math.max(200, p.width + dx), height: Math.max(120, p.height + dy) }) };
   }
-  function move(e: PointerEvent) {
-    const g = gesture.current; if (!g) return;
+  function move(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
+    const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
     if (g.type === 'pan') navigation.current!.set({ ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy });
     else if (g.type === 'select') { if (Math.abs(dx) + Math.abs(dy) > 3) selectRegion(g, e.clientX, e.clientY); }
@@ -205,8 +216,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       });
     }
   }
-  function end(e: PointerEvent) {
-    const g = gesture.current; if (!g) return;
+  function end(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
+    const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
     const moved = Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y) > 3;
     if (g.type === 'pan') {
       navigation.current!.set({ ...g.camera, x: g.camera.x + e.clientX - g.x, y: g.camera.y + e.clientY - g.y });
@@ -251,8 +262,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const visible = current.cards.filter(p => p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible(p, view, size.width, size.height, Math.max(size.width, size.height)));
   return <div className="board-shell">
     <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label="Whiteboard canvas"
-      onPointerDownCapture={capture} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel}
-      onLostPointerCapture={() => { if (gesture.current) cancel(); }} onContextMenu={e => e.preventDefault()}
+      onPointerDownCapture={capture} onContextMenu={e => e.preventDefault()}
       onDoubleClick={e => {
         if (e.target === viewport.current) {
           const rect = viewport.current.getBoundingClientRect(), camera = navigation.current!.current;

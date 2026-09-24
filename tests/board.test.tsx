@@ -117,3 +117,49 @@ test('dragged cards keep their latest position through delayed saves, consecutiv
     assert.equal(saves.length,4);
   } finally {await act(async () => root.unmount());dom.window.close();}
 });
+
+test('losing pointer capture before release still saves the final drag instead of snapping back',async () => {
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
+  dom.window.HTMLElement.prototype.setPointerCapture=() => undefined;
+  dom.window.HTMLElement.prototype.hasPointerCapture=() => false;
+  const {Whiteboard}=await import('../src/renderer/Board');
+  const board:Board={path:'test.whiteboard',folder:'',name:'Test',revision:'r',cards:[{id:'p',cardId:'c',x:0,y:0,width:340,height:280}],edges:[]};
+  const saved:Board[]=[];const root=createRoot(document.getElementById('root')!);
+  const pointer=(target:EventTarget,type:string,x:number,pointerId=1) => {
+    const event=new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:100});
+    Object.defineProperty(event,'pointerId',{value:pointerId});target.dispatchEvent(event);
+  };
+  try {
+    await act(async () => root.render(<Whiteboard board={board} cards={[]} onOpen={() => undefined} onCreate={() => undefined} onSave={next => {saved.push(next);}}/>));
+    const grip=document.querySelector('.card-grip')!,card=document.querySelector('.board-card')!;
+    await act(async () => {pointer(grip,'pointerdown',100);pointer(card,'pointermove',185);});
+    await act(async () => {pointer(card,'lostpointercapture',185);pointer(document,'pointermove',270);pointer(document,'pointerup',270,2);});
+    assert.equal(saved.length,0,'another pointer must not end the active drag');
+    await act(async () => {pointer(document,'pointerup',270);});
+    assert.equal(saved.length,1,'release is committed even after capture was lost');
+    assert.equal(saved[0].cards[0].x,200);
+  } finally {await act(async () => root.unmount());dom.window.close();}
+});
+
+test('saving a 200-card board preserves existing preview DOM and scroll positions',async () => {
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
+  const {Whiteboard}=await import('../src/renderer/Board');
+  const cards=Array.from({length:200},(_,i)=>({id:`c${i}`,path:`${i}.md`,name:`${i}`,revision:'r',legacy:false}));
+  let reads=0;
+  window.door={assetUrl:path=>path,request:async request=>{reads++;return {...cards.find(c=>c.path===('path' in request ? request.path : ''))!,body:'# Heading\n\n![Local image](asset.svg)\n\nText to read.'};}} as typeof window.door;
+  const board:Board={path:'test.whiteboard',folder:'',name:'Test',revision:'r0',cards:cards.map((c,i)=>({id:`p${i}`,cardId:c.id,x:(i%20)*60,y:Math.floor(i/20)*60,width:340,height:280})),edges:[]};
+  const root=createRoot(document.getElementById('root')!);
+  const render=(b:Board)=>root.render(<Whiteboard board={b} cards={cards.map(c=>({...c}))} onOpen={()=>undefined} onCreate={()=>undefined} onSave={()=>undefined}/>);
+  try {
+    await act(async ()=>render(board));
+    const previews=[...document.querySelectorAll<HTMLElement>('.card-preview')];
+    assert.equal(previews.length,200);assert.equal(reads,200);
+    const headings=previews.map(p=>p.firstElementChild),images=previews.map(p=>p.querySelector('img'));
+    previews.forEach(p=>{p.scrollTop=75;});
+    await act(async ()=>render({...board,revision:'r1',cards:board.cards.map((p,i)=>i ? p : {...p,x:100})}));
+    assert.ok(previews.every((p,i)=>p.firstElementChild===headings[i] && p.querySelector('img')===images[i]),'unchanged previews must not replace their DOM when the board saves');
+    assert.ok(previews.every(p=>p.scrollTop===75));assert.equal(reads,200,'saving geometry does not reload card bodies');
+  } finally {await act(async()=>root.unmount());dom.window.close();}
+});
