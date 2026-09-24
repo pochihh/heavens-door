@@ -19,7 +19,8 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 ## Using the preview
 
 - Create a card, then write in the formatted editor. Edits save after a short pause. Frontmatter stays hidden.
-- Drag a card’s header to move it, or its lower-right handle to resize it. Drag empty space to pan; pinch or Ctrl-scroll to zoom. **Fit** frames the board. Distant cards use simplified previews.
+- Drag a card to move it, or its lower-right handle to resize it. Navigation follows the Obsidian whiteboard plugin: mouse wheel zooms at the pointer; two-finger trackpad scrolling pans; pinch zooms. Middle-drag or Space + left-drag pans; right-drag pans from empty canvas. Left-drag on empty canvas selects a region. Shift-click adds cards and Cmd/Ctrl-click toggles them; drag a selected card to move the group.
+- Scrollable card content consumes wheel input while it can scroll in that direction. At its boundary the board handles the wheel. Zoom supports 20–300%, editable percentage, Cmd/Ctrl + `+`/`-`, `0` for 100%, and `1` to fit. Distant cards use simplified previews.
 - Select one card and **Connect**, then select another. **Remove placement** removes only that board placement and its connections. The Markdown file remains.
 - Use the editor’s **Link card** menu to insert a stable link. Backlinks appear below the editor. A card that is not on the current board can be placed there from that panel.
 - Search card names and contents in the sidebar. `backlinks:<card-id>` also works. The file list displays actual filenames.
@@ -31,7 +32,7 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 
 Cards are `.md` files with a UUID in YAML `card-id` frontmatter. Existing frontmatter is preserved. Imported notes without an ID receive one when edited; until then their provisional identity depends on their path. Persistent card links use `[label](card:UUID)`.
 
-A `.whiteboard` file contains readable Markdown membership links and a versioned JSON layout in a comment block. Each placement has its own identity, separate from its card. A folder gets a board when its first card is created in the app. Existing folders and boards appear when opened; this preview does not yet create folders or migrate Obsidian plugin boards.
+A `.whiteboard` file contains readable Markdown membership links and a versioned JSON layout in a comment block. This is a new, smaller schema inspired by the Obsidian plugin, not a directly compatible copy of its version-2 format. Each placement has its own identity, separate from its card. A folder gets a board when its first card is created in the app. Existing folders and boards appear when opened; this preview does not yet create folders or migrate Obsidian plugin boards.
 
 SQLite is a rebuildable index stored in the application’s user-data directory, outside the notes folder. Startup verifies content hashes and reuses unchanged index entries. A filesystem watcher updates changed files; board previews load only visible card bodies. Changes made outside the app appear automatically.
 
@@ -49,3 +50,5 @@ npm run benchmark   # temporary 10,000-card vault; removed afterward
 ```
 
 This first slice targets macOS, Windows and Ubuntu through Electron; desktop interaction has been exercised on macOS. It is not yet a packaged or signed release. Tags and property views, rich history graphs/cherry-picking, AI integrations, reading workflows, sync, and the community plugin/theme API are not implemented in this preview.
+
+Navigation code adapted from the user’s MIT-licensed Obsidian whiteboard plugin is attributed in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

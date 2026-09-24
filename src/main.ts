@@ -61,7 +61,7 @@ void app.whenReady().then(async () => {
     const folder = join(parent,'Getting started'); await fs.mkdir(folder);
     await open(folder);
     const samples = [
-      ['Welcome', '# A little room for big ideas\n\nThis is your first whiteboard. Each card is a Markdown file you own.\n\n**Double-click a card** to write. Drag its header to move it.\n\n- Pan by dragging the empty canvas\n- Scroll to move; pinch or Ctrl-scroll to zoom\n- Create a checkpoint with ⌘S / Ctrl+S\n'],
+      ['Welcome', '# A little room for big ideas\n\nThis is your first whiteboard. Each card is a Markdown file you own.\n\n**Double-click a card** to write. Drag its header to move it.\n\n- Pan with Space-drag or the middle/right mouse button\n- Two-finger scroll pans; mouse wheel or pinch zooms\n- Create a checkpoint with ⌘S / Ctrl+S\n'],
       ['Connecting ideas', '# Follow the connections\n\nA thought becomes useful when it finds a neighbor.\n\nSelect a card, then **Connect** and select another. Hold Shift to select two cards.\n\nReferences share the same card identity, even across boards.\n'],
       ['Try it', '# Make it yours\n\n- [ ] Write a small idea\n- [ ] Move a card\n- [ ] Save a checkpoint\n- [ ] Explore an earlier version\n\nYour future edits stay reachable in history.\n'],
     ];
