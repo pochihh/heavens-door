@@ -18,10 +18,11 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 
 ## Using the preview
 
-- Create a card, then write in the formatted editor. Edits save after a short pause. Frontmatter stays hidden.
-- Drag a card to move it, or its lower-right handle to resize it. Navigation follows the Obsidian whiteboard plugin: mouse wheel zooms at the pointer; two-finger trackpad scrolling pans; pinch zooms. Middle-drag or Space + left-drag pans; right-drag pans from empty canvas. Left-drag on empty canvas selects a region. Shift-click adds cards and Cmd/Ctrl-click toggles them; drag a selected card to move the group.
+- Click inside a whiteboard card to edit it in place. Drag its header to move it; text remains selectable. Escape or clicking empty canvas finishes editing. The card library also offers a full-page editor. Edits save after a short pause. Frontmatter stays hidden.
+- Drag a card’s header to move it, or its lower-right handle to resize it. Navigation follows the Obsidian whiteboard plugin: mouse wheel zooms at the pointer; two-finger trackpad scrolling pans; pinch zooms. Middle-drag or Space + left-drag pans; right-drag pans from empty canvas. Left-drag on empty canvas selects a region. Shift-click adds cards and Cmd/Ctrl-click toggles them; drag a selected card’s header to move the group.
 - Scrollable card content consumes wheel input while it can scroll in that direction. At its boundary the board handles the wheel. Zoom supports 20–300%, editable percentage, Cmd/Ctrl + `+`/`-`, `0` for 100%, and `1` to fit. Distant cards use simplified previews.
 - Select one card and **Connect**, then select another. **Remove placement** removes only that board placement and its connections. The Markdown file remains.
+- **View → Reload** (`Cmd/Ctrl+R`) saves pending edits and reopens the current workspace. Rendering errors show a recovery screen; Quit/Reload offer a native prompt if the renderer stops responding. Unsaved conflicts block normal reload so the draft can be copied or reconciled. Reload resets session undo; saved Git checkpoints remain.
 - Use the editor’s **Link card** menu to insert a stable link. Backlinks appear below the editor. A card that is not on the current board can be placed there from that panel.
 - Search card names and contents in the sidebar. `backlinks:<card-id>` also works. The file list displays actual filenames.
 - ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z undo or redo card and board changes in one chronological session history. Typing close together is grouped.

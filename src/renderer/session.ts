@@ -17,6 +17,19 @@ export class Session {
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private checkpointTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(readonly bridge: Bridge) {}
+  // Registered outside the React tree so renderer errors cannot strand Quit/Reload.
+  connectWindow() {
+    return this.bridge.onClosing(action => {
+      void this.run(async () => { await this.flush(); this.bridge.finishClosing(action); })
+        .catch(() => this.bridge.cancelClosing(action));
+    });
+  }
+  resume() {
+    return this.run(async () => {
+      const snapshot=await this.bridge.currentWorkspace();
+      if (snapshot) this.update({snapshot,status:'Saved locally'});
+    });
+  }
   dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer); }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getState = () => this.state;
@@ -66,8 +79,10 @@ export class Session {
   }
   select(path: string | null) {
     return this.run(async () => {
-      await this.flush();
+      if (path && path === this.state.draft?.card.path) return;
       const card=path ? await this.bridge.request<Card>({kind:'card',path}) : null;
+      // Keep accepting edits to the old card while the next card loads, then flush them.
+      await this.flush();
       this.update({draft:card ? {card,body:card.body,dirty:false} : null});
     });
   }

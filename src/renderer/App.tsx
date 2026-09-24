@@ -4,13 +4,13 @@ import { Whiteboard } from './Board';
 import { CardEditor } from './Editor';
 import type { Board } from '../shared';
 
-const session=new Session(window.door);
+export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>) => { void promise.catch(() => undefined); };
 export function App() {
   const state=useSyncExternalStore(session.subscribe,session.getState);
   const {snapshot,draft}=state;
   const [boardPath,setBoardPath]=useState('');
-  const [mode,setMode]=useState<'board'|'files'>('board');
+  const [mode,setMode]=useState<'board'|'files'|'card'>('board');
   const [showHistory,setShowHistory]=useState(false);
   const [settings,setSettings]=useState(false);
   const [stem,setStem]=useState(localStorage.getItem('new-card-stem') || 'untitled');
@@ -20,14 +20,13 @@ export function App() {
   const board=snapshot?.boards.find(b => b.path === boardPath) ?? snapshot?.boards[0];
   useEffect(() => {
     const remove=window.door.onChange(() => { if (session.state.snapshot) attempt(session.refresh()); });
-    const close=window.door.onClosing(() => attempt(session.run(async () => { await session.flush(); window.door.finishClosing(); })));
     const keyboard=(event:KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.isComposing) return;
       if (event.key.toLowerCase() === 's') { event.preventDefault(); attempt(session.checkpoint()); }
       if (event.key.toLowerCase() === 'z' && !(event.target instanceof HTMLInputElement && event.target.type !== 'checkbox')) { event.preventDefault(); attempt(session.undo(event.shiftKey)); }
     };
     window.addEventListener('keydown',keyboard,true);
-    return () => { remove(); close(); session.dispose(); window.removeEventListener('keydown',keyboard,true); };
+    return () => { remove(); window.removeEventListener('keydown',keyboard,true); };
   },[]);
   useEffect(() => {
     if (!snapshot) return;
@@ -43,10 +42,21 @@ export function App() {
     return () => { live=false; };
   },[draft?.card.id,snapshot]);
   const files=useMemo(() => snapshot?.cards.filter(c => matches === null || matches.includes(c.path)) ?? [],[snapshot,matches]);
-  const openCard=useCallback((path:string) => attempt(session.select(path)),[]);
+  const openCard=useCallback((path:string) => {
+    const id=snapshot?.cards.find(c => c.path === path)?.id;
+    const target=(board?.cards.some(p => p.cardId === id) ? board : snapshot?.boards.find(b => b.cards.some(p => p.cardId === id)));
+    if (target) {setBoardPath(target.path);setMode('board');} else setMode('card');
+    attempt(session.select(path));
+  },[board,snapshot]);
+  const editCard=useCallback((body:string) => session.edit(body),[]);
+  const finishCard=useCallback(() => attempt(session.select(null)),[]);
   const saveBoard=useCallback((board:Board,label:string) => attempt(session.board(board,label)),[]);
   const create=useCallback((x?:number,y?:number) => attempt(session.create(board?.folder ?? '',stem,x ?? (board?.cards.at(-1)?.x ?? -280)+380,y ?? board?.cards.at(-1)?.y ?? 100)),[board,stem]);
   const emptyBoard: Board=useMemo(() => ({path:'',folder:'',name:snapshot?.name ?? '',revision:'',cards:[],edges:[]}),[snapshot?.name]);
+  const cardDetails=draft && <details className="card-details"><summary>Linked from · {backlinks.length}</summary>
+    {backlinks.map(path => <button key={path} onClick={() => openCard(path)}>↗ {path}</button>)}
+    {board && !board.cards.some(p => p.cardId === draft.card.id) && <button disabled={draft.card.legacy} onClick={() => saveBoard({...board,cards:[...board.cards,{id:crypto.randomUUID(),cardId:draft.card.id,x:120,y:120,width:340,height:280}]},'Place card reference')}>+ Place on this whiteboard</button>}
+  </details>;
   return <div className="app">
     {snapshot ? <>
       <aside className="sidebar">
@@ -62,10 +72,10 @@ export function App() {
       </aside>
       <main className="workspace">
         <header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> {mode === 'board' ? 'Whiteboards' : 'Cards'}</div><div className="top-actions"><span className="save-state"><i className="local-dot"/>{state.status}</span><button title="Undo (⌘Z / Ctrl+Z)" onClick={() => attempt(session.undo())} disabled={!session.undoHistory.past.length && !draft?.dirty}>↶</button><button title="Redo (⇧⌘Z / Ctrl+Shift+Z)" onClick={() => attempt(session.undo(true))} disabled={!session.undoHistory.future.length}>↷</button></div></header>
-        <div className="workspace-heading"><div><div className="eyebrow">{mode === 'board' ? 'A SPACE TO THINK' : 'YOUR MARKDOWN LIBRARY'}</div><h1>{mode === 'board' ? board?.name ?? snapshot.name : 'All cards'}</h1></div><button className="primary" onClick={() => create()}>+ New card</button></div>
+        <div className="workspace-heading"><div><div className="eyebrow">{mode === 'board' ? 'A SPACE TO THINK' : 'YOUR MARKDOWN LIBRARY'}</div><h1>{mode === 'board' ? board?.name ?? snapshot.name : mode === 'card' ? draft?.card.path ?? 'Card' : 'All cards'}</h1></div><button className="primary" onClick={() => create()}>+ New card</button></div>
         <div className="content-row">
-          {mode === 'board' ? <Whiteboard key={board?.path || 'empty'} board={board ?? emptyBoard} cards={snapshot.cards} onSave={saveBoard} onOpen={openCard} onCreate={create}/> : <div className="library">{files.slice(0,200).map(card => <button key={card.path} className="library-card" onClick={() => openCard(card.path)}><span>▤</span><strong>{card.name}</strong><small>{card.path}</small></button>)}{!files.length && <p>No cards yet. Start with a small idea.</p>}</div>}
-          {draft && <aside className="editor-pane"><div className="pane-header"><div><small>CARD</small><strong title={draft.card.path}>{draft.card.path}</strong></div><button title="Close editor" onClick={() => attempt(session.select(null))}>×</button></div><CardEditor path={draft.card.path} body={draft.body} cards={snapshot.cards} onEdit={body => session.edit(body)}/><div className="backlinks"><span className="section-label">LINKED FROM · {backlinks.length}</span>{backlinks.map(path => <button key={path} onClick={() => openCard(path)}>↗ {path}</button>)}{board && !board.cards.some(p => p.cardId === draft.card.id) && <button disabled={draft.card.legacy} title={draft.card.legacy ? 'Edit this imported card once to give it a persistent identity' : 'Place a reference on this board'} onClick={() => saveBoard({...board,cards:[...board.cards,{id:crypto.randomUUID(),cardId:draft.card.id,x:120,y:120,width:340,height:280}]},'Place card reference')}>+ Place on this whiteboard</button>}</div></aside>}
+          {mode === 'board' ? <Whiteboard key={board?.path || 'empty'} board={board ?? emptyBoard} cards={snapshot.cards} onSave={saveBoard} onOpen={openCard} onCreate={create} draft={draft} onEdit={editCard} onFinish={finishCard} cardDetails={cardDetails}/> : mode === 'card' && draft ? <section className="document-editor"><button className="document-back" onClick={() => {finishCard();setMode('files');}}>← All cards</button><CardEditor path={draft.card.path} body={draft.body} cards={snapshot.cards} onEdit={editCard} autofocus/>{cardDetails}</section> : <div className="library">{files.slice(0,200).map(card => <button key={card.path} className="library-card" onClick={() => {setMode('card');attempt(session.select(card.path));}}><span>▤</span><strong>{card.name}</strong><small>{card.path}</small></button>)}{!files.length && <p>No cards yet. Start with a small idea.</p>}</div>}
+
         </div>
       </main>
       {showHistory && <aside className="history-pane"><div className="pane-header"><div><small>WORKSPACE</small><strong>History</strong></div><button onClick={() => setShowHistory(false)}>×</button></div><p className="history-hint">Return to a checkpoint. Later versions stay here; new edits start a branch.</p><button className="checkpoint-button" disabled={!snapshot.historyAvailable} onClick={() => attempt(session.checkpoint())}>+ Save checkpoint <kbd>⌘S</kbd></button>{!snapshot.historyAvailable && <p className="notice">This folder already belongs to a Git repository. Automatic history stays disabled to preserve its staging and branches.</p>}<div className="history-list">{state.checkpoints.map(item => <button key={item.id} className={`checkpoint ${item.active ? 'active' : ''}`} onClick={() => !item.active && attempt(session.restore(item.id))}><span className="history-dot"/><strong>{item.label}</strong><time>{new Date(item.time).toLocaleString()}</time><small>{item.id.slice(0,7)} {item.parents.length>0 ? `← ${item.parents.map(p => p.slice(0,7)).join(', ')}` : '· Start'} {item.active && '· You are here'}</small></button>)}{!state.checkpoints.length && <p className="muted small">Save a checkpoint to start your timeline.</p>}</div></aside>}

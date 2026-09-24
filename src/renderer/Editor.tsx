@@ -1,22 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { CardInfo } from '../shared';
 import { unsupported, preview } from './markdown';
 import { extensions } from './editor-schema';
 
-export function CardEditor({path,body,cards,onEdit}:{path:string;body:string;cards:CardInfo[];onEdit:(body:string)=>void}) {
+export interface EditorFocus { x: number; y: number; scrollTop: number }
+interface Props { path:string; body:string; cards:CardInfo[]; onEdit:(body:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus }
+// Changing files remounts the editor: effects must never touch a destroyed instance.
+export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
+function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props) {
   const blocked=unsupported(body);
   const [linkQuery,setLinkQuery]=useState('');
+  const configuredExtensions=useMemo(() => extensions(path),[path]);
   const editor=useEditor({
-    extensions:extensions(path),
+    extensions:configuredExtensions,
     content:body,contentType:'markdown',editable:!blocked,
     editorProps:{attributes:{'aria-label':'Card content',spellcheck:'true'}},
     onUpdate:({editor}) => onEdit(editor.getMarkdown()),
-  },[path]);
+  });
   useEffect(() => {
-    if (editor && editor.getMarkdown() !== body) editor.commands.setContent(body,{contentType:'markdown',emitUpdate:false});
+    if (editor && !editor.isDestroyed && editor.getMarkdown() !== body) editor.commands.setContent(body,{contentType:'markdown',emitUpdate:false});
   },[editor,body]);
-  useEffect(() => { editor?.setEditable(!blocked); },[editor,blocked]);
+  useEffect(() => { if (editor && !editor.isDestroyed) editor.setEditable(!blocked,false); },[editor,blocked]);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || !autofocus || blocked) return;
+    const scroll=editor.view.dom.closest('.editor-body');
+    if (scroll && focusPoint) scroll.scrollTop=focusPoint.scrollTop;
+    const position=focusPoint ? editor.view.posAtCoords({left:focusPoint.x,top:focusPoint.y})?.pos : undefined;
+    editor.commands.focus(position ?? (focusPoint ? 'end' : 'start'),{scrollIntoView:false});
+  },[editor,autofocus,blocked,focusPoint]);
   if (blocked) return <div className="editor-body"><p className="notice">This card contains Markdown extensions this first editor cannot preserve yet. It stays readable; edit the original file in your preferred editor.</p><div className="prose" dangerouslySetInnerHTML={{__html:preview(body,path)}} /></div>;
   if (!editor) return null;
   return <>

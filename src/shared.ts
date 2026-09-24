@@ -21,13 +21,17 @@ export type Request =
   | { kind: 'read'; path: string }
   | { kind: 'card'; path: string }
   | { kind: 'write'; changes: Write[] };
+export type WindowAction = 'close' | 'reload';
 export interface Bridge {
   chooseWorkspace(): Promise<Snapshot | null>;
   demo(): Promise<Snapshot>;
   request<T>(request: Exclude<Request, { kind: 'open' }>): Promise<T>;
   onChange(callback: () => void): () => void;
-  onClosing(callback: () => void): () => void;
-  finishClosing(): void;
+  currentWorkspace(): Promise<Snapshot | null>;
+  onClosing(callback: (action: WindowAction) => void): () => void;
+  finishClosing(action: WindowAction): void;
+  cancelClosing(action: WindowAction): void;
+  reload(): void;
   assetUrl(path: string): string;
 }
 declare global { interface Window { door: Bridge } }

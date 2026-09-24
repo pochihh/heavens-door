@@ -16,7 +16,7 @@ export function zoomAt(camera: Camera, x: number, y: number, zoom: number): Came
 }
 export function shouldLetCardScroll(event: WheelEvent, viewport: HTMLElement) {
   const target = event.target instanceof HTMLElement ? event.target : null;
-  const root = target?.closest<HTMLElement>('.card-preview');
+  const root = target?.closest<HTMLElement>('.card-preview,.editor-body');
   if (!root) return false;
   const dx = normalizedWheelDelta(event.deltaX, event.deltaMode);
   const dy = normalizedWheelDelta(event.deltaY, event.deltaMode);
