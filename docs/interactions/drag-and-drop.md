@@ -37,3 +37,16 @@ The plugin reference committed some cancel events. This app intentionally cancel
 `useBookmarkDrag` owns one pointer session and accepts a destination element, a commit callback, and the axis. `crossed` is the common directional-threshold calculation. Only vertical bookmark lists are currently wired into the product. A future horizontal property consumer should reuse the geometry and phantom rules, supply its own persistence callback, and add a horizontal interaction test before shipping. Do not couple property storage or board-card geometry to bookmark preferences.
 
 For a future property editor, preserve keyboard editing and start dragging only on the property label/grip. Editable controls must never accidentally begin a reorder. Update this specification and its runnable regression whenever the gesture changes.
+
+
+## Module tabs and panel groups
+
+Implementation: `src/renderer/Docks.tsx` and shared `src/layout.ts`. Regression: `tests/docks.test.tsx`.
+
+Dock rearrangement uses native HTML drag-and-drop with `application/heavens-module`, separate from the pointer-based bookmark sorter and document-tab transfer. Drag a module tab to move one module; drag a group's grip to move all its tabs. Every module has exactly one placement across the two docks.
+
+A tab-strip drop merges groups or inserts/reorders a module before a targeted tab. Top/bottom content drop zones create vertical panel groups. Collapsed or empty docks expose a narrow target while a drag is active. The destination dock expands after a successful drop. A source group disappears only if it has no modules left. Drops cannot move file content.
+
+Only the completed drop saves a layout change. Drag end, Escape or blur without a drop clears transient targets. An explicit drop-zone highlight is used here; it does not change the bookmark rule prohibiting a highlighted Starred section. The group menu offers equivalent move/split/merge operations without dragging.
+
+Panel-group splitters preview adjacent weights while held and persist on release; pointer cancellation restores the starting proportions. Arrow keys resize them too. Layout writes are batched independently of card/board content and use workspace preferences, not session undo.

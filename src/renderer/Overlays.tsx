@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon, type IconName } from './Icons';
 
@@ -12,7 +12,7 @@ export function TooltipHost() {
     const show=(event:Event)=>{
       const next=event.target instanceof Element?event.target.closest<HTMLElement>('[data-tooltip]'):null;
       if(next===target)return;
-      hide();if(!next||document.body.classList.contains('list-dragging'))return;
+      hide();if(!next||document.body.classList.contains('list-dragging')||document.querySelector('.docking'))return;
       target=next;description=next.getAttribute('aria-describedby');
       timer=setTimeout(()=>{if(!next.isConnected)return;next.setAttribute('aria-describedby',[description,'app-tooltip'].filter(Boolean).join(' '));setTip({text:next.dataset.tooltip!,rect:next.getBoundingClientRect()});},event.type==='focusin'?0:450);
     };
@@ -29,14 +29,14 @@ export function TooltipHost() {
   },[tip]);
   return tip?createPortal(<div ref={element} id="app-tooltip" className="hover-tooltip" role="tooltip">{tip.text}</div>,document.body):null;
 }
-export interface MenuAction {label:string;icon?:IconName;checked?:boolean;disabled?:boolean;hint?:string;run:()=>void}
-export interface MenuState {x:number;y:number;actions:MenuAction[]}
+export interface MenuAction {separatorBefore?:boolean;label:string;icon?:IconName;checked?:boolean;disabled?:boolean;hint?:string;run:()=>void}
+export interface MenuState {above?:boolean;label?:string;x:number;y:number;actions:MenuAction[]}
 export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
   const ref=useRef<HTMLDivElement>(null);
   useLayoutEffect(()=>{
     const el=ref.current!,box=el.getBoundingClientRect(),previous=document.activeElement;
     el.style.left=Math.max(8,Math.min(menu.x,innerWidth-box.width-8))+'px';
-    el.style.top=Math.max(8,Math.min(menu.y,innerHeight-box.height-8))+'px';
+    el.style.top=Math.max(8,Math.min(menu.above?menu.y-box.height-4:menu.y,innerHeight-box.height-8))+'px';
     el.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
     return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
   },[menu]);
@@ -45,9 +45,9 @@ export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
     document.addEventListener('pointerdown',outside);window.addEventListener('blur',onClose);window.addEventListener('resize',onClose);
     return()=>{document.removeEventListener('pointerdown',outside);window.removeEventListener('blur',onClose);window.removeEventListener('resize',onClose);};
   },[onClose]);
-  return createPortal(<div ref={ref} className="context-menu" role="menu" aria-label="Explorer actions" onKeyDown={e=>{
+  return createPortal(<div ref={ref} className="context-menu" role="menu" aria-label={menu.label??"Explorer actions"} onKeyDown={e=>{
     const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
     if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();onClose();}
-  }}>{menu.actions.map((action,i)=><button key={i} role={action.checked!==undefined?'menuitemradio':'menuitem'} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint??action.label} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button>)}</div>,document.body);
+  }}>{menu.actions.map((action,i)=><Fragment key={i}>{action.separatorBefore&&<div role="separator" className="menu-separator"/>}<button role={action.checked!==undefined?'menuitemradio':'menuitem'} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint??action.label} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button></Fragment>)}</div>,document.body);
 }

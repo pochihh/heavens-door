@@ -4,12 +4,12 @@ import type { Session } from './session';
 import { CardEditor, type EditorFocus } from './Editor';
 import { preview } from './markdown';
 import { Whiteboard } from './Board';
-import type { Camera } from './navigation';
+import type { ViewMemory } from '../layout';
+export type { ViewMemory } from '../layout';
 import { Icon } from './Icons';
 
-export interface ViewMemory {camera?:Camera;scroll?:number}
-export function NoteView({path,session,snapshot,active,memory,formatting,onActivate,onOpen,onWords}:{
-  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;formatting:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onWords:(count:number)=>void;
+export function NoteView({path,session,snapshot,active,memory,formatting,onActivate,onOpen,onViewChange}:{
+  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;formatting:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
 }) {
   const [loaded,setLoaded]=useState<Card|null>(null),[focus,setFocus]=useState<EditorFocus>();
   const container=useRef<HTMLDivElement>(null);
@@ -32,8 +32,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     void session.bridge.request<{path:string}[]>({kind:'query',text:'backlinks:'+info.id}).then(rows=>{if(live)setBacklinks(rows);}).catch(error=>{if(live)session.update({error:String(error)});});
     return()=>{live=false;};
   },[info?.id,snapshot,session]);
-  useEffect(()=>{onWords(body.trim()?body.trim().split(/\s+/).length:0);},[body,onWords]);
-  return <section className={'document-editor '+(formatting?'show-formatting':'')} ref={container} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;}}
+  return <section className={'document-editor '+(formatting?'show-formatting':'')} ref={container} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
     onPointerDown={e=>{
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
       setFocus({x:e.clientX,y:e.clientY,scrollTop:memory.scroll??0});onActivate();
@@ -52,12 +51,12 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     </details>
   </section>;
 }
-export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onCreate,onMigrate}:{
-  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onCreate:(x:number,y:number)=>void;onMigrate:()=>void;
+export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onCreate,onMigrate,onViewChange}:{
+  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onCreate:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;
 }) {
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
-  return <Whiteboard board={shown} cards={snapshot.cards} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;}}
+  return <Whiteboard board={shown} cards={snapshot.cards} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
     folders={snapshot.boards.map(b=>b.folder)} onOpenFolder={folder=>onOpen('board:'+folder)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error('Move root cards before changing the mother whiteboard.'));}
@@ -69,8 +68,8 @@ export function BoardView({board,snapshot,session,active,memory,onActivate,onOpe
     draft={active?session.state.draft:null} onEdit={body=>session.edit(body)}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;
 }
-export function TagView({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}) {
-  const [rows,setRows]=useState<TagResult[]>([]),[view,setView]=useState<'table'|'kanban'>('table'),[group,setGroup]=useState('status');
+export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;memory:ViewMemory;onViewChange:()=>void}) {
+  const [rows,setRows]=useState<TagResult[]>([]),[view,setView]=useState<'table'|'kanban'>(memory.tagView??'table'),[group,setGroup]=useState(memory.tagGroup??'status');
   useEffect(()=>{
     let live=true;
     void session.bridge.request<TagResult[]>({kind:'tagCards',tag:tag.tag}).then(result=>{if(live)setRows(result);}).catch(error=>{if(live)session.update({error:String(error)});});
@@ -81,9 +80,9 @@ export function TagView({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snap
   const groups=[...new Set(rows.map(row=>text(row.properties[group])||'No '+group))];
   return <section className="tag-view">
     <div className="tag-view-toolbar">
-      <button data-tooltip="Show tagged cards as a table" className={view==='table'?'selected':''} onClick={()=>setView('table')}><Icon name="table"/> Table</button>
-      <button data-tooltip="Group tagged cards by a property; editing properties is a later milestone" className={view==='kanban'?'selected':''} onClick={()=>setView('kanban')}><Icon name="kanban"/> Kanban</button>
-      {view==='kanban'&&<select aria-label="Group cards by property" data-tooltip="Property used for Kanban columns" value={group} onChange={e=>setGroup(e.target.value)}>{[...new Set(['status',...fields])].map(f=><option key={f}>{f}</option>)}</select>}
+      <button data-tooltip="Show tagged cards as a table" className={view==='table'?'selected':''} onClick={()=>{setView('table');memory.tagView='table';onViewChange();}}><Icon name="table"/> Table</button>
+      <button data-tooltip="Group tagged cards by a property; editing properties is a later milestone" className={view==='kanban'?'selected':''} onClick={()=>{setView('kanban');memory.tagView='kanban';onViewChange();}}><Icon name="kanban"/> Kanban</button>
+      {view==='kanban'&&<select aria-label="Group cards by property" data-tooltip="Property used for Kanban columns" value={group} onChange={e=>{setGroup(e.target.value);memory.tagGroup=e.target.value;onViewChange();}}>{[...new Set(['status',...fields])].map(f=><option key={f}>{f}</option>)}</select>}
       <span className="muted">{rows.length} cards</span>
     </div>
     {view==='table'?<div className="tag-results"><table><thead><tr><th>Card</th>{fields.map(f=><th key={f}>{f}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.card.id}><td><button data-tooltip={'Open '+row.card.path} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button></td>{fields.map(f=><td key={f}>{text(row.properties[f])}</td>)}</tr>)}</tbody></table></div>:
@@ -98,7 +97,7 @@ export function HistoryPanel({session}:{session:Session}) {
     <div className="history-list">{state.checkpoints.map(item=><button key={item.id} className={'checkpoint '+(item.active?'active':'')} data-tooltip={(item.active?'Current checkpoint: ':'Restore workspace to ')+item.label} onClick={()=>{if(!item.active)void session.restore(item.id).catch(()=>undefined);}}><span className="history-dot"/><strong>{item.label}</strong><time>{new Date(item.time).toLocaleString()}</time><small>{item.id.slice(0,7)}{item.active?' · Current':''}</small></button>)}</div></>;
 }
 
-export function FileView({path,snapshot,memory}:{path:string;snapshot:Snapshot;memory:ViewMemory}) {
+export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapshot:Snapshot;memory:ViewMemory;onViewChange:()=>void}) {
   const [file,setFile]=useState<FileInspection|null>(null),[error,setError]=useState('');
   const container=useRef<HTMLDivElement>(null);
   useEffect(()=>{
@@ -107,7 +106,7 @@ export function FileView({path,snapshot,memory}:{path:string;snapshot:Snapshot;m
     return()=>{live=false;};
   },[path,snapshot]);
   useEffect(()=>{if(container.current)container.current.scrollTop=memory.scroll??0;},[file?.kind,memory]);
-  return <div className="file-preview" ref={container} onScroll={e=>{memory.scroll=e.currentTarget.scrollTop;}}>
+  return <div className="file-preview" ref={container} onScroll={e=>{memory.scroll=e.currentTarget.scrollTop;onViewChange();}}>
     {error?<p role="alert">{error}</p>:!file?<p className="muted">Loading…</p>:file.kind==='text'?<pre>{file.text}</pre>:file.kind==='image'?<img src={window.door.assetUrl(path)} alt={path}/>:<p className="muted">{path} · {file.size.toLocaleString()} bytes</p>}
     {file?.kind!=='text'&&<button data-tooltip="Show the original file in your system file manager" onClick={()=>{void window.door.revealFile(path).catch(error=>setError(String(error)));}}>Reveal file</button>}
   </div>;

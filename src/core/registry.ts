@@ -17,16 +17,17 @@ export class WorkspaceRegistry {
       return [...new Set(value)] as string[];
     }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;}
   }
-  register(root:string) {
+  register(root:string) {return this.update(async roots=>{const actual=await fs.realpath(root);return roots.includes(actual)?roots:[...roots,actual];});}
+  async unregister(root:string){await this.update(async roots=>roots.filter(path=>path!==root));return this.list();}
+  private update(change:(roots:string[])=>Promise<string[]>) {
     const task=this.queue.then(async()=>{
-      const actual=await fs.realpath(root),roots=await this.read();
-      if(roots.includes(actual))return;
+      const roots=await this.read(),next=await change(roots);
+      if(JSON.stringify(roots)===JSON.stringify(next))return;
       await fs.mkdir(dirname(this.file),{recursive:true});
       const temporary=this.file+'.'+randomUUID()+'.tmp';
-      await fs.writeFile(temporary,JSON.stringify([...roots,actual],null,2)+'\n',{flag:'wx'});
+      await fs.writeFile(temporary,JSON.stringify(next,null,2)+'\n',{flag:'wx'});
       try{await fs.rename(temporary,this.file);}finally{await fs.unlink(temporary).catch(()=>undefined);}
     });
-    this.queue=task.catch(()=>undefined);
-    return task;
+    this.queue=task.catch(()=>undefined);return task;
   }
 }

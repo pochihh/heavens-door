@@ -3,12 +3,15 @@ import { Session } from './session';
 import type { Mutation, Preferences, Snapshot } from '../shared';
 import { DocumentIcon, Icon, Tool } from './Icons';
 import { Explorer } from './Explorer';
+import { SideDock, modules, MODULE_IDS } from './Docks';
+import { WorkspaceMenu,WorkspaceManager } from './WorkspaceMenu';
+import {defaultDocks,findModule,revealModule,type DockDrag,type Docks,type DocumentsLayout} from '../layout';
 import { TooltipHost } from './Overlays';
 import { documentInfo, parent } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
 import { BoardView, FileView, HistoryPanel, NoteView, TagView, type ViewMemory } from './DocumentViews';
-import { closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type Layout, type Pane } from './layout';
+import { MAX_PANES, MAX_TABS, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
@@ -34,7 +37,7 @@ export function App() {
 }
 function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:number;onChange:(value:number)=>void;label:string}) {
   const drag=useRef<{coordinate:number;value:number}|null>(null);
-  return <div className={'divider '+axis} role="separator" aria-label={label} aria-orientation={axis==='row'?'vertical':'horizontal'} aria-valuenow={Math.round(value)} tabIndex={0}
+  return <div className={'divider '+axis} role="separator" aria-label={label} aria-orientation={axis==='row'?'vertical':'horizontal'} aria-valuemin={180} aria-valuemax={520} aria-valuenow={Math.round(Math.abs(value))} aria-valuetext={Math.round(Math.abs(value))+' pixels'} tabIndex={0}
     onPointerDown={e=>{e.preventDefault();drag.current={coordinate:axis==='row'?e.clientX:e.clientY,value};e.currentTarget.setPointerCapture(e.pointerId);}}
     onPointerMove={e=>{if(drag.current)onChange(drag.current.value+(axis==='row'?e.clientX:e.clientY)-drag.current.coordinate);}}
     onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}
@@ -42,20 +45,17 @@ function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:n
 }
 function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const state=session.state,prefs=snapshot.preferences??defaults;
-  const storage='layout:'+snapshot.root;
-  const [layout,setLayout]=useState(()=>restoreLayout(sessionStorage.getItem(storage)));
-  const [activeId,setActiveId]=useState(()=>panes(layout)[0].id);
-  const [left,setLeft]=useState(true),[right,setRight]=useState<'history'|'agent'|null>(null);
-  const [leftWidth,setLeftWidth]=useState(232),[rightWidth,setRightWidth]=useState(232);
-  const [navMode,setNavMode]=useState<'files'|'search'|'tags'>('files');
-  const [formatting,setFormatting]=useState(new Set<string>());
-  const [modal,setModal]=useState<'settings'|'folder'|'icon'|'migration'|null>(null);
+  const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
+  const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
+  const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks()),[dockDrag,setDockDrag]=useState<DockDrag|null>(null);
+  const left=!docks.left.collapsed&&!!docks.left.groups.length,right=!docks.right.collapsed&&!!docks.right.groups.length;
+  const [formatting,setFormatting]=useState(new Set(prefs.documents?.formatting??[]));
+  const [modal,setModal]=useState<'settings'|'folder'|'icon'|'migration'|'workspaces'|null>(null);
   const [folderParent,setFolderParent]=useState(''),[folderName,setFolderName]=useState('');
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
-  const [pulse,setPulse]=useState(0),[wordCounts,setWordCounts]=useState<Record<string,number>>({});
-  const memories=useRef(new Map<string,ViewMemory>());
+  const [pulse,setPulse]=useState(0);
+  const memories=useRef(new Map<string,ViewMemory>(Object.entries(prefs.documents?.views??{}))),starredTarget=useRef<HTMLDivElement>(null);
   const active=panes(layout).find(p=>p.id===activeId)??panes(layout)[0];
-  const doc=active.active?documentInfo(active.active,snapshot):null;
   const rootCards=snapshot.cards.filter(c=>!parent(c.path));
   useEffect(()=>{
     if(!modal)return;
@@ -71,17 +71,31 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     };
     dialog.addEventListener('keydown',key);return()=>{dialog.removeEventListener('keydown',key);if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
   },[modal]);
-  useEffect(()=>{sessionStorage.setItem(storage,JSON.stringify(layout));},[layout,storage]);
+  const documentState=useRef<()=>DocumentsLayout>(()=>({tree:layout,active:active.id,views:{},formatting:[]}));
+  documentState.current=()=>{
+    const keys=new Set(panes(layout).flatMap(p=>p.tabs.map(key=>p.id+':'+key)));
+    return {tree:layout,active:active.id,views:Object.fromEntries([...memories.current].filter(([key])=>keys.has(key))),formatting:[...formatting].filter(id=>panes(layout).some(p=>p.id===id))};
+  };
+  const rememberViews=useCallback(()=>session.schedulePreferences({documents:documentState.current()},snapshot.root),[snapshot.root]);
+  useEffect(()=>{rememberViews();},[layout,activeId,formatting,rememberViews]);
+  const incomingDocks=JSON.stringify(prefs.docks),knownDocks=useRef(incomingDocks);
+  useEffect(()=>{if(incomingDocks!==knownDocks.current){knownDocks.current=incomingDocks;if(prefs.docks&&!session.hasPendingPreferences('docks'))setDocks(prefs.docks);}},[incomingDocks,prefs.docks]);
+  useEffect(()=>{if(!prefs.docks)session.schedulePreferences({docks},snapshot.root);},[]);
+  function changeDocks(next:Docks){setDocks(next);session.schedulePreferences({docks:next},snapshot.root);}
+  const shownModules=[...(left?docks.left.groups:[]),...(right?docks.right.groups:[])].map(g=>g.active);
+  const historyVisible=shownModules.includes('history');
+  useEffect(()=>{const cancel=()=>setDockDrag(null),escape=(event:KeyboardEvent)=>{if(event.key==='Escape')cancel();};window.addEventListener('keydown',escape);window.addEventListener('blur',cancel);window.addEventListener('dragend',cancel);return()=>{window.removeEventListener('keydown',escape);window.removeEventListener('blur',cancel);window.removeEventListener('dragend',cancel);};},[]);
   useEffect(()=>{
     const query=matchMedia('(prefers-color-scheme: dark)');
     const apply=()=>{document.documentElement.dataset.theme=prefs.theme==='system'?(query.matches?'dark':'light'):prefs.theme;};
     apply();query.addEventListener('change',apply);return()=>query.removeEventListener('change',apply);
   },[prefs.theme]);
   useEffect(()=>{
-    if(right==='history')attempt(session.history());
-  },[right]);
+    if(historyVisible)attempt(session.history());
+  },[historyVisible]);
   const changePrefs=useCallback((change:(p:Preferences)=>Partial<Preferences>)=>{
     attempt(session.run(async()=>{
+      await session.flushPreferences();
       const patch=change(session.state.snapshot?.preferences??defaults);if(!Object.keys(patch).length)return;
       const result=await window.door.request<Snapshot>({kind:'preferences',patch});
       session.update({snapshot:result});
@@ -89,13 +103,15 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   },[]);
   const open=useCallback((key:string,id=activeId)=>{
     attempt((async()=>{
+      const target=panes(layout).find(p=>p.id===id);
+      if(target&&!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS){session.update({error:'Close a document tab before opening more in this pane.'});return;}
       const info=documentInfo(key,session.state.snapshot!);
       if(!info.exists){session.update({error:'This file is no longer in the workspace.'});return;}
       await session.select(info.kind==='card'?info.path:null);
       setLayout(current=>openTab(current,id,key));setActiveId(id);setPulse(v=>v+1);
       changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
     })());
-  },[activeId,changePrefs]);
+  },[activeId,changePrefs,layout]);
   function focusPane(p:Pane){
     setActiveId(p.id);
     const current=p.active?documentInfo(p.active,snapshot):null;
@@ -108,6 +124,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     })());
   }
   function split(p:Pane,axis:'row'|'column'){
+    if(panes(layout).length>=MAX_PANES)return;
     document.querySelectorAll('details.pane-menu[open]').forEach(el=>el.removeAttribute('open'));
     const next=pane(p.active);setLayout(current=>splitPane(current,p.id,axis,next));setActiveId(next.id);
   }
@@ -131,6 +148,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function docIcon(key:string){const info=documentInfo(key,snapshot);return <DocumentIcon value={prefs.icons[key]} fallback={info.icon}/>;}
   function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
   function openBeside(key:string){
+    if(panes(layout).length>=MAX_PANES){session.update({error:'Close a document pane before creating another split.'});return;}
     attempt((async()=>{await session.flush();const next=pane(key);setLayout(current=>splitPane(current,activeId,'row',next));setActiveId(next.id);open(key,next.id);})());
   }
   function transfer(event:React.DragEvent,p:Pane,before?:string){
@@ -157,8 +175,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
           </div>;})}
         </div>
         <details className="menu pane-menu"><summary data-tooltip="Pane actions" aria-label="Pane actions"><Icon name="down" size={12}/></summary><div className="menu-content">
-          <button data-tooltip="Open the current file beside this pane" onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
-          <button data-tooltip="Open the current file below this pane" onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
+          <button data-tooltip="Open the current file beside this pane" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
+          <button data-tooltip="Open the current file below this pane" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
           <button data-tooltip="Close this pane; keep files on disk" disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>Close pane</button>
         </div></details>
       </div>
@@ -174,9 +192,9 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="document-content">
         {!info?<div className="empty-pane"><button data-tooltip="Open the mother whiteboard" onClick={()=>open('board:',p.id)}><Icon name="map"/>Open whiteboard</button></div>:
           !info.exists?<p className="notice">This file is no longer in the workspace.</p>:
-          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onMigrate={()=>setModal('migration')}/>:
-          tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)}/>:
-          info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onWords={count=>setWordCounts(v=>v[p.active]===count?v:{...v,[p.active]:count})}/>}
+          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews}/>:
+          tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
+          info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onViewChange={rememberViews}/>}
       </div>
       {focused&&<div className="pane-focus-flash" key={pulse}/>}
     </section>;
@@ -189,47 +207,45 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="split-child" style={{flex:1-node.ratio}}>{renderLayout(node.second,top&&node.axis==='row',first&&node.axis==='column',last)}</div>
     </div>;
   }
-  const activeBoard=doc?.kind==='board'?snapshot.boards.find(b=>b.folder===doc.id):undefined;
-  const stat=activeBoard?(doc?.id?activeBoard.cards.filter(p=>!p.folder).length+' cards · ':'')+activeBoard.cards.filter(p=>p.folder).length+' whiteboards':
-    doc?.kind==='card'?(wordCounts[active.active]??0)+' words':doc?.kind==='tag'?'Tag view':'';
-  return <div className={'app platform-'+window.door.platform} inert={state.status==='Opening workspace…'} style={{'--sidebar-width':leftWidth+'px','--dock-width':rightWidth+'px'} as CSSProperties}>
+  function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
+    if(module==='history')return <><div className="module-toolbar"><strong>History</strong><div className="toolbar-spacer"/><Tool icon="plus" label="Save workspace checkpoint · ⌘S / Ctrl+S" disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
+    if(module==='agent')return <><div className="module-toolbar"><strong>Agent console</strong></div><div className="agent-empty">Agent integration is not connected yet.</div></>;
+    return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
+  }
+  return <div className={'app platform-'+window.door.platform+(dockDrag?' docking':'')} inert={state.status==='Opening workspace…'} style={{'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
-      <Tool icon="left" label={left?'Hide file navigation':'Show file navigation'} onClick={()=>setLeft(!left)}/>
+      <Tool icon="left" label={left?'Collapse left dock':'Expand left dock'} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
       <div className="window-drag-space"/>
-      <Tool icon="search" label="Search workspace cards" onClick={()=>{setLeft(true);setNavMode('search');}}/>
+      <Tool icon="search" label="Search workspace cards" onClick={()=>changeDocks(revealModule(docks,'search'))}/>
+      <Tool icon="right" label={right?'Collapse right dock':'Expand right dock'} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
       <div className="windows-controls-space"/>
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
-      <nav className="dock-rail" aria-label="Navigation tools">
-        <Tool icon="folder" label="Explorer" aria-pressed={left&&navMode==='files'} className={left&&navMode==='files'?'selected':''} onClick={()=>{setLeft(!(left&&navMode==='files'));setNavMode('files');}}/>
-        <Tool icon="tag" label="Tags" aria-pressed={left&&navMode==='tags'} className={left&&navMode==='tags'?'selected':''} onClick={()=>{setLeft(!(left&&navMode==='tags'));setNavMode('tags');}}/>
-        <Tool icon="star" label="Starred files" onClick={()=>{setLeft(true);setNavMode('files');requestAnimationFrame(()=>document.querySelector('.starred .file-button')?.scrollIntoView({block:'nearest'}));}}/>
-        <div className="toolbar-spacer"/>
-        <Tool icon="settings" label="Workspace settings" onClick={()=>setModal('settings')}/>
+      <nav className="activity-bar" aria-label="Activity bar">
+        {MODULE_IDS.map(module=>{const {side,group}=findModule(docks,module),selected=!docks[side].collapsed&&group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
+        <div className="toolbar-spacer"/><Tool icon="settings" label="Workspace settings" onClick={()=>setModal('settings')}/>
       </nav>
-      {left&&<><Explorer snapshot={snapshot} prefs={prefs} activeKey={active.active} navMode={navMode} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>
-      <Divider value={leftWidth} label="Resize file navigation" onChange={value=>setLeftWidth(Math.max(170,Math.min(420,value)))}/></>}
-      <main className="workspace">{renderLayout(layout)}</main>
-      {right&&<><Divider value={-rightWidth} label="Resize right panel" onChange={value=>setRightWidth(Math.max(190,Math.min(520,-value)))}/><aside className="right-dock" aria-label="Right panel">
-        <div className="section-title"><strong>{right==='history'?'History':'Agent'}</strong><div className="toolbar-spacer"/>{right==='history'&&<Tool icon="plus" label="Save workspace checkpoint · ⌘S / Ctrl+S" disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/>}<Tool icon="close" label="Close right panel" onClick={()=>setRight(null)}/></div>
-        {right==='history'?<HistoryPanel session={session}/>:<div className="agent-empty">Agent integration is not connected yet.</div>}
-      </aside></>}
-      <nav className="dock-rail" aria-label="Workspace tools">
-        <Tool icon="agent" label="Agent panel" aria-pressed={right==='agent'} className={right==='agent'?'selected':''} onClick={()=>setRight(right==='agent'?null:'agent')}/>
-        <Tool icon="clock" label="Workspace history" aria-pressed={right==='history'} className={right==='history'?'selected':''} onClick={()=>setRight(right==='history'?null:'history')}/>
-      </nav>
+      <SideDock side="left" docks={docks} drag={dockDrag} onDrag={setDockDrag} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
+      {left&&<Divider value={docks.left.width} label="Resize left dock" onChange={value=>changeDocks({...docks,left:{...docks.left,width:Math.max(180,Math.min(520,value))}})}/>}
+      <main className="workspace" aria-label="Document area">{renderLayout(layout)}</main>
+      {right&&<Divider value={-docks.right.width} label="Resize right dock" onChange={value=>changeDocks({...docks,right:{...docks.right,width:Math.max(180,Math.min(520,-value))}})}/>}
+      <SideDock side="right" docks={docks} drag={dockDrag} onDrag={setDockDrag} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
     </div>
-    <footer className="statusbar">      <Tool icon="undo" label="Undo · ⌘Z / Ctrl+Z" disabled={!session.undoHistory.past.length&&!state.draft?.dirty} onClick={()=>attempt(session.undo())}/>
-      <Tool icon="redo" label="Redo · ⇧⌘Z / Ctrl+Shift+Z" disabled={!session.undoHistory.future.length} onClick={()=>attempt(session.undo(true))}/>
-<span data-tooltip="Remote sync is not configured"><Icon name="sync" size={13}/>Sync off</span><span role="status" data-tooltip={state.error||state.status}>{state.status==='Saved locally'?'Saved':state.status}</span><div className="toolbar-spacer"/>{!!rootCards.length&&<button data-tooltip="Review moving root-level cards into a sub-whiteboard" onClick={()=>setModal('migration')}>Organize root cards</button>}<span>{stat}</span></footer>
+    <footer className="statusbar">
+      <WorkspaceMenu snapshot={snapshot} session={session} onManage={()=>setModal('workspaces')}/>
+      <div className="toolbar-spacer"/>
+      <span data-tooltip="Remote sync is not configured"><Icon name="sync" size={13}/>Sync off</span>
+      <span role="status" data-tooltip={state.error||state.status}>{state.status==='Saved locally'?'Saved':state.status}</span>
+    </footer>
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip="Copy the unsaved draft before reconciling changes" onClick={()=>attempt(session.copyDraft())}>Copy draft</button><button data-tooltip="Discard this draft and read the current file" onClick={()=>{if(confirm('Discard the unsaved draft and reload from disk?'))attempt(session.reloadDraft());}}>Reload from disk</button></>}<Tool icon="close" label="Dismiss error" onClick={()=>session.update({error:''})}/></div>}
-    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}>
-      <div className="panel-title"><strong>{modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}</strong><Tool icon="close" label="Close dialog" onClick={()=>setModal(null)}/></div>
-      {modal==='settings'?<div className="settings-body">
+    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?'Manage workspaces':modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}>
+      <div className="panel-title"><strong>{modal==='workspaces'?'Manage workspaces':modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}</strong><Tool icon="close" label="Close dialog" onClick={()=>setModal(null)}/></div>
+      {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<div className="settings-body">
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
-        <small>Settings apply to this workspace and its windows.</small>
+        <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
+        <small>Settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
         {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}
       </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>Folder name<input autoFocus aria-label="Whiteboard folder name" value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" data-tooltip="Create this folder and its whiteboard" disabled={!folderName.trim()}>Create whiteboard</button></form>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>

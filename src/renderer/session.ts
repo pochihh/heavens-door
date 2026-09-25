@@ -1,4 +1,4 @@
-import type { Board, Bridge, Card, Checkpoint, Mutation, Snapshot } from '../shared';
+import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot } from '../shared';
 import { UndoHistory } from './history';
 
 function layout(board: Board) {
@@ -20,6 +20,8 @@ export class Session {
   undoHistory = new UndoHistory();
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
+  private preferencesTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingPreferences: Partial<Preferences> = {};
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private checkpointTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(readonly bridge: Bridge) {}
@@ -36,7 +38,33 @@ export class Session {
       if (snapshot) this.update({snapshot,status:'Saved locally'});
     });
   }
-  dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer); }
+  dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={}; }
+  hasPendingPreferences(key:keyof Preferences){return key in this.pendingPreferences;}
+  schedulePreferences(patch:Partial<Preferences>,root:string){
+    if(root!==this.state.snapshot?.root)return;
+    const navigation={...this.pendingPreferences.navigation};
+    for(const [id,value] of Object.entries(patch.navigation??{})){const key=id as keyof typeof navigation;navigation[key]={...navigation[key],...value};}
+    this.pendingPreferences={...this.pendingPreferences,...patch,navigation:Object.keys(navigation).length?navigation:undefined};
+    if(!this.pendingPreferences.navigation)delete this.pendingPreferences.navigation;
+    clearTimeout(this.preferencesTimer);
+    this.preferencesTimer=setTimeout(()=>{void this.run(()=>this.flushPreferences()).catch(()=>undefined);},250);
+  }
+  async flushPreferences(){
+    clearTimeout(this.preferencesTimer);
+    if(!Object.keys(this.pendingPreferences).length)return;
+    const patch=this.pendingPreferences;this.pendingPreferences={};
+    if(patch.navigation){const navigation={...this.state.snapshot?.preferences?.navigation};for(const [id,value] of Object.entries(patch.navigation)){const key=id as keyof typeof navigation;navigation[key]={...navigation[key],...value};}patch.navigation=navigation;}
+    try{const snapshot=await this.bridge.request<Snapshot>({kind:'preferences',patch});this.update({snapshot});}
+    catch(error){
+      const pending=this.pendingPreferences;this.pendingPreferences={...patch,...pending};
+      if(patch.navigation||pending.navigation){
+        const navigation={...patch.navigation};
+        for(const [id,value] of Object.entries(pending.navigation??{})){const key=id as keyof typeof navigation;navigation[key]={...navigation[key],...value};}
+        this.pendingPreferences.navigation=navigation;
+      }
+      throw error;
+    }
+  }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getState = () => this.state;
   update(patch: Partial<State>) {
@@ -71,6 +99,7 @@ export class Session {
     this.saveTimer=setTimeout(() => { void this.run(() => this.flush()).catch(() => undefined); },600);
   }
   async flush() {
+    await this.flushPreferences();
     clearTimeout(this.saveTimer);
     while (this.state.draft?.dirty) {
       const draft=this.state.draft;

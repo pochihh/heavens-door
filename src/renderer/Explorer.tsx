@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from 'react';
 import type { FileEntry, Preferences, Snapshot } from '../shared';
 import type { Session } from './session';
 import { DocumentIcon, Icon, Tool } from './Icons';
@@ -6,16 +6,18 @@ import { ActionMenu, type MenuAction, type MenuState } from './Overlays';
 import { documentInfo, documentIndex, fileIcon, parent, portable } from './documents';
 import { insertBookmark, useBookmarkDrag } from './sortable';
 
+export type ExplorerModule='whiteboards'|'files'|'bookmarks'|'tags'|'search';
 type Entry={path:string;key?:string;folder?:string;name:string;symlink?:boolean};
-export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSplit,onFolder,onCard,onIcon,onPrefs}:{
-  snapshot:Snapshot;prefs:Preferences;activeKey:string;navMode:'files'|'search'|'tags';session:Session;
+export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,onOpen,onSplit,onFolder,onCard,onIcon,onPrefs}:{
+  snapshot:Snapshot;prefs:Preferences;activeKey:string;module:ExplorerModule;starredTarget:RefObject<HTMLDivElement|null>;session:Session;
   onOpen:(key:string)=>void;onSplit:(key:string)=>void;onFolder:(folder:string)=>void;onCard:(folder:string)=>void;onIcon:(key:string)=>void;onPrefs:(change:(prefs:Preferences)=>Partial<Preferences>)=>void;
 }) {
-  const mode=prefs.explorerMode??'whiteboards';
-  const [expanded,setExpanded]=useState(new Set([''])),[files,setFiles]=useState<Record<string,FileEntry[]>>({});
-  const [menu,setMenu]=useState<MenuState|null>(null),[search,setSearch]=useState(''),[results,setResults]=useState<string[]>([]);
-  const [bottomHeight,setBottomHeight]=useState(38);
-  const starred=useRef<HTMLDivElement>(null),sidebar=useRef<HTMLElement>(null),resizeCleanup=useRef(()=>{});
+  const expanded=useMemo(()=>new Set(prefs.navigation?.[module]?.expanded??['']),[prefs.navigation,module]);
+  const setExpanded=(change:(current:Set<string>)=>Set<string>)=>onPrefs(p=>({navigation:{...p.navigation,[module]:{...p.navigation?.[module],expanded:[...change(new Set(p.navigation?.[module]?.expanded??['']))]}}}));
+  const [files,setFiles]=useState<Record<string,FileEntry[]>>({});
+  const [menu,setMenu]=useState<MenuState|null>(null),[search,setSearch]=useState(prefs.navigation?.search?.search??''),[results,setResults]=useState<string[]>([]);
+  const starred=starredTarget,scroller=useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(scroller.current)scroller.current.scrollTop=prefs.navigation?.[module]?.scroll??0;},[module]);
   const closeMenu=useCallback(()=>setMenu(null),[]);
   const attempt=(promise:Promise<unknown>)=>{void promise.catch(error=>session.update({error:String(error)}));};
   const report=useCallback((error:unknown)=>session.update({error:String(error)}),[session]);
@@ -30,17 +32,16 @@ export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSpli
     if([...failed].some(path=>path))setExpanded(current=>new Set([...current].filter(path=>!path||!failed.has(path))));
   },[expanded,report]);
   useEffect(()=>{
-    if(mode!=='files'||navMode!=='files')return;
+    if(module!=='files')return;
     // Only expanded directories are read. A collapsed asset tree has no enumeration cost.
     void refresh();return()=>{fileLoad.current++;};
-  },[mode,navMode,snapshot,refresh]);
+  },[module,snapshot,refresh]);
   useEffect(()=>{
     let live=true;
-    if(!search.trim()){setResults([]);return;}
+    if(module!=='search'||!search.trim()){setResults([]);return;}
     const timer=setTimeout(()=>{void window.door.request<{path:string}[]>({kind:'query',text:search}).then(rows=>{if(live)setResults(rows.map(r=>r.path));}).catch(report);},120);
     return()=>{live=false;clearTimeout(timer);};
-  },[search,snapshot,report]);
-  useEffect(()=>()=>resizeCleanup.current(),[]);
+  },[module,search,snapshot,report]);
   const tree=useMemo(()=>{
     const groups=new Map(snapshot.boards.map(b=>[portable(b.folder),{folders:[] as string[],keys:[] as string[]} ]));
     for(const board of snapshot.boards)if(board.folder){let ancestor=parent(board.folder);while(ancestor&&!groups.has(ancestor))ancestor=parent(ancestor);groups.get(ancestor)?.folders.push(board.folder);}
@@ -73,26 +74,17 @@ export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSpli
           {label:'Move up in Starred',icon:'up' as const,disabled:index===0,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)-1,true)}))},
           {label:'Move down in Starred',icon:'arrowDown' as const,disabled:index===prefs.starred.length-1,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+1,true)}))},
         ]:[]),
-        ...(entry.folder===undefined&&mode==='files'?[{label:'View source',icon:'source' as const,run:()=>onOpen('file:'+entry.path)}]:[]),
+        ...(entry.folder===undefined&&module==='files'?[{label:'View source',icon:'source' as const,run:()=>onOpen('file:'+entry.path)}]:[]),
       ]:[]),
       {label:'Copy relative path',icon:'copy',run:()=>attempt(navigator.clipboard.writeText(entry.path||'.'))},
       {label:window.door.platform==='darwin'?'Reveal in Finder':'Reveal in file manager',icon:'reveal',disabled:entry.symlink,run:()=>attempt(window.door.revealFile(entry.path))},
-      {label:'Refresh Explorer',icon:'sync',run:()=>attempt(mode==='files'?refresh():session.refresh())},
-      {label:'Collapse folders',icon:'collapse',run:()=>setExpanded(new Set(['']))},
+      {label:'Refresh Explorer',icon:'sync',run:()=>attempt(module==='files'?refresh():session.refresh())},
+      {label:'Collapse folders',icon:'collapse',run:()=>setExpanded(()=>new Set(['']))},
     ];
   }
   function show(actions:MenuAction[],event:{clientX?:number;clientY?:number;currentTarget:EventTarget|null},context=false) {
     const rect=(event.currentTarget as HTMLElement).getBoundingClientRect();
     setMenu({x:context?event.clientX!:rect.left,y:context?event.clientY!:rect.bottom+3,actions});
-  }
-  async function workspaces(button:HTMLElement) {
-    const rect=button.getBoundingClientRect(),registered=await window.door.listWorkspaces();
-    setMenu({x:rect.left,y:rect.bottom+3,actions:[
-      ...registered.map(w=>({label:w.name,icon:'database' as const,checked:w.root===snapshot.root,hint:w.root,run:()=>{if(w.root!==snapshot.root)attempt(session.open(false,w.root));}})),
-      {label:'Open workspace…',icon:'folder',run:()=>attempt(session.open(false))},
-      {label:'New window',icon:'window',run:()=>attempt(window.door.newWindow(false))},
-      {label:'New window for this workspace',icon:'window',run:()=>attempt(window.door.newWindow(true))},
-    ]});
   }
   function row(entry:Entry,depth=0,saved?:'starred'|'recent',physical=false):ReactNode {
     const key=entry.key,folder=entry.folder,expandedHere=folder!==undefined&&expanded.has(folder);
@@ -120,29 +112,18 @@ export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSpli
   function fileBranch(entry:Entry,depth=0):ReactNode {
     return <div key={entry.path}>{row(entry,depth,undefined,true)}{entry.folder!==undefined&&expanded.has(entry.folder)&&<>{files[entry.folder]?.map(file=>fileBranch(fileEntry(file),depth+1))}</>}</div>;
   }
-  return <aside className="sidebar" aria-label="File navigation" ref={sidebar}>
-    <div className="nav-files" style={{flex:100-bottomHeight}}>
-      <div className="section-title explorer-heading"><strong>{navMode==='search'?'Search':navMode==='tags'?'Tags':'Explorer'}</strong><div className="toolbar-spacer"/>
-        <Tool icon="database" label={'Switch workspace · '+snapshot.name} onClick={e=>attempt(workspaces(e.currentTarget))}/>
-        <Tool icon={mode==='whiteboards'?'map':'folder'} label={mode==='whiteboards'?'Whiteboard view · switch to files':'File view · switch to whiteboards'} aria-pressed={mode==='files'} onClick={()=>onPrefs(()=>({explorerMode:mode==='whiteboards'?'files':'whiteboards'}))}/>
-        <Tool icon="more" label="Explorer actions" onClick={e=>show(actions(entryFor('board:')),e)}/>
-      </div>
-      {navMode==='search'&&<label className="search"><Icon name="search" size={14}/><input autoFocus aria-label="Search cards" data-tooltip="Search filenames and card content" placeholder="Search" value={search} onChange={e=>setSearch(e.target.value)}/>{search&&<Tool icon="close" label="Clear search" onClick={()=>setSearch('')}/>}</label>}
-      <nav className="file-tree" aria-label="Workspace files" onContextMenu={e=>{if(e.target===e.currentTarget){e.preventDefault();show(actions(entryFor('board:')),e,true);}}}>
-        {navMode==='tags'?snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path))):navMode==='search'?results.map(path=>{const key=documentIndex(snapshot).paths.get(portable(path));return key?row(entryFor(key)):null;}):mode==='whiteboards'?boardBranch(''):fileBranch({path:'',folder:'',name:snapshot.name})}
-      </nav>
-    </div>
-    <div className="nav-divider" role="separator" aria-label="Resize file navigation sections" aria-orientation="horizontal" tabIndex={0} onKeyDown={e=>{if(e.key==='ArrowUp')setBottomHeight(v=>Math.min(70,v+5));if(e.key==='ArrowDown')setBottomHeight(v=>Math.max(20,v-5));}}
-      onPointerDown={e=>{
-        resizeCleanup.current();e.preventDefault();const start=e.clientY,initial=bottomHeight,height=sidebar.current!.clientHeight;
-        const move=(event:PointerEvent)=>{if(event.pointerId===e.pointerId)setBottomHeight(Math.max(20,Math.min(70,initial-(event.clientY-start)/height*100)));};
-        const stop=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',stop);document.removeEventListener('pointercancel',stop);window.removeEventListener('blur',stop);};
-        resizeCleanup.current=stop;document.addEventListener('pointermove',move);document.addEventListener('pointerup',stop);document.addEventListener('pointercancel',stop);window.addEventListener('blur',stop);
-      }}/>
-    <div className="nav-bottom" style={{flex:bottomHeight}}>
+  const rememberScroll=(scroll:number)=>session.schedulePreferences({navigation:{[module]:{scroll}}},snapshot.root);
+  return <div className="explorer-module" data-module={module}>
+    {module!=='bookmarks'&&<div className="module-toolbar">
+      {module==='search'?<label className="search"><Icon name="search" size={14}/><input aria-label="Search cards" data-tooltip="Search filenames and card content" placeholder="Search" value={search} onChange={e=>{setSearch(e.target.value);session.schedulePreferences({navigation:{search:{search:e.target.value}}},snapshot.root);}}/>{search&&<Tool icon="close" label="Clear search" onClick={()=>{setSearch('');onPrefs(p=>({navigation:{...p.navigation,search:{...p.navigation?.search,search:''}}}));}}/>}</label>:<strong>{module==='whiteboards'?'Whiteboards':module==='files'?'Files':'Tags'}</strong>}
+      <div className="toolbar-spacer"/><Tool icon="more" label={module==='whiteboards'?'Whiteboard explorer actions':module==='files'?'File explorer actions':module==='tags'?'Tag actions':'Search actions'} onClick={e=>show(actions(entryFor('board:')),e)}/>
+    </div>}
+    {module==='bookmarks'?<div className="nav-bottom" ref={scroller} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)}>
       <section className="starred" data-bookmark-target><div className="section-title" data-tooltip="Drag files here to star them. Drag out to remove; drag vertically to reorder."><Icon name="star" size={13}/><strong>Starred</strong></div><div className="saved-files" ref={starred} aria-label="Starred files">{prefs.starred.map(key=>row(entryFor(key),0,'starred'))}</div></section>
       <section className="recent"><div className="section-title" data-tooltip="Recently opened files. Drag a file into Starred to keep it."><Icon name="clock" size={13}/><strong>Recent</strong></div><div className="saved-files">{prefs.recent.map(key=>row(entryFor(key),0,'recent'))}</div></section>
-    </div>
+    </div>:<div className="file-tree" ref={scroller} role="navigation" aria-label={module==='files'?'Workspace files':module==='whiteboards'?'Workspace whiteboards':module==='tags'?'Workspace tags':'Search results'} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)} onContextMenu={e=>{if(e.target===e.currentTarget){e.preventDefault();show(actions(entryFor('board:')),e,true);}}}>
+      {module==='tags'?snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path))):module==='search'?results.map(path=>{const key=documentIndex(snapshot).paths.get(portable(path));return key?row(entryFor(key)):null;}):module==='whiteboards'?boardBranch(''):fileBranch({path:'',folder:'',name:snapshot.name})}
+    </div>}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
-  </aside>;
+  </div>;
 }

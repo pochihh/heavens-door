@@ -29,12 +29,17 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 - ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z undo or redo card and board changes in one chronological session history. Typing close together is grouped.
 - ⌘S / Ctrl+S saves a workspace Git checkpoint. The app also checkpoints after five idle minutes. Select a checkpoint in **History** to restore the whole workspace. Later checkpoints remain reachable; new edits continue on a new branch.
 - Change the default `untitled` filename base in **Workspace settings**. Headings and filenames are independent.
-- Explorer, Starred and Recent open files in the active pane. Reopening a file selects its existing tab. Use the pane dropdown to split right or down; the same file may be open in several panes, with independent scroll/zoom positions and shared edits. Drag tabs between panes. Pane layout survives Reload in that window; full app-restart layout persistence is not implemented.
+- Explorer, Starred and Recent open files in the active pane. Reopening a file selects its existing tab. Use the pane dropdown to split right or down; the same file may be open in several panes, with independent scroll/zoom positions and shared edits. Drag tabs between panes. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent document panes.
 - **File → New Window** opens another workspace; **New Window for This Workspace** shares the current one. Workspace windows share one index/write queue; conflicting concurrent drafts remain recoverable. Appearance, default filenames, starred/recent entries and icons are stored in that workspace's `.heavens-door/settings.json`. Change an icon from the document breadcrumb. Root migration requires other windows for that workspace to be closed.
 
-## Explorer
+## Side docks and navigation
 
-The database icon beside **Explorer** lists registered workspaces; the current one is checked. Selecting another opens it in the same window after saving pending edits. The map/folder button switches between whiteboards and the real filesystem, including attachments and hidden files. Folder rows show **+** on hover for a sub-whiteboard or note. **…** and right-click use the same menu.
+The activity bar on the far left reveals modules wherever they are placed. Both side docks can collapse, contain vertically stacked panel groups, and host several module tabs per group. Drag a module tab or a group's grip to rearrange them; use the group's **…** menu for move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
+
+The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
+
+
+The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider; removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate module tabs; File explorer includes attachments and hidden files. Folder rows show **+** on hover for a sub-whiteboard or note. **…** and right-click use the same menu.
 
 Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological. Both lists share one scroller; an empty Starred header is still a drop target.
 
@@ -45,6 +50,7 @@ Physical-file mode opens indexed notes/boards/tags normally, images as previews,
 ## Developer documentation
 
 - [Codebase architecture](docs/architecture.md)
+- [UI terminology and workspace layout](docs/ui-terminology.md)
 - [Design system](docs/design-system.md)
 - [Whiteboard folders, membership and collapsed cards](docs/whiteboards.md)
 - [Sortable-list and bookmark drag specification](docs/interactions/drag-and-drop.md)

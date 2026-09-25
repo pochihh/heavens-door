@@ -86,6 +86,10 @@ async function createWindow(folder?:string){
 void app.whenReady().then(async()=>{
   registry=new WorkspaceRegistry(join(app.getPath('userData'),'workspaces.json'));
   ipcMain.handle('workspace:list',event=>{trusted(event);return registry.list();});
+  ipcMain.handle('workspace:unregister',async(event,root:unknown)=>{
+    const d=trusted(event);if(typeof root!=='string'||root===d.host?.root||!(await registry.list()).some(w=>w.root===root))throw new Error('Cannot remove this workspace from the registry');
+    return registry.unregister(root);
+  });
   ipcMain.handle('workspace:registered',async(event,root:unknown)=>{
     const d=trusted(event);if(typeof root!=='string'||!(await registry.list()).some(w=>w.root===root))throw new Error('Workspace is not registered');
     return open(d,root);

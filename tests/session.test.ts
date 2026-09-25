@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Workspace } from '../src/core/workspace';
 import { Session } from '../src/renderer/session';
+import {defaultDocks} from '../src/layout';
 import type { Bridge } from '../src/shared';
 
 test('typing during an in-flight save is retained, and conflicting drafts remain recoverable',async t => {
@@ -47,7 +48,7 @@ test('reload and quit flush drafts independently of the UI, and refuse to discar
   const w=await Workspace.open(root,join(folder,'cache'));await w.create('','untitled',0,0);
   let handler:(action:'reload'|'close')=>void=() => undefined;
   const completed:string[]=[],cancelled:string[]=[];
-  const bridge={listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
+  const bridge={unregisterWorkspace:async()=>[],listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
     if (request.kind === 'card') return w.card(request.path);
     if (request.kind === 'saveCard') return w.saveCard(request.path,request.body,request.expected);
     throw new Error('Unexpected request');
@@ -137,4 +138,29 @@ test('registered workspace switching saves first and keeps the old workspace whe
   assert.equal(session.state.status,'Needs attention');assert.equal(session.undoHistory.past.length,1);
   fail=false;await session.open(false,'/second');
   assert.equal(session.state.snapshot?.root,'/second');assert.equal(session.state.draft,null);assert.equal(session.undoHistory.past.length,0);
+});
+
+
+test('pending workspace layout saves before closing or switching and survives a failed write',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-layout-save-')),root=join(folder,'Notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));
+  let fail=true,closing:(action:'reload'|'close')=>void=()=>undefined;
+  const completed:string[]=[],cancelled:string[]=[];
+  const bridge={request:async(request:Parameters<Bridge['request']>[0])=>{
+    if(request.kind==='preferences'){
+      if(fail){fail=false;session.schedulePreferences({navigation:{files:{scroll:42}}},w.root);throw new Error('Disk unavailable');}
+      return w.setPreferences(request.patch);
+    }
+    throw new Error('Unexpected request');
+  },onClosing:(callback:typeof closing)=>{closing=callback;return()=>undefined;},finishClosing:(action:string)=>completed.push(action),cancelClosing:(action:string)=>cancelled.push(action),openWorkspace:async()=>{
+    const saved=w.snapshot().preferences!;assert.equal(saved.docks?.left.collapsed,true);assert.deepEqual(saved.navigation?.files,{expanded:['','assets'],scroll:42});
+    return {...w.snapshot(),root:'/second'};
+  }} as unknown as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});session.connectWindow();
+  t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  const docks=defaultDocks();docks.left.collapsed=true;
+  session.schedulePreferences({docks,navigation:{files:{expanded:['','assets']}}},w.root);
+  closing('reload');await session.run(async()=>undefined);assert.deepEqual(cancelled,['reload']);assert.ok(session.hasPendingPreferences('docks'));
+  closing('reload');await session.run(async()=>undefined);assert.deepEqual(completed,['reload']);assert.equal(session.hasPendingPreferences('docks'),false);
+  await session.open(false,'/second');session.schedulePreferences({docks:defaultDocks()},w.root);assert.equal(session.hasPendingPreferences('docks'),false,'late callbacks from the previous workspace cannot change the new workspace');
 });

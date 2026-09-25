@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Workspace} from '../src/core/workspace';
-import {pane,panes,openTab,splitPane,moveTab,closeTab,removePane,restoreLayout} from '../src/renderer/layout';
+import {pane,panes,openTab,splitPane,moveTab,closeTab,removePane,restoreLayout} from '../src/layout';
 
 test('tabs are unique within a pane, can share a file across splits, and survive layout restore',()=>{
   const first=pane('board:');
