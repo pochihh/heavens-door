@@ -1,26 +1,30 @@
 import { promises as fs } from 'node:fs';
-import { join, resolve, relative, basename, sep, extname, isAbsolute } from 'node:path';
+import { join, resolve, relative, basename, dirname, sep, extname, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { marked } from 'marked';
+import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { History } from './history';
-import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote } from './format';
-import type { Board, CardInfo, Snapshot, Write, Mutation } from '../shared';
+import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote } from './format';
+import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult } from '../shared';
 
 export class Workspace {
   readonly history: History;
   private db: DatabaseSync;
+  private folders = new Set<string>(['']);
+  private tags = new Map<string,TagInfo>();
+  private preferences = defaultPreferences();
   private boards = new Map<string, Board>();
   private issues = new Map<string, string>();
   private scanning = false;
   constructor(readonly root: string, readonly cache: string) {
     this.history = new History(root);
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 1) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=1;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 2) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=2;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER);
+      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT);
       CREATE INDEX IF NOT EXISTS card_identity ON cards(id);
       CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path UNINDEXED,name,body);
       CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT);
@@ -102,14 +106,15 @@ export class Workspace {
     return {snapshot:this.snapshot(),edits:journal};
   }
   async scan() {
+    this.preferences=await readPreferences(this.root);
     const unseen=new Set((this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(row => row.path));
-    this.boards.clear(); this.issues.clear();
+    this.boards.clear(); this.issues.clear(); this.folders=new Set(['']); this.tags.clear();
     const walk = async (folder: string) => {
       for (const entry of await fs.readdir(join(this.root,folder),{withFileTypes:true})) {
         if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.isSymbolicLink()) continue;
         const path = join(folder,entry.name);
-        if (entry.isDirectory()) await walk(path);
-        else if (entry.isFile() && ['.md','.whiteboard'].includes(extname(path))) { unseen.delete(path); await this.refresh(path); }
+        if (entry.isDirectory()) { this.folders.add(path); await walk(path); }
+        else if (entry.isFile() && ['.md','.whiteboard','.tag'].includes(extname(path))) { unseen.delete(path); await this.refresh(path); }
       }
     };
     // One index transaction avoids a disk sync for each of ten thousand notes.
@@ -128,12 +133,19 @@ export class Workspace {
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
   }
   async refresh(path: string) {
-    if (!['.md','.whiteboard'].includes(extname(path))) return;
+    if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
-    this.boards.delete(path);
+    this.boards.delete(path); this.tags.delete(path);
     try {
       const raw = await this.raw(path);
       if (raw === null) { this.removeIndex(path); return; }
+      let folder=dirname(path);
+      while (folder !== '.') { this.folders.add(folder); folder=dirname(folder); }
+      if (path.endsWith('.tag')) {
+        const {front}=splitNote(raw), name=basename(path,'.tag');
+        this.tags.set(path,{path,name,tag:String(front.get('tag') ?? name),revision:revision(raw)});
+        return;
+      }
       if (path.endsWith('.whiteboard')) { this.boards.set(path,readBoard(path,raw)); return; }
       const cached=this.db.prepare('SELECT revision FROM cards WHERE path=?').get(path);
       // Verify content hashes rather than trusting timestamps or file sizes.
@@ -142,7 +154,7 @@ export class Workspace {
       if (!this.scanning) this.db.exec('BEGIN');
       try {
         this.removeIndex(path);
-        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy));
+        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}));
         this.db.prepare('INSERT INTO search(rowid,path,name,body) SELECT rowid,path,name,body FROM cards WHERE path=?').run(card.path);
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
@@ -156,8 +168,110 @@ export class Workspace {
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
     const cards = this.db.prepare('SELECT path,id,name,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:[...this.boards.values()], issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available };
+    return { root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
+
+  private allBoards() {
+    const boards=[...this.boards.values()],existing=new Set(boards.map(b=>b.folder));
+    const childrenByFolder=new Map<string,string[]>();
+    for (const folder of this.folders) {
+      if (!existing.has(folder)) boards.push(emptyBoard(join(folder,(folder ? basename(folder) : basename(this.root))+'.whiteboard')));
+      if (folder) {
+        const parent=dirname(folder)==='.'?'':dirname(folder);
+        const children=childrenByFolder.get(parent)??[];children.push(folder);childrenByFolder.set(parent,children);
+      }
+    }
+    return boards.map(board => {
+      const children=childrenByFolder.get(board.folder)??[];
+      const cards=[...board.cards];
+      for (const folder of children) if (!cards.some(p => p.folder === folder)) {
+        const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
+        cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
+      }
+      return {...board,name:board.folder ? basename(board.folder) : basename(this.root),cards};
+    });
+  }
+  async setPreferences(patch: Partial<Preferences>) {
+    this.preferences=await writePreferences(this.root,this.preferences,patch);
+    return this.snapshot();
+  }
+  async createFolder(parent: string, name: string) {
+    if (!name || name.startsWith('.') || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || [...name].some(c => c.charCodeAt(0)<32) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) throw new Error('Choose a valid folder name');
+    if (parent) await fs.access(await this.path(parent));
+    const path=join(parent,name);
+    await fs.mkdir(await this.path(path));
+    this.folders.add(path);
+    const board=emptyBoard(join(path,name+'.whiteboard'));
+    return this.write([{path:board.path,content:writeBoard(board),expected:null}]);
+  }
+  tagCards(tag: string): TagResult[] {
+    // Properties come from the incremental index, not another filesystem scan.
+    const rows=this.db.prepare('SELECT path,id,name,revision,legacy,frontmatter FROM cards').all();
+    return rows.flatMap(row => {
+      const properties=JSON.parse(String(row.frontmatter)) as Record<string,unknown>;
+      const tags=Array.isArray(properties.tags) ? properties.tags : typeof properties.tags === 'string' ? [properties.tags] : [];
+      return tags.some(t => t === tag || String(t).startsWith(tag+'/')) ? [{
+        card:{path:String(row.path),id:String(row.id),name:String(row.name),revision:String(row.revision),legacy:!!row.legacy},properties,
+      }] : [];
+    });
+  }
+  async migrateRoot() {
+    const cards=this.snapshot().cards.filter(c => dirname(c.path) === '.');
+    if (!cards.length) return this.snapshot();
+    const moving=new Set(cards.map(c => c.path));
+    // Refuse a migration whose path-dependent syntax this importer cannot preserve.
+    for (const row of this.db.prepare('SELECT path,body FROM cards').all()) {
+      const path=String(row.path),body=String(row.body);
+      marked.walkTokens(marked.lexer(body),token=>{
+        if (moving.has(path) && (token.type==='html' || token.type==='text' && /\[\[|!\[\[/.test(token.raw))) throw new Error('Root migration needs manual attention for unsupported markup in '+path);
+        if (!moving.has(path) && (token.type==='link' || token.type==='image') && !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(token.href)) {
+          const target=relative(this.root,resolve(this.root,dirname(path),decodeURIComponent(token.href.split(/[?#]/)[0])));
+          if (moving.has(target)) throw new Error('Replace the path link to '+target+' in '+path+' with a stable card link before root migration.');
+        }
+      });
+    }
+    if (this.history.available) await this.history.checkpoint('Before root cards migration');
+    const names=new Set((await fs.readdir(this.root)).map(name => name.toLowerCase()));
+    let folder='Notes', suffix=0;
+    while (names.has(folder.toLowerCase())) folder='Notes_'+(++suffix);
+    await fs.mkdir(join(this.root,folder));
+    const changes: Write[]=[];
+    for (const info of cards) {
+      const raw=await this.read(info.path), card=readCard(info.path,raw);
+      let body=card.body;
+      const rewrite=(href: string) => {
+        if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href)) return href;
+        const target=href.replace(/^\.\//,'').split(/[?#]/)[0];
+        return moving.has(decodeURIComponent(target)) ? href : '../'+href;
+      };
+      const tokens=marked.lexer(body);
+      marked.walkTokens(tokens,token => {
+        if ((token.type === 'image' || token.type === 'link') && token.raw.includes('](')) {
+          const next=rewrite(token.href);
+          if (next !== token.href) body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));
+        }
+      });
+      body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(_all,lead,href) => lead+'<'+rewrite(href)+'>');
+      changes.push({path:join(folder,info.path),content:editCard(raw,card,body),expected:null},{path:info.path,content:null,expected:info.revision});
+    }
+    const rootBoards=[...this.boards.values()].filter(b => !b.folder);
+    for (const board of rootBoards) {
+      const path=join(folder,rootBoards.length === 1 ? folder+'.whiteboard' : basename(board.path));
+      changes.push({path,content:writeBoard({...board,path,folder,name:folder}),expected:null},{path:board.path,content:null,expected:board.revision});
+    }
+    if (!rootBoards.length) {
+      const board=emptyBoard(join(folder,folder+'.whiteboard'));
+      board.cards=cards.map((c,i) => ({id:randomUUID(),cardId:c.id,x:60+(i%5)*380,y:60+Math.floor(i/5)*320,width:340,height:280}));
+      changes.push({path:board.path,content:writeBoard(board),expected:null});
+    }
+    const originals=await Promise.all(changes.filter(c=>c.content===null).map(async c=>({path:c.path,content:await this.read(c.path)})));
+    await fs.writeFile(join(this.cache,'migration-'+randomUUID()+'.json'),JSON.stringify({folder,originals},null,2),{flag:'wx'});
+    await this.write(changes);
+    await this.scan();
+    if (this.history.available) await this.history.checkpoint('Move root cards into '+folder);
+    return this.snapshot();
+  }
+
   async create(folder: string, stem: string, x: number, y: number) {
     if (!stem || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) throw new Error('Choose a valid filename base');
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Invalid position');
@@ -180,7 +294,7 @@ export class Workspace {
     return this.write([{path,content:editCard(raw,card,body),expected}]);
   }
   async saveBoard(board: Board, expected: string) {
-    return this.write([{path:board.path,content:writeBoard(board),expected}]);
+    return this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);
   }
   query(text: string) {
     if (text.startsWith('backlinks:')) return this.db.prepare('SELECT DISTINCT source AS path FROM links WHERE target=?').all(text.slice(10));

@@ -3,7 +3,7 @@ import { UndoHistory } from './history';
 
 function layout(board: Board) {
   return JSON.stringify([board.name,
-    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height]),
+    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder]),
     board.edges.map(e => [e.id,e.from,e.to])]);
 }
 

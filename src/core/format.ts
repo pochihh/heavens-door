@@ -32,8 +32,8 @@ export function readBoard(path: string, raw: string): Board {
   if (!block) throw new Error('Missing whiteboard layout');
   const layout = JSON.parse(block[1]);
   if (layout.version !== 1 || !Array.isArray(layout.cards) || !Array.isArray(layout.edges)) throw new Error('Unsupported board format');
-  const membership = new Map([...raw.matchAll(/^- \[[^\n]*\]\(card:([\w-]+)\) \^([\w-]+)$/gm)].map(m => [m[2], m[1]]));
-  const board = { ...emptyBoard(path), revision: revision(raw), cards: layout.cards.map((c: Placement) => ({ ...c, cardId: membership.get(c.id) })), edges: layout.edges };
+  const membership = new Map([...raw.matchAll(/^- \[[^\n]*\]\((card|board):([^\s)]+)\) \^([\w-]+)$/gm)].map(m => [m[3], m[1] === 'card' ? {cardId:m[2]} : {cardId:'',folder:decodeURIComponent(m[2])}]));
+  const board = { ...emptyBoard(path), revision: revision(raw), cards: layout.cards.map((c: Placement) => {const member=membership.get(c.id);if(!member)throw new Error('Missing board membership');return {...c,folder:undefined,...member};}), edges: layout.edges };
   validateBoard(board);
   return board;
 }
@@ -41,7 +41,8 @@ export function validateBoard(board: Board) {
   if (board.cards.length > 10000 || board.edges.length > 50000) throw new Error('Board exceeds supported limits');
   const ids = new Set<string>();
   for (const p of board.cards) {
-    if (!p.id || !p.cardId || ids.has(p.id) || ![p.x,p.y,p.width,p.height].every(Number.isFinite) || p.width < 120 || p.height < 80) throw new Error('Invalid board placement');
+    if (!p.id || (!p.cardId && !p.folder) || ids.has(p.id) || ![p.x,p.y,p.width,p.height].every(Number.isFinite) || p.width < 120 || p.height < 80) throw new Error('Invalid board placement');
+    if (p.folder !== undefined && (typeof p.folder !== 'string' || !p.folder || p.folder.startsWith('/') || p.folder.split(/[\\/]/).some(part => !part || part.startsWith('.')))) throw new Error('Invalid sub-whiteboard reference');
     ids.add(p.id);
   }
   const edges = new Set<string>();
@@ -52,7 +53,7 @@ export function validateBoard(board: Board) {
 }
 export function writeBoard(board: Board) {
   validateBoard(board);
-  const members = board.cards.map(c => `- [Card](card:${c.cardId}) ^${c.id}`).join('\n');
+  const members = board.cards.map(c => c.folder ? `- [Whiteboard](board:${encodeURIComponent(c.folder)}) ^${c.id}` : `- [Card](card:${c.cardId}) ^${c.id}`).join('\n');
   const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,x:p.x,y:p.y,width:p.width,height:p.height})), edges: board.edges };
   return `---\nwhiteboard: true\nwhiteboard_version: 1\n---\n# ${board.name}\n\n## Cards\n${members}\n\n%% whiteboard-layout\n${JSON.stringify(layout, null, 2)}\n%%\n`;
 }

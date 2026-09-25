@@ -31,13 +31,15 @@ async function dispatch(request: Request) {
       ignoreInitial:true, awaitWriteFinish:{stabilityThreshold:200,pollInterval:50},
       ignored:path => relative(root,path).split(sep).some(p => p.startsWith('.') || p === 'node_modules'),
     });
-    watcher.on('all', (_event,path) => {
+    let directoryChanged=false;
+    watcher.on('all', (event,path) => {
+      if (event === 'addDir' || event === 'unlinkDir') directoryChanged=true;
       changed.add(relative(root,path));
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const paths = [...changed]; changed.clear();
+        const paths = [...changed]; changed.clear(); const rescan=directoryChanged; directoryChanged=false;
         void enqueue(async () => {
-          for (const path of paths) await workspace!.refresh(path);
+          if (rescan) await workspace!.scan(); else for (const path of paths) await workspace!.refresh(path);
           parentPort!.postMessage({event:'change'});
         }).catch(error => parentPort!.postMessage({event:'error',error:String(error)}));
       },100);
@@ -48,6 +50,10 @@ async function dispatch(request: Request) {
   }
   if (!workspace) throw new Error('Open a workspace first');
   switch (request.kind) {
+    case 'preferences': return workspace.setPreferences(request.patch);
+    case 'createFolder': string(request.parent); string(request.name); return workspace.createFolder(request.parent,request.name);
+    case 'migrateRoot': return workspace.migrateRoot();
+    case 'tagCards': string(request.tag); return workspace.tagCards(request.tag);
     case 'snapshot': return workspace.snapshot();
     case 'create':
       string(request.folder); string(request.stem);

@@ -41,7 +41,7 @@ function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props)
       <button title="Checklist" onClick={() => editor.chain().focus().toggleTaskList().run()}>☑</button>
       <button title="Quote" onClick={() => editor.chain().focus().toggleBlockquote().run()}>❞</button>
       <button title="Code block" onClick={() => editor.chain().focus().toggleCodeBlock().run()}>&lt;/&gt;</button>
-      <details className="link-picker"><summary>↗ Link card</summary><div><input aria-label="Find a card to link" placeholder="Find a card…" value={linkQuery} onChange={e => setLinkQuery(e.target.value)}/><select aria-label="Link another card" size={5} value="" onChange={e => {
+      <details className="link-picker"><summary title="Insert a stable link to another card">↗ Link card</summary><div><input aria-label="Find a card to link" placeholder="Find a card…" value={linkQuery} onChange={e => setLinkQuery(e.target.value)}/><select aria-label="Link another card" size={5} value="" onChange={e => {
         const card=cards.find(c => c.id === e.target.value);
         if (card) editor.chain().focus().insertContent({type:'text',text:card.name,marks:[{type:'link',attrs:{href:`card:${card.id}`}}]}).run();
         e.target.closest('details')?.removeAttribute('open');

@@ -1,0 +1,33 @@
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import type { Preferences } from '../shared';
+
+export const defaultPreferences = (): Preferences => ({ theme:'system', stem:'untitled', starred:[], recent:[], icons:{} });
+export function validatePreferences(value: unknown): Preferences {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid workspace settings');
+  const p = value as Preferences;
+  if (!['light','dark','system'].includes(p.theme) || typeof p.stem !== 'string' || p.stem.length > 120) throw new Error('Invalid appearance settings');
+  for (const list of [p.starred,p.recent]) if (!Array.isArray(list) || list.length > 1000 || list.some(x => typeof x !== 'string' || x.length > 2048)) throw new Error('Invalid saved navigation');
+  if (!p.icons || typeof p.icons !== 'object' || Array.isArray(p.icons) || Object.keys(p.icons).length > 20000 || Object.entries(p.icons).some(([k,v]) => k.length > 2048 || typeof v !== 'string' || [...v].length > 16)) throw new Error('Invalid document icons');
+  return {theme:p.theme,stem:p.stem,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
+}
+export async function readPreferences(root: string) {
+  try {
+    const folder=join(root,'.heavens-door'),file=join(folder,'settings.json');
+    if ((await fs.lstat(folder)).isSymbolicLink() || (await fs.lstat(file)).isSymbolicLink()) throw new Error('Settings cannot be a symbolic link');
+    return validatePreferences(JSON.parse(await fs.readFile(file,'utf8')));
+  }
+  catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return defaultPreferences(); throw e; }
+}
+export async function writePreferences(root: string, current: Preferences, patch: Partial<Preferences>) {
+  const next=validatePreferences({...current,...patch});
+  const folder=join(root,'.heavens-door');
+  // Settings are app-owned; never follow an external symlink outside the workspace.
+  await fs.mkdir(folder,{recursive:true});
+  if ((await fs.lstat(folder)).isSymbolicLink()) throw new Error('Settings directory cannot be a symbolic link');
+  const temporary=join(folder,'settings.'+randomUUID()+'.tmp');
+  await fs.writeFile(temporary,JSON.stringify(next,null,2)+'\n',{flag:'wx'});
+  try { await fs.rename(temporary,join(folder,'settings.json')); } finally { await fs.unlink(temporary).catch(() => undefined); }
+  return next;
+}

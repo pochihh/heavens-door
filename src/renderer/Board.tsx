@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { Board, Card, CardInfo, Placement } from '../shared';
 import { preview } from './markdown';
 import { BoardNavigation, type Camera } from './navigation';
+import { Icon } from './Icons';
 import { CardEditor, type EditorFocus } from './Editor';
 import type { ReactNode } from 'react';
 
@@ -32,9 +33,10 @@ const Preview = memo(function Preview({ card, onOpen, cache }: {
   return <div className="prose card-preview" onClick={e => {
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href');
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
-  }} dangerouslySetInnerHTML={{ __html: html || '<p class="empty-text">An unwritten idea…</p>' }} />;
+  }} dangerouslySetInnerHTML={{ __html: html || '<p class="empty-text">Click to write</p>' }} />;
 });
 interface Props {
+  enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; folders?: string[]; onOpenFolder?: (folder:string)=>void; onReference?: (id:string)=>void;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
   onOpen: (path: string) => void; onCreate: (x: number, y: number) => void;
   draft?: { card: Card; body: string } | null; onEdit?: (body: string) => void; onFinish?: () => void; cardDetails?: ReactNode;
@@ -45,7 +47,7 @@ interface Gesture {
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
 
-export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, draft, onEdit, onFinish, cardDetails }: Props) {
+export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, draft, onEdit, onFinish, cardDetails, enabled=true, initialCamera, onCamera, folders=[], onOpenFolder, onReference }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -70,14 +72,15 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const lookup = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards]);
   const placements = useMemo(() => new Map(current.cards.map(p => [p.id, p])), [current.cards]);
   const openReference = useCallback((id: string) => {
-    const target = lookup.get(id); if (target) onOpen(target.path);
-  }, [lookup, onOpen]);
-  const latest = useRef({ board: current, onFinish, move, end });
-  latest.current = { board: current, onFinish, move, end };
+    const target = lookup.get(id); if (target) { if(onReference) onReference(id); else onOpen(target.path); }
+  }, [lookup, onOpen, onReference]);
+  const latest = useRef({ board: current, onFinish, move, end, enabled, onCamera });
+  latest.current = { board: current, onFinish, move, end, enabled, onCamera };
 
   useLayoutEffect(() => {
     const element = viewport.current!;
-    const nav = new BoardNavigation(element, world.current!, grid.current!, zoomInput.current!, setView);
+    const nav = new BoardNavigation(element, world.current!, grid.current!, zoomInput.current!, camera => {setView(camera);latest.current.onCamera?.(camera);});
+    if(initialCamera) { nav.set(initialCamera); nav.flush(); setView(initialCamera); }
     navigation.current = nav;
     const observer = new ResizeObserver(([entry]) => {
       setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
@@ -89,7 +92,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       nav.wheel(event);
     };
     const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
+      if (event.isComposing || !latest.current.enabled) return;
       if (event.key === 'Escape') { cancel(); setSelected([]); setConnecting(false); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
       if (editable(event.target)) return;
       if (event.code === 'Space' && !(event.target instanceof HTMLElement && event.target.closest('button'))) {
@@ -118,7 +121,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     element.ownerDocument.addEventListener('keyup', keyup);
     element.ownerDocument.defaultView!.addEventListener('blur', blur);
     return () => {
-      observer.disconnect(); nav.dispose(); navigation.current = null;
+      observer.disconnect(); latest.current.onCamera?.(nav.current); nav.dispose(); navigation.current = null;
       if (dragFrame.current !== null) element.ownerDocument.defaultView!.cancelAnimationFrame(dragFrame.current);
       element.removeEventListener('wheel', wheel, true);
       element.ownerDocument.removeEventListener('keydown', keydown);
@@ -279,11 +282,11 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
         </svg>
         {visible.map(p => {
           const card = lookup.get(p.cardId), folder = card?.path.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
-          return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''}`}
-            title={card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: p.height }}
+          return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''}`}
+            title={p.folder ?? card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: p.height }}
             onPointerDown={e => startCard(e, p.id)}>
-            <div className="card-grip"><span>{folder === board.folder ? '• Card' : '↗ Reference'}</span><button title="Edit card in place" onClick={() => { if (card) { setEditingPlacement(p.id); setFocusPoint(undefined); onOpen(card.path); } }}>✎</button></div>
-            {active?.id === p.id && draft ? <div className="card-editor">
+            <div className="card-grip"><span>{p.folder ? 'Whiteboard' : folder === board.folder ? 'Card' : '↗ Reference'}</span><button title={p.folder ? 'Open sub-whiteboard' : 'Edit card in place'} onClick={() => { if(p.folder) onOpenFolder?.(p.folder); if (card) { setEditingPlacement(p.id); setFocusPoint(undefined); onOpen(card.path); } }}>✎</button></div>
+            {p.folder ? <button className="subboard-preview" title={'Open '+p.folder} onClick={()=>onOpenFolder?.(p.folder!)}><Icon name="map" size={28}/><strong>{p.folder.split(/[\\/]/).at(-1)}</strong><small>{folders.includes(p.folder) ? cards.filter(c=>c.path.replaceAll('\\','/').split('/').slice(0,-1).join('/')===p.folder).length+' cards' : 'Missing whiteboard'}</small></button> : active?.id === p.id && draft ? <div className="card-editor">
               <CardEditor path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
               {cardDetails}
             </div> : card ? view.zoom < 0.4 ? <div className="distant-card">{card.name}</div> :
@@ -293,13 +296,13 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
         })}
       </div>
       <div className="selection-box" ref={selectionBox}/>
-      {!board.cards.length && <div className="canvas-empty"><span>✧</span><h2>Give an idea some space.</h2><p>Create your first card to start this whiteboard.</p><button className="primary" onClick={() => onCreate(100, 100)}>+ New card</button></div>}
-      {!!selected.length && !active && <div className="selection-tools"><span>{selected.length} selected</span><button disabled={selected.length > 2} onClick={() => {
+      {!board.cards.length && <div className="canvas-empty"><button className="primary" title={board.folder ? "Create a card in this whiteboard" : "Create a sub-whiteboard"} onClick={() => onCreate(100, 100)}>{board.folder ? "+ New card" : "+ New whiteboard"}</button></div>}
+      {!!selected.length && !active && <div className="selection-tools"><span>{selected.length} selected</span><button title="Connect selected cards" disabled={selected.length > 2} onClick={() => {
         if (selected.length === 2) save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, 'Connect cards');
         else setConnecting(!connecting);
       }}>{connecting ? 'Select another card…' : 'Connect'}</button><button onClick={() => {
         save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, 'Remove placement'); setSelected([]);
-      }}>Remove placement</button></div>}
+      }} title="Remove this placement; keep the original file">Remove placement</button></div>}
       <div className="canvas-controls">
         <button title="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}>−</button>
         <input ref={zoomInput} aria-label="Zoom percentage" defaultValue="85%" onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} onBlur={e => {
@@ -307,9 +310,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
           if (Number.isFinite(value) && value > 0) navigation.current!.zoomTo(value / 100);
           else e.target.value = `${Math.round(navigation.current!.current.zoom * 100)}%`;
         }}/>
-        <button title="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}>+</button><i/><button onClick={fit}>Fit</button>
+        <button title="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}>+</button><i/><button title="Fit whiteboard in this pane · ⌘1 / Ctrl+1" onClick={fit}>Fit</button>
       </div>
     </div>
-    <div className="canvas-footer"><span>{board.cards.length} cards · {board.edges.length} connections</span><span>Wheel to zoom · Space-drag to pan · Drag to select</span></div>
+
   </div>;
 });
