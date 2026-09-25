@@ -3,14 +3,15 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Preferences } from '../shared';
 
-export const defaultPreferences = (): Preferences => ({ theme:'system', stem:'untitled', starred:[], recent:[], icons:{} });
+export const defaultPreferences = (): Preferences => ({ explorerMode:'whiteboards', theme:'system', stem:'untitled', starred:[], recent:[], icons:{} });
 export function validatePreferences(value: unknown): Preferences {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid workspace settings');
   const p = value as Preferences;
   if (!['light','dark','system'].includes(p.theme) || typeof p.stem !== 'string' || p.stem.length > 120) throw new Error('Invalid appearance settings');
   for (const list of [p.starred,p.recent]) if (!Array.isArray(list) || list.length > 1000 || list.some(x => typeof x !== 'string' || x.length > 2048)) throw new Error('Invalid saved navigation');
   if (!p.icons || typeof p.icons !== 'object' || Array.isArray(p.icons) || Object.keys(p.icons).length > 20000 || Object.entries(p.icons).some(([k,v]) => k.length > 2048 || typeof v !== 'string' || [...v].length > 16)) throw new Error('Invalid document icons');
-  return {theme:p.theme,stem:p.stem,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
+  if(p.explorerMode!==undefined&&!['whiteboards','files'].includes(p.explorerMode))throw new Error('Invalid explorer mode');
+  return {explorerMode:p.explorerMode??'whiteboards',theme:p.theme,stem:p.stem,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
 }
 export async function readPreferences(root: string) {
   try {

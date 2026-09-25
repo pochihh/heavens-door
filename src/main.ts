@@ -1,15 +1,18 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell } from 'electron';
 import { Worker } from 'node:worker_threads';
 import { join, resolve, sep, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+import {WorkspaceRegistry} from './core/registry';
+import {workspacePath} from './core/files';
 import type { Request, Snapshot, Mutation, Card, WindowAction } from './shared';
 
 app.setName("Heaven's Door");
 protocol.registerSchemesAsPrivileged([{scheme:'heavens-asset',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 interface Host { root:string; key:string; worker:Worker; call<T>(request:Request):Promise<T> }
 interface Desktop { window:BrowserWindow; host?:Host; closing:boolean; action:WindowAction|null; timer?:ReturnType<typeof setTimeout> }
+let registry:WorkspaceRegistry;
 const desktops=new Map<number,Desktop>(), hosts=new Map<string,Promise<Host>>(), assets=new Map<string,Host>();
 // One worker owns a workspace's index and write queue, shared by all its windows.
 // ponytail: retain opened workers until quit; evict idle hosts if many workspaces become common.
@@ -43,7 +46,7 @@ async function snapshot(d:Desktop) {
   if(!d.host)return null;
   return {...await d.host.call<Snapshot>({kind:'snapshot'}),assetKey:d.host.key};
 }
-async function open(d:Desktop,folder:string){d.host=await getHost(folder);return snapshot(d);}
+async function open(d:Desktop,folder:string){const host=await getHost(folder);await registry.register(host.root);const value=await host.call<Snapshot>({kind:'snapshot'});d.host=host;return {...value,assetKey:host.key};}
 function trusted(event:Electron.IpcMainInvokeEvent|Electron.IpcMainEvent) {
   const d=[...desktops.values()].find(d=>d.window.webContents===event.sender);
   if(!d||event.senderFrame!==d.window.webContents.mainFrame)throw new Error('Untrusted sender');return d;
@@ -81,6 +84,16 @@ async function createWindow(folder?:string){
   else await win.loadFile(join(__dirname,'renderer/index.html'));
 }
 void app.whenReady().then(async()=>{
+  registry=new WorkspaceRegistry(join(app.getPath('userData'),'workspaces.json'));
+  ipcMain.handle('workspace:list',event=>{trusted(event);return registry.list();});
+  ipcMain.handle('workspace:registered',async(event,root:unknown)=>{
+    const d=trusted(event);if(typeof root!=='string'||!(await registry.list()).some(w=>w.root===root))throw new Error('Workspace is not registered');
+    return open(d,root);
+  });
+  ipcMain.handle('workspace:reveal',async(event,path:unknown)=>{
+    const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error('Invalid workspace file');
+    shell.showItemInFolder(await workspacePath(d.host.root,path));
+  });
   protocol.handle('heavens-asset',async request=>{
     try{
       const url=new URL(request.url),host=assets.get(url.host);if(!host)throw new Error('Unknown workspace');

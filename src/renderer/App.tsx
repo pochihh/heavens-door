@@ -1,22 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { Session } from './session';
 import type { Mutation, Preferences, Snapshot } from '../shared';
-import { Icon, Tool, type IconName } from './Icons';
-import { BoardView, HistoryPanel, NoteView, TagView, type ViewMemory } from './DocumentViews';
+import { DocumentIcon, Icon, Tool } from './Icons';
+import { Explorer } from './Explorer';
+import { TooltipHost } from './Overlays';
+import { documentInfo, parent } from './documents';
+const IconPicker=lazy(()=>import('./IconPicker'));
+export { documentInfo } from './documents';
+import { BoardView, FileView, HistoryPanel, NoteView, TagView, type ViewMemory } from './DocumentViews';
 import { closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type Layout, type Pane } from './layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
-const parent=(path:string)=>path.replaceAll('\\','/').split('/').slice(0,-1).join('/');
-const leaf=(path:string)=>path.replaceAll('\\','/').split('/').at(-1)??path;
 const defaults:Preferences={theme:'system',stem:'untitled',starred:[],recent:[],icons:{}};
-export function documentInfo(key:string,snapshot:Snapshot) {
-  const split=key.indexOf(':'),kind=key.slice(0,split),id=key.slice(split+1);
-  if(kind==='board')return {key,kind,id,title:id?leaf(id):snapshot.name,path:id,icon:'map' as IconName,exists:(snapshot.folders??['']).includes(id)};
-  if(kind==='card'){const card=snapshot.cards.find(c=>c.id===id);return {key,kind,id,title:card?leaf(card.path):'Missing card',path:card?.path??'',icon:'note' as IconName,exists:!!card};}
-  const tag=snapshot.tags?.find(t=>t.path===id);
-  return {key,kind:'tag',id,title:tag?.name??leaf(id),path:id,icon:'tag' as IconName,exists:!!tag};
-}
 export function App() {
   const state=useSyncExternalStore(session.subscribe,session.getState);
   useEffect(()=>{
@@ -29,12 +25,12 @@ export function App() {
     window.addEventListener('keydown',keyboard,true);
     return()=>{remove();window.removeEventListener('keydown',keyboard,true);};
   },[]);
-  return state.snapshot?<WorkspaceShell key={state.snapshot.root} snapshot={state.snapshot}/>:
+  return <><TooltipHost/>{state.snapshot?<WorkspaceShell key={state.snapshot.root} snapshot={state.snapshot}/>:
     <div className={'app welcome-shell platform-'+window.door.platform}><div className="welcome-drag"/><div className="welcome">
-      <button className="primary" title="Open an existing notes folder or create a workspace" onClick={()=>attempt(session.open(false))}>Open workspace</button>
-      <button title="Create a temporary workspace with example cards" onClick={()=>attempt(session.open(true))}>Try a sample workspace</button>
+      <button className="primary" data-tooltip="Open an existing notes folder or create a workspace" onClick={()=>attempt(session.open(false))}>Open workspace</button>
+      <button data-tooltip="Create a temporary workspace with example cards" onClick={()=>attempt(session.open(true))}>Try a sample workspace</button>
       {state.error&&<p role="alert">{state.error}</p>}
-    </div></div>;
+    </div></div>}</>;
 }
 function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:number;onChange:(value:number)=>void;label:string}) {
   const drag=useRef<{coordinate:number;value:number}|null>(null);
@@ -53,9 +49,6 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [leftWidth,setLeftWidth]=useState(232),[rightWidth,setRightWidth]=useState(232);
   const [navMode,setNavMode]=useState<'files'|'search'|'tags'>('files');
   const [formatting,setFormatting]=useState(new Set<string>());
-  const [bottomHeight,setBottomHeight]=useState(38);
-  const [search,setSearch]=useState(''),[results,setResults]=useState<string[]|null>(null);
-  const [expanded,setExpanded]=useState(new Set(['']));
   const [modal,setModal]=useState<'settings'|'folder'|'icon'|'migration'|null>(null);
   const [folderParent,setFolderParent]=useState(''),[folderName,setFolderName]=useState('');
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
@@ -63,8 +56,21 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const memories=useRef(new Map<string,ViewMemory>());
   const active=panes(layout).find(p=>p.id===activeId)??panes(layout)[0];
   const doc=active.active?documentInfo(active.active,snapshot):null;
-  const activeFolder=doc?.kind==='board'?doc.id:doc?parent(doc.path):'';
   const rootCards=snapshot.cards.filter(c=>!parent(c.path));
+  useEffect(()=>{
+    if(!modal)return;
+    const dialog=document.querySelector<HTMLElement>('[role=dialog]')!,previous=document.activeElement;
+    (dialog.querySelector<HTMLElement>('[autofocus]')??dialog.querySelector<HTMLElement>('input,button'))?.focus();
+    const key=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){event.preventDefault();setModal(null);}
+      if(event.key==='Tab'){
+        const controls=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,[tabindex="0"]')],first=controls[0],last=controls.at(-1);
+        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+      }
+    };
+    dialog.addEventListener('keydown',key);return()=>{dialog.removeEventListener('keydown',key);if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
+  },[modal]);
   useEffect(()=>{sessionStorage.setItem(storage,JSON.stringify(layout));},[layout,storage]);
   useEffect(()=>{
     const query=matchMedia('(prefers-color-scheme: dark)');
@@ -74,14 +80,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   useEffect(()=>{
     if(right==='history')attempt(session.history());
   },[right]);
-  useEffect(()=>{
-    let live=true;if(!search.trim()){setResults(null);return;}
-    const timer=setTimeout(()=>{void window.door.request<{path:string}[]>({kind:'query',text:search}).then(rows=>{if(live)setResults(rows.map(r=>r.path));}).catch(error=>session.update({error:String(error)}));},120);
-    return()=>{live=false;clearTimeout(timer);};
-  },[search,snapshot]);
   const changePrefs=useCallback((change:(p:Preferences)=>Partial<Preferences>)=>{
     attempt(session.run(async()=>{
-      const result=await window.door.request<Snapshot>({kind:'preferences',patch:change(session.state.snapshot?.preferences??defaults)});
+      const patch=change(session.state.snapshot?.preferences??defaults);if(!Object.keys(patch).length)return;
+      const result=await window.door.request<Snapshot>({kind:'preferences',patch});
       session.update({snapshot:result});
     }));
   },[]);
@@ -117,36 +119,19 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       session.undoHistory.record('Create whiteboard',result.edits);session.update({snapshot:result.snapshot,error:''});
     });
     const path=folderParent?folderParent+'/'+folderName:folderName;
-    setExpanded(v=>new Set([...v,folderParent,path]));setModal(null);open('board:'+path);
+    setModal(null);open('board:'+path);
   }
   function createCard(folder:string,x=80,y=80,paneId=activeId){
     if(!folder){createFolder('');return;}
-    attempt((async()=>{await session.create(folder,prefs.stem,x,y);const card=session.state.draft?.card;
-      if(card){setExpanded(v=>new Set([...v,folder]));const p=panes(layout).find(p=>p.id===paneId);if(p?.active!=='board:'+folder)open('card:'+card.id,paneId);}
+    attempt((async()=>{await session.create(folder,prefs.stem,x,y,snapshot.boards.some(b=>b.folder===folder));const card=session.state.draft?.card;
+      if(card){const p=panes(layout).find(p=>p.id===paneId);if(p?.active!=='board:'+folder)open('card:'+card.id,paneId);}
     })());
   }
   function star(key:string){changePrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));}
-  function docIcon(key:string){const info=documentInfo(key,snapshot);return prefs.icons[key]?<span className="document-icon">{prefs.icons[key]}</span>:<Icon name={info.icon}/>;}
-  function item(key:string,indent=0,extra?:ReactNode){
-    const info=documentInfo(key,snapshot);
-    return <div className={'tree-row '+(active.active===key?'current':'')} key={key} style={{paddingLeft:8+indent*16}}>
-      {extra}<button className="file-button" title={'Open '+(info.path||snapshot.name)+' in the active pane'} onClick={()=>open(key)}>{docIcon(key)}<span>{info.title}</span></button>
-    </div>;
-  }
-  const folders=useMemo(()=>snapshot.folders??['',...snapshot.boards.map(b=>b.folder)], [snapshot]);
-  const tree=useMemo(()=>{
-    const groups=new Map<string,{folders:string[];keys:string[]}>();
-    for(const folder of folders)groups.set(folder,{folders:[],keys:[]});
-    for(const folder of folders)if(folder)groups.get(parent(folder))?.folders.push(folder);
-    for(const card of snapshot.cards)groups.get(parent(card.path))?.keys.push('card:'+card.id);
-    for(const tag of snapshot.tags??[])groups.get(parent(tag.path))?.keys.push('tag:'+tag.path);
-    return groups;
-  },[folders,snapshot.cards,snapshot.tags]);
-  function branch(folder:string,depth=0):ReactNode {
-    const group=tree.get(folder),show=expanded.has(folder);
-    return <div key={folder}>{item('board:'+folder,depth,<button className="tree-disclosure" title={(show?'Collapse ':'Expand ')+(folder||snapshot.name)} aria-expanded={show} onClick={()=>setExpanded(v=>{const next=new Set(v);if(show)next.delete(folder);else next.add(folder);return next;})}><Icon name={show?'down':'chevron'} size={12}/></button>)}
-      {show&&<div>{group?.folders.map(f=>branch(f,depth+1))}{group?.keys.map(key=>item(key,depth+1,<span className="tree-spacer"/>))}</div>}
-    </div>;
+  function docIcon(key:string){const info=documentInfo(key,snapshot);return <DocumentIcon value={prefs.icons[key]} fallback={info.icon}/>;}
+  function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
+  function openBeside(key:string){
+    attempt((async()=>{await session.flush();const next=pane(key);setLayout(current=>splitPane(current,activeId,'row',next));setActiveId(next.id);open(key,next.id);})());
   }
   function transfer(event:React.DragEvent,p:Pane,before?:string){
     event.preventDefault();
@@ -167,19 +152,19 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="tab-strip">
         <div className="tab-list" role="tablist" aria-label="Open files" onDragOver={e=>e.preventDefault()} onDrop={e=>transfer(e,p)}>
           {p.tabs.map(key=>{const info=documentInfo(key,snapshot);return <div className={'tab '+(p.active===key?'active-tab':'')} key={key} draggable onDragStart={e=>{e.dataTransfer.setData('application/heavens-tab',JSON.stringify({pane:p.id,key}));e.dataTransfer.effectAllowed='move';}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.stopPropagation();transfer(e,p,key);}}>
-            <button role="tab" aria-selected={p.active===key} title={info.path||info.title} onClick={()=>open(key,p.id)}>{docIcon(key)}<span>{info.title}</span></button>
+            <button role="tab" aria-selected={p.active===key} data-tooltip={info.path||info.title} onClick={()=>open(key,p.id)}>{docIcon(key)}<span>{info.title}</span></button>
             <Tool icon="close" label={'Close '+info.title} onClick={()=>close(p,key)}/>
           </div>;})}
         </div>
-        <details className="menu pane-menu"><summary title="Pane actions" aria-label="Pane actions"><Icon name="down" size={12}/></summary><div className="menu-content">
-          <button title="Open the current file beside this pane" onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
-          <button title="Open the current file below this pane" onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
-          <button title="Close this pane; keep files on disk" disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>Close pane</button>
+        <details className="menu pane-menu"><summary data-tooltip="Pane actions" aria-label="Pane actions"><Icon name="down" size={12}/></summary><div className="menu-content">
+          <button data-tooltip="Open the current file beside this pane" onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
+          <button data-tooltip="Open the current file below this pane" onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
+          <button data-tooltip="Close this pane; keep files on disk" disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>Close pane</button>
         </div></details>
       </div>
       {info&&<div className="document-toolbar">
-        <button className="document-icon-button" title="Change this file’s icon" onClick={()=>{setIconKey(p.active);setCustomIcon(prefs.icons[p.active]??'');setModal('icon');}}>{docIcon(p.active)}</button>
-        <span className="document-breadcrumb" title={info.path||snapshot.root}>{info.path||snapshot.name}</span>
+        <button className="document-icon-button" aria-label="Change this file’s icon" data-tooltip="Change this file’s icon" onClick={()=>editIcon(p.active)}>{docIcon(p.active)}</button>
+        <span className="document-breadcrumb" data-tooltip={info.path||snapshot.root}>{info.path||snapshot.name}</span>
         <div className="toolbar-spacer"/>
         {info.kind==='board'&&<><Tool icon="folder" label="Create sub-whiteboard" onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label="Create card in this whiteboard" onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
         {info.kind==='card'&&<Tool icon="format" label="Show or hide formatting controls" aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
@@ -187,11 +172,11 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
 
       </div>}
       <div className="document-content">
-        {!info?<div className="empty-pane"><button title="Open the mother whiteboard" onClick={()=>open('board:',p.id)}><Icon name="map"/>Open whiteboard</button></div>:
+        {!info?<div className="empty-pane"><button data-tooltip="Open the mother whiteboard" onClick={()=>open('board:',p.id)}><Icon name="map"/>Open whiteboard</button></div>:
           !info.exists?<p className="notice">This file is no longer in the workspace.</p>:
           board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onMigrate={()=>setModal('migration')}/>:
           tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)}/>:
-          <NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onWords={count=>setWordCounts(v=>v[p.active]===count?v:{...v,[p.active]:count})}/>}
+          info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onWords={count=>setWordCounts(v=>v[p.active]===count?v:{...v,[p.active]:count})}/>}
       </div>
       {focused&&<div className="pane-focus-flash" key={pulse}/>}
     </section>;
@@ -207,14 +192,9 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const activeBoard=doc?.kind==='board'?snapshot.boards.find(b=>b.folder===doc.id):undefined;
   const stat=activeBoard?(doc?.id?activeBoard.cards.filter(p=>!p.folder).length+' cards · ':'')+activeBoard.cards.filter(p=>p.folder).length+' whiteboards':
     doc?.kind==='card'?(wordCounts[active.active]??0)+' words':doc?.kind==='tag'?'Tag view':'';
-  return <div className={'app platform-'+window.door.platform} style={{'--sidebar-width':leftWidth+'px','--dock-width':rightWidth+'px'} as CSSProperties}>
+  return <div className={'app platform-'+window.door.platform} inert={state.status==='Opening workspace…'} style={{'--sidebar-width':leftWidth+'px','--dock-width':rightWidth+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
-      <details className="menu workspace-menu"><summary title="Workspace actions"><span>{snapshot.name}</span><Icon name="down" size={12}/></summary><div className="menu-content">
-        <button title="Open another workspace in this window" onClick={()=>attempt(session.open(false))}><Icon name="folder"/>Open workspace…</button>
-        <button title="Open a new window for another workspace" onClick={()=>attempt(window.door.newWindow(false))}><Icon name="window"/>New window</button>
-        <button title="Open this workspace in another window" onClick={()=>attempt(window.door.newWindow(true))}><Icon name="window"/>New window for this workspace</button>
-      </div></details>
       <Tool icon="left" label={left?'Hide file navigation':'Show file navigation'} onClick={()=>setLeft(!left)}/>
       <div className="window-drag-space"/>
       <Tool icon="search" label="Search workspace cards" onClick={()=>{setLeft(true);setNavMode('search');}}/>
@@ -222,30 +202,14 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
       <nav className="dock-rail" aria-label="Navigation tools">
-        <Tool icon="folder" label="Documents" aria-pressed={left&&navMode==='files'} className={left&&navMode==='files'?'selected':''} onClick={()=>{setLeft(!(left&&navMode==='files'));setNavMode('files');}}/>
+        <Tool icon="folder" label="Explorer" aria-pressed={left&&navMode==='files'} className={left&&navMode==='files'?'selected':''} onClick={()=>{setLeft(!(left&&navMode==='files'));setNavMode('files');}}/>
         <Tool icon="tag" label="Tags" aria-pressed={left&&navMode==='tags'} className={left&&navMode==='tags'?'selected':''} onClick={()=>{setLeft(!(left&&navMode==='tags'));setNavMode('tags');}}/>
         <Tool icon="star" label="Starred files" onClick={()=>{setLeft(true);setNavMode('files');requestAnimationFrame(()=>document.querySelector('.starred .file-button')?.scrollIntoView({block:'nearest'}));}}/>
         <div className="toolbar-spacer"/>
         <Tool icon="settings" label="Workspace settings" onClick={()=>setModal('settings')}/>
       </nav>
-      {left&&<><aside className="sidebar" aria-label="File navigation">
-        <div className="nav-files" style={{flex:100-bottomHeight}}>
-          <div className="section-title"><strong>{navMode==='search'?'Search':navMode==='tags'?'Tags':'Documents'}</strong><div className="toolbar-spacer"/><Tool icon="folder" label="Create sub-whiteboard in the active folder" onClick={()=>createFolder(activeFolder)}/><Tool icon="plus" label={activeFolder?'Create card in the active folder':'Create sub-whiteboard'} onClick={()=>createCard(activeFolder)}/></div>
-          {navMode==='search'&&<label className="search"><Icon name="search" size={14}/><input autoFocus aria-label="Search cards" title="Search filenames and card content" placeholder="Search" value={search} onChange={e=>setSearch(e.target.value)}/>{search&&<Tool icon="close" label="Clear search" onClick={()=>setSearch('')}/>}</label>}
-          <nav className="file-tree" aria-label="Workspace files">{navMode==='tags'?snapshot.tags?.map(tag=>item('tag:'+tag.path)):navMode==='search'&&results?results.map(path=>{const c=snapshot.cards.find(c=>c.path===path);return c?item('card:'+c.id):null;}):branch('')}</nav>
-        </div>
-        <div className="nav-divider" role="separator" aria-label="Resize file navigation sections" aria-orientation="horizontal" tabIndex={0} onKeyDown={e=>{if(e.key==='ArrowUp')setBottomHeight(v=>Math.min(70,v+5));if(e.key==='ArrowDown')setBottomHeight(v=>Math.max(20,v-5));}}
-          onPointerDown={(e:PointerEvent<HTMLDivElement>)=>{
-            const start=e.clientY,initial=bottomHeight,height=e.currentTarget.parentElement!.clientHeight;
-            const move=(event:globalThis.PointerEvent)=>setBottomHeight(Math.max(20,Math.min(70,initial-(event.clientY-start)/height*100)));
-            const stop=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',stop);};
-            document.addEventListener('pointermove',move);document.addEventListener('pointerup',stop,{once:true});
-          }}/>
-        <div className="nav-bottom" style={{flex:bottomHeight}}>
-          <section className="starred"><div className="section-title"><Icon name="star" size={13}/><strong>Starred</strong></div><div className="saved-files">{prefs.starred.map(key=>item(key))}</div></section>
-          <section className="recent"><div className="section-title"><Icon name="clock" size={13}/><strong>Recent</strong></div><div className="saved-files">{prefs.recent.map(key=>item(key))}</div></section>
-        </div>
-      </aside><Divider value={leftWidth} label="Resize file navigation" onChange={value=>setLeftWidth(Math.max(170,Math.min(420,value)))}/></>}
+      {left&&<><Explorer snapshot={snapshot} prefs={prefs} activeKey={active.active} navMode={navMode} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>
+      <Divider value={leftWidth} label="Resize file navigation" onChange={value=>setLeftWidth(Math.max(170,Math.min(420,value)))}/></>}
       <main className="workspace">{renderLayout(layout)}</main>
       {right&&<><Divider value={-rightWidth} label="Resize right panel" onChange={value=>setRightWidth(Math.max(190,Math.min(520,-value)))}/><aside className="right-dock" aria-label="Right panel">
         <div className="section-title"><strong>{right==='history'?'History':'Agent'}</strong><div className="toolbar-spacer"/>{right==='history'&&<Tool icon="plus" label="Save workspace checkpoint · ⌘S / Ctrl+S" disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/>}<Tool icon="close" label="Close right panel" onClick={()=>setRight(null)}/></div>
@@ -258,20 +222,20 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </div>
     <footer className="statusbar">      <Tool icon="undo" label="Undo · ⌘Z / Ctrl+Z" disabled={!session.undoHistory.past.length&&!state.draft?.dirty} onClick={()=>attempt(session.undo())}/>
       <Tool icon="redo" label="Redo · ⇧⌘Z / Ctrl+Shift+Z" disabled={!session.undoHistory.future.length} onClick={()=>attempt(session.undo(true))}/>
-<span title="Remote sync is not configured"><Icon name="sync" size={13}/>Sync off</span><span role="status" title={state.error||state.status}>{state.status==='Saved locally'?'Saved':state.status}</span><div className="toolbar-spacer"/>{!!rootCards.length&&<button title="Review moving root-level cards into a sub-whiteboard" onClick={()=>setModal('migration')}>Organize root cards</button>}<span>{stat}</span></footer>
-    {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button title="Copy the unsaved draft before reconciling changes" onClick={()=>attempt(session.copyDraft())}>Copy draft</button><button title="Discard this draft and read the current file" onClick={()=>{if(confirm('Discard the unsaved draft and reload from disk?'))attempt(session.reloadDraft());}}>Reload from disk</button></>}<Tool icon="close" label="Dismiss error" onClick={()=>session.update({error:''})}/></div>}
+<span data-tooltip="Remote sync is not configured"><Icon name="sync" size={13}/>Sync off</span><span role="status" data-tooltip={state.error||state.status}>{state.status==='Saved locally'?'Saved':state.status}</span><div className="toolbar-spacer"/>{!!rootCards.length&&<button data-tooltip="Review moving root-level cards into a sub-whiteboard" onClick={()=>setModal('migration')}>Organize root cards</button>}<span>{stat}</span></footer>
+    {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip="Copy the unsaved draft before reconciling changes" onClick={()=>attempt(session.copyDraft())}>Copy draft</button><button data-tooltip="Discard this draft and read the current file" onClick={()=>{if(confirm('Discard the unsaved draft and reload from disk?'))attempt(session.reloadDraft());}}>Reload from disk</button></>}<Tool icon="close" label="Dismiss error" onClick={()=>session.update({error:''})}/></div>}
     {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}>
       <div className="panel-title"><strong>{modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}</strong><Tool icon="close" label="Close dialog" onClick={()=>setModal(null)}/></div>
       {modal==='settings'?<div className="settings-body">
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
         <small>Settings apply to this workspace and its windows.</small>
-        {!!rootCards.length&&<button title="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}
-      </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>Folder name<input autoFocus aria-label="Whiteboard folder name" value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" title="Create this folder and its whiteboard" disabled={!folderName.trim()}>Create whiteboard</button></form>:
+        {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}
+      </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>Folder name<input autoFocus aria-label="Whiteboard folder name" value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" data-tooltip="Create this folder and its whiteboard" disabled={!folderName.trim()}>Create whiteboard</button></form>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>
-        <label>Icon<input autoFocus aria-label="Document icon" placeholder="Emoji or symbol" value={customIcon} onChange={e=>setCustomIcon([...e.target.value].slice(0,16).join(''))}/></label>
-        <div className="icon-options">{['📌','📚','💡','🔬','🎯','🌱','🗺️','📝'].map(icon=><button key={icon} type="button" title={'Use '+icon} onClick={()=>setCustomIcon(icon)}>{icon}</button>)}</div><div className="dialog-actions"><button type="button" title="Restore the default map, note, or tag icon" onClick={()=>setCustomIcon('')}>Default</button><button className="primary" title="Save this icon">Save</button></div>
-      </form>:<div className="settings-body"><p>Move {rootCards.length} root-level cards and their whiteboard layouts into a new <strong>Notes</strong> subfolder. An occupied name gets a numbered suffix.</p><p>Card identities stay the same. Local attachment links are adjusted. A backup is kept before files move.</p><button className="primary" title="Back up and move root cards into a subfolder" onClick={()=>attempt(session.run(async()=>{await session.flush();const result=await window.door.request<Snapshot>({kind:'migrateRoot'});session.undoHistory.clear();session.update({snapshot:result,draft:null,error:''});setModal(null);setExpanded(new Set(['']));}))}>Move cards into Notes</button></div>}
+        <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?'Selected icon':'Default icon'}</span></div>
+        <Suspense fallback={<small>Loading icons…</small>}><IconPicker onSelect={setCustomIcon}/></Suspense><div className="dialog-actions"><button type="button" data-tooltip="Restore the default map, note, or tag icon" onClick={()=>setCustomIcon('')}>Default</button><button className="primary" data-tooltip="Save this icon">Save</button></div>
+      </form>:<div className="settings-body"><p>Move {rootCards.length} root-level cards and their whiteboard layouts into a new <strong>Notes</strong> subfolder. An occupied name gets a numbered suffix.</p><p>Card identities stay the same. Local attachment links are adjusted. A backup is kept before files move.</p><button className="primary" data-tooltip="Back up and move root cards into a subfolder" onClick={()=>attempt(session.run(async()=>{await session.flush();const result=await window.door.request<Snapshot>({kind:'migrateRoot'});session.undoHistory.clear();session.update({snapshot:result,draft:null,error:''});setModal(null);}))}>Move cards into Notes</button></div>}
     </section></div>}
   </div>;
 }

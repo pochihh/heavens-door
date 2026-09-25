@@ -47,7 +47,7 @@ test('reload and quit flush drafts independently of the UI, and refuse to discar
   const w=await Workspace.open(root,join(folder,'cache'));await w.create('','untitled',0,0);
   let handler:(action:'reload'|'close')=>void=() => undefined;
   const completed:string[]=[],cancelled:string[]=[];
-  const bridge={newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
+  const bridge={listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
     if (request.kind === 'card') return w.card(request.path);
     if (request.kind === 'saveCard') return w.saveCard(request.path,request.body,request.expected);
     throw new Error('Unexpected request');
@@ -113,4 +113,27 @@ test('rapid board edits save against their predecessor and remain undoable witho
   await assert.rejects(() => session.board({...before,cards:before.cards.map(p => ({...p,x:300}))},'Move cards',before),/changed|changes/i);
   assert.equal(w.snapshot().boards[0].cards[0].y,500,'a refreshed external edit is not overwritten');
   assert.equal(w.snapshot().boards[0].cards[0].x,200);
+});
+
+test('registered workspace switching saves first and keeps the old workspace when opening fails',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-door-workspace-switch-')),root=join(folder,'Notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));await w.create('','a',0,0);
+  let fail=true;
+  const bridge={request:async (request:Parameters<Bridge['request']>[0])=>{
+    if(request.kind==='card')return w.card(request.path);
+    if(request.kind==='saveCard')return w.saveCard(request.path,request.body,request.expected);
+    throw new Error('Unexpected request');
+  },openWorkspace:async()=>{
+    assert.equal((await w.card('a.md')).body,'Save before changing workspace');
+    if(fail)throw new Error('Workspace unavailable');
+    return {...w.snapshot(),root:'/second',cards:[]};
+  }} as unknown as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});
+  t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  await session.select('a.md');session.edit('Save before changing workspace');
+  await assert.rejects(()=>session.open(false,'/second'),/unavailable/);
+  assert.equal(session.state.snapshot?.root,w.root);assert.equal(session.state.draft?.body,'Save before changing workspace');
+  assert.equal(session.state.status,'Needs attention');assert.equal(session.undoHistory.past.length,1);
+  fail=false;await session.open(false,'/second');
+  assert.equal(session.state.snapshot?.root,'/second');assert.equal(session.state.draft,null);assert.equal(session.undoHistory.past.length,0);
 });

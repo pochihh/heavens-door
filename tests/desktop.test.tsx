@@ -7,7 +7,7 @@ import type {Bridge,Card,Preferences,Snapshot} from '../src/shared';
 
 test('desktop shell reuses tabs, splits the same card, shares edits and restores pane layout',async()=>{
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'https://workspace.test',pretendToBeVisual:true});
-  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,sessionStorage:dom.window.sessionStorage,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,sessionStorage:dom.window.sessionStorage,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
   dom.window.Range.prototype.getClientRects=()=>[] as unknown as DOMRectList;
   dom.window.Range.prototype.getBoundingClientRect=()=>({x:0,y:0,top:0,left:0,bottom:0,right:0,width:0,height:0,toJSON(){}});
@@ -16,9 +16,10 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
   let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];
-  window.door={chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
+  window.door={listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
+      case 'listFiles':return request.path===''?[{name:'Ideas',path:'Ideas',kind:'folder'},{name:'assets',path:'assets',kind:'folder'}]:request.path==='assets'?[{name:'photo.jpg',path:'assets/photo.jpg',kind:'file'}]:[{name:'A.md',path:'Ideas/A.md',kind:'file'}];
       case 'snapshot':return snapshot;
       case 'card':return {...card};
       case 'query':return [];
@@ -41,12 +42,37 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     assert.equal(document.querySelectorAll('.dock-rail').length,2);
     assert.ok(!requests.includes('migrateRoot'),'opening the workspace never moves files');
-    await click('[title="Expand Ideas"]');
-    await click('[title="Open Ideas/A.md in the active pane"]');
-    await click('[title="Open Ideas/A.md in the active pane"]');
+    assert.ok(!document.querySelector('.workspace-menu'),'workspace selector is no longer in the titlebar');
+    assert.ok(!document.querySelector('[data-tooltip="Expand assets"]'),'ordinary folders stay out of whiteboard mode');
+    await click('[aria-label="Switch workspace · Workspace"]');
+    assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]')?.textContent,'Workspace');
+    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await click('[aria-label="Add in Ideas"]');
+    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['New sub-whiteboard','New note']);
+    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await click('[aria-label="More actions for Ideas"]');
+    const labels=[...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent);
+    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await act(async()=>document.querySelector('[data-file-key="board:Ideas"]')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100})));
+    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),labels);
+    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await click('[aria-label="Whiteboard view · switch to files"]');
+    await click('[data-tooltip="Expand assets"]');
+    assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active pane"]'));
+    await click('[aria-label="File view · switch to whiteboards"]');
+    const control=document.querySelector<HTMLElement>('[aria-label="Switch workspace · Workspace"]')!;
+    await act(async()=>{control.dispatchEvent(new dom.window.MouseEvent('pointerover',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,470));});
+    assert.match(document.querySelector('[role=tooltip]')?.textContent??'',/Switch workspace/);
+    assert.equal(control.getAttribute('aria-describedby'),'app-tooltip');
+    await act(async()=>control.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));
+    assert.equal(document.querySelector('[role=tooltip]'),null);
+
+    await click('[data-tooltip="Expand Ideas"]');
+    await click('[data-tooltip="Open Ideas/A.md in the active pane"]');
+    await click('[data-tooltip="Open Ideas/A.md in the active pane"]');
     assert.equal(document.querySelectorAll('[role=tab]').length,2,'reopening a card reuses its tab');
     assert.equal(document.querySelectorAll('.tiptap').length,1);
-    await click('[title="Open the current file beside this pane"]');
+    await click('[data-tooltip="Open the current file beside this pane"]');
     assert.equal(document.querySelectorAll('.note-pane').length,2);
     assert.equal(document.querySelectorAll('[role=tab][aria-selected=true]').length,2);
     assert.equal(document.querySelectorAll('.tiptap').length,1,'one focused editor, shared card content');
@@ -56,9 +82,9 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.match(card.body,/Shared draft/);
     await click('.note-pane:not(.active-pane) [role=tab][aria-selected=true]');
     assert.equal(session.state.draft?.card.path,card.path,'switching between the same card retains its draft');
-    await click('.active-pane [title="Show or hide formatting controls"]');
+    await click('.active-pane [data-tooltip="Show or hide formatting controls"]');
     assert.ok(document.querySelector('.active-pane .show-formatting'));
-    await click('.active-pane [title="Add to starred"]');
+    await click('.active-pane [data-tooltip="Add to starred"]');
     assert.equal(snapshot.preferences?.starred[0],'card:a');
     const savedLayout=sessionStorage.getItem('layout:'+snapshot.root);
     assert.ok(savedLayout);

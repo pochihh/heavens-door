@@ -15,6 +15,7 @@
     "benchmark": "node --import tsx scripts/benchmark.ts"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-image": "^3.31.3",
     "@tiptap/extension-table": "^3.31.3",
@@ -25,6 +26,8 @@
     "@tiptap/starter-kit": "^3.31.3",
     "chokidar": "^5.0.0",
     "dompurify": "^3.4.16",
+    "emoji-mart": "^5.6.0",
+    "lucide-react": "^1.48.0",
     "marked": "^18.0.14",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

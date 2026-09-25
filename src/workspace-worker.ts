@@ -1,6 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import { relative, sep } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
+import {listFiles,inspectFile} from './core/files';
 import { Workspace } from './core/workspace';
 import type { Request } from './shared';
 
@@ -54,10 +55,13 @@ async function dispatch(request: Request) {
     case 'createFolder': string(request.parent); string(request.name); return workspace.createFolder(request.parent,request.name);
     case 'migrateRoot': return workspace.migrateRoot();
     case 'tagCards': string(request.tag); return workspace.tagCards(request.tag);
+    case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
+    case 'inspectFile': string(request.path);return inspectFile(workspace.root,request.path);
     case 'snapshot': return workspace.snapshot();
     case 'create':
       string(request.folder); string(request.stem);
-      return workspace.create(request.folder,request.stem,request.x,request.y);
+      if(request.place!==undefined&&typeof request.place!=='boolean')throw new Error('Invalid placement flag');
+      return workspace.create(request.folder,request.stem,request.x,request.y,request.place);
     case 'saveCard':
       string(request.path); string(request.body); string(request.expected);
       return workspace.saveCard(request.path,request.body,request.expected);

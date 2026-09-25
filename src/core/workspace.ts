@@ -172,14 +172,14 @@ export class Workspace {
   }
 
   private allBoards() {
-    const boards=[...this.boards.values()],existing=new Set(boards.map(b=>b.folder));
-    const childrenByFolder=new Map<string,string[]>();
-    for (const folder of this.folders) {
-      if (!existing.has(folder)) boards.push(emptyBoard(join(folder,(folder ? basename(folder) : basename(this.root))+'.whiteboard')));
-      if (folder) {
-        const parent=dirname(folder)==='.'?'':dirname(folder);
-        const children=childrenByFolder.get(parent)??[];children.push(folder);childrenByFolder.set(parent,children);
-      }
+    const boards=[...this.boards.values()];
+    if(!boards.some(b=>!b.folder))boards.unshift(emptyBoard(basename(this.root)+'.whiteboard'));
+    const boardFolders=new Set(boards.map(b=>b.folder)),childrenByFolder=new Map<string,string[]>();
+    for(const folder of boardFolders){
+      if(!folder)continue;
+      let ancestor=dirname(folder)==='.'?'':dirname(folder);
+      while(ancestor&&!boardFolders.has(ancestor))ancestor=dirname(ancestor)==='.'?'':dirname(ancestor);
+      const children=childrenByFolder.get(ancestor)??[];children.push(folder);childrenByFolder.set(ancestor,children);
     }
     return boards.map(board => {
       const children=childrenByFolder.get(board.folder)??[];
@@ -272,7 +272,7 @@ export class Workspace {
     return this.snapshot();
   }
 
-  async create(folder: string, stem: string, x: number, y: number) {
+  async create(folder: string, stem: string, x: number, y: number,place=true) {
     if (!stem || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) throw new Error('Choose a valid filename base');
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Invalid position');
     if (folder) await fs.access(await this.path(folder));
@@ -281,6 +281,7 @@ export class Workspace {
     let filename = stem + '.md', i = 0;
     while (names.has(filename.toLocaleLowerCase())) filename = `${stem}_${++i}.md`;
     const path = join(folder,filename), raw = newNote(), card = readCard(path,raw);
+    if(!place)return this.write([{path,content:raw,expected:null}]);
     const boardPath = join(folder,`${folder ? basename(folder) : basename(this.root)}.whiteboard`);
     const matching = [...this.boards.values()].filter(b => b.folder === folder);
     if (matching.length > 1) throw new Error('More than one board in this folder; select a single board first');

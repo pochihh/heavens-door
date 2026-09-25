@@ -3,6 +3,9 @@ import type { Bridge, Snapshot, WindowAction } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
+  listWorkspaces:()=>ipcRenderer.invoke('workspace:list'),
+  openWorkspace:root=>adopt(ipcRenderer.invoke('workspace:registered',root)) as Promise<Snapshot>,
+  revealFile:path=>ipcRenderer.invoke('workspace:reveal',path),
   chooseWorkspace:()=>adopt(ipcRenderer.invoke('workspace:choose')),
   demo:async()=>(await adopt(ipcRenderer.invoke('workspace:demo')))!,
   request:request=>ipcRenderer.invoke('workspace:request',request),

@@ -48,11 +48,11 @@ export class Session {
     this.queue=next.catch(error => this.update({error:String(error),status:'Needs attention'}));
     return next;
   }
-  async open(demo: boolean) {
+  async open(demo: boolean,registeredRoot?:string) {
     return this.run(async () => {
       await this.flush();
       this.update({status:'Opening workspace…',error:''});
-      const snapshot = await (demo ? this.bridge.demo() : this.bridge.chooseWorkspace());
+      const snapshot = await (registeredRoot ? this.bridge.openWorkspace(registeredRoot) : demo ? this.bridge.demo() : this.bridge.chooseWorkspace());
       if (snapshot) { this.dispose(); this.undoHistory.clear(); this.update({snapshot,draft:null,checkpoints:[]}); }
       this.update({status:'Saved locally'});
     });
@@ -106,10 +106,10 @@ export class Session {
       }
     });
   }
-  create(folder: string,stem: string,x:number,y:number) {
+  create(folder: string,stem: string,x:number,y:number,place=true) {
     return this.run(async () => {
       await this.flush();
-      const result=await this.bridge.request<Mutation>({kind:'create',folder,stem,x,y});
+      const result=await this.bridge.request<Mutation>({kind:'create',folder,stem,x,y,place});
       this.accept(result,'Create card');
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { Board, Card, CardInfo, Placement } from '../shared';
 import { preview } from './markdown';
 import { BoardNavigation, type Camera } from './navigation';
-import { Icon } from './Icons';
+import { Icon, Tool } from './Icons';
 import { CardEditor, type EditorFocus } from './Editor';
 import type { ReactNode } from 'react';
 
@@ -283,34 +283,34 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
         {visible.map(p => {
           const card = lookup.get(p.cardId), folder = card?.path.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
           return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''}`}
-            title={p.folder ?? card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: p.height }}
+            data-tooltip={p.folder ?? card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: p.height }}
             onPointerDown={e => startCard(e, p.id)}>
-            <div className="card-grip"><span>{p.folder ? 'Whiteboard' : folder === board.folder ? 'Card' : '↗ Reference'}</span><button title={p.folder ? 'Open sub-whiteboard' : 'Edit card in place'} onClick={() => { if(p.folder) onOpenFolder?.(p.folder); if (card) { setEditingPlacement(p.id); setFocusPoint(undefined); onOpen(card.path); } }}>✎</button></div>
-            {p.folder ? <button className="subboard-preview" title={'Open '+p.folder} onClick={()=>onOpenFolder?.(p.folder!)}><Icon name="map" size={28}/><strong>{p.folder.split(/[\\/]/).at(-1)}</strong><small>{folders.includes(p.folder) ? cards.filter(c=>c.path.replaceAll('\\','/').split('/').slice(0,-1).join('/')===p.folder).length+' cards' : 'Missing whiteboard'}</small></button> : active?.id === p.id && draft ? <div className="card-editor">
+            <div className="card-grip"><span>{p.folder ? 'Whiteboard' : folder === board.folder ? 'Card' : <><Icon name="external" size={11}/> Reference</>}</span><Tool icon={p.folder?'external':'edit'} label={p.folder ? 'Open sub-whiteboard' : 'Edit card in place'} onClick={() => { if(p.folder) onOpenFolder?.(p.folder); if (card) { setEditingPlacement(p.id); setFocusPoint(undefined); onOpen(card.path); } }}/></div>
+            {p.folder ? <button className="subboard-preview" data-tooltip={'Open '+p.folder} onClick={()=>onOpenFolder?.(p.folder!)}><Icon name="map" size={28}/><strong>{p.folder.split(/[\\/]/).at(-1)}</strong><small>{folders.includes(p.folder) ? cards.filter(c=>c.path.replaceAll('\\','/').split('/').slice(0,-1).join('/')===p.folder).length+' cards' : 'Missing whiteboard'}</small></button> : active?.id === p.id && draft ? <div className="card-editor">
               <CardEditor path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
               {cardDetails}
             </div> : card ? view.zoom < 0.4 ? <div className="distant-card">{card.name}</div> :
               <Preview card={card} onOpen={openReference} cache={cache.current}/> : <div className="missing-card">Missing card<br/><small>{p.cardId.slice(0, 12)}</small></div>}
-            <button className="resize-handle" aria-label={`Resize ${card?.name ?? 'card'}`} onPointerDown={e => { if (e.button === 0) begin(e, 'resize', [p.id]); }}>⌟</button>
+            <button className="resize-handle" data-tooltip="Resize card" aria-label={`Resize ${card?.name ?? 'card'}`} onPointerDown={e => { if (e.button === 0) begin(e, 'resize', [p.id]); }}><Icon name="resize" size={14}/></button>
           </article>;
         })}
       </div>
       <div className="selection-box" ref={selectionBox}/>
-      {!board.cards.length && <div className="canvas-empty"><button className="primary" title={board.folder ? "Create a card in this whiteboard" : "Create a sub-whiteboard"} onClick={() => onCreate(100, 100)}>{board.folder ? "+ New card" : "+ New whiteboard"}</button></div>}
-      {!!selected.length && !active && <div className="selection-tools"><span>{selected.length} selected</span><button title="Connect selected cards" disabled={selected.length > 2} onClick={() => {
+      {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? "Create a card in this whiteboard" : "Create a sub-whiteboard"} onClick={() => onCreate(100, 100)}>{board.folder ? "+ New card" : "+ New whiteboard"}</button></div>}
+      {!!selected.length && !active && <div className="selection-tools"><span>{selected.length} selected</span><button data-tooltip="Connect selected cards" disabled={selected.length > 2} onClick={() => {
         if (selected.length === 2) save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, 'Connect cards');
         else setConnecting(!connecting);
       }}>{connecting ? 'Select another card…' : 'Connect'}</button><button onClick={() => {
         save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, 'Remove placement'); setSelected([]);
-      }} title="Remove this placement; keep the original file">Remove placement</button></div>}
+      }} data-tooltip="Remove this placement; keep the original file">Remove placement</button></div>}
       <div className="canvas-controls">
-        <button title="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}>−</button>
+        <Tool icon="minus" label="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
         <input ref={zoomInput} aria-label="Zoom percentage" defaultValue="85%" onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} onBlur={e => {
           const value = Number.parseFloat(e.target.value.replace(/%$/, '').trim());
           if (Number.isFinite(value) && value > 0) navigation.current!.zoomTo(value / 100);
           else e.target.value = `${Math.round(navigation.current!.current.zoom * 100)}%`;
         }}/>
-        <button title="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}>+</button><i/><button title="Fit whiteboard in this pane · ⌘1 / Ctrl+1" onClick={fit}>Fit</button>
+        <Tool icon="plus" label="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}/><i/><button data-tooltip="Fit whiteboard in this pane · ⌘1 / Ctrl+1" onClick={fit}>Fit</button>
       </div>
     </div>
 
