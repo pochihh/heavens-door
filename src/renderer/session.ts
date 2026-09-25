@@ -2,8 +2,8 @@ import type { Board, Bridge, Card, Checkpoint, Mutation, Snapshot } from '../sha
 import { UndoHistory } from './history';
 
 function layout(board: Board) {
-  return JSON.stringify([board.name,
-    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder]),
+  return JSON.stringify([board.name,board.inbox,
+    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false]),
     board.edges.map(e => [e.id,e.from,e.to])]);
 }
 

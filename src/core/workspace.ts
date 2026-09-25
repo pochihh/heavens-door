@@ -6,6 +6,7 @@ import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { History } from './history';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote } from './format';
+import { placementHeight } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult } from '../shared';
 
 export class Workspace {
@@ -20,11 +21,12 @@ export class Workspace {
   constructor(readonly root: string, readonly cache: string) {
     this.history = new History(root);
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 2) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=2;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 3) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=3;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT);
+      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT);
+      CREATE INDEX IF NOT EXISTS cards_folder ON cards(folder);
       CREATE INDEX IF NOT EXISTS card_identity ON cards(id);
       CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path UNINDEXED,name,body);
       CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT);
@@ -81,6 +83,7 @@ export class Workspace {
   }
   async write(changes: Write[]): Promise<Mutation> {
     if (!changes.length || new Set(changes.map(c => c.path)).size !== changes.length) throw new Error('Invalid edit');
+    changes=this.automaticPlacements(changes);
     const journal = [];
     for (const change of changes) {
       if (!['.md','.whiteboard'].includes(extname(change.path)) || (change.content !== null && typeof change.content !== 'string')) throw new Error('Unsupported file edit');
@@ -102,7 +105,7 @@ export class Workspace {
       }
       await fs.unlink(journalFile);
     } catch(e) { await this.recover().catch(() => undefined); throw e; }
-    for (const change of changes) await this.refresh(change.path);
+    for (const change of changes) await this.refresh(change.path,false);
     return {snapshot:this.snapshot(),edits:journal};
   }
   async scan() {
@@ -125,6 +128,9 @@ export class Workspace {
       this.db.exec('COMMIT');
     } catch(error) { this.db.exec('ROLLBACK'); throw error; }
     finally { this.scanning=false; }
+    const mother=basename(this.root)+'.whiteboard';
+    if(await this.raw(mother)===null)await this.write([{path:mother,content:writeBoard(emptyBoard(mother)),expected:null}]);
+    await this.reconcile();
     return this.snapshot();
   }
   private removeIndex(path: string) {
@@ -132,7 +138,7 @@ export class Workspace {
     this.db.prepare('DELETE FROM cards WHERE path=?').run(path);
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
   }
-  async refresh(path: string) {
+  async refresh(path: string,reconcile=true) {
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
     this.boards.delete(path); this.tags.delete(path);
@@ -154,7 +160,7 @@ export class Workspace {
       if (!this.scanning) this.db.exec('BEGIN');
       try {
         this.removeIndex(path);
-        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}));
+        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path));
         this.db.prepare('INSERT INTO search(rowid,path,name,body) SELECT rowid,path,name,body FROM cards WHERE path=?').run(card.path);
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
@@ -162,17 +168,18 @@ export class Workspace {
         if (!this.scanning) this.db.exec('COMMIT');
       } catch(e) { if (!this.scanning) this.db.exec('ROLLBACK'); throw e; }
     } catch(e) { this.removeIndex(path); this.issues.set(path,`${path}: ${String(e)}`); }
+    finally {if(reconcile&&!this.scanning)await this.reconcile([path]);}
   }
   snapshot(): Snapshot {
     // ponytail: full metadata snapshots; switch to deltas if IPC dominates large-vault saves.
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
-    const cards = this.db.prepare('SELECT path,id,name,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
+    const cards = this.db.prepare('SELECT path,id,name,title,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
     return { root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
-    const boards=[...this.boards.values()];
+    const boards=[...this.boards.values()].filter(b=>this.boardPath(b.folder)===b.path);
     if(!boards.some(b=>!b.folder))boards.unshift(emptyBoard(basename(this.root)+'.whiteboard'));
     const boardFolders=new Set(boards.map(b=>b.folder)),childrenByFolder=new Map<string,string[]>();
     for(const folder of boardFolders){
@@ -183,13 +190,51 @@ export class Workspace {
     }
     return boards.map(board => {
       const children=childrenByFolder.get(board.folder)??[];
-      const cards=[...board.cards];
+      const cards=board.folder?[...board.cards]:board.cards.filter(p=>p.folder);
       for (const folder of children) if (!cards.some(p => p.folder === folder)) {
         const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
         cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
       }
-      return {...board,name:board.folder ? basename(board.folder) : basename(this.root),cards};
+      const ids=new Set(cards.map(p=>p.id));
+      return {...board,name:board.folder ? basename(board.folder) : basename(this.root),cards,edges:board.edges.filter(e=>ids.has(e.from)&&ids.has(e.to))};
     });
+  }
+  private boardPath(folder:string) {return join(folder,(folder?basename(folder):basename(this.root))+'.whiteboard');}
+  private automaticPlacements(changes:Write[],folders?:Set<string>):Write[] {
+    const result=changes.map(change=>({...change}));
+    const affected=folders??new Set(changes.length?changes.map(c=>dirname(c.path)==='.'?'':dirname(c.path)):[...this.boards.values()].map(b=>b.folder));
+    let displayed:Map<string,Board>|undefined;
+    for(const folder of affected){
+      if(!folder)continue; // The mother board contains sub-whiteboards only.
+      const path=this.boardPath(folder),explicit=result.find(c=>c.path===path);
+      if(explicit?.content===null)continue;
+      const board=explicit?readBoard(path,explicit.content!):this.boards.get(path);
+      if(!board)continue;
+      const local=new Map((this.db.prepare('SELECT path,id FROM cards WHERE folder=? ORDER BY path').all(folder) as {path:string;id:string}[]).map(c=>[c.path,c]));
+      for(const change of changes)if(change.path.endsWith('.md')&&dirname(change.path)===folder){
+        if(change.content===null)local.delete(change.path);else{const card=readCard(change.path,change.content);local.set(change.path,card);}
+      }
+      const placed=new Set(board.cards.map(p=>p.cardId)),missing=[...local.values()].filter(c=>!placed.has(c.id));
+      if(!missing.length)continue;
+      displayed??=new Map(this.allBoards().map(b=>[b.folder,b]));
+      const occupied=[...board.cards,...(displayed.get(folder)?.cards.filter(p=>p.folder&&!board.cards.some(existing=>existing.folder===p.folder))??[])];
+      const inbox=board.inbox??{x:Math.max(0,...occupied.map(p=>p.x+p.width))+80,y:60};
+      let y=Math.max(inbox.y,...occupied.filter(p=>p.x<inbox.x+340&&p.x+p.width>inbox.x).map(p=>p.y+placementHeight(p)+12));
+      const next={...board,inbox,cards:occupied};
+      for(const card of missing){
+        if(placed.has(card.id))continue;
+        next.cards.push({id:randomUUID(),cardId:card.id,x:inbox.x,y,width:340,height:280,collapsed:true});
+        placed.add(card.id);y+=52;
+      }
+      const write={path,content:writeBoard(next),expected:board.revision||null};
+      if(explicit)explicit.content=write.content;else result.push(write);
+    }
+    return result;
+  }
+  async reconcile(paths?:string[]) {
+    const folders=paths?new Set(paths.filter(p=>p.endsWith('.md')||p.endsWith('.whiteboard')).map(p=>dirname(p)==='.'?'':dirname(p))):undefined;
+    const additions=this.automaticPlacements([],folders);
+    if(additions.length)await this.write(additions);
   }
   async setPreferences(patch: Partial<Preferences>) {
     this.preferences=await writePreferences(this.root,this.preferences,patch);
@@ -218,6 +263,9 @@ export class Workspace {
   async migrateRoot() {
     const cards=this.snapshot().cards.filter(c => dirname(c.path) === '.');
     if (!cards.length) return this.snapshot();
+    const layouts=[...this.boards.values()].filter(b=>!b.folder&&b.cards.some(p=>!p.folder));
+    if(layouts.length>1)throw new Error('Root migration needs manual attention: more than one root whiteboard contains cards.');
+    const source=layouts[0];
     const moving=new Set(cards.map(c => c.path));
     // Refuse a migration whose path-dependent syntax this importer cannot preserve.
     for (const row of this.db.prepare('SELECT path,body FROM cards').all()) {
@@ -254,17 +302,17 @@ export class Workspace {
       body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(_all,lead,href) => lead+'<'+rewrite(href)+'>');
       changes.push({path:join(folder,info.path),content:editCard(raw,card,body),expected:null},{path:info.path,content:null,expected:info.revision});
     }
-    const rootBoards=[...this.boards.values()].filter(b => !b.folder);
-    for (const board of rootBoards) {
-      const path=join(folder,rootBoards.length === 1 ? folder+'.whiteboard' : basename(board.path));
-      changes.push({path,content:writeBoard({...board,path,folder,name:folder}),expected:null},{path:board.path,content:null,expected:board.revision});
+    const path=join(folder,folder+'.whiteboard'),board=source?{...source,path,folder,name:folder,cards:source.cards.filter(p=>!p.folder)}:emptyBoard(path);
+    const placements=new Set(board.cards.map(p=>p.id));
+    board.edges=board.edges.filter(e=>placements.has(e.from)&&placements.has(e.to));
+    changes.push({path,content:writeBoard(board),expected:null});
+    if(source){
+      const remaining=source.cards.filter(p=>p.folder),ids=new Set(remaining.map(p=>p.id));
+      // Keep the mother board and its sub-whiteboard positions; retire an old mismatched file only when empty.
+      const content=source.path===this.boardPath('')||remaining.length?writeBoard({...source,cards:remaining,edges:source.edges.filter(e=>ids.has(e.from)&&ids.has(e.to))}):null;
+      changes.push({path:source.path,content,expected:source.revision});
     }
-    if (!rootBoards.length) {
-      const board=emptyBoard(join(folder,folder+'.whiteboard'));
-      board.cards=cards.map((c,i) => ({id:randomUUID(),cardId:c.id,x:60+(i%5)*380,y:60+Math.floor(i/5)*320,width:340,height:280}));
-      changes.push({path:board.path,content:writeBoard(board),expected:null});
-    }
-    const originals=await Promise.all(changes.filter(c=>c.content===null).map(async c=>({path:c.path,content:await this.read(c.path)})));
+    const originals=await Promise.all(changes.filter(c=>c.expected!==null).map(async c=>({path:c.path,content:await this.read(c.path)})));
     await fs.writeFile(join(this.cache,'migration-'+randomUUID()+'.json'),JSON.stringify({folder,originals},null,2),{flag:'wx'});
     await this.write(changes);
     await this.scan();
@@ -282,10 +330,8 @@ export class Workspace {
     while (names.has(filename.toLocaleLowerCase())) filename = `${stem}_${++i}.md`;
     const path = join(folder,filename), raw = newNote(), card = readCard(path,raw);
     if(!place)return this.write([{path,content:raw,expected:null}]);
-    const boardPath = join(folder,`${folder ? basename(folder) : basename(this.root)}.whiteboard`);
-    const matching = [...this.boards.values()].filter(b => b.folder === folder);
-    if (matching.length > 1) throw new Error('More than one board in this folder; select a single board first');
-    const board = structuredClone(matching[0] ?? emptyBoard(boardPath));
+    const boardPath=this.boardPath(folder);
+    const board=structuredClone(this.boards.get(boardPath)??emptyBoard(boardPath));
     board.cards.push({id:randomUUID(),cardId:card.id,x,y,width:340,height:280});
     return this.write([{path,content:raw,expected:null},{path:board.path,content:writeBoard(board),expected:board.revision || null}]);
   }

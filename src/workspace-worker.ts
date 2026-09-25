@@ -40,7 +40,7 @@ async function dispatch(request: Request) {
       timer = setTimeout(() => {
         const paths = [...changed]; changed.clear(); const rescan=directoryChanged; directoryChanged=false;
         void enqueue(async () => {
-          if (rescan) await workspace!.scan(); else for (const path of paths) await workspace!.refresh(path);
+          if (rescan) await workspace!.scan(); else {for (const path of paths) await workspace!.refresh(path,false);await workspace!.reconcile(paths);}
           parentPort!.postMessage({event:'change'});
         }).catch(error => parentPort!.postMessage({event:'error',error:String(error)}));
       },100);

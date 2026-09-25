@@ -21,7 +21,8 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 - Click inside a whiteboard card to edit it in place. Drag its header to move it; text remains selectable. Escape or clicking empty canvas finishes editing. Clicking a card in Explorer opens its full-page editor. Edits save after a short pause. Frontmatter stays hidden.
 - Drag a card’s header to move it, or its lower-right handle to resize it. Navigation follows the Obsidian whiteboard plugin: mouse wheel zooms at the pointer; two-finger trackpad scrolling pans; pinch zooms. Middle-drag or Space + left-drag pans; right-drag pans from empty canvas. Left-drag on empty canvas selects a region. Shift-click adds cards and Cmd/Ctrl-click toggles them; drag a selected card’s header to move the group.
 - Scrollable card content consumes wheel input while it can scroll in that direction. At its boundary the board handles the wheel. Zoom supports 20–300%, editable percentage, Cmd/Ctrl + `+`/`-`, `0` for 100%, and `1` to fit. Distant cards use simplified previews.
-- Select one card and **Connect**, then select another. **Remove placement** removes only that board placement and its connections. The Markdown file remains.
+- Select one card and **Connect**, then select another. **Remove reference** removes a reference to a card from another folder and its connections. Direct-child cards always belong to their folder’s board. The Markdown file remains.
+- Use the header chevron to collapse or expand a card. Collapsed cards show their first H1 (filename fallback). Notes created in Explorer or by another app appear collapsed in a persistent column to the right of existing content. Cards created on the canvas open at the chosen position.
 - **View → Reload** (`Cmd/Ctrl+R`) saves pending edits and reopens the current workspace. Rendering errors show a recovery screen; Quit/Reload offer a native prompt if the renderer stops responding. Unsaved conflicts block normal reload so the draft can be copied or reconciled. Reload resets session undo; saved Git checkpoints remain.
 - Show formatting controls with **Aa**, then use **Link card** to insert a stable link. Backlinks appear below the editor. That panel also places a reference on another whiteboard.
 - Use the top-right search button to search card names and contents. `backlinks:<card-id>` also works. The file list displays actual filenames.
@@ -35,7 +36,7 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 
 The database icon beside **Explorer** lists registered workspaces; the current one is checked. Selecting another opens it in the same window after saving pending edits. The map/folder button switches between whiteboards and the real filesystem, including attachments and hidden files. Folder rows show **+** on hover for a sub-whiteboard or note. **…** and right-click use the same menu.
 
-Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological.
+Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological. Both lists share one scroller; an empty Starred header is still a drop target.
 
 Change a document icon from its breadcrumb or context menu. Lucide supplies the standard icons; the searchable Emoji Mart picker works offline. Hover controls or focus them with the keyboard for tooltips.
 
@@ -45,13 +46,14 @@ Physical-file mode opens indexed notes/boards/tags normally, images as previews,
 
 - [Codebase architecture](docs/architecture.md)
 - [Design system](docs/design-system.md)
+- [Whiteboard folders, membership and collapsed cards](docs/whiteboards.md)
 - [Sortable-list and bookmark drag specification](docs/interactions/drag-and-drop.md)
 
 ## Files and safeguards
 
 Cards are `.md` files with a UUID in YAML `card-id` frontmatter. Existing frontmatter is preserved. Imported notes without an ID receive one when edited; until then their provisional identity depends on their path. Persistent card links use `[label](card:UUID)`.
 
-A `.whiteboard` file contains readable Markdown membership links and a versioned JSON layout in a comment block. This is a new, smaller schema inspired by the Obsidian plugin, not a directly compatible copy of its version-2 format. Each placement has its own identity, separate from its card. A folder containing a `.whiteboard` file is a whiteboard; creating a sub-whiteboard creates that folder and file. Ordinary asset folders stay ordinary folders. Subfolder placements use readable `board:` links. The workspace root shows only sub-whiteboards. For older workspaces with root cards, **Organize root cards** reviews a migration into `Notes` (or a numbered free name), keeps card identities, and saves recovery data before moving files. Path-based incoming links and unsupported root-card markup stop migration for manual attention. Opening a workspace never migrates it automatically. Obsidian plugin board imports are not implemented.
+A `.whiteboard` file contains readable Markdown membership links and a versioned JSON layout in a comment block. This is a new, smaller schema inspired by the Obsidian plugin, not a directly compatible copy of its version-2 format. Each placement has its own identity, separate from its card. A folder is a whiteboard only when it contains a valid file with the same basename, such as `Ideas/Ideas.whiteboard`; creating a sub-whiteboard creates that folder and matching file. Every direct `.md` child appears on it, including externally created notes. The root metadata file is `<workspace-name>.whiteboard`. Ordinary asset folders stay ordinary folders. Subfolder placements use readable `board:` links. The workspace root shows only sub-whiteboards. For older workspaces with root cards, **Organize root cards** reviews a migration into `Notes` (or a numbered free name), keeps card identities, and saves recovery data before moving files. Path-based incoming links and unsupported root-card markup stop migration for manual attention. Opening a workspace creates missing mother-board metadata and reconciles membership, but never moves existing notes automatically. Obsidian plugin board imports are not implemented.
 
 SQLite is a rebuildable index stored in the application’s user-data directory, outside the notes folder. Startup verifies content hashes and reuses unchanged index entries. A filesystem watcher updates changed files; board previews load only visible card bodies. Changes made outside the app appear automatically.
 

@@ -121,10 +121,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     const path=folderParent?folderParent+'/'+folderName:folderName;
     setModal(null);open('board:'+path);
   }
-  function createCard(folder:string,x=80,y=80,paneId=activeId){
+  function createCard(folder:string,x?:number,y?:number,paneId=activeId){
     if(!folder){createFolder('');return;}
-    attempt((async()=>{await session.create(folder,prefs.stem,x,y,snapshot.boards.some(b=>b.folder===folder));const card=session.state.draft?.card;
-      if(card){const p=panes(layout).find(p=>p.id===paneId);if(p?.active!=='board:'+folder)open('card:'+card.id,paneId);}
+    attempt((async()=>{await session.create(folder,prefs.stem,x??80,y??80,x!==undefined&&y!==undefined);const card=session.state.draft?.card;
+      if(card){const p=panes(layout).find(p=>p.id===paneId);if(x===undefined||y===undefined||p?.active!=='board:'+folder)open('card:'+card.id,paneId);}
     })());
   }
   function star(key:string){changePrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));}

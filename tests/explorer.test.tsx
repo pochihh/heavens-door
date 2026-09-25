@@ -19,6 +19,9 @@ test('Explorer identifies real whiteboards, lists physical assets and confines i
   const workspace=await Workspace.open(root,join(dir,'cache'));
   t.after(async()=>{workspace.close();await fs.rm(dir,{recursive:true,force:true});});
   await workspace.createFolder('','Ideas');await workspace.createFolder('Ideas','Nested');
+  const child=structuredClone(workspace.snapshot().boards.find(b=>b.folder==='Ideas')!.cards.find(p=>p.folder)!);
+  await workspace.create('Ideas','new-note',0,0,false);
+  assert.deepEqual(workspace.snapshot().boards.find(b=>b.folder==='Ideas')!.cards.find(p=>p.folder),child,'automatic intake preserves sub-whiteboard geometry');
   await workspace.create('assets','ordinary',0,0,false);
   assert.deepEqual(workspace.snapshot().boards.map(b=>b.folder).sort(),['','Ideas',join('Ideas','Nested')]);
   assert.deepEqual(workspace.snapshot().boards.find(b=>b.folder==='')!.cards.map(c=>c.folder),['Ideas']);
@@ -44,11 +47,13 @@ test('bookmark drags use one axis-locked phantom and placeholder, reorder, unsta
   function Harness(){
     const [keys,setKeys]=useState(stored),target=useRef<HTMLDivElement>(null);
     const drag=useBookmarkDrag(target,(key,index,source)=>{stored=insertBookmark(stored,key,index,source);writes++;setKeys(stored);});
-    return <><div id="starred" ref={target}>{keys.map(k=><div key={k} data-file-key={k}><button onPointerDown={e=>drag(e,k,true)}>{k}</button></div>)}</div><div id="recent" data-file-key="d"><button onPointerDown={e=>drag(e,'d',false)}>d</button></div></>;
+    return <><div className="nav-bottom"><section data-bookmark-target><header>Starred</header><div id="starred" ref={target}>{keys.map(k=><div key={k} data-file-key={k}><button onPointerDown={e=>drag(e,k,true)}>{k}</button></div>)}</div></section><div id="recent" data-file-key="d"><button onPointerDown={e=>drag(e,'d',false)}>d</button></div></div></>;
   }
   const rect=(left:number,top:number,width:number,height:number)=>({left,top,width,height,right:left+width,bottom:top+height,x:left,y:top,toJSON(){}});
   const geometry=()=>{
-    const list=document.querySelector<HTMLElement>('#starred')!;list.getBoundingClientRect=()=>rect(20,100,220,150);
+    const list=document.querySelector<HTMLElement>('#starred')!;list.getBoundingClientRect=()=>rect(20,100,220,stored.length?150:0);
+    list.closest<HTMLElement>('[data-bookmark-target]')!.getBoundingClientRect=()=>rect(20,80,220,stored.length?170:20);
+    list.closest<HTMLElement>('.nav-bottom')!.getBoundingClientRect=()=>rect(20,80,220,300);
     for(const row of document.querySelectorAll<HTMLElement>('[data-file-key]'))row.getBoundingClientRect=()=>{
       const visible=[...list.children].filter(el=>(el as HTMLElement).style.display!=='none');return rect(28,row.id==='recent'?300:105+visible.indexOf(row)*30,204,28);
     };
@@ -75,6 +80,12 @@ test('bookmark drags use one axis-locked phantom and placeholder, reorder, unsta
     assert.deepEqual(stored,['d','c','a']);assert.equal(document.querySelector('#recent')?.textContent,'d');geometry();
     await pointer(button('d'),'pointerdown',50,115);await pointer(document,'pointermove',80,160);await pointer(document,'pointercancel',80,160);
     assert.deepEqual(stored,['d','c','a']);assert.equal(document.body.classList.contains('list-dragging'),false);
+    for(const key of [...stored]){geometry();await pointer(button(key),'pointerdown',50,115);await pointer(document,'pointermove',500,150);await pointer(document,'pointerup',500,150);}
+    assert.deepEqual(stored,[]);geometry();
+    assert.equal(document.querySelector('#starred')!.getBoundingClientRect().height,0,'an empty Starred list has no reserved drop space');
+    await pointer(recent,'pointerdown',50,310);await pointer(document,'pointermove',120,90);
+    assert.equal(document.querySelector('.drop-target'),null,'dragging into Starred never highlights the section');
+    await pointer(document,'pointerup',120,90);assert.deepEqual(stored,['d'],'the header accepts a drop when the list is empty');
     assert.equal(crossed(26,0,100,1),true);assert.equal(crossed(24,0,100,1),false);assert.equal(crossed(74,0,100,-1),true);assert.equal(crossed(76,0,100,-1),false);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

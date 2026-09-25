@@ -44,7 +44,7 @@ export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSpli
   const tree=useMemo(()=>{
     const groups=new Map(snapshot.boards.map(b=>[portable(b.folder),{folders:[] as string[],keys:[] as string[]} ]));
     for(const board of snapshot.boards)if(board.folder){let ancestor=parent(board.folder);while(ancestor&&!groups.has(ancestor))ancestor=parent(ancestor);groups.get(ancestor)?.folders.push(board.folder);}
-    for(const c of snapshot.cards)groups.get(parent(c.path))?.keys.push('card:'+c.id);
+    for(const c of snapshot.cards){const folder=parent(c.path);if(folder)groups.get(folder)?.keys.push('card:'+c.id);}
     for(const t of snapshot.tags??[])groups.get(parent(t.path))?.keys.push('tag:'+t.path);
     for(const group of groups.values())group.folders.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     return groups;
@@ -104,7 +104,7 @@ export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSpli
         onPointerDown={key?e=>drag(e,key,saved==='starred'):undefined}
         onKeyDown={e=>{if(saved==='starred'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+(e.key==='ArrowUp'?-1:1),true)}));}}}
         onClick={()=>{if(physical&&folder!==undefined)toggle(folder);else if(key)onOpen(key);}}>
-        <span className="row-icon"><DocumentIcon value={key?prefs.icons[key]:undefined} fallback={entry.symlink?'link':icon}/>{key&&<span className="drag-handle"><Icon name="grip"/></span>}</span><span>{entry.name}</span>
+        <span className="row-icon"><DocumentIcon value={key?prefs.icons[key]:undefined} fallback={entry.symlink?'link':icon}/></span><span>{entry.name}</span>
       </button>
       <span className="row-actions">{folder!==undefined&&<Tool icon="plus" label={'Add in '+(entry.path||snapshot.name)} onClick={e=>show(creations(folder),e)}/>}<Tool icon="more" label={'More actions for '+entry.name} onClick={e=>show(actions(entry),e)}/></span>
     </div>;
@@ -140,7 +140,7 @@ export function Explorer({snapshot,prefs,activeKey,navMode,session,onOpen,onSpli
         resizeCleanup.current=stop;document.addEventListener('pointermove',move);document.addEventListener('pointerup',stop);document.addEventListener('pointercancel',stop);window.addEventListener('blur',stop);
       }}/>
     <div className="nav-bottom" style={{flex:bottomHeight}}>
-      <section className="starred"><div className="section-title" data-tooltip="Drag files here to star them. Drag out to remove; drag vertically to reorder."><Icon name="star" size={13}/><strong>Starred</strong></div><div className="saved-files" ref={starred} aria-label="Starred files">{prefs.starred.map(key=>row(entryFor(key),0,'starred'))}</div></section>
+      <section className="starred" data-bookmark-target><div className="section-title" data-tooltip="Drag files here to star them. Drag out to remove; drag vertically to reorder."><Icon name="star" size={13}/><strong>Starred</strong></div><div className="saved-files" ref={starred} aria-label="Starred files">{prefs.starred.map(key=>row(entryFor(key),0,'starred'))}</div></section>
       <section className="recent"><div className="section-title" data-tooltip="Recently opened files. Drag a file into Starred to keep it."><Icon name="clock" size={13}/><strong>Recent</strong></div><div className="saved-files">{prefs.recent.map(key=>row(entryFor(key),0,'recent'))}</div></section>
     </div>
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}

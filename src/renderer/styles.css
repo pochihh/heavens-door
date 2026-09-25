@@ -46,7 +46,7 @@ p{margin:0 0 12px}kbd{font-size:11px;color:var(--muted)}.muted,small,.empty-text
 .tree-disclosure{padding:0;width:18px;height:24px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}.tree-spacer{width:18px;flex-shrink:0}
 .document-icon{width:16px;display:inline-flex;justify-content:center;flex-shrink:0;font-size:16px}
 .nav-divider{height:6px;flex-shrink:0;cursor:row-resize;position:relative}.nav-divider:after{content:'';position:absolute;top:3px;left:8px;right:8px;border-top:.5px solid var(--border)}
-.nav-bottom>section{display:flex;flex-direction:column;min-height:0}.starred{max-height:50%;flex:0 1 auto}.recent{flex:1}.saved-files{overflow:auto;scrollbar-width:thin}
+.nav-bottom{overflow:auto;scrollbar-width:thin;display:block}.nav-bottom>section{display:flex;flex-direction:column}.saved-files{flex-shrink:0}
 .saved-files .tree-row{padding-left:10px!important}.nav-bottom .section-title{color:var(--muted)}
 .divider{background:transparent;flex-shrink:0;position:relative;z-index:3;touch-action:none}.divider.row{width:4px;cursor:col-resize}.divider.column{height:4px;cursor:row-resize}
 .divider:hover,.divider:focus-visible{background:var(--border)}
@@ -87,12 +87,12 @@ p{margin:0 0 12px}kbd{font-size:11px;color:var(--muted)}.muted,small,.empty-text
 .explorer-heading{gap:2px}.explorer-heading .tool{width:25px;height:25px;padding:5px}.explorer-heading strong{margin-right:4px}
 .row-actions{display:flex;align-items:center;opacity:0;flex-shrink:0;pointer-events:none}.row-actions .tool{width:22px;height:24px;padding:4px}.row-actions .tool svg{width:14px;height:14px}
 .tree-row:hover>.row-actions,.tree-row:focus-within>.row-actions{opacity:1;pointer-events:auto}.tree-row .row-actions button:hover{background:var(--hover)}
-.row-icon{display:inline-flex;position:relative;flex-shrink:0;width:16px;height:18px;align-items:center;justify-content:center}.drag-handle{position:absolute;inset:1px 0;display:flex;opacity:0}
-.saved-row:hover .row-icon>svg,.saved-row:hover .row-icon>.document-icon{opacity:0}.saved-row:hover .drag-handle{opacity:1}
-.file-button{touch-action:none}.starred{min-height:70px}.starred .saved-files{min-height:30px}.saved-files:empty{margin:0 8px;border:1px dashed var(--border);border-radius:4px}
-.list-dragging,.list-dragging *{cursor:grabbing!important;user-select:none!important}.list-dragging .tree-row:not(.drag-phantom):hover{background:transparent}.list-dragging .row-actions{opacity:0;pointer-events:none}.list-dragging .drag-handle{opacity:0}.list-dragging .row-icon>svg,.list-dragging .row-icon>.document-icon{opacity:1}
-.saved-files.drop-target{outline:1px solid var(--accent);outline-offset:-1px}.sort-placeholder{margin:1px 8px;flex-shrink:0;pointer-events:none}
-body[data-bookmark-drop=remove] .starred>.section-title{color:var(--muted)}
+.row-icon{display:inline-flex;position:relative;flex-shrink:0;width:16px;height:18px;align-items:center;justify-content:center}
+
+.file-button{touch-action:none}
+.list-dragging,.list-dragging *{cursor:grabbing!important;user-select:none!important}.list-dragging .tree-row:not(.drag-phantom):hover{background:transparent}.list-dragging .row-actions{opacity:0;pointer-events:none}
+.sort-placeholder{margin:1px 8px;flex-shrink:0;pointer-events:none}
+
 .hover-tooltip{position:fixed;z-index:2000;pointer-events:none;max-width:min(360px,calc(100vw - 16px));padding:6px 9px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;background:var(--text);color:var(--surface);border-radius:5px;box-shadow:0 2px 8px #0002}
 .context-menu{position:fixed;z-index:500;min-width:210px;max-width:min(360px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:5px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow)}
 .context-menu button{width:100%;display:flex;align-items:center;gap:9px;font-size:13px;padding:7px 9px;text-align:left;min-height:30px}.context-menu button>span:not(.menu-icon-space){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.context-menu button:focus-visible{background:var(--hover);outline:none}.menu-icon-space{width:16px;flex-shrink:0}
@@ -103,3 +103,4 @@ body[data-bookmark-drop=remove] .starred>.section-title{color:var(--muted)}
 .icon-selection{display:flex;align-items:center;gap:10px;color:var(--muted)}
 .card-grip>span{display:flex;align-items:center;gap:3px}.card-grip .tool{height:22px;width:22px;padding:3px}.canvas-controls .tool{width:25px;height:25px;padding:5px}.editor-tools .tool{width:27px;height:27px;padding:5px}.link-picker summary{display:flex;align-items:center;gap:5px}
 body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred';position:absolute;top:calc(100% + 4px);left:0;width:max-content;padding:4px 7px;border-radius:4px;background:var(--text);color:var(--surface);font-size:11px;line-height:16px}
+.card-grip-label{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.card-grip-actions{flex-shrink:0;display:flex;gap:2px}.board-card.collapsed .card-grip{height:100%;border-bottom:0;padding-left:12px;font-size:14px;color:var(--text)}

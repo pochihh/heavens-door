@@ -19,7 +19,11 @@ The header reads **Explorer**. Its controls are, in order: database/workspace pi
 - Folder mode is the physical file explorer. Folders expand on click. It shows Markdown, `.whiteboard`, `.tag`, attachments, hidden files and app/Git internals. Listing never changes a folder into a whiteboard. Refresh is explicit for ignored/internal directories that the workspace watcher does not monitor.
 - A row's **+** and **…** appear on hover or keyboard focus; on touch they remain visible. **+** on a folder offers only **New sub-whiteboard** and **New note**. The root's note action is disabled with an explanation in its tooltip.
 - Right-click and **…** call the same action builder. The menu supports arrows, Home/End and Escape, and restores focus when closed. File operations currently include open, open to side, bookmark, icon, source inspection, path copy, reveal, refresh and collapse. It does not pretend to offer unimplemented rename/delete/move actions.
-- Recent stays chronological. Starred is manually ordered. Dragging changes bookmarks, never file locations. The precise drag behavior is in [drag-and-drop.md](interactions/drag-and-drop.md).
+- Starred and Recent share one scrolling panel. Empty Starred occupies only its header, which accepts drops. Document icons stay visible on hover/drag; there is no section drop highlight. Recent stays chronological. Starred is manually ordered. Dragging changes bookmarks, never file locations. The precise drag behavior is in [drag-and-drop.md](interactions/drag-and-drop.md).
+
+## Whiteboard cards
+
+The header chevron collapses/expands a card in place. A collapsed card is a 40px-high title row, using its first H1 or its filename; hovering still reveals the file path. It does not mount a preview or editor. Expanded dimensions and coordinates remain saved. Collapse belongs to a placement, so references on other boards can have different states. See [whiteboards.md](whiteboards.md) for automatic column placement and storage.
 
 ## Icons and emoji
 

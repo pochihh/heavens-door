@@ -1,8 +1,8 @@
-export interface Card { id: string; path: string; name: string; body: string; revision: string; legacy: boolean }
+export interface Card { id: string; path: string; name: string; title?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
-export interface Placement { id: string; cardId: string; x: number; y: number; width: number; height: number; folder?: string }
+export interface Placement { id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; folder?: string }
 export interface Edge { id: string; from: string; to: string }
-export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[] }
+export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; inbox?:{x:number;y:number} }
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
@@ -52,3 +52,6 @@ export interface Bridge {
   platform: string;
 }
 declare global { interface Window { door: Bridge } }
+
+export const COLLAPSED_CARD_HEIGHT=40;
+export function placementHeight(placement:Placement){return placement.collapsed?COLLAPSED_CARD_HEIGHT:placement.height;}

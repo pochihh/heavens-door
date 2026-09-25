@@ -14,14 +14,20 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
 
   const card:Card={id:'a',path:'Ideas/A.md',name:'A',body:'# First card\n\nOriginal text',revision:'r1',legacy:false};
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
-  let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
+  let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];
   window.door={listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
       case 'listFiles':return request.path===''?[{name:'Ideas',path:'Ideas',kind:'folder'},{name:'assets',path:'assets',kind:'folder'}]:request.path==='assets'?[{name:'photo.jpg',path:'assets/photo.jpg',kind:'file'}]:[{name:'A.md',path:'Ideas/A.md',kind:'file'}];
       case 'snapshot':return snapshot;
-      case 'card':return {...card};
+      case 'card':return request.path===card.path?{...card}:{...snapshot.cards.find(c=>c.path===request.path)!,body:''};
+      case 'create':{
+        const created={id:'created',path:'Ideas/untitled.md',name:'untitled',revision:'new',legacy:false};
+        assert.equal(request.place,false,'Explorer creation requests automatic placement');
+        snapshot={...snapshot,cards:[...snapshot.cards,created],boards:snapshot.boards.map(b=>b.folder==='Ideas'?{...b,cards:[...b.cards,{id:'created-placement',cardId:created.id,x:500,y:60,width:340,height:280,collapsed:true}]}:b)};
+        return {snapshot,edits:[{path:created.path,before:null,after:'New note'}]};
+      }
       case 'query':return [];
       case 'preferences':snapshot={...snapshot,preferences:{...snapshot.preferences!,...request.patch}};return snapshot;
       case 'saveCard':{
@@ -41,6 +47,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   try {
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     assert.equal(document.querySelectorAll('.dock-rail').length,2);
+    assert.equal(document.querySelector('.file-tree [data-file-key="card:loose"]'),null,'root notes remain outside whiteboard navigation');
     assert.ok(!requests.includes('migrateRoot'),'opening the workspace never moves files');
     assert.ok(!document.querySelector('.workspace-menu'),'workspace selector is no longer in the titlebar');
     assert.ok(!document.querySelector('[data-tooltip="Expand assets"]'),'ordinary folders stay out of whiteboard mode');
@@ -93,6 +100,12 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>root.render(<App/>));await settle();
     assert.equal(document.querySelectorAll('.note-pane').length,2,'splits survive renderer reload');
     assert.equal(session.state.error,'');
+    await click('.file-tree [data-file-key="board:Ideas"] .file-button');
+    await click('.file-tree [aria-label="Add in Ideas"]');
+    const newNote=[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='New note')!;
+    await act(async()=>newNote.click());await settle();
+    assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')?.textContent,'untitled.md','Explorer creation opens the note even when its board is active');
+    assert.equal(snapshot.boards.find(b=>b.folder==='Ideas')?.cards.at(-1)?.collapsed,true);
   } finally {
     await act(async()=>root.unmount());session.dispose();dom.window.close();
   }

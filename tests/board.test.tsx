@@ -163,3 +163,32 @@ test('saving a 200-card board preserves existing preview DOM and scroll position
     assert.ok(previews.every(p=>p.scrollTop===75));assert.equal(reads,200,'saving geometry does not reload card bodies');
   } finally {await act(async()=>root.unmount());dom.window.close();}
 });
+
+test('collapsed cards use cached titles without loading bodies and expand without losing size or position',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+  const {Whiteboard,isVisible}=await import('../src/renderer/Board');
+  const {useState}=await import('react');
+  const cards=Array.from({length:200},(_,i)=>({id:`c${i}`,path:`Ideas/${i}.md`,name:String(i),title:i===0?'A cached title':undefined,revision:'r',legacy:false}));
+  let reads=0;
+  window.door={assetUrl:path=>path,request:async request=>{reads++;return {...cards.find(c=>c.path===('path' in request?request.path:''))!,body:'# A cached title\n\nFull body'};}} as typeof window.door;
+  const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:cards.map((c,i)=>({id:`p${i}`,cardId:c.id,x:i%20*60,y:Math.floor(i/20)*60,width:340,height:280,collapsed:true})),edges:[]};
+  let latest=board;
+  function Fixture(){const [value,setValue]=useState(board);return <Whiteboard board={value} cards={cards} onOpen={()=>undefined} onCreate={()=>undefined} onSave={next=>{latest=next;setValue(next);}}/>;}
+  const root=createRoot(document.getElementById('root')!);
+  try{
+    await act(async()=>root.render(<Fixture/>));
+    assert.equal(document.querySelectorAll('.board-card.collapsed').length,200);assert.equal(reads,0);
+    const first=document.querySelector<HTMLElement>('[data-placement="p0"]')!;
+    assert.equal(first.querySelector('.card-grip-label')?.textContent,'A cached title');assert.equal(first.style.height,'40px');
+    assert.equal(document.querySelector('[data-placement="p1"] .card-grip-label')?.textContent,'1.md');
+    assert.equal(first.querySelector('.resize-handle'),null);
+    await act(async()=>first.querySelector<HTMLButtonElement>('[aria-label="Expand card"]')!.click());
+    assert.equal(reads,1);assert.equal(first.style.height,'280px');assert.ok(first.querySelector('.card-preview'),'expansion mounts the full preview');
+    assert.deepEqual([latest.cards[0].x,latest.cards[0].y,latest.cards[0].height],[0,0,280]);
+    await act(async()=>first.querySelector<HTMLButtonElement>('[aria-label="Collapse card"]')!.click());
+    assert.equal(first.style.height,'40px');assert.equal(first.querySelector('.card-preview'),null);assert.equal(latest.cards[0].collapsed,true);
+    assert.equal(isVisible({...board.cards[0],y:-100},{x:0,y:0,zoom:1},1000,800,0),false,'visibility uses the collapsed footprint');
+    assert.equal(isVisible({...board.cards[0],y:-100,collapsed:false},{x:0,y:0,zoom:1},1000,800,0),true);
+  }finally{await act(async()=>root.unmount());dom.window.close();}
+});

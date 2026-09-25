@@ -26,7 +26,7 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 | Data | Owner and location |
 | --- | --- |
 | Card content and stable identity | `.md`, YAML `card-id`; `src/core/format.ts` |
-| Placement identity, geometry and edges | `.whiteboard`; `src/core/format.ts` |
+| Placement identity, geometry, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
 | Tag definitions | `.tag`, indexed by `Workspace` |
 | Theme, naming, icons, Explorer mode, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
 | Search, backlinks and file revisions | Rebuildable SQLite index under Electron user data |
@@ -36,7 +36,9 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 
 The Markdown files are authoritative. Indexing compares content hashes and reuses unchanged entries. Chokidar batches filesystem notifications; worker operations and watcher refreshes are serialized. Settings writes and file replacement use temporary files. Multi-file edits retain a recovery journal outside the workspace until completion.
 
-Only folders containing a successfully parsed `.whiteboard` are whiteboards. The root additionally has a virtual mother whiteboard. Ordinary folders such as `assets/` do not become boards just because they exist. A board beneath ordinary folders appears under its nearest whiteboard ancestor. Board placements and card identities remain separate.
+Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must match exactly and the file must parse successfully. On open, a missing `<workspace-name>.whiteboard` is created at the root; an invalid existing file is preserved and reported. The mother view contains only sub-whiteboards. Ordinary folders such as `assets/` do not become boards just because they exist. A board beneath ordinary folders appears under its nearest whiteboard ancestor. Board placements and card identities remain separate. The full membership and collapse contract is in [whiteboards.md](whiteboards.md).
+
+`Workspace.automaticPlacements` adds missing direct-child cards to the folder's matching board. Internal note creation and its placement share one revision-checked recovery transaction and undo entry. Watcher batches update the index before reconciling affected folders; startup reconciles all boards. Only board metadata is amended when an external note is discovered. The folder index avoids rescanning all notes per change. First H1 titles are cached in the derived card index so collapsed rendering needs no body requests.
 
 ## Renderer map
 

@@ -1,0 +1,72 @@
+# Whiteboard folders and card membership
+
+This is the implemented contract. `src/core/workspace.ts` owns recognition and membership; `src/core/format.ts` owns serialization; `src/renderer/Board.tsx` owns canvas rendering.
+
+## One matching file per folder
+
+```text
+My workspace/
+  My workspace.whiteboard       mother whiteboard
+  Ideas/
+    Ideas.whiteboard            makes Ideas a whiteboard
+    first.md                    belongs to Ideas
+    external.md                 also belongs to Ideas
+    Research/
+      Research.whiteboard       sub-whiteboard
+      paper.md                  belongs to Research, not Ideas
+  _assets/
+    figure.png                  ordinary folder, omitted in whiteboard mode
+    source.md                   accessible in file mode; no automatic placement
+  Other/
+    wrong-name.whiteboard       does not make Other a whiteboard
+```
+
+The filename must be `<folder-name>.whiteboard`, with exact spelling and case, and its content must parse. A different `.whiteboard` filename remains an ordinary file available in file mode. Renaming a folder externally requires renaming its board file to match. Membership follows direct directory children, not recursive descendants. An actual whiteboard beneath ordinary directories appears under its nearest whiteboard ancestor in navigation.
+
+The workspace folder name supplies the mother board's displayed name and metadata filename. The app creates that metadata file if missing, without moving notes. A malformed existing file is preserved and reported. The mother canvas contains only sub-whiteboards. Existing or externally added root notes remain accessible in file mode; **Organize root cards** explicitly moves them into a free `Notes/Notes.whiteboard` (or numbered name). Migration preserves a single old root card layout, IDs and supported relative attachment links, and creates history/recovery copies. Multiple root layouts or unsupported incoming links require manual attention rather than a guessed merge.
+
+## Every direct card appears
+
+A valid `.md` file directly inside a whiteboard folder must have a placement on that board. This applies to canvas creation, Explorer creation, external creation and discovery on reopen. Card identity prevents duplicate insertion when the same ID already has a placement. A moved card with a stable `card-id` retains existing references; its new parent board gains an owned placement. Removing a direct card's placement cannot hide that file: reconciliation restores a placement. The UI disables **Remove reference** for owned cards and sub-whiteboards.
+
+References to cards in other folders remain optional placements and may be removed without deleting notes. A deleted note leaves a recognizable missing reference. Invalid Markdown/frontmatter is reported rather than silently rewritten. Imported notes without a `card-id` receive a provisional path-based identity; discovery preserves their bytes, and the ID is written when they are edited. External renames of such ID-less notes cannot preserve their identity until an ID is stored.
+
+## Default column and collapse
+
+- Canvas creation uses the chosen coordinates and an expanded 340 × 280 card.
+- Other newly discovered cards use a collapsed 340 × 40 title row. The first top-level H1 supplies the title, with formatting removed; filename is the fallback. The full path remains available on hover.
+- On first automatic insertion, the board records `inbox: {x, y}`. It starts 80 canvas units to the right of existing content, with `y: 60`; an empty board starts at `x: 80`.
+- New arrivals append below placements overlapping that column, with a 12-unit gap. The anchor persists, so later discoveries and restarts do not move existing cards. Batch discovery uses filename order; later arrivals append regardless of alphabetical position.
+- Collapse is per placement, stored as optional `collapsed: true/false`. Omitted means expanded. The existing `width` and `height` retain the expanded dimensions. Collapse/expand changes neither note content nor position, and participates in shared undo and persistent history.
+- The chevron toggles state; double-clicking a collapsed title expands it. Expanded cards retain in-place editing. Expansion restores the saved height without rearranging neighbors, so it can overlap the next collapsed row; users can drag it to a working area.
+- Collapsed placements mount neither preview bodies nor editors. Titles come from the index. Hit testing, selection, connections, visibility and fit-to-board use the displayed 40-unit height.
+
+## File example
+
+The format remains version 1 with optional collapse and intake-column fields. Membership links and layout placement IDs must agree:
+
+```markdown
+---
+whiteboard: true
+whiteboard_version: 1
+---
+# Ideas
+
+## Cards
+- [Card](card:stable-card-id) ^placement-id
+
+%% whiteboard-layout
+{
+  "version": 1,
+  "cards": [{"id": "placement-id", "x": 520, "y": 60, "width": 340, "height": 280, "collapsed": true}],
+  "edges": [],
+  "inbox": {"x": 520, "y": 60}
+}
+%%
+```
+
+## Writes and verification
+
+Internal note creation and automatic placement are one revision-checked transaction and one undo action. External discovery changes only the matching `.whiteboard`; the externally authored `.md` remains untouched. A batched watcher updates the incremental index before reconciliation. Startup handles changes made while the app was closed. Board revision conflicts stop a write instead of replacing unseen edits. Geometry already present in the board is preserved.
+
+`tests/workspace.test.ts` covers recognition, external discovery, persistent placement, grouped undo, rename identity and revision conflicts. `tests/board.test.tsx` checks 200 collapsed cards without body reads and expansion without geometry loss, alongside the existing 200-preview and drag regressions. `tests/shell.test.ts` covers root migration and recovery.

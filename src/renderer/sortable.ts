@@ -26,7 +26,9 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
     let phantom:HTMLElement|null=null,placeholder:HTMLElement|null=null,active=false,ended=false,last=start,direction=0,x=event.clientX,y=event.clientY,frame=0;
     const animations=new Map<HTMLElement,Animation>();
     const duplicate=[...list.querySelectorAll<HTMLElement>('[data-file-key]')].find(el=>el!==source&&el.dataset.fileKey===key);
-    const inside=()=>{const r=list.getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;};
+    const area=list.closest<HTMLElement>('[data-bookmark-target]')??list;
+    const scroller=list.closest<HTMLElement>('.nav-bottom')??list;
+    const inside=()=>{const r=area.getBoundingClientRect(),clip=scroller.getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=Math.max(r.top,clip.top)&&y<=Math.min(r.bottom,clip.bottom);};
     const rows=()=>[...list.querySelectorAll<HTMLElement>(':scope > [data-file-key]')].filter(el=>el!==source&&el.dataset.fileKey!==key);
     const place=(before:HTMLElement|null)=>{
       if(!placeholder)return;
@@ -40,10 +42,9 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
     const update=()=>{
       if(!active||!phantom)return;
       if(!source.isConnected){finish(false);return;}
-      const coordinate=vertical?y:x,r=list.getBoundingClientRect(),inList=inside();
+      const coordinate=vertical?y:x,r=area.getBoundingClientRect(),inList=inside();
       const size=vertical?rect.height:rect.width,min=vertical?r.top:r.left,max=(vertical?r.bottom:r.right)-size;
       phantom.style[vertical?'top':'left']=(inList?Math.max(min,Math.min(max,coordinate-offset)):coordinate-offset)+'px';
-      list.classList.toggle('drop-target',inList);
       document.body.dataset.bookmarkDrop=inList?'star':fromStarred?'remove':'';
       if(inList){
         if(!placeholder!.isConnected){const before=rows().find(row=>{const r=row.getBoundingClientRect();return coordinate<(vertical?r.top+r.height/2:r.left+r.width/2);});place(before??null);}
@@ -61,9 +62,9 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
     const tick=()=>{
       if(!active||ended)return;
       if(inside()){
-        const r=list.getBoundingClientRect(),coordinate=vertical?y:x,min=vertical?r.top:r.left,max=vertical?r.bottom:r.right;
+        const r=scroller.getBoundingClientRect(),coordinate=vertical?y:x,min=vertical?r.top:r.left,max=vertical?r.bottom:r.right;
         const delta=coordinate<min+22?-5:coordinate>max-22?5:0;
-        if(delta){const old=vertical?list.scrollTop:list.scrollLeft;if(vertical)list.scrollTop+=delta;else list.scrollLeft+=delta;if(old!==(vertical?list.scrollTop:list.scrollLeft)){direction=delta;update();}}
+        if(delta){const old=vertical?scroller.scrollTop:scroller.scrollLeft;if(vertical)scroller.scrollTop+=delta;else scroller.scrollLeft+=delta;if(old!==(vertical?scroller.scrollTop:scroller.scrollLeft)){direction=delta;update();}}
       }
       frame=requestAnimationFrame(tick);
     };
@@ -87,7 +88,7 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       if(ended)return;ended=true;
       let index:number|null=null;
       if(save&&active&&inside()&&placeholder?.parentElement===list)index=[...list.children].slice(0,[...list.children].indexOf(placeholder)).filter(el=>el instanceof HTMLElement&&el.dataset.fileKey&&el!==source&&el.dataset.fileKey!==key).length;
-      cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();list.classList.remove('drop-target');document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;
+      cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;
       document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',keyboard,true);window.removeEventListener('blur',abort);cancel.current=()=>{};
       if(active){document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
       if(save&&active)onCommit.current(key,index,fromStarred);
