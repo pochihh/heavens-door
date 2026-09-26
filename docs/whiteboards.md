@@ -49,7 +49,7 @@ Unselected cards cannot scroll their content; their wheel input follows normal c
 
 Expanded card content stays formatted from 20% through 300% zoom. There is no distant title-only rendering mode. Navigation paints one world transform per frame and updates the overscanned card set only after significant motion or settling. Offscreen cards unmount except the active editor or dragged placements. Mounted previews retain their DOM during zoom and geometry saves. A per-view cache holds up to 256 revision-keyed previews of up to 32,000 characters each; oversized previews still render, but are not cached after unmount. Local images use browser lazy loading. No additional editor instances are mounted for previews.
 
-Whiteboard tiles show the board name, separate card/whiteboard counts, and up to six labeled child placements plus a remaining count. They use the existing snapshot/index, including cached H1 titles and missing-card fallbacks, without recursive board rendering or child-body reads.
+Whiteboard tiles show an inline icon/name header, card and whiteboard counts below, and a compact grid of child titles. Miniature cards are 88 × 34 canvas units, with 12-unit column gaps, 8-unit row gaps and single-line ellipsis. They have a neutral fill and rounded corners; only nested whiteboards carry a map icon. The grid clips at the tile’s lower inset without scrolling. Resizing reveals more rows/columns, with only enough indexed items mounted to fill the visible area (including a partially clipped last row). They use the existing snapshot/index, including cached H1 titles and missing-card fallbacks, without recursive board rendering or child-body reads.
 
 ## Empty and editable titles
 

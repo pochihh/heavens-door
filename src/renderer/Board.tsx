@@ -316,6 +316,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
           const childBoard = p.folder ? boardLookup.get(p.folder) : undefined;
           const nestedCount = childBoard?.cards.filter(child => child.folder).length ?? 0;
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
+          // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
+          const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''}`}
             data-tooltip={p.folder ?? card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed?'auto':p.height }}
             onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
@@ -328,13 +330,12 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip="Reference to a card in another whiteboard" aria-label="Card reference"><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
-                  <Icon name="map" size={26}/>
+                  <div className="board-tile-title"><Icon name="map" size={18}/><strong>{p.folder.split(/[\\/]/).at(-1)}</strong></div>
+                  <small>{childBoard ? `${cardCount} card${cardCount===1?'':'s'} · ${nestedCount} whiteboard${nestedCount===1?'':'s'}` : 'Missing whiteboard'}</small>
                   <Tool icon="external" label="Open whiteboard" onClick={()=>onOpenFolder?.(p.folder!)}/>
-                  <div className="board-tile-title"><strong>{p.folder.split(/[\\/]/).at(-1)}</strong><small>{childBoard ? `${cardCount} card${cardCount===1?'':'s'}${nestedCount ? ` · ${nestedCount} whiteboard${nestedCount===1?'':'s'}` : ''}` : 'Missing whiteboard'}</small></div>
                 </div>
                 <div className="board-tile-contents" aria-label="Whiteboard contents preview">
-                  {childBoard?.cards.slice(0,6).map(child => <span className="board-tile-item" key={child.id}><Icon name={child.folder?'map':'note'} size={14}/><span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||'Missing card'}</span></span>)}
-                  {!!childBoard && childBoard.cards.length>6 && <span className="board-tile-more">+{childBoard.cards.length-6} more</span>}
+                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||'Missing card'}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
                 <CardEditor path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
