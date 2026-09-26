@@ -17,7 +17,7 @@ One worker per canonical workspace root
   Workspace: files, rebuildable SQLite index, Git checkpoints
 ```
 
-`src/main.ts` owns windows and caches workers by the folder's real path. Windows for the same workspace share one index and mutation queue. Each window keeps its own focused editor, document tabs, split layout, scroll positions and board cameras. Side-dock arrangements are shared through workspace preferences. Idle workers currently live until application quit.
+`src/main.ts` owns windows and caches workers by the folder's real path. Windows for the same workspace share one index and mutation queue. Each window keeps its own focused editor, Main Dock tabs, split layout, scroll positions and board cameras. Side-dock arrangements are shared through workspace preferences. Idle workers currently live until application quit.
 
 The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/shared.ts`. Main-process handlers validate the sending window and frame; the worker validates command payloads. Workspace paths reject traversal and symlinks. The asset protocol serves supported local images within an opened workspace. Remote images are not fetched.
 
@@ -28,7 +28,7 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 | Card content and stable identity | `.md`, YAML `card-id`; `src/core/format.ts` |
 | Placement identity, geometry, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
 | Tag definitions | `.tag`, indexed by `Workspace` |
-| Theme, naming, icons, dock/document layouts, module navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
+| Theme, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
 | Search, backlinks and file revisions | Rebuildable SQLite index under Electron user data |
 | Persistent checkpoints and branches | The workspace's app-managed `.git`; `src/core/history.ts` |
 | Registered workspace paths | `workspaces.json` under Electron user data; `src/core/registry.ts` |
@@ -43,10 +43,10 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 
 | File | Responsibility |
 | --- | --- |
-| `App.tsx` / `src/layout.ts` | Desktop shell; shared validated document/dock layout data and operations |
-| `Docks.tsx` | Equal side docks, module tabs, panel groups, resizing and module/group dragging |
+| `App.tsx` / `src/layout.ts` | Desktop shell; shared validated Main Dock/Side Dock layout data and operations |
+| `Docks.tsx` | Equal Side Docks, View tabs, Tab Groups, resizing and View/group dragging |
 | `WorkspaceMenu.tsx` | Bottom-left workspace switcher and workspace manager |
-| `Explorer.tsx` | Whiteboard/file explorer, tags, search and saved-list modules with shared context actions |
+| `Explorer.tsx` | Whiteboard/file explorer, tags, search and saved-list Views with shared context actions |
 | `documents.ts` | Snapshot-scoped identity/path maps; avoids a full card search for every row |
 | `Icons.tsx` / `IconPicker.tsx` | Named Lucide imports and lazy, locally bundled Emoji Mart picker |
 | `Overlays.tsx` | Delegated hover/focus tooltip and keyboard-accessible action menu |
@@ -61,7 +61,7 @@ Explorer's whiteboard tree uses the index snapshot. Physical-file mode enumerate
 
 ## Editing, switching and recovery
 
-A `Session` serializes app commands. UI preference patches are debounced for 250ms, merged by module for navigation state, and flushed before close/reload/workspace switching. Failed writes retain pending preferences for retry; callbacks from an old workspace are ignored. Static layout JSON is independent of the rebuildable index. See [UI terminology and state ownership](ui-terminology.md). Draft saves retain keystrokes arriving during an earlier save. Every persisted edit checks the observed revision; external conflicts preserve the draft. Undo groups nearby typing and shares the command order with board edits. Board movement updates DOM transforms while dragging and persists final geometry once the gesture ends. Its document-level pointer handlers tolerate losing pointer capture.
+A `Session` serializes app commands. UI preference patches are debounced for 250ms, merged by View for navigation state, and flushed before close/reload/workspace switching. Failed writes retain pending preferences for retry; callbacks from an old workspace are ignored. Static layout JSON is independent of the rebuildable index. See [UI terminology and state ownership](ui-terminology.md). Draft saves retain keystrokes arriving during an earlier save. Every persisted edit checks the observed revision; external conflicts preserve the draft. Undo groups nearby typing and shares the command order with board edits. Board movement updates DOM transforms while dragging and persists final geometry once the gesture ends. Its document-level pointer handlers tolerate losing pointer capture.
 
 Switching workspaces first flushes the current draft. While opening, the workspace UI is inert. Main attaches the new worker only after it has opened successfully, and the renderer clears session undo only after receiving the new snapshot. An unavailable workspace leaves the previous workspace selected. Registered paths are canonicalized, deduplicated and written atomically. Registration is local to the desktop application; appearance and navigation preferences belong to each workspace.
 

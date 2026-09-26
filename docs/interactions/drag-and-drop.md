@@ -39,14 +39,14 @@ The plugin reference committed some cancel events. This app intentionally cancel
 For a future property editor, preserve keyboard editing and start dragging only on the property label/grip. Editable controls must never accidentally begin a reorder. Update this specification and its runnable regression whenever the gesture changes.
 
 
-## Module tabs and panel groups
+## Side Dock tabs and Tab Groups
 
 Implementation: `src/renderer/Docks.tsx` and shared `src/layout.ts`. Regression: `tests/docks.test.tsx`.
 
-Dock rearrangement uses native HTML drag-and-drop with `application/heavens-module`, separate from the pointer-based bookmark sorter and document-tab transfer. Drag a module tab to move one module; drag a group's grip to move all its tabs. Every module has exactly one placement across the two docks.
+Dock rearrangement uses native HTML drag-and-drop with `application/heavens-module`, separate from the pointer-based bookmark sorter and Main Dock tab transfer. Drag a Side Dock tab to move one View; drag a group's grip to move all its tabs. Each Side Dock View currently has exactly one placement across the Left and Right Side Docks. These are distinct from Main Dock tabs, which can display the same file in several Tab Groups.
 
-A tab-strip drop merges groups or inserts/reorders a module before a targeted tab. Top/bottom content drop zones create vertical panel groups. Collapsed or empty docks expose a narrow target while a drag is active. The destination dock expands after a successful drop. A source group disappears only if it has no modules left. Drops cannot move file content.
+A tab-strip drop merges groups or inserts/reorders a View tab before a targeted tab. Top/bottom content drop zones create vertical Tab Groups. Collapsed or empty docks expose a narrow target while a drag is active. The destination dock expands after a successful drop. A source group disappears only if it has no tabs left. Drops cannot move file content.
 
 Only the completed drop saves a layout change. Drag end, Escape or blur without a drop clears transient targets. An explicit drop-zone highlight is used here; it does not change the bookmark rule prohibiting a highlighted Starred section. The group menu offers equivalent move/split/merge operations without dragging.
 
-Panel-group splitters preview adjacent weights while held and persist on release; pointer cancellation restores the starting proportions. Arrow keys resize them too. Layout writes are batched independently of card/board content and use workspace preferences, not session undo.
+Tab Group splitters preview adjacent weights while held and persist on release; pointer cancellation restores the starting proportions. Arrow keys resize them too. Layout writes are batched independently of card/board content and use workspace preferences, not session undo.

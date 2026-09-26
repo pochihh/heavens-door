@@ -18,7 +18,7 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 
 ## Using the preview
 
-- Click inside a whiteboard card to edit it in place. Drag its header to move it; text remains selectable. Escape or clicking empty canvas finishes editing. Clicking a card in Explorer opens its full-page editor. Edits save after a short pause. Frontmatter stays hidden.
+- Click inside a whiteboard card to edit it in place. Drag its header to move it; text remains selectable. Escape or clicking empty canvas finishes editing. Clicking a card in Explorer opens its Card View in the Main Dock. Edits save after a short pause. Frontmatter stays hidden.
 - Drag a card’s header to move it, or its lower-right handle to resize it. Navigation follows the Obsidian whiteboard plugin: mouse wheel zooms at the pointer; two-finger trackpad scrolling pans; pinch zooms. Middle-drag or Space + left-drag pans; right-drag pans from empty canvas. Left-drag on empty canvas selects a region. Shift-click adds cards and Cmd/Ctrl-click toggles them; drag a selected card’s header to move the group.
 - Scrollable card content consumes wheel input while it can scroll in that direction. At its boundary the board handles the wheel. Zoom supports 20–300%, editable percentage, Cmd/Ctrl + `+`/`-`, `0` for 100%, and `1` to fit. Distant cards use simplified previews.
 - Select one card and **Connect**, then select another. **Remove reference** removes a reference to a card from another folder and its connections. Direct-child cards always belong to their folder’s board. The Markdown file remains.
@@ -29,17 +29,19 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 - ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z undo or redo card and board changes in one chronological session history. Typing close together is grouped.
 - ⌘S / Ctrl+S saves a workspace Git checkpoint. The app also checkpoints after five idle minutes. Select a checkpoint in **History** to restore the whole workspace. Later checkpoints remain reachable; new edits continue on a new branch.
 - Change the default `untitled` filename base in **Workspace settings**. Headings and filenames are independent.
-- Explorer, Starred and Recent open files in the active pane. Reopening a file selects its existing tab. Use the pane dropdown to split right or down; the same file may be open in several panes, with independent scroll/zoom positions and shared edits. Drag tabs between panes. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent document panes.
+- Explorer, Starred and Recent open files in the active Main Dock Tab Group. Reopening a file selects its existing tab. Use the group dropdown (currently labelled **Pane actions**) to split right or down; the same file may be open in several Tab Groups, with independent scroll/zoom positions and shared edits. Drag tabs between groups. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent Main Dock Tab Groups.
 - **File → New Window** opens another workspace; **New Window for This Workspace** shares the current one. Workspace windows share one index/write queue; conflicting concurrent drafts remain recoverable. Appearance, default filenames, starred/recent entries and icons are stored in that workspace's `.heavens-door/settings.json`. Change an icon from the document breadcrumb. Root migration requires other windows for that workspace to be closed.
 
-## Side docks and navigation
+## Docks and navigation
 
-The activity bar on the far left reveals modules wherever they are placed. Both side docks can collapse, contain vertically stacked panel groups, and host several module tabs per group. Drag a module tab or a group's grip to rearrange them; use the group's **…** menu for move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
+The **Main Dock** holds Whiteboard View, Card View and other content views in tabs and splits. **Left Side Dock** and **Right Side Dock** hold supporting Views. A **Workspace** is the local folder together with its settings and saved interface layout. See the [terminology guide](docs/ui-terminology.md) for definitions.
+
+The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab or a group's grip to rearrange them; use the group's **…** menu for move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
 
-The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider; removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate module tabs; File explorer includes attachments and hidden files. Folder rows show **+** on hover for a sub-whiteboard or note. **…** and right-click use the same menu.
+The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider; removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate Views; File explorer includes attachments and hidden files. Folder rows show **+** on hover for a sub-whiteboard or note. **…** and right-click use the same menu.
 
 Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological. Both lists share one scroller; an empty Starred header is still a drop target.
 
