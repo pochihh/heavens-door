@@ -79,7 +79,7 @@ The bottom-left workspace switcher lists registered workspaces with the current 
 
 Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological. Both lists share one scroller; an empty Starred header is still a drop target.
 
-Change a document icon from its breadcrumb or context menu. Lucide supplies the standard icons; the searchable Emoji Mart picker works offline. Hover controls or focus them with the keyboard for tooltips.
+Change a document icon from its breadcrumb or context menu. Lucide supplies the standard icons; the searchable Emoji Mart picker works offline. Hover controls for tooltips. Icon buttons retain accessible names for keyboard and assistive-technology users.
 
 Physical-file mode opens indexed notes/boards/tags normally, images as previews, and text as read-only source (up to 2 MiB). PDFs and other binaries can be revealed in the system file manager. It does not yet rename, delete or move files.
 
@@ -90,6 +90,7 @@ Physical-file mode opens indexed notes/boards/tags normally, images as previews,
 - [Design system](docs/design-system.md)
 - [Whiteboard folders, membership and collapsed cards](docs/whiteboards.md)
 - [Shared drag-and-drop specification](docs/interactions/drag-and-drop.md)
+- [Menu and tooltip interaction guideline](docs/interactions/menus-and-tooltips.md)
 
 ## Files and safeguards
 
