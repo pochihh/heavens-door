@@ -25,7 +25,7 @@ test('opening and switching formatted cards never writes content or uses a destr
   } finally {await act(async () => root.unmount());}
 });
 
-test('card bodies edit in place with one pinned editor, while card chrome still drags',async () => {
+test('card bodies edit only after a click, drag without opening an editor, and retain text selection while editing',async () => {
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
@@ -37,10 +37,10 @@ test('card bodies edit in place with one pinned editor, while card chrome still 
   const cards=[0,1].map(i => ({id:`c${i}`,path:`card${i}.md`,name:`Card ${i}`,revision:'r',legacy:false,body:`# Card ${i}\n\nEdit this text.\n`}));
   window.door={assetUrl:path => `heavens-asset://vault/${path}`,request:async request => cards.find(c => c.path === ('path' in request ? request.path : ''))} as typeof window.door;
   const board={path:'board.whiteboard',folder:'',name:'Board',revision:'r',cards:cards.map((c,i) => ({id:`p${i}`,cardId:c.id,x:i*400,y:0,width:340,height:280})),edges:[]};
-  let saves=0;
+  let saves=0,opens=0;
   function Fixture() {
     const [draft,setDraft]=useState<{card:typeof cards[number];body:string}|null>(null);
-    return <Whiteboard board={board} cards={cards} draft={draft} onSave={() => {saves++;}} onOpen={path => {const card=cards.find(c => c.path === path)!;setDraft({card,body:card.body});}} onCreate={() => assert.fail('editing must not create a card')} onEdit={body => setDraft(d => d && {...d,body})} onFinish={() => setDraft(null)}/>;
+    return <Whiteboard board={board} cards={cards} draft={draft} onSave={() => {saves++;}} onOpen={path => {opens++;const card=cards.find(c => c.path === path)!;setDraft({card,body:card.body});}} onCreate={() => assert.fail('editing must not create a card')} onEdit={body => setDraft(d => d && {...d,body})} onFinish={() => setDraft(null)}/>;
   }
   const root=createRoot(document.getElementById('root')!);
   try {
@@ -49,6 +49,8 @@ test('card bodies edit in place with one pinned editor, while card chrome still 
     for (const id of ['p0','p1','p0']) {
       const preview=document.querySelector(`[data-placement="${id}"] .card-preview`)!;
       await act(async () => {pointer(preview,'pointerdown',100,100);});
+      assert.equal(document.querySelectorAll('.tiptap').length,0,'pointer-down must not mount an editor');
+      await act(async()=>{pointer(preview,'pointermove',101,101);pointer(preview,'pointerup',101,101);});
       assert.equal(document.querySelectorAll('.tiptap').length,1);
       assert.ok(document.querySelector(`[data-placement="${id}"] .card-editor .tiptap`));
       assert.equal(document.querySelector('.editor-pane'),null);
@@ -68,9 +70,18 @@ test('card bodies edit in place with one pinned editor, while card chrome still 
     });
     await act(async () => {pointer(canvas,'pointerdown',0,500);pointer(canvas,'pointerup',0,500);});
     assert.equal(document.querySelector('.tiptap'),null,'clicking the canvas finishes editing');
+    const preview=document.querySelector('.card-preview')!,before=opens;
+    await act(async()=>{pointer(preview,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
+    assert.equal(opens,before,'dragging the preview never activates editing');assert.equal(saves,1);
+    await act(async()=>{pointer(preview,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',100,100);});
+    assert.equal(opens,before,'a drag returning to its starting point is still not a click');assert.equal(saves,2);
+    await act(async()=>{pointer(preview,'pointerdown',100,100);pointer(canvas,'pointercancel',100,100);pointer(canvas,'pointerup',100,100);});
+    assert.equal(opens,before,'cancelled presses do not edit');assert.equal(saves,2);
+    await act(async()=>{pointer(preview,'pointerdown',100,100);pointer(canvas,'pointerup',185,100);});
+    assert.equal(opens,before,'a fast drag with no move event still does not edit');assert.equal(saves,3);
     const grip=document.querySelector('.board-card')!;
     await act(async () => {pointer(grip,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
-    assert.equal(saves,1,'card chrome remains draggable');
+    assert.equal(saves,4,'card chrome remains draggable');
   } finally {await act(async () => root.unmount());}
 });
 

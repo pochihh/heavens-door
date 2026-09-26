@@ -48,6 +48,7 @@ interface Props {
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
   board: Board; camera: Camera; rect: DOMRect; additive: boolean; initialSelection: string[];
+  moved: boolean; editOnClick?: {id:string;focus:EditorFocus};
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
 
@@ -158,7 +159,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
     gesture.current = { type, ids, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: pendingSave.current ?? current,
       camera: { ...nav.current }, rect: element.getBoundingClientRect(),
-      additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected };
+      additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected, moved:false };
     // Keep card clicks on the card; viewport capture would turn double-clicks into card creation.
     e.currentTarget.setPointerCapture(e.pointerId);
     if (type === 'pan') element.dataset.panning = 'true';
@@ -190,19 +191,11 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       e.preventDefault(); e.stopPropagation(); return;
     }
     const body=(e.target as HTMLElement).closest<HTMLElement>('.card-preview');
-    if (body) {
-      const placement=current.cards.find(p => p.id === id), card=placement && lookup.get(placement.cardId);
-      if (card) {
-        e.preventDefault(); e.stopPropagation();
-        if(placement.collapsed)toggleCollapsed(placement);
-        setSelected([id]); setEditingPlacement(id);
-        setFocusPoint({x:e.clientX,y:e.clientY,scrollTop:body.scrollTop}); onOpen(card.path);
-      }
-      return;
-    }
     onFinish?.();
     const ids = selected.includes(id) ? selected : [id];
     setSelected(ids); begin(e, 'move', ids);
+    // Like obsidian-whiteboard: a press is a pending drag; edit only on a quiet release.
+    if(body&&selected.length<2)gesture.current!.editOnClick={id,focus:{x:e.clientX,y:e.clientY,scrollTop:body.scrollTop}};
   }
   function selectRegion(g: Gesture, x: number, y: number) {
     const left = Math.min(g.x, x) - g.rect.left, top = Math.min(g.y, y) - g.rect.top;
@@ -221,9 +214,10 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   function move(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
     const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    g.moved ||= Math.abs(dx) + Math.abs(dy) > 3;
     if (g.type === 'pan') navigation.current!.set({ ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy });
-    else if (g.type === 'select') { if (Math.abs(dx) + Math.abs(dy) > 3) selectRegion(g, e.clientX, e.clientY); }
-    else {
+    else if (g.type === 'select') { if (g.moved) selectRegion(g, e.clientX, e.clientY); }
+    else if(g.moved) {
       dragPoint.current = { x: e.clientX, y: e.clientY };
       if (dragFrame.current === null) dragFrame.current = viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(() => {
         dragFrame.current = null;
@@ -233,7 +227,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   }
   function end(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
     const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
-    const moved = Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y) > 3;
+    const moved = g.moved || Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y) > 3;
     if (g.type === 'pan') {
       navigation.current!.set({ ...g.camera, x: g.camera.x + e.clientX - g.x, y: g.camera.y + e.clientY - g.y });
     } else if (g.type === 'select') {
@@ -244,6 +238,13 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
+    if(!moved&&g.editOnClick){
+      const {id,focus}=g.editOnClick,placement=current.cards.find(p=>p.id===id),card=placement&&lookup.get(placement.cardId);
+      if(card){
+        if(placement.collapsed)toggleCollapsed(placement);
+        setSelected([id]);setEditingPlacement(id);setFocusPoint(focus);onOpen(card.path);
+      }
+    }
   }
   function cancel() {
     gesture.current = null; setDragged([]); setWorking(pendingSave.current);
