@@ -33,6 +33,12 @@ Run these commands in the repository folder containing `package.json`.
 
 **View → Reload** refreshes the current window; it does not rebuild source code or restart the main process and workspace workers. **`npm start`** launches the last files built in `dist/`; it does not build them. Use the full quit/build/start sequence when testing new changes.
 
+### Reload or Quit is blocked after closing a View
+
+If you rebuilt while the app was running and now see **Missing workspace module** after closing a Side Dock View, the new UI may be talking to an older workspace worker. The failed layout save also blocks Reload and Quit.
+
+Reopen the closed Views from the **Action Ribbon**, then quit normally so pending changes can save. Rebuild and reopen using the steps above. You can close those Views again after restarting. Reload alone cannot update the running worker.
+
 ### Clean rebuild if the app still looks outdated
 
 Quit all running copies and stop the development server first. From the repository folder, remove the generated build output and rebuild:
