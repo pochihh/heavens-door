@@ -6,10 +6,11 @@ import {tmpdir} from 'node:os';
 import {act,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {defaultDocks,findModule,moveModule,revealModule,resizeGroups,validateDocks,pane,openTab,splitPane,MAX_PANES,MAX_TABS,panes,type Layout,type DockDrag,type Docks} from '../src/layout';
+import {activeAfterRemoval,moveTab,defaultDocks,findModule,moveModule,revealModule,resizeGroups,validateDocks,pane,openTab,splitPane,MAX_PANES,MAX_TABS,panes,type Layout,type ModuleId,type Docks} from '../src/layout';
 import {readPreferences,writePreferences,defaultPreferences,validatePreferences} from '../src/core/preferences';
 import {WorkspaceRegistry} from '../src/core/registry';
 import {SideDock} from '../src/renderer/Docks';
+import {useTabDrag} from '../src/renderer/tab-drag';
 
 test('module layouts keep every module once, persist per workspace, and registration removal keeps files',async t=>{
   const root=await fs.mkdtemp(join(tmpdir(),'heavens-docks-')),one=join(root,'One'),two=join(root,'Two');await fs.mkdir(one);await fs.mkdir(two);
@@ -41,41 +42,83 @@ test('module layouts keep every module once, persist per workspace, and registra
   const registry=new WorkspaceRegistry(join(root,'registered.json'));await registry.register(one);await registry.register(two);await registry.unregister(await fs.realpath(two));assert.equal((await registry.list()).length,1);assert.equal((await fs.stat(two)).isDirectory(),true);
 });
 
-test('dragging module tabs and whole groups moves them between equal docks and cancellation leaves the layout intact',async()=>{
-  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
+test('tab pointer drags preview activation, retain empty sources, respect dock families, and cancel without saving',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const root=createRoot(document.getElementById('root')!);let current=defaultDocks(),writes=0;
-  function Harness(){const [docks,setDocks]=useState(current),[drag,setDrag]=useState<DockDrag|null>(null);const commit=(next:Docks)=>{current=next;writes++;setDocks(next);};return <>{(['left','right'] as const).map(side=><SideDock key={side} side={side} docks={docks} drag={drag} onDrag={setDrag} onChange={commit} onPreview={setDocks} renderModule={m=><div>{m}</div>}/>)}</>;}
-  const data={setData(){},effectAllowed:'',dropEffect:''};
-  const event=async(selector:string,type:string)=>{const el=document.querySelector(selector);assert.ok(el,selector);await act(async()=>{const e=new dom.window.Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'dataTransfer',{value:data});el.dispatchEvent(e);});};
+  const first=pane('a'),second=pane('c');first.tabs=['a','b'];let documents=splitPane(first,first.id,'row',second),documentWrites=0;
+  function Harness(){
+    const [docks,setDocks]=useState(current),[layout,setLayout]=useState(documents);
+    const commit=(next:Docks)=>{if(next===current)return;current=next;writes++;setDocks(next);};
+    const tabs=useTabDrag((source,target)=>{
+      if(source.family==='side')commit(moveModule(current,{module:source.key as ModuleId},{side:target.side!,group:target.group||undefined,position:target.position,beforeTab:target.before as ModuleId|undefined}));
+      else{documents=moveTab(documents,source.group,target.group,source.key,target.before);documentWrites++;setLayout(documents);}
+    });
+    return <>{(['left','right'] as const).map(side=><SideDock key={side} side={side} docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={commit} onPreview={setDocks} renderModule={m=><div>{m}</div>}/>)}{panes(layout).map(p=>{
+      const active=tabs.drag?.group===p.id?activeAfterRemoval(p.tabs,p.active,tabs.drag.key):p.active;
+      return <section key={p.id}><div data-tab-strip data-tab-family="main" data-tab-group={p.id}>{p.tabs.map(key=><div key={key} data-tab-key={key} className={'tab '+(active===key?'active-tab':'')}><button role="tab" onPointerDown={e=>tabs.begin(e,{family:'main',group:p.id,key})}>{key}</button></div>)}</div><div data-test-content={p.id}>{active}</div></section>;
+    })}</>;
+  }
+  const rect=(left:number,top:number,width:number,height:number)=>({left,top,width,height,right:left+width,bottom:top+height,x:left,y:top,toJSON(){}});
+  dom.window.HTMLElement.prototype.getBoundingClientRect=function(){
+    const el=this as HTMLElement;
+    if(el.matches('[data-tab-strip],[data-tab-drop]')){
+      if(el.hasAttribute('data-tab-drop')&&el.dataset.tabGroup)return rect(0,0,0,0);
+      const main=el.dataset.tabFamily==='main',right=el.dataset.dockSide==='right';
+      return rect(main?400:right?800:10,main?(el.dataset.tabGroup===first.id?40:300):(el.dataset.tabGroup==='saved'?240:40),main?220:320,34);
+    }
+    if(el.matches('[data-tab-key],.tab-drop-preview')){
+      const parent=el.parentElement!,r=parent.getBoundingClientRect(),visible=[...parent.children].filter(e=>(e as HTMLElement).style.display!=='none');
+      return rect(r.left+visible.indexOf(el)*80,r.top,80,34);
+    }
+    return rect(0,0,0,0);
+  };
+  const pointer=async(target:Element|Document,type:string,x:number,y:number,id=1)=>{await act(async()=>{const event=new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:id});target.dispatchEvent(event);});};
+  const tab=(key:string)=>document.querySelector<HTMLElement>('.side-dock #tab-'+key)!;
+  const escape=()=>act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+  const mainTab=(group:string,key:string)=>[...document.querySelectorAll<HTMLElement>('[data-tab-family=main]')].find(e=>e.dataset.tabGroup===group)!.querySelector<HTMLElement>('[data-tab-key="'+key+'"] button')!;
   try{
     await act(async()=>root.render(<Harness/>));
-    const selected=()=>document.querySelector<HTMLButtonElement>('[data-group="navigation"] [aria-selected=true]')!;
-    const assertActive=(title:string)=>{
-      assert.equal(selected().getAttribute('aria-label'),title);
-      assert.equal(selected().querySelector('.module-tab-label')?.getAttribute('aria-hidden'),'false');
-      assert.equal(document.getElementById(selected().getAttribute('aria-controls')!)?.getAttribute('aria-labelledby'),selected().id);
-      assert.ok([...document.querySelectorAll('[data-group="navigation"] [aria-selected=false] .module-tab-label')].every(label=>label.getAttribute('aria-hidden')==='true'));
-    };
-    assertActive('Whiteboard explorer');
-    await event('[role=tab][aria-label="File explorer"]','click');assertActive('File explorer');
-    await act(async()=>{selected().focus();selected().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));});
-    assertActive('Tags');assert.equal(document.activeElement,selected());
-    const tab=selected(),strip=tab.parentElement!,tabBounds=tab.getBoundingClientRect,stripBounds=strip.getBoundingClientRect;
-    tab.getBoundingClientRect=()=>({left:90,right:170}) as DOMRect;strip.getBoundingClientRect=()=>({left:0,right:140}) as DOMRect;
-    await act(async()=>{const end=new dom.window.Event('transitionend',{bubbles:true});Object.defineProperty(end,'propertyName',{value:'flex-basis'});tab.dispatchEvent(end);});
-    assert.equal(strip.scrollLeft,30,'the expanding active tab remains visible in a narrow strip');
-    tab.getBoundingClientRect=tabBounds;strip.getBoundingClientRect=stripBounds;
-    await act(async()=>selected().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Home',bubbles:true})));
-    assertActive('Whiteboard explorer');writes=0;
-    await event('[role=tab][aria-label="File explorer"]','dragstart');
-    assert.ok(document.querySelector('[data-dock-drop="right:empty"]'),'a collapsed dock exposes a destination');
-    await event('[data-dock-drop="right:empty"]','dragover');await event('[data-dock-drop="right:empty"]','drop');
-    assert.equal(findModule(current,'files').side,'right');assert.equal(writes,1);
-    await event('[data-group="saved"] [aria-label="Drag panel group"]','dragstart');
-    await event('[data-group="tools"] .module-tab-strip','dragover');await event('[data-group="tools"] .module-tab-strip','drop');
-    assert.equal(findModule(current,'bookmarks').side,'right');assert.equal(findModule(current,'bookmarks').group.id,'tools');assert.equal(current.left.groups.length,1);
-    const before=structuredClone(current);
-    await event('[role=tab][aria-label="Whiteboard explorer"]','dragstart');await event('[role=tab][aria-label="Whiteboard explorer"]','dragend');assert.deepEqual(current,before);assert.equal(writes,2);
-    assert.deepEqual(validateDocks(current),current);
+    assert.equal(document.querySelector('[aria-label="Drag panel group"]'),null);
+    await pointer(tab('whiteboards'),'pointerdown',30,50);await pointer(document,'pointermove',32,51);assert.equal(document.querySelector('.drag-phantom'),null,'ordinary clicks retain the 5px threshold');
+    await pointer(document,'pointermove',100,180);
+    assert.equal(document.querySelectorAll('.drag-phantom').length,1);assert.ok(document.querySelector('.tab-phantom.selected .module-tab-label'));
+    assert.equal(tab('files').getAttribute('aria-selected'),'true','next source tab becomes active');
+    assert.equal(writes,0);assert.ok(document.querySelector('[aria-label="Right dock drop target"]'));
+    await pointer(document,'pointermove',440,50);assert.equal(document.querySelector('.tab-drop-preview'),null,'Side Dock tabs cannot enter Main Dock');
+    await pointer(document,'pointerup',440,50);assert.equal(writes,0);assert.equal(tab('whiteboards').getAttribute('aria-selected'),'true');
+
+    await pointer(tab('whiteboards'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);
+    assert.ok(document.querySelector('.collapsed-dock-target .tab-drop-preview.selected'));
+    assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.top,'40px','Y is locked to the destination strip');
+    await pointer(document,'pointerup',850,50);assert.equal(findModule(current,'whiteboards').side,'right');assert.equal(findModule(current,'files').group.active,'files');assert.equal(writes,1);assert.deepEqual(validateDocks(current),current);
+
+    await pointer(tab('bookmarks'),'pointerdown',30,250);await pointer(document,'pointermove',200,180);
+    assert.ok(document.querySelector('[data-group="saved"] [aria-label="Empty Tab Group"]'),'sole-tab source stays open');
+    await pointer(document,'pointermove',30,250);assert.ok(document.querySelector('[data-group="saved"] .tab-drop-preview'));
+    await pointer(document,'pointerup',30,250);assert.equal(findModule(current,'bookmarks').group.id,'saved');assert.equal(writes,1,'dropping back is a no-op');
+
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await escape();assert.equal(writes,1);assert.equal(findModule(current,'files').side,'left');assert.equal(document.querySelector('.drag-phantom'),null);
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await pointer(document,'pointercancel',850,50);assert.equal(writes,1);
+
+    await pointer(mainTab(first.id,'a'),'pointerdown',420,50);await pointer(document,'pointermove',440,310);
+    assert.equal(document.querySelector('[data-test-content="'+first.id+'"]')?.textContent,'b');
+    assert.ok(document.querySelector('[data-tab-group="'+second.id+'"] .tab-drop-preview.active-tab'));assert.equal(documentWrites,0);
+    await pointer(document,'pointerup',440,310);assert.equal(panes(documents).find(p=>p.id===second.id)?.active,'a');assert.equal(documentWrites,1);
+    await pointer(mainTab(first.id,'b'),'pointerdown',420,50);await pointer(document,'pointermove',440,180);assert.equal(document.querySelector('[data-test-content="'+first.id+'"]')?.textContent,'');
+    await pointer(document,'pointermove',30,50);assert.equal(document.querySelector('.tab-drop-preview'),null,'Main Dock tabs cannot enter Side Docks');await pointer(document,'pointerup',30,50);assert.equal(documentWrites,1);
+    await pointer(mainTab(first.id,'b'),'pointerdown',420,50);await pointer(document,'pointermove',440,310);await act(async()=>window.dispatchEvent(new dom.window.Event('blur')));assert.equal(documentWrites,1);
+    assert.equal(document.querySelector('.drag-phantom'),null);assert.equal(document.querySelector('.tab-drop-preview'),null);assert.equal(document.body.classList.contains('tab-dragging'),false);
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',270,50);await pointer(document,'pointerup',270,50);
+    assert.deepEqual(findModule(current,'files').group.tabs,['tags','search','files']);assert.equal(findModule(current,'files').group.active,'files');
+    await pointer(tab('files'),'pointerdown',190,50);await pointer(document,'pointermove',30,50);await pointer(document,'pointerup',30,50);
+    assert.deepEqual(findModule(current,'files').group.tabs,['files','tags','search'],'horizontal reordering works in both directions');
+    await pointer(tab('tags'),'pointerdown',110,50);await pointer(document,'pointermove',850,50);
+    assert.equal(document.querySelector('.tab-phantom')?.classList.contains('selected'),false,'inactive phantom keeps its original state');
+    assert.ok(document.querySelector('.tab-drop-preview.selected .module-tab-label'),'destination preview still becomes active');
+    assert.ok(parseFloat((document.querySelector('.tab-drop-preview') as HTMLElement).style.width)>=80,'active preview reserves label space');
+    await escape();
+
+
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

@@ -14,7 +14,7 @@ Light and dark palettes are CSS variables. A workspace's theme can follow the sy
 
 ## Docks and navigation
 
-Use the names in [UI terminology](ui-terminology.md). The Left and Right Side Docks have the same layout and controls: vertically resizable Tab Groups, a tab strip for each group, a whole-group drag grip visible on hover/focus, and a **…** menu. View controls sit inside the active group's content. The Action Ribbon contains actions for revealing the current Side Dock Views and opening Workspace settings. A View action reveals it in its assigned group and expands that dock. The window toolbar collapses either dock independently.
+Use the names in [UI terminology](ui-terminology.md). The Left and Right Side Docks have the same layout and controls: vertically resizable Tab Groups, a tab strip for each group and a **…** menu. View controls sit inside the active group's content. The Action Ribbon contains actions for revealing the current Side Dock Views and opening Workspace settings. A View action reveals it in its assigned group and expands that dock. The window toolbar collapses either dock independently.
 
 The bottom-left **workspace switcher** uses Lucide's `ChevronsUpDown` icon, aligned with the Action Ribbon's icons, followed by the folder name. Its menu opens upward and contains registered workspace names with the current one checked, then a divider and **Manage workspaces** with the Database icon. Paths appear in tooltips. Sync and save/checkpoint state occupy the right end of the status bar. Word/card counts and undo/redo buttons are absent there.
 
@@ -36,7 +36,7 @@ Motion uses CSS tokens in `styles.css`:
 | `--motion-normal` | 180 ms | Small state changes, including active Side Dock tab expansion. |
 | `--motion-ease` | `cubic-bezier(.2,0,0,1)` | Ease out without bounce or overshoot. |
 
-Keep motion local: Side Dock tab widths and labels transition, while content switches immediately without sliding or fading the whole View. Prefer transform/opacity for other motion; the short tab row is the deliberate size-animation exception. Avoid `transition: all`. Dragging, resizing and whiteboard navigation must track the pointer without easing; tab transitions are disabled during dock dragging. Reduced motion sets these durations to zero. The existing 650 ms Main Dock focus indicator remains a separate attention cue and is disabled under reduced motion. New animations should use these conventions rather than add arbitrary timings or a motion library.
+Keep motion local: Side Dock tab widths and labels transition, while content switches immediately without sliding or fading the whole View. Prefer transform/opacity for other motion; the short tab row is the deliberate size-animation exception. Avoid `transition: all`. Dragging, resizing and whiteboard navigation must track the pointer without easing; tab width transitions are disabled during dragging. Bookmark and tab neighbors share the same 150 ms displacement animation. See [shared drag-and-drop interactions](interactions/drag-and-drop.md) for source fallback, active destination previews, empty groups and dock-family restrictions. Reduced motion sets these durations to zero. The existing 650 ms Main Dock focus indicator remains a separate attention cue and is disabled under reduced motion. New animations should use these conventions rather than add arbitrary timings or a motion library.
 
 ## Whiteboard cards
 

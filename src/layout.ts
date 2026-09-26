@@ -11,10 +11,14 @@ export function updatePane(layout:Layout,id:string,change:(pane:Pane)=>Layout):L
 export function openTab(layout:Layout,id:string,key:string) {
   return updatePane(layout,id,p=>!p.tabs.includes(key)&&p.tabs.length>=MAX_TABS?p:({...p,tabs:p.tabs.includes(key)?p.tabs:[...p.tabs,key],active:key}));
 }
+export function activeAfterRemoval(tabs:string[],active:string,key:string):string {
+  if(active!==key)return active;
+  const index=tabs.indexOf(key);return tabs[index+1]??tabs[index-1]??'';
+}
 export function closeTab(layout:Layout,id:string,key:string) {
   return updatePane(layout,id,p=>{
-    const index=p.tabs.indexOf(key),tabs=p.tabs.filter(k=>k!==key);
-    return {...p,tabs,active:p.active===key?tabs[Math.min(index,tabs.length-1)]??'':p.active};
+    const tabs=p.tabs.filter(k=>k!==key);
+    return {...p,tabs,active:activeAfterRemoval(p.tabs,p.active,key)};
   });
 }
 export function splitPane(layout:Layout,id:string,axis:'row'|'column',next:Pane):Layout {
@@ -31,6 +35,7 @@ export function resizeSplit(layout:Layout,id:string,ratio:number):Layout {
   return layout.id===id?{...layout,ratio:Math.max(.15,Math.min(.85,ratio))}:{...layout,first:resizeSplit(layout.first,id,ratio),second:resizeSplit(layout.second,id,ratio)};
 }
 export function moveTab(layout:Layout,from:string,to:string,key:string,before?:string):Layout {
+  if(!panes(layout).some(p=>p.id===from&&p.tabs.includes(key))||from===to&&key===before)return layout;
   const target=panes(layout).find(p=>p.id===to);if(!target||!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS)return layout;
   let next=closeTab(layout,from,key);
   next=updatePane(next,to,p=>{
@@ -95,7 +100,7 @@ export function moveModule(docks:Docks,drag:DockDrag,drop:DockDrop):Docks {
   const active='module' in drag?drag.module:source.group.active;
   next[source.side].groups=next[source.side].groups.flatMap(g=>{
     if(g.id!==source.group.id)return [g];
-    const tabs=g.tabs.filter(m=>!moving.includes(m));return tabs.length?[{...g,tabs,active:tabs.includes(g.active)?g.active:tabs[0]}]:[];
+    const tabs=g.tabs.filter(m=>!moving.includes(m));return tabs.length?[{...g,tabs,active:('module' in drag?activeAfterRemoval(g.tabs,g.active,drag.module):tabs[0]) as ModuleId}]:[];
   });
   const target=next[drop.side],index=target.groups.findIndex(g=>g.id===drop.group);
   target.collapsed=false;

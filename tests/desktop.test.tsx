@@ -116,8 +116,8 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(session.state.error,'');
     await click('.activity-bar [aria-label="Agent console"]');
     assert.ok(document.querySelector('.right-dock [aria-label="Agent console"][role=tabpanel]'));
-    await click('[aria-label="Panel group actions · Agent console"]');
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Move module to left dock')!.click());await settle();
+    await click('[aria-label="Tab Group actions · Agent console"]');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Move View to left dock')!.click());await settle();
     await click('[aria-label="Collapse left dock"]');
     await click('.activity-bar [aria-label="Agent console"]');
     assert.ok(document.querySelector('.left-dock [aria-label="Agent console"][role=tabpanel]'),'activity buttons reveal a module in its chosen location');

@@ -36,7 +36,7 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 
 The **Main Dock** holds Whiteboard View, Card View and other content views in tabs and splits. **Left Side Dock** and **Right Side Dock** hold supporting Views. A **Workspace** is the local folder together with its settings and saved interface layout. See the [terminology guide](docs/ui-terminology.md) for definitions.
 
-The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab or a group's grip to rearrange them; use the group's **…** menu for move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
+The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab to rearrange Views; use the group's **…** menu for move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
@@ -55,7 +55,7 @@ Physical-file mode opens indexed notes/boards/tags normally, images as previews,
 - [UI terminology and workspace layout](docs/ui-terminology.md)
 - [Design system](docs/design-system.md)
 - [Whiteboard folders, membership and collapsed cards](docs/whiteboards.md)
-- [Sortable-list and bookmark drag specification](docs/interactions/drag-and-drop.md)
+- [Shared drag-and-drop specification](docs/interactions/drag-and-drop.md)
 
 ## Files and safeguards
 

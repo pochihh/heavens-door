@@ -44,13 +44,13 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | File | Responsibility |
 | --- | --- |
 | `App.tsx` / `src/layout.ts` | Desktop shell; shared validated Main Dock/Side Dock layout data and operations |
-| `Docks.tsx` | Equal Side Docks, View tabs, Tab Groups, resizing and View/group dragging |
+| `Docks.tsx` | Equal Side Docks, View tabs, Tab Groups, resizing and View tab dragging |
 | `WorkspaceMenu.tsx` | Bottom-left workspace switcher and workspace manager |
 | `Explorer.tsx` | Whiteboard/file explorer, tags, search and saved-list Views with shared context actions |
 | `documents.ts` | Snapshot-scoped identity/path maps; avoids a full card search for every row |
 | `Icons.tsx` / `IconPicker.tsx` | Named Lucide imports and lazy, locally bundled Emoji Mart picker |
 | `Overlays.tsx` | Delegated hover/focus tooltip and keyboard-accessible action menu |
-| `sortable.ts` | Pointer drag session for Starred; see the interaction specification |
+| `sortable.ts` / `tab-drag.ts` | Shared phantom/reorder visuals; separate bookmark and tab pointer sessions; previews never persist layout |
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
 | `Board.tsx` / `navigation.ts` | Visible-card rendering, level of detail, selection and board gestures |
 | `Editor.tsx` / `editor-schema.ts` | Formatted TipTap editing and supported Markdown conversion |

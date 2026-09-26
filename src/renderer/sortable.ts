@@ -13,6 +13,21 @@ function freezeStyle(source:HTMLElement,clone:HTMLElement) {
   const originals=[source,...source.querySelectorAll('*')],copies=[clone,...clone.querySelectorAll('*')];
   originals.forEach((el,i)=>{const style=getComputedStyle(el),copy=copies[i] as HTMLElement;for(let j=0;j<style.length;j++){const name=style.item(j);copy.style.setProperty(name,style.getPropertyValue(name));}copy.removeAttribute('id');copy.removeAttribute('data-tooltip');copy.removeAttribute('aria-describedby');});
 }
+export function createDragPhantom(source:HTMLElement,rect=source.getBoundingClientRect()) {
+  const phantom=source.cloneNode(true) as HTMLElement;freezeStyle(source,phantom);
+  // Preserve the composited surface so destination text cannot bleed through a translucent tab.
+  const fill=getComputedStyle(source).backgroundColor;let parent=source.parentElement,backing='transparent';
+  while(parent){backing=getComputedStyle(parent).backgroundColor;if(backing!=='transparent'&&!backing.endsWith(', 0)'))break;parent=parent.parentElement;}
+  phantom.style.backgroundColor=backing;phantom.style.backgroundImage=`linear-gradient(${fill},${fill})`;
+  Object.assign(phantom.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',zIndex:'1000',pointerEvents:'none',transition:'none'});
+  phantom.classList.add('drag-phantom');phantom.setAttribute('aria-hidden','true');phantom.inert=true;document.body.appendChild(phantom);
+  return phantom;
+}
+export function animateReorder(before:Map<HTMLElement,DOMRect>,axis:SortAxis,animations:Map<HTMLElement,Animation>) {
+  animations.forEach(a=>a.cancel());animations.clear();
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  for(const [row,r] of before){const next=row.getBoundingClientRect(),delta=axis==='vertical'?r.top-next.top:r.left-next.left;if(delta&&row.animate){const animation=row.animate([{transform:axis==='vertical'?`translateY(${delta}px)`:`translateX(${delta}px)`},{transform:'none'}],{duration:150,easing:'cubic-bezier(0.2,0,0,1)'});animations.set(row,animation);}}
+}
 export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(key:string,index:number|null,fromStarred:boolean)=>void,axis:SortAxis='vertical') {
   const cancel=useRef<()=>void>(()=>{}),onCommit=useRef(commit);onCommit.current=commit;
   useEffect(()=>()=>cancel.current(),[]);
@@ -36,8 +51,7 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       const beforeRects=new Map(rows().map(el=>[el,el.getBoundingClientRect()]));
       animations.forEach(a=>a.cancel());animations.clear();
       list.insertBefore(placeholder,before);
-      if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-      for(const [row,r] of beforeRects){const next=row.getBoundingClientRect(),delta=vertical?r.top-next.top:r.left-next.left;if(delta&&row.animate){const animation=row.animate([{transform:vertical?`translateY(${delta}px)`:`translateX(${delta}px)`},{transform:'none'}],{duration:150,easing:'cubic-bezier(0.2,0,0,1)'});animations.set(row,animation);}}
+      animateReorder(beforeRects,axis,animations);
     };
     const update=()=>{
       if(!active||!phantom)return;
@@ -74,9 +88,7 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       if(!active&&Math.hypot(coordinate-start,(vertical?x:y)-initialCross)<5)return;
       e.preventDefault();
       if(!active){
-        active=true;phantom=source.cloneNode(true) as HTMLElement;freezeStyle(source,phantom);
-        Object.assign(phantom.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',zIndex:'1000',pointerEvents:'none'});
-        phantom.classList.add('drag-phantom');phantom.setAttribute('aria-hidden','true');phantom.inert=true;document.body.appendChild(phantom);
+        active=true;phantom=createDragPhantom(source,rect);
         placeholder=document.createElement('div');placeholder.className='sort-placeholder';placeholder.style.height=rect.height+'px';placeholder.style.width=rect.width+'px';
         if(fromStarred)list.insertBefore(placeholder,source);
         source.style.display='none';if(duplicate)duplicate.style.display='none';document.body.classList.add('list-dragging');frame=requestAnimationFrame(tick);

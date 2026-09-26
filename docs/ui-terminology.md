@@ -54,11 +54,11 @@ The initial Left Side Dock has Whiteboard Explorer, File Explorer, Tags and Sear
 
 ## Arranging Views
 
-Drag a Side Dock **tab** onto another group's Tab Strip to combine them. Dropping onto an existing tab inserts before it. Drop near the top or bottom of a group's content to create a separate vertical group. The grip in a Tab Strip moves the **whole Tab Group**. A collapsed or empty Side Dock exposes a drop target during dragging.
+Drag a Side Dock **tab** onto another group's Tab Strip to combine them. Dropping onto an existing tab inserts before it. Drop near the top or bottom of a group's content to create a separate vertical group. There is no Tab Group drag handle; whole-group moves remain in the group menu. A collapsed or empty Side Dock exposes a temporary destination during dragging.
 
 The group's **…** menu provides move, split, merge and collapse actions without dragging. Left/Right, Home and End navigate Side Dock tabs. Splitters also respond to arrow keys. Escape or an unfinished drag leaves the arrangement unchanged. Dock dragging operates within one app window; it does not create floating windows.
 
-Main Dock tabs have their own drag behavior. The same file may be open in several Tab Groups, with independent view positions and shared edits. The preview permits up to 16 Main Dock Tab Groups and 200 tabs per group, matching the saved-layout validation limits. Moving Views between the Main Dock and Side Docks is not implemented; the common term **View** does not change that behavior.
+All tabs use the same phantom and insertion-preview behavior as Starred/Recent, described in [shared drag-and-drop interactions](interactions/drag-and-drop.md). An active tab keeps its appearance in the phantom; the destination previews it as active. The source selects the next tab or retains an empty View during the drag. The same file may be open in several Tab Groups, with independent view positions and shared edits. The preview permits up to 16 Main Dock Tab Groups and 200 tabs per group, matching the saved-layout validation limits. Side Dock tabs remain within the Left/Right Side Docks; Main Dock tabs remain within Main Dock Tab Groups. Cross-family drops are invalid.
 
 ## State ownership and current storage
 
