@@ -16,6 +16,34 @@ For development, `npm run dev` starts Vite and Electron. Renderer edits reload a
 
 Choose **Try a sample workspace** to explore without opening your own notes. **Open workspace** opens a real folder; the app writes edits directly to it. The sample workspace is temporary.
 
+## Rebuild and reopen after code changes
+
+Run these commands in the repository folder containing `package.json`.
+
+1. Wait for **Saved** in the status bar, then quit the app completely: **Cmd+Q** on macOS, or close all app windows on Windows/Ubuntu. Close any other copy of Heaven’s Door launched from this repository too.
+2. If you were using `npm run dev`, stop that command in its terminal after quitting the app. A running development window reads from Vite, not the production build.
+3. Build, then reopen:
+
+   ```sh
+   npm run build && npm start
+   ```
+
+   This starts the app only if the build succeeds. In Windows PowerShell 5, run the two commands separately and start only after a successful build. Run `npm ci` first on a fresh checkout or when `package-lock.json` changes; it is not needed for ordinary UI edits.
+4. Choose your existing workspace from the welcome screen, or use **Open workspace** to select its folder.
+
+**View → Reload** refreshes the current window; it does not rebuild source code or restart the main process and workspace workers. **`npm start`** launches the last files built in `dist/`; it does not build them. Use the full quit/build/start sequence when testing new changes.
+
+### Clean rebuild if the app still looks outdated
+
+Quit all running copies and stop the development server first. From the repository folder, remove the generated build output and rebuild:
+
+```sh
+node -e "require('node:fs').rmSync('dist', { recursive: true, force: true })"
+npm run build && npm start
+```
+
+Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git history are retained. There is no need to delete workspace data or Electron’s application-data directory to rebuild. If the UI still looks old, check that the terminal is in the intended checkout (`pwd` on macOS/Ubuntu, `Get-Location` in PowerShell) and that you reopened the newly launched window.
+
 ## Using the preview
 
 - Click inside a whiteboard card to edit it in place. Drag its header to move it; text remains selectable. Escape or clicking empty canvas finishes editing. Clicking a card in Explorer opens its Card View in the Main Dock. Edits save after a short pause. Frontmatter stays hidden.
@@ -36,7 +64,7 @@ Choose **Try a sample workspace** to explore without opening your own notes. **O
 
 The **Main Dock** holds Whiteboard View, Card View and other content views in tabs and splits. **Left Side Dock** and **Right Side Dock** hold supporting Views. A **Workspace** is the local folder together with its settings and saved interface layout. See the [terminology guide](docs/ui-terminology.md) for definitions.
 
-The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab to rearrange Views; use the group's **…** menu for move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
+The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
