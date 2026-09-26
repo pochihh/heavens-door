@@ -83,7 +83,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     }
     if(el.matches('[data-tab-key],.tab-drop-preview')){
       const parent=el.parentElement!,r=parent.getBoundingClientRect(),visible=[...parent.children].filter(e=>(e as HTMLElement).style.display!=='none');
-      return rect(r.left+visible.indexOf(el)*80,r.top,el.dataset.tabKey==='bookmarks'?320:80,34);
+      return rect(r.left+visible.indexOf(el)*80,r.top,parseFloat(el.style.width)||(el.dataset.tabKey==='bookmarks'?320:80),34);
     }
     return rect(0,0,0,0);
   };
@@ -126,6 +126,11 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await escape();assert.equal(writes,1);assert.equal(findModule(current,'files').side,'left');assert.equal(document.querySelector('.drag-phantom'),null);
     await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await pointer(document,'pointercancel',850,50);assert.equal(writes,1);
 
+    await pointer(mainTab(first.id,'b'),'pointerdown',500,50);await pointer(document,'pointermove',440,310);
+    assert.ok(document.querySelector('.tab-phantom.active-tab'),'inactive Main Dock tabs lift with active styling');
+    assert.equal(document.querySelector('[data-test-content="'+first.id+'"]')?.textContent,'a','inactive Main Dock drags preserve source selection');
+    await escape();assert.equal(documentWrites,0);
+    assert.equal(mainTab(first.id,'b').parentElement!.classList.contains('active-tab'),false);
     await pointer(mainTab(first.id,'a'),'pointerdown',420,50);await pointer(document,'pointermove',440,310);
     assert.equal(document.querySelector('[data-test-content="'+first.id+'"]')?.textContent,'b');
     assert.ok(document.querySelector('[data-tab-group="'+second.id+'"] .tab-drop-preview.active-tab'));assert.equal(documentWrites,0);
@@ -139,10 +144,13 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await pointer(tab('files'),'pointerdown',190,50);await pointer(document,'pointermove',30,50);await pointer(document,'pointerup',30,50);
     assert.deepEqual(findModule(current,'files').group.tabs,['files','tags','search'],'horizontal reordering works in both directions');
     await pointer(tab('tags'),'pointerdown',110,50);await pointer(document,'pointermove',850,50);
-    assert.equal(document.querySelector('.tab-phantom')?.classList.contains('selected'),false,'inactive phantom keeps its original state');
+    assert.ok(document.querySelector('.tab-phantom.selected .module-tab-label'),'inactive tabs lift with an active icon + name phantom');
+    assert.equal(tab('files').getAttribute('aria-selected'),'true','lifting an inactive tab preserves source selection');
     assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','inactive drags also keep the destination slot empty');
     assert.equal((document.querySelector('.tab-drop-preview') as HTMLElement).style.width,(document.querySelector('.tab-phantom') as HTMLElement).style.width,'slot and phantom have matching widths');
     await escape();
+    assert.equal(tab('tags').getAttribute('aria-selected'),'false','cancel restores the inactive tab');
+    assert.equal(tab('files').getAttribute('aria-selected'),'true');
     await act(async()=>{tab('tags').focus();tab('tags').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));});
     assert.ok(document.querySelector('[role=menu][aria-label="Tab Group actions"]'));
     assert.equal(tab('files').getAttribute('aria-selected'),'true','opening an inactive tab menu does not select it');

@@ -13,7 +13,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
     cancel.current();
     const source=event.currentTarget.closest<HTMLElement>('[data-tab-key]');if(!source)return;
     const rect=source.getBoundingClientRect(),pointer=event.pointerId,startX=event.clientX,startY=event.clientY,offsetX=startX-rect.left,offsetY=startY-rect.top;
-    let x=startX,y=startY,lastX=startX,direction=0,active=false,ended=false,frame=0;
+    let x=startX,y=startY,lastX=startX,direction=0,active=false,ended=false,frame=0,activeWidth=rect.width;
     let phantom:HTMLElement|null=null,preview:HTMLElement|null=null,target:HTMLElement|null=null,duplicate:HTMLElement|null=null;
     const animations=new Map<HTMLElement,Animation>();
     const rows=(strip:HTMLElement)=>[...strip.querySelectorAll<HTMLElement>(':scope > [data-tab-key]')].filter(el=>el!==source&&el!==duplicate);
@@ -43,9 +43,9 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         const r=target.getBoundingClientRect(),margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
         const available=rows(target),gap=parseFloat(getComputedStyle(target).columnGap)||0;
         // A lone Side Dock tab fills its source; fit it beside the destination icons.
-        const width=value.family==='side'&&target!==source.parentElement?Math.min(rect.width,Math.max(phantom.classList.contains('selected')?80:32,r.width-available.reduce((sum,el)=>sum+el.getBoundingClientRect().width,0)-gap*available.length)):rect.width;
+        const width=value.family==='side'&&target!==source.parentElement?Math.min(activeWidth,Math.max(80,r.width-available.reduce((sum,el)=>sum+el.getBoundingClientRect().width,0)-gap*available.length)):activeWidth;
         Object.assign(preview.style,{width:width+'px',flex:'0 0 '+width+'px'});phantom.style.width=width+'px';
-        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-width-margin),x-offsetX*width/rect.width));
+        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-width-margin),x-offsetX*width/activeWidth));
         const edge=direction>0?left+width:left;
         phantom.style.left=left+'px';
         phantom.style.top=(r.top+Math.max(0,(Math.min(r.height,42)-rect.height)/2))+'px';
@@ -59,7 +59,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
           if(!crossed(edge,r.left-shift,r.width,direction))break;
           place(direction>0?(children[index+2] as HTMLElement??null):neighbor);
         }
-      }else{phantom.style.width=rect.width+'px';phantom.style.left=x-offsetX+'px';phantom.style.top=y-offsetY+'px';}
+      }else{phantom.style.width=activeWidth+'px';phantom.style.left=x-offsetX+'px';phantom.style.top=y-offsetY+'px';}
     };
     const tick=()=>{
       if(!active||ended)return;
@@ -74,15 +74,19 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
       if(!active&&Math.hypot(x-startX,y-startY)<5)return;
       e.preventDefault();
       if(!active){
-        active=true;phantom=createDragPhantom(source,rect);phantom.classList.add('tab-phantom');
+        active=true;
         preview=source.cloneNode(true) as HTMLElement;
-        for(const el of [preview,...preview.querySelectorAll('*')])for(const attr of ['id','data-tab-key','data-tooltip','aria-controls','aria-labelledby','aria-describedby','role','tabindex'])el.removeAttribute(attr);
+        for(const el of [preview,...preview.querySelectorAll('*')])for(const attr of ['id','data-tab-key','data-tooltip','aria-controls','aria-labelledby','aria-describedby','tabindex'])el.removeAttribute(attr);
         preview.querySelectorAll('[aria-hidden]').forEach(el=>el.removeAttribute('aria-hidden'));
-        Object.assign(preview.style,{width:rect.width+'px',flex:'0 0 '+rect.width+'px',visibility:'hidden'});
+        preview.style.width=rect.width+'px';
         preview.classList.add('tab-drop-preview',value.family==='side'?'selected':'active-tab');preview.setAttribute('aria-hidden','true');preview.inert=true;
         source.style.display='none';document.body.classList.add('list-dragging','tab-dragging');flushSync(()=>setDrag(value));
         // Preserve the source slot at lift, independent of where the tab was grabbed.
         target=source.parentElement!;target.dataset.tabPreview='true';target.insertBefore(preview,source);
+        // Measure the active clone in its strip before freezing styles, including an expanded Side Dock label.
+        activeWidth=preview.getBoundingClientRect().width;
+        phantom=createDragPhantom(preview);phantom.classList.remove('tab-drop-preview');phantom.classList.add('tab-phantom');
+        preview.style.visibility='hidden';
         frame=requestAnimationFrame(tick);
       }
       if(x!==lastX)direction=x-lastX;lastX=x;update();
