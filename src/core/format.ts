@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname } from 'node:path';
 import { parseDocument, isMap } from 'yaml';
-import { marked, type Token } from 'marked';
+import type { Token } from 'marked';
+import { leadingTitle } from '../card-title';
 import type { Board, Card, Placement } from '../shared';
 
 export const revision = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -12,8 +13,7 @@ export function splitNote(raw: string) {
   if (front.contents !== null && !isMap(front.contents)) throw new Error('Frontmatter must be a mapping');
   return { front, header: match?.[0] ?? '', body: raw.slice(match?.[0].length ?? 0) };
 }
-function headingText(body:string) {
-  const heading=marked.lexer(body).find(token=>token.type==='heading'&&token.depth===1);
+function headingText(heading:Token|undefined) {
   const text=(token:Token):string=>'tokens' in token&&token.tokens?token.tokens.map(text).join(''):token.type==='html'?'':'text' in token?String(token.text):'';
   return heading?text(heading):undefined;
 }
@@ -21,7 +21,8 @@ export function readCard(path: string, raw: string): Card {
   const { front, body } = splitNote(raw);
   const id = front.get('card-id');
   if (id !== undefined && (typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id))) throw new Error('Invalid card-id');
-  return { id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(body), body, revision: revision(raw), legacy: !id };
+  const heading=leadingTitle(body);
+  return { id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
 }
 export function editCard(raw: string, card: Card, body: string) {
   const { front, header } = splitNote(raw);

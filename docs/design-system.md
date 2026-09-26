@@ -40,13 +40,15 @@ Keep motion local: Side Dock tab widths and labels transition, while content swi
 
 ## Whiteboard cards
 
-Expanded cards have no top bar. A floating upper-right chevron appears on hover, selection or keyboard focus and collapses the card in place; the collapsed title row retains an expand chevron. A collapsed card is a 40px-high title row, using its first H1 or its filename; hovering still reveals the file path. It does not mount a preview or editor. Expanded dimensions and coordinates remain saved. Collapse belongs to a placement, so references on other boards can have different states. See [whiteboards.md](whiteboards.md) for automatic column placement and storage.
+Expanded cards have no top bar. A floating upper-right chevron appears on hover, selection or keyboard focus and collapses the card in place; the same button becomes the expand chevron at the same coordinates. Collapsed cards retain the same H1 font, formatting, padding and wrapping. Their minimum height is 70px and grows to fit the title. They render only indexed heading metadata, with no body reads or editors; hovering still reveals the file path. Expanded dimensions and coordinates remain saved. Collapse belongs to a placement, so references on other boards can have different states. See [whiteboards.md](whiteboards.md) for automatic column placement and storage.
 
 Cards and whiteboard tiles share the bottom-right L-shaped resize control. Keep the hit target 20px square with a 9px corner mark; this is a geometric handle, not a diagonal arrow. Drag cards by their 10px outer padding/frame; their content remains directly editable. Whiteboard tiles drag by their body and open by double-click or the corner arrow. Keep selected items above ordinary items, the active editor above those, and moving/resizing items above all three. These layers are temporary interaction state, not stored board order.
 
 Only selected card content scrolls. Unselected previews clip their content and route the wheel to the canvas. Pinch and Ctrl/Command-wheel always zoom. Expanded previews keep the same formatted content at all zoom levels; use offscreen culling, cached HTML and lazy images instead of substituting title-only cards. The zoom percentage is a **Zoom to fit** button, between minus and plus.
 
 A whiteboard tile uses a compact icon/name/count header followed by up to six labeled previews of contained cards or whiteboards and a remaining count. It reads existing workspace metadata, never mounts recursive canvases or loads child note bodies. App actions say **New whiteboard** and **Open whiteboard**, regardless of nesting.
+
+Every card reserves its **leading H1** as its title. If no leading H1 exists, previews and the editor show an empty heading with the gray **A new card** prompt. The prompt is a CSS overlay, not text to select/delete, not the filename, and not stored note content. Workspace settings expose **Empty card title** to customize it. Typing inserts a real H1; Enter continues into body content. Opening or focusing an empty/heading-less card does not write a file. Later H1s remain body sections, and existing body content stays in place.
 
 ## Icons and emoji
 

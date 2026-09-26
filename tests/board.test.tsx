@@ -1,12 +1,15 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+const windows:JSDOM[]=[];
+// DOMPurify retains its renderer window until the module is disposed.
+after(()=>windows.forEach(dom=>dom.window.close()));
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Board } from '../src/shared';
 
 test('board drags persist final coordinates even when pointer events share a render batch',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   const captured:HTMLElement[]=[];
   dom.window.HTMLElement.prototype.setPointerCapture=function () {captured.push(this);};
@@ -28,11 +31,11 @@ test('board drags persist final coordinates even when pointer events share a ren
   assert.equal(saved.length,1); assert.equal(saved[0].cards[0].x,100); assert.equal(saved[0].cards[0].y,50);
   assert.equal(isVisible(board.cards[0],{x:0,y:0,zoom:1},1000,800),true);
   assert.equal(isVisible({...board.cards[0],x:10000},{x:0,y:0,zoom:1},1000,800),false);
-  await act(async () => root.unmount()); assert.deepEqual(errors,[]); dom.window.close();
+  await act(async () => root.unmount()); assert.deepEqual(errors,[]);
 });
 
 test('plugin pointer navigation selects with left drag, pans with middle/right/Space, and moves a selection together',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   dom.window.HTMLElement.prototype.setPointerCapture=() => undefined;
   dom.window.HTMLElement.prototype.hasPointerCapture=() => false;
@@ -61,11 +64,11 @@ test('plugin pointer navigation selects with left drag, pans with middle/right/S
   const right=world.style.transform;await drag(0);await frame();assert.notEqual(world.style.transform,right);
   await act(async () => document.dispatchEvent(new dom.window.KeyboardEvent('keyup',{code:'Space',key:' ',bubbles:true})));
   assert.equal(saved.length,1,'navigation does not create edit history');
-  await act(async () => root.unmount());assert.deepEqual(errors,[]);dom.window.close();
+  await act(async () => root.unmount());assert.deepEqual(errors,[]);
 });
 
 test('dragged cards keep their latest position through delayed saves, consecutive gestures and cancellation',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   dom.window.HTMLElement.prototype.setPointerCapture=() => undefined;
   dom.window.HTMLElement.prototype.hasPointerCapture=() => false;
@@ -115,11 +118,11 @@ test('dragged cards keep their latest position through delayed saves, consecutiv
     assert.equal(card().style.left,'400px');assert.equal(card().style.width,'440px','cancelling a gesture preserves the earlier pending save');
     await act(async () => saves[3].finish());assert.equal(card().style.width,'440px');
     assert.equal(saves.length,4);
-  } finally {await act(async () => root.unmount());dom.window.close();}
+  } finally {await act(async () => root.unmount());}
 });
 
 test('losing pointer capture before release still saves the final drag instead of snapping back',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   dom.window.HTMLElement.prototype.setPointerCapture=() => undefined;
   dom.window.HTMLElement.prototype.hasPointerCapture=() => false;
@@ -139,11 +142,11 @@ test('losing pointer capture before release still saves the final drag instead o
     await act(async () => {pointer(document,'pointerup',270);});
     assert.equal(saved.length,1,'release is committed even after capture was lost');
     assert.equal(saved[0].cards[0].x,200);
-  } finally {await act(async () => root.unmount());dom.window.close();}
+  } finally {await act(async () => root.unmount());}
 });
 
 test('200 full previews keep their DOM through saves and distant zoom, and cache across offscreen culling',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   const {Whiteboard}=await import('../src/renderer/Board');
   const cards=Array.from({length:200},(_,i)=>({id:`c${i}`,path:`${i}.md`,name:`${i}`,revision:'r',legacy:false}));
@@ -179,17 +182,17 @@ test('200 full previews keep their DOM through saves and distant zoom, and cache
     assert.equal(document.querySelector('.canvas-controls input'),null);
     await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Zoom to fit"]')!.click();await new Promise(resolve=>setTimeout(resolve,130));});
     assert.equal(document.querySelector('.zoom-level')!.textContent,'25%','clicking the percentage fits all placements (zero-sized test viewport)');
-  } finally {await act(async()=>root.unmount());dom.window.close();}
+  } finally {await act(async()=>root.unmount());}
 });
 
 test('collapsed cards use cached titles without loading bodies and expand without losing size or position',async()=>{
-  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
   const {Whiteboard,isVisible}=await import('../src/renderer/Board');
   const {useState}=await import('react');
-  const cards=Array.from({length:200},(_,i)=>({id:`c${i}`,path:`Ideas/${i}.md`,name:String(i),title:i===0?'A cached title':undefined,revision:'r',legacy:false}));
+  const cards=Array.from({length:200},(_,i)=>({id:`c${i}`,path:`Ideas/${i}.md`,name:String(i),title:i===0?'A cached title':undefined,titleMarkdown:i===0?'A **cached** title':'',revision:'r',legacy:false}));
   let reads=0;
-  window.door={assetUrl:path=>path,request:async request=>{reads++;return {...cards.find(c=>c.path===('path' in request?request.path:''))!,body:'# A cached title\n\nFull body'};}} as typeof window.door;
+  window.door={assetUrl:path=>path,request:async request=>{reads++;return {...cards.find(c=>c.path===('path' in request?request.path:''))!,body:'# A **cached** title\n\nFull body'};}} as typeof window.door;
   const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:cards.map((c,i)=>({id:`p${i}`,cardId:c.id,x:i%20*60,y:Math.floor(i/20)*60,width:340,height:280,collapsed:true})),edges:[]};
   let latest=board;
   function Fixture(){const [value,setValue]=useState(board);return <Whiteboard board={value} cards={cards} onOpen={()=>undefined} onCreate={()=>undefined} onSave={next=>{latest=next;setValue(next);}}/>;}
@@ -198,21 +201,25 @@ test('collapsed cards use cached titles without loading bodies and expand withou
     await act(async()=>root.render(<Fixture/>));
     assert.equal(document.querySelectorAll('.board-card.collapsed').length,200);assert.equal(reads,0);
     const first=document.querySelector<HTMLElement>('[data-placement="p0"]')!;
-    assert.equal(first.querySelector('.card-grip-label')?.textContent,'A cached title');assert.equal(first.style.height,'40px');
-    assert.equal(document.querySelector('[data-placement="p1"] .card-grip-label')?.textContent,'1.md');
+    assert.equal(first.querySelector('.card-title')?.textContent,'A cached title');assert.equal(first.style.height,'auto');
+    assert.equal(document.querySelector('[data-placement="p1"] .card-title')?.textContent,'');
+    assert.ok(document.querySelector('[data-placement="p1"] .card-title.is-empty'),'a missing H1 shows a visual prompt, not the filename');
+    const summary=first.querySelector('.card-title')!.innerHTML,chevron=first.querySelector('[aria-label="Expand card"]');
     assert.equal(first.querySelector('.resize-handle'),null);
     await act(async()=>first.querySelector<HTMLButtonElement>('[aria-label="Expand card"]')!.click());
-    assert.equal(reads,1);assert.equal(first.style.height,'280px');assert.ok(first.querySelector('.card-preview'),'expansion mounts the full preview');
+    assert.equal(reads,1);assert.equal(first.style.height,'280px');assert.ok(first.querySelector('.card-preview p'),'expansion mounts the body');
+    assert.equal(first.querySelector('.card-title')!.innerHTML,summary,'heading formatting stays identical');
+    assert.equal(first.querySelector('[aria-label="Collapse card"]'),chevron,'the same button stays mounted');
     assert.deepEqual([latest.cards[0].x,latest.cards[0].y,latest.cards[0].height],[0,0,280]);
     await act(async()=>first.querySelector<HTMLButtonElement>('[aria-label="Collapse card"]')!.click());
-    assert.equal(first.style.height,'40px');assert.equal(first.querySelector('.card-preview'),null);assert.equal(latest.cards[0].collapsed,true);
+    assert.equal(first.style.height,'auto');assert.equal(first.querySelector('.card-preview p'),null);assert.equal(first.querySelector('.card-title')!.innerHTML,summary);assert.equal(latest.cards[0].collapsed,true);
     assert.equal(isVisible({...board.cards[0],y:-100},{x:0,y:0,zoom:1},1000,800,0),false,'visibility uses the collapsed footprint');
     assert.equal(isVisible({...board.cards[0],y:-100,collapsed:false},{x:0,y:0,zoom:1},1000,800,0),true);
-  }finally{await act(async()=>root.unmount());dom.window.close();}
+  }finally{await act(async()=>root.unmount());}
 });
 
 test('whiteboard tiles preview indexed members without body reads and share card move/resize gestures',async()=>{
-  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
   dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;
   dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
@@ -242,5 +249,5 @@ test('whiteboard tiles preview indexed members without body reads and share card
     assert.deepEqual(opened,['Ideas','Ideas']);assert.equal(saved.length,2,'opening leaves geometry/history untouched');
     await act(async()=>{pointer(body,'pointerdown',100);pointer(tile,'pointercancel',185);});
     assert.equal(tile.classList.contains('dragging'),false);assert.equal(saved.length,2,'cancellation does not save');
-  }finally{await act(async()=>root.unmount());dom.window.close();}
+  }finally{await act(async()=>root.unmount());}
 });

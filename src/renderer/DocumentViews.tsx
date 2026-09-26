@@ -42,7 +42,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
       if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
     }}>
     {editing?<CardEditor path={path} body={body} cards={snapshot.cards} onEdit={body=>session.edit(body)} autofocus focusPoint={focus}/>:
-      <div className="prose editor-body document-preview" dangerouslySetInnerHTML={{__html:preview(body,path)||'<p class="empty-text">Click to write</p>'}}/>}
+      <div className="prose editor-body document-preview" dangerouslySetInnerHTML={{__html:preview(body,path)}}/>}
     <details className="card-details"><summary data-tooltip="Cards that link here, and whiteboards where this card can be placed">Linked from · {backlinks.length}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={'Open '+card.path} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
       {info&&!info.legacy&&<select aria-label="Place card on whiteboard" data-tooltip="Add a reference to this card on another whiteboard" value="" onChange={e=>{

@@ -1,11 +1,14 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+const windows:JSDOM[]=[];
+// DOMPurify retains its renderer window until the module is disposed.
+after(()=>windows.forEach(dom=>dom.window.close()));
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 test('opening and switching formatted cards never writes content or uses a destroyed editor',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
   window.door={assetUrl:path => `heavens-asset://vault/${path}`} as typeof window.door;
@@ -19,11 +22,11 @@ test('opening and switching formatted cards never writes content or uses a destr
       assert.ok(document.querySelector('[contenteditable="true"]')?.textContent?.includes(path));
     }
     assert.deepEqual(edits,[],'opening a card must not normalize or autosave its Markdown');
-  } finally {await act(async () => root.unmount());dom.window.close();}
+  } finally {await act(async () => root.unmount());}
 });
 
 test('card bodies edit in place with one pinned editor, while card chrome still drags',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
   document.elementFromPoint=() => null;
@@ -68,11 +71,11 @@ test('card bodies edit in place with one pinned editor, while card chrome still 
     const grip=document.querySelector('.board-card')!;
     await act(async () => {pointer(grip,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
     assert.equal(saves,1,'card chrome remains draggable');
-  } finally {await act(async () => root.unmount());dom.window.close();}
+  } finally {await act(async () => root.unmount());}
 });
 
 test('a rendering failure shows a recoverable draft and a working Reload action',async () => {
-  const dom=new JSDOM('<!doctype html><div id="root"></div>');
+  const dom=new JSDOM('<!doctype html><div id="root"></div>'); windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
   const {AppBoundary}=await import('../src/renderer/Recovery');
   const {Session}=await import('../src/renderer/session');
@@ -86,5 +89,5 @@ test('a rendering failure shows a recoverable draft and a working Reload action'
     assert.match(document.body.textContent!,/editor encountered a problem/);
     assert.equal(document.querySelector('textarea')?.value,'Unsaved, recoverable text');
     document.querySelector<HTMLButtonElement>('.primary')!.click();assert.equal(reloads,1);
-  } finally {await act(async () => root.unmount());session.dispose();dom.window.close();}
+  } finally {await act(async () => root.unmount());session.dispose();}
 });

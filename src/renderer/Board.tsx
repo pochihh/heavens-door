@@ -1,22 +1,24 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { placementHeight, type Board, type Card, type CardInfo, type Placement } from '../shared';
+import { COLLAPSED_CARD_HEIGHT, placementHeight, type Board, type Card, type CardInfo, type Placement } from '../shared';
+import { leadingTitle } from '../card-title';
 import { parent, portable } from './documents';
-import { preview } from './markdown';
+import { preview, titlePreview } from './markdown';
 import { BoardNavigation, type Camera } from './navigation';
 import { Icon, Tool } from './Icons';
 import { CardEditor, type EditorFocus } from './Editor';
 import type { ReactNode } from 'react';
 
-export function isVisible(p: Placement, camera: Camera, width: number, height: number, margin = 160) {
+export function isVisible(p: Placement, camera: Camera, width: number, height: number, margin = 160, footprint = placementHeight(p)) {
   return (p.x + p.width) * camera.zoom + camera.x > -margin && p.x * camera.zoom + camera.x < width + margin &&
-    (p.y + placementHeight(p)) * camera.zoom + camera.y > -margin && p.y * camera.zoom + camera.y < height + margin;
+    (p.y + footprint) * camera.zoom + camera.y > -margin && p.y * camera.zoom + camera.y < height + margin;
 }
-const Preview = memo(function Preview({ card, onOpen, cache }: {
-  card: CardInfo; onOpen: (id: string) => void; cache: Map<string, string>;
+const Preview = memo(function Preview({ card, onOpen, cache, collapsed=false }: {
+  card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, string>;
 }) {
   const key = `${card.path}:${card.revision}`;
   const [html, setHtml] = useState(cache.get(key) ?? '');
   useEffect(() => {
+    if(collapsed)return;
     let live = true;
     const cached = cache.get(key);
     if (cached !== undefined) { setHtml(cached); return; }
@@ -30,11 +32,12 @@ const Preview = memo(function Preview({ card, onOpen, cache }: {
       if (live) setHtml(rendered);
     }).catch(() => { if (live) setHtml('<p>Card unavailable</p>'); });
     return () => { live = false; };
-  }, [card.path, card.revision, key, cache]);
+  }, [card.path, card.revision, key, cache, collapsed]);
+  const summary=useMemo(()=>collapsed?titlePreview(card):'',[collapsed,card.title,card.titleMarkdown,card.path]);
   return <div className="prose card-preview" onClick={e => {
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href');
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
-  }} dangerouslySetInnerHTML={{ __html: html || '<p class="empty-text">Click to write</p>' }} />;
+  }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
 interface Props {
   enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string)=>void; onReference?: (id:string)=>void;
@@ -64,12 +67,15 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const [size, setSize] = useState({ width: 1000, height: 800 });
   const [view, setView] = useState<Camera>({ x: 20, y: 20, zoom: 0.85 });
   const [working, setWorking] = useState<Board | null>(null);
+  const [collapsedHeights,setCollapsedHeights]=useState<Record<string,number>>({});
+  const heightOf=(p:Placement)=>p.collapsed?(collapsedHeights[p.id]??placementHeight(p)):p.height;
   const [dragged, setDragged] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [connecting, setConnecting] = useState(false);
   const [editingPlacement, setEditingPlacement] = useState('');
   const [focusPoint, setFocusPoint] = useState<EditorFocus>();
   const current = working ?? board;
+  const draftTitle=useMemo(()=>draft?leadingTitle(draft.body)?.text??'':undefined,[draft?.body]);
   const active = current.cards.find(p => !p.collapsed && p.id === editingPlacement && p.cardId === draft?.card.id) ?? current.cards.find(p => !p.collapsed && p.cardId === draft?.card.id);
   const lookup = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards]);
   const boardLookup = useMemo(() => new Map(boards.map(b => [b.folder, b])), [boards]);
@@ -77,8 +83,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const openReference = useCallback((id: string) => {
     const target = lookup.get(id); if (target) { if(onReference) onReference(id); else onOpen(target.path); }
   }, [lookup, onOpen, onReference]);
-  const latest = useRef({ board: current, onFinish, move, end, enabled, onCamera });
-  latest.current = { board: current, onFinish, move, end, enabled, onCamera };
+  const latest = useRef({ board: current, onFinish, move, end, enabled, onCamera, heightOf });
+  latest.current = { board: current, onFinish, move, end, enabled, onCamera, heightOf };
 
   useLayoutEffect(() => {
     const element = viewport.current!;
@@ -187,7 +193,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     if (body) {
       const placement=current.cards.find(p => p.id === id), card=placement && lookup.get(placement.cardId);
       if (card) {
-        e.preventDefault(); e.stopPropagation(); setSelected([id]); setEditingPlacement(id);
+        e.preventDefault(); e.stopPropagation();
+        if(placement.collapsed)toggleCollapsed(placement);
+        setSelected([id]); setEditingPlacement(id);
         setFocusPoint({x:e.clientX,y:e.clientY,scrollTop:body.scrollTop}); onOpen(card.path);
       }
       return;
@@ -201,7 +209,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const width = Math.abs(x - g.x), height = Math.abs(y - g.y);
     Object.assign(selectionBox.current!.style, { display: 'block', left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
     const a = (left - g.camera.x) / g.camera.zoom, b = (top - g.camera.y) / g.camera.zoom;
-    const ids = g.board.cards.filter(p => p.x <= a + width / g.camera.zoom && p.x + p.width >= a && p.y <= b + height / g.camera.zoom && p.y + placementHeight(p) >= b).map(p => p.id);
+    const ids = g.board.cards.filter(p => p.x <= a + width / g.camera.zoom && p.x + p.width >= a && p.y <= b + height / g.camera.zoom && p.y + heightOf(p) >= b).map(p => p.id);
     const next = g.additive ? [...new Set([...g.initialSelection, ...ids])] : ids;
     setSelected(previous => previous.length === next.length && previous.every((id, i) => id === next[i]) ? previous : next);
   }
@@ -266,11 +274,25 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     if (!cards.length) { nav.set({ x: 20, y: 20, zoom: 1 }); return; }
     const left = Math.min(...cards.map(p => p.x)), top = Math.min(...cards.map(p => p.y));
     const width = Math.max(1, Math.max(...cards.map(p => p.x + p.width)) - left);
-    const height = Math.max(1, Math.max(...cards.map(p => p.y + placementHeight(p))) - top);
+    const height = Math.max(1, Math.max(...cards.map(p => p.y + latest.current.heightOf(p))) - top);
     const zoom = Math.min(1.6, Math.max(0.25, Math.min((element.clientWidth - 120) / width, (element.clientHeight - 120) / height)));
     nav.flush(); nav.set({ zoom, x: element.clientWidth / 2 - (left + width / 2) * zoom, y: element.clientHeight / 2 - (top + height / 2) * zoom });
   }
-  const visible = current.cards.filter(p => p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible(p, view, size.width, size.height, Math.max(size.width, size.height)));
+  const visible = current.cards.filter(p => p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible(p, view, size.width, size.height, Math.max(size.width, size.height), heightOf(p)));
+  const collapsedIds=visible.filter(p=>p.collapsed).map(p=>p.id).join(',');
+  useLayoutEffect(()=>{
+    const nodes=[...world.current!.querySelectorAll<HTMLElement>('.board-card.collapsed')];
+    const measure=()=>setCollapsedHeights(previous=>{
+      let next=previous;
+      for(const node of nodes){const id=node.dataset.placement!,height=node.offsetHeight;
+        if(height>0&&height!==(previous[id]??COLLAPSED_CARD_HEIGHT)){if(next===previous)next={...previous};next[id]=height;}
+      }
+      return next;
+    });
+    measure();
+    const observer=new ResizeObserver(measure);nodes.forEach(node=>observer.observe(node));
+    return()=>observer.disconnect();
+  },[collapsedIds]);
   return <div className="board-shell">
     <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label="Whiteboard canvas"
       onPointerDownCapture={capture} onContextMenu={e => e.preventDefault()}
@@ -285,26 +307,24 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
         <svg className="connections" aria-hidden="true">
           {current.edges.map(edge => {
             const a = placements.get(edge.from), b = placements.get(edge.to);
-            return a && b ? <line key={edge.id} x1={a.x + a.width / 2} y1={a.y + placementHeight(a) / 2} x2={b.x + b.width / 2} y2={b.y + placementHeight(b) / 2}/> : null;
+            return a && b ? <line key={edge.id} x1={a.x + a.width / 2} y1={a.y + heightOf(a) / 2} x2={b.x + b.width / 2} y2={b.y + heightOf(b) / 2}/> : null;
           })}
         </svg>
         {visible.map(p => {
-          const card = lookup.get(p.cardId), folder = card?parent(card.path):undefined;
+          const savedCard = lookup.get(p.cardId);
+          const card=savedCard&&draft?.card.id===savedCard.id?{...savedCard,titleMarkdown:draftTitle}:savedCard, folder = card?parent(card.path):undefined;
           const childBoard = p.folder ? boardLookup.get(p.folder) : undefined;
           const nestedCount = childBoard?.cards.filter(child => child.folder).length ?? 0;
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
           return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''}`}
-            data-tooltip={p.folder ?? card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: placementHeight(p) }}
+            data-tooltip={p.folder ?? card?.path ?? `Missing card ${p.cardId}`} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed?'auto':p.height }}
             onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button'))return;
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
-            {p.collapsed ? <div className="card-grip">
-              <span className="card-grip-label">{card?.title||card?.path.split(/[\\/]/).at(-1)||'Missing card'}</span>
-              <Tool icon="chevron" label="Expand card" aria-expanded={false} onClick={()=>toggleCollapsed(p)}/>
-            </div> : <>
-              {!p.folder && <div className="card-actions"><Tool icon="down" label="Collapse card" aria-expanded onClick={()=>toggleCollapsed(p)}/></div>}
+            {!p.folder && <div className="card-actions"><Tool icon={p.collapsed?'chevron':'down'} label={p.collapsed?'Expand card':'Collapse card'} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
+            {p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current}/>:<div className="missing-card">Missing card</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip="Reference to a card in another whiteboard" aria-label="Card reference"><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">

@@ -6,7 +6,7 @@ import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { History } from './history';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote } from './format';
-import { placementHeight } from '../shared';
+import { COLLAPSED_CARD_HEIGHT, placementHeight } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult } from '../shared';
 
 export class Workspace {
@@ -21,11 +21,11 @@ export class Workspace {
   constructor(readonly root: string, readonly cache: string) {
     this.history = new History(root);
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 3) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=3;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 4) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=4;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT);
+      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT);
       CREATE INDEX IF NOT EXISTS cards_folder ON cards(folder);
       CREATE INDEX IF NOT EXISTS card_identity ON cards(id);
       CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path UNINDEXED,name,body);
@@ -160,7 +160,7 @@ export class Workspace {
       if (!this.scanning) this.db.exec('BEGIN');
       try {
         this.removeIndex(path);
-        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path));
+        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'');
         this.db.prepare('INSERT INTO search(rowid,path,name,body) SELECT rowid,path,name,body FROM cards WHERE path=?').run(card.path);
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
@@ -173,7 +173,7 @@ export class Workspace {
   snapshot(): Snapshot {
     // ponytail: full metadata snapshots; switch to deltas if IPC dominates large-vault saves.
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
-    const cards = this.db.prepare('SELECT path,id,name,title,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
+    const cards = this.db.prepare('SELECT path,id,name,title,titleMarkdown,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
     return { root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
@@ -224,7 +224,7 @@ export class Workspace {
       for(const card of missing){
         if(placed.has(card.id))continue;
         next.cards.push({id:randomUUID(),cardId:card.id,x:inbox.x,y,width:340,height:280,collapsed:true});
-        placed.add(card.id);y+=52;
+        placed.add(card.id);y+=COLLAPSED_CARD_HEIGHT+12;
       }
       const write={path,content:writeBoard(next),expected:board.revision||null};
       if(explicit)explicit.content=write.content;else result.push(write);

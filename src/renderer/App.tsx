@@ -1,3 +1,4 @@
+import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { useCallback, useEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { Session } from './session';
 import type { Mutation, Preferences, Snapshot } from '../shared';
@@ -224,7 +225,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     if(module==='agent')return <div className="agent-empty">Agent integration is not connected yet.</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
   }
-  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status==='Opening workspace…'} style={{'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
+  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status==='Opening workspace…'} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
       <Tool icon="left" label={left?'Collapse left dock':'Expand left dock'} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
@@ -257,6 +258,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<div className="settings-body">
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
+        <label>Empty card title<input aria-label="Empty card title placeholder" maxLength={120} defaultValue={prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER} onBlur={e=>changePrefs(()=>({titlePlaceholder:e.target.value.trim()||DEFAULT_TITLE_PLACEHOLDER}))}/></label>
         <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
         <small>Settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
         {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}

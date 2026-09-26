@@ -1,5 +1,5 @@
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
-export interface Card { id: string; path: string; name: string; title?:string; body: string; revision: string; legacy: boolean }
+export interface Card { id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
 export interface Placement { id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; folder?: string }
 export interface Edge { id: string; from: string; to: string }
@@ -8,7 +8,7 @@ export interface Checkpoint { id: string; parents: string[]; time: number; label
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
 export interface RegisteredWorkspace {root:string;name:string}
-export interface Preferences { docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export interface TagInfo { path: string; name: string; tag: string; revision: string }
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
@@ -55,5 +55,6 @@ export interface Bridge {
 }
 declare global { interface Window { door: Bridge } }
 
-export const COLLAPSED_CARD_HEIGHT=40;
+export const DEFAULT_TITLE_PLACEHOLDER='A new card';
+export const COLLAPSED_CARD_HEIGHT=70;
 export function placementHeight(placement:Placement){return placement.collapsed?COLLAPSED_CARD_HEIGHT:placement.height;}

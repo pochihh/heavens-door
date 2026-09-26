@@ -36,7 +36,9 @@ test('workspace settings, sub-whiteboard files and root migration preserve ident
   await workspace.saveCard(card.path,'# First\n\n![Figure](assets/image.svg)\n\n[Second](second.md)\n\n[Source](https://example.org)\n\n![Reference][figure]\n\n[figure]: assets/image.svg\n',card.revision);
   await workspace.createFolder('','Existing');
   await workspace.createFolder('Existing','Nested');
-  await workspace.setPreferences({theme:'dark',starred:['card:'+card.id],icons:{['card:'+card.id]:'🔬'}});
+  await workspace.setPreferences({theme:'dark',titlePlaceholder:'Start a thought',starred:['card:'+card.id],icons:{['card:'+card.id]:'🔬'}});
+  assert.equal(second.snapshot().preferences?.titlePlaceholder,'A new card');
+  await assert.rejects(()=>workspace.setPreferences({titlePlaceholder:'invalid\nprompt'}),/Invalid title placeholder/);
   assert.equal(second.snapshot().preferences?.theme,'system','another workspace keeps its own appearance');
   const mother=workspace.snapshot().boards.find(b=>b.folder==='')!;
   assert.ok(mother.cards.some(p=>p.folder==='Existing'));
@@ -64,6 +66,7 @@ test('workspace settings, sub-whiteboard files and root migration preserve ident
   assert.ok((await workspace.history.list()).some(c=>c.label==='Before root cards migration'));
   workspace.close();workspace=await Workspace.open(root,join(directory,'cache'));
   assert.equal(workspace.snapshot().preferences?.theme,'dark');
+  assert.equal(workspace.snapshot().preferences?.titlePlaceholder,'Start a thought');
   assert.deepEqual(workspace.snapshot().preferences?.starred,['card:'+card.id]);
   assert.equal(workspace.snapshot().boards.find(b=>b.folder==='Existing')!.cards.find(p=>p.folder)!.folder,join('Existing','Nested'));
 });

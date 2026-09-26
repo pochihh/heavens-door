@@ -135,9 +135,10 @@ test('matching folders reconcile direct Markdown cards into a persistent collaps
   const original=structuredClone(boardNow().cards[0]);
   await fs.mkdir(join(f.root,'Ideas','Ordinary'));
   await fs.writeFile(join(f.root,'Ideas','Ordinary','nested.md'),'# Not a direct child');
-  const raw='```md\n# Not the title\n```\n\n# Real **title**\n\nExternally written content.\n';
+  const raw='# Real **title**\n\n```md\n# Not the title\n```\n\nExternally written content.\n';
   await fs.writeFile(join(f.root,'Ideas','external.md'),raw);await w.refresh('Ideas/external.md');
   const external=await w.card('Ideas/external.md');
+  assert.equal(external.titleMarkdown,'Real **title**');assert.equal(w.snapshot().cards.find(c=>c.id===external.id)?.titleMarkdown,'Real **title**');
   assert.equal(external.title,'Real title');assert.equal(w.snapshot().cards.find(c=>c.id===external.id)?.title,'Real title');
   assert.equal(await w.read(external.path),raw,'discovery never rewrites the external note');
   const placement=boardNow().cards.find(p=>p.cardId===external.id)!;
@@ -147,7 +148,7 @@ test('matching folders reconcile direct Markdown cards into a persistent collaps
   const undo=new UndoHistory(),created=await w.create('Ideas','untitled',0,0,false);
   undo.record('Create card',created.edits);
   assert.deepEqual(created.edits.map(e=>e.path).sort(),['Ideas/Ideas.whiteboard','Ideas/untitled.md']);
-  const added=boardNow().cards.at(-1)!;assert.equal(added.collapsed,true);assert.equal(added.x,520);assert.equal(added.y,112);
+  const added=boardNow().cards.at(-1)!;assert.equal(added.collapsed,true);assert.equal(added.x,520);assert.equal(added.y,142);
   await undo.travel(false,c=>w.write(c));assert.equal(boardNow().cards.length,2);await assert.rejects(()=>w.read('Ideas/untitled.md'));
   await undo.travel(true,c=>w.write(c));assert.deepEqual(boardNow().cards.at(-1),added);
   const collapsed=boardNow(),expanded={...collapsed,cards:collapsed.cards.map(p=>p.id===placement.id?{...p,collapsed:false}:p)};

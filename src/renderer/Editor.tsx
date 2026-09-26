@@ -3,7 +3,8 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import type { CardInfo } from '../shared';
 import { unsupported, preview } from './markdown';
 import { Icon, Tool } from './Icons';
-import { extensions } from './editor-schema';
+import { withCardTitle } from '../card-title';
+import { cardMarkdown, extensions } from './editor-schema';
 
 export interface EditorFocus { x: number; y: number; scrollTop: number }
 interface Props { path:string; body:string; cards:CardInfo[]; onEdit:(body:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus }
@@ -11,16 +12,17 @@ interface Props { path:string; body:string; cards:CardInfo[]; onEdit:(body:strin
 export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
 function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props) {
   const blocked=unsupported(body);
+  const [initialContent]=useState(()=>withCardTitle(body));
   const [linkQuery,setLinkQuery]=useState('');
   const configuredExtensions=useMemo(() => extensions(path),[path]);
   const editor=useEditor({
     extensions:configuredExtensions,
-    content:body,contentType:'markdown',editable:!blocked,
+    content:initialContent,contentType:'markdown',editable:!blocked,
     editorProps:{attributes:{'aria-label':'Card content',spellcheck:'true'}},
-    onUpdate:({editor}) => onEdit(editor.getMarkdown()),
+    onUpdate:({editor}) => onEdit(cardMarkdown(editor)),
   });
   useEffect(() => {
-    if (editor && !editor.isDestroyed && editor.getMarkdown() !== body) editor.commands.setContent(body,{contentType:'markdown',emitUpdate:false});
+    if (editor && !editor.isDestroyed && cardMarkdown(editor) !== body) editor.commands.setContent(withCardTitle(body),{contentType:'markdown',emitUpdate:false});
   },[editor,body]);
   useEffect(() => { if (editor && !editor.isDestroyed) editor.setEditable(!blocked,false); },[editor,blocked]);
   useEffect(() => {

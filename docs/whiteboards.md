@@ -34,12 +34,12 @@ References to cards in other folders remain optional placements and may be remov
 ## Default column and collapse
 
 - Canvas creation uses the chosen coordinates and an expanded 340 × 280 card.
-- Other newly discovered cards use a collapsed 340 × 40 title row. The first top-level H1 supplies the title, with formatting removed; filename is the fallback. The full path remains available on hover.
+- Other newly discovered cards use a collapsed 340px-wide card with a minimum 70px title footprint. The leading H1 retains its formatting and wrapping; an empty title shows the workspace prompt. The full path remains available on hover.
 - On first automatic insertion, the board records `inbox: {x, y}`. It starts 80 canvas units to the right of existing content, with `y: 60`; an empty board starts at `x: 80`.
 - New arrivals append below placements overlapping that column, with a 12-unit gap. The anchor persists, so later discoveries and restarts do not move existing cards. Batch discovery uses filename order; later arrivals append regardless of alphabetical position.
 - Collapse is per placement, stored as optional `collapsed: true/false`. Omitted means expanded. The existing `width` and `height` retain the expanded dimensions. Collapse/expand changes neither note content nor position, and participates in shared undo and persistent history.
-- The chevron toggles state; double-clicking a collapsed title expands it. Expanded cards retain in-place editing. Expansion restores the saved height without rearranging neighbors, so it can overlap the next collapsed row; users can drag it to a working area.
-- Collapsed placements mount neither preview bodies nor editors. Titles come from the index. Hit testing, selection, connections, visibility and fit-to-board use the displayed 40-unit height.
+- The same upper-right chevron toggles state without moving. Clicking a collapsed title expands it for direct editing; double-clicking its outer frame also expands it. Expanded cards retain in-place editing. Expansion restores the saved height without rearranging neighbors, so it can overlap the next collapsed row; users can drag it to a working area.
+- Collapsed placements mount neither note bodies nor editors. Plain titles and their inline Markdown come from the derived index. The same H1 styles are used in both states. One ResizeObserver per board measures wrapped collapsed titles, so selection, connections, culling and Zoom to fit use their displayed heights. New intake rows reserve 70 units plus the existing 12-unit gap. Existing placement coordinates remain untouched; wrapped titles can extend beyond that default spacing, just as expanding a card can overlap its neighbors.
 
 ## Canvas interactions and rendering
 
@@ -50,6 +50,12 @@ Unselected cards cannot scroll their content; their wheel input follows normal c
 Expanded card content stays formatted from 20% through 300% zoom. There is no distant title-only rendering mode. Navigation paints one world transform per frame and updates the overscanned card set only after significant motion or settling. Offscreen cards unmount except the active editor or dragged placements. Mounted previews retain their DOM during zoom and geometry saves. A per-view cache holds up to 256 revision-keyed previews of up to 32,000 characters each; oversized previews still render, but are not cached after unmount. Local images use browser lazy loading. No additional editor instances are mounted for previews.
 
 Whiteboard tiles show the board name, separate card/whiteboard counts, and up to six labeled child placements plus a remaining count. They use the existing snapshot/index, including cached H1 titles and missing-card fallbacks, without recursive board rendering or child-body reads.
+
+## Empty and editable titles
+
+The app reserves a leading H1 in previews and formatted editors. Only a heading at the beginning of a note (apart from whitespace) supplies the title; a later H1 remains a body section. A note without one displays a virtual empty H1 above its existing content. The default **A new card** text is a gray CSS prompt and may be changed per workspace with `titlePlaceholder` in settings. It is never inserted into the Markdown or counted as text.
+
+Typing in the empty title creates `# Your title`. The editor keeps that first block as H1, and Enter moves into the body. An empty reserved heading is omitted when serializing; opening/focusing a card produces no save. New card bodies remain empty on disk until edited. Unsaved title text remains visible when collapsing while a save is in flight. The filename and title remain independent.
 
 ## File example
 
