@@ -40,18 +40,22 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         }
       }
       if(target){
+        const r=target.getBoundingClientRect(),margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
+        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-rect.width-margin),x-offsetX));
+        const edge=direction>0?left+rect.width:left;
+        phantom.style.left=left+'px';
+        phantom.style.top=(r.top+Math.max(0,(Math.min(r.height,42)-rect.height)/2))+'px';
         const available=rows(target);
         for(let step=0;step<available.length;step++){
           const children=[...target.children].filter(el=>el===preview||available.includes(el as HTMLElement)),index=children.indexOf(preview);
           const neighbor=children[index+(direction>0?1:-1)] as HTMLElement|undefined;
           if(!direction||!neighbor)break;
-          const r=neighbor.getBoundingClientRect();if(!crossed(x,r.left,r.width,direction))break;
+          const r=neighbor.getBoundingClientRect(),transform=getComputedStyle(neighbor).transform;
+          // Compare layout bounds, not the neighbor's animated displacement.
+          const shift=transform&&transform!=='none'?new DOMMatrixReadOnly(transform).m41:0;
+          if(!crossed(edge,r.left-shift,r.width,direction))break;
           place(direction>0?(children[index+2] as HTMLElement??null):neighbor);
         }
-        const r=target.getBoundingClientRect();
-        const margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
-        phantom.style.left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-rect.width-margin),x-offsetX))+'px';
-        phantom.style.top=(r.top+Math.max(0,(Math.min(r.height,42)-rect.height)/2))+'px';
       }else{phantom.style.left=x-offsetX+'px';phantom.style.top=y-offsetY+'px';}
     };
     const tick=()=>{
@@ -74,7 +78,10 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         const previewWidth=value.family==='side'?Math.max(80,rect.width):rect.width;
         Object.assign(preview.style,{width:previewWidth+'px',flex:'0 0 '+previewWidth+'px'});
         preview.classList.add('tab-drop-preview',value.family==='side'?'selected':'active-tab');preview.setAttribute('aria-hidden','true');preview.inert=true;
-        source.style.display='none';document.body.classList.add('list-dragging','tab-dragging');flushSync(()=>setDrag(value));frame=requestAnimationFrame(tick);
+        source.style.display='none';document.body.classList.add('list-dragging','tab-dragging');flushSync(()=>setDrag(value));
+        // Preserve the source slot at lift, independent of where the tab was grabbed.
+        target=source.parentElement!;target.dataset.tabPreview='true';target.insertBefore(preview,source);
+        frame=requestAnimationFrame(tick);
       }
       if(x!==lastX)direction=x-lastX;lastX=x;update();
     };

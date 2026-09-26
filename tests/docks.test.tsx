@@ -122,3 +122,40 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
 
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
+
+test('wide tabs reorder by their leading edge regardless of grab offset in either dock family',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
+  const root=createRoot(document.getElementById('root')!);let order:string[]=[],writes=0;
+  function Harness({family,initial}:{family:'side'|'main';initial:string[]}){
+    const [keys,setKeys]=useState(initial);
+    const tabs=useTabDrag((source,target)=>{order=keys.filter(key=>key!==source.key);const index=target.before?order.indexOf(target.before):order.length;order.splice(index,0,source.key);writes++;setKeys(order);});
+    return <div data-tab-strip data-tab-family={family} data-tab-group="group">{keys.map(key=><button key={key} data-tab-key={key} onPointerDown={e=>tabs.begin(e,{family,group:'group',key})}>{key}</button>)}</div>;
+  }
+  const width=(el:HTMLElement)=>parseFloat(el.style.width)||(el.dataset.tabKey==='wide'?180:32);
+  const rect=(left:number,size:number)=>({left,top:40,width:size,height:34,right:left+size,bottom:74,x:left,y:40,toJSON(){}});
+  dom.window.HTMLElement.prototype.getBoundingClientRect=function(){
+    const el=this as HTMLElement;if(el.hasAttribute('data-tab-strip'))return rect(10,600);
+    const siblings=[...el.parentElement!.children].filter(e=>(e as HTMLElement).style.display!=='none'),index=siblings.indexOf(el);
+    return rect(10+siblings.slice(0,index).reduce((x,e)=>x+width(e as HTMLElement)+2,0),width(el));
+  };
+  const pointer=(target:Element|Document,type:string,x:number)=>act(async()=>{const e=new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:50});Object.defineProperty(e,'pointerId',{value:1});target.dispatchEvent(e);});
+  const previewOrder=()=>[...document.querySelector('[data-tab-strip]')!.children].filter(el=>(el as HTMLElement).style.display!=='none').map(el=>el.textContent);
+  try{
+    for(const family of ['side','main'] as const)for(const direction of [1,-1])for(const offset of [8,172]){
+      const initial=direction>0?['wide','b','c']:['b','c','wide'];order=initial;writes=0;
+      await act(async()=>root.render(<Harness key={family+direction+offset} family={family} initial={initial}/>));
+      const source=document.querySelector<HTMLElement>('[data-tab-key=wide]')!,start=source.getBoundingClientRect().left+offset;
+      await pointer(source,'pointerdown',start);await pointer(document,'pointermove',start+direction*5);
+      assert.deepEqual(previewOrder(),initial,'lifting at either end preserves the source slot');
+      await pointer(document,'pointermove',start+direction*13);
+      assert.deepEqual(previewOrder(),['b','wide','c'],'the tab edge crosses its neighbor while the cursor stays inside the wide tab');
+      await pointer(document,'pointermove',start+direction*45);
+      const moved=direction>0?['b','c','wide']:['wide','b','c'];assert.deepEqual(previewOrder(),moved);
+      assert.equal(writes,0,'edge previews do not persist');
+      await pointer(document,'pointermove',start);assert.deepEqual(previewOrder(),initial,'reversing uses the opposite boundary');
+      await pointer(document,'pointermove',start+direction*45);await pointer(document,'pointerup',start+direction*45);
+      assert.deepEqual(order,moved);assert.equal(writes,1);
+    }
+  }finally{await act(async()=>root.unmount());dom.window.close();}
+});
