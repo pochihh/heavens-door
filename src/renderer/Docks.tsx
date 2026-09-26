@@ -20,6 +20,8 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
   const dock=docks[side],name=side==='left'?'Left':'Right',dockElement=useRef<HTMLElement>(null);
   useLayoutEffect(()=>revealActiveTabs(dockElement.current),[dock]);
   const moving=drag?.family==='side'?drag:null;
+  // CSS leaves unused space when flex-grow values add up to less than one.
+  const totalWeight=dock.groups.reduce((sum,group)=>sum+group.weight,0);
   if(dock.collapsed||!dock.groups.length)return moving?<aside className="side-dock collapsed-dock-target" aria-label={name+' dock drop target'} style={{width:dock.width}}><div className="module-tabs" data-tab-family="side" data-tab-group="" data-dock-side={side} data-tab-drop="after"/><div className="module-content"/></aside>:null;
   return <aside ref={dockElement} onTransitionEnd={e=>{if(e.propertyName==='flex-basis'||e.propertyName==='flex-grow')revealActiveTabs(dockElement.current);}} className={'side-dock '+side+'-dock'} aria-label={name+' dock'} style={{width:dock.width}}>
     {dock.groups.map((group,index)=>{const active=(moving?.group===group.id?activeAfterRemoval(group.tabs,group.active,moving.key):group.active) as ModuleId|'';
@@ -36,7 +38,7 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
           ]});
       };
       return <Fragment key={group.id}>
-      <section className="panel-group" aria-label={name+' Tab Group '+(index+1)} data-group={group.id} style={{flex:group.weight}}>
+      <section className="panel-group" aria-label={name+' Tab Group '+(index+1)} data-group={group.id} style={{flex:group.weight/totalWeight}}>
         <div className="module-tab-strip" onContextMenu={e=>{e.preventDefault();openMenu(e.target as Element,e.clientX,e.clientY);}}>
           <div className="module-tabs" role="tablist" aria-label={name+' Tab Group views'} data-tab-strip data-tab-family="side" data-tab-group={group.id} data-dock-side={side} onKeyDown={e=>{
             if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const target=e.target as HTMLElement,r=target.getBoundingClientRect();openMenu(target,r.left,r.bottom);return;}

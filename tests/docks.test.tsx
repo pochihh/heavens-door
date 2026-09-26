@@ -59,6 +59,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const root=createRoot(document.getElementById('root')!);let current=defaultDocks(),writes=0;
+  current.left.groups[0].weight=.31;current.left.groups[1].weight=.19;current.right.groups[0].weight=.25;
   const first=pane('a'),second=pane('c');first.tabs=['a','b'];let documents=splitPane(first,first.id,'row',second),documentWrites=0;
   function Harness(){
     const [docks,setDocks]=useState(current),[layout,setLayout]=useState(documents);
@@ -92,6 +93,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
   const mainTab=(group:string,key:string)=>[...document.querySelectorAll<HTMLElement>('[data-tab-family=main]')].find(e=>e.dataset.tabGroup===group)!.querySelector<HTMLElement>('[data-tab-key="'+key+'"] button')!;
   try{
     await act(async()=>root.render(<Harness/>));
+    assert.equal([...document.querySelectorAll<HTMLElement>('.left-dock>.panel-group')].reduce((sum,g)=>sum+Number(g.style.flexGrow),0),1,'fractional saved weights consume the full dock height');
     assert.equal(document.querySelector('[aria-label="Drag panel group"]'),null);
     await pointer(tab('whiteboards'),'pointerdown',30,50);await pointer(document,'pointermove',32,51);assert.equal(document.querySelector('.drag-phantom'),null,'ordinary clicks retain the 5px threshold');
     await pointer(document,'pointermove',100,180);
