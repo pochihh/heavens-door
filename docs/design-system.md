@@ -14,7 +14,7 @@ Light and dark palettes are CSS variables. A workspace's theme can follow the sy
 
 ## Docks and navigation
 
-Use the names in [UI terminology](ui-terminology.md). The Left and Right Side Docks have the same layout and controls: vertically resizable Tab Groups, an icon tab strip for each group, a whole-group drag grip visible on hover/focus, and a **…** menu. View controls sit inside the active group's content. The Action Ribbon contains actions for revealing the current Side Dock Views and opening Workspace settings. A View action reveals it in its assigned group and expands that dock. The window toolbar collapses either dock independently.
+Use the names in [UI terminology](ui-terminology.md). The Left and Right Side Docks have the same layout and controls: vertically resizable Tab Groups, a tab strip for each group, a whole-group drag grip visible on hover/focus, and a **…** menu. View controls sit inside the active group's content. The Action Ribbon contains actions for revealing the current Side Dock Views and opening Workspace settings. A View action reveals it in its assigned group and expands that dock. The window toolbar collapses either dock independently.
 
 The bottom-left **workspace switcher** uses Lucide's `ChevronsUpDown` icon, aligned with the Action Ribbon's icons, followed by the folder name. Its menu opens upward and contains registered workspace names with the current one checked, then a divider and **Manage workspaces** with the Database icon. Paths appear in tooltips. Sync and save/checkpoint state occupy the right end of the status bar. Word/card counts and undo/redo buttons are absent there.
 
@@ -23,6 +23,20 @@ The bottom-left **workspace switcher** uses Lucide's `ChevronsUpDown` icon, alig
 - A row's **+** and **…** appear on hover or keyboard focus; on touch they remain visible. **+** on a folder offers only **New sub-whiteboard** and **New note**. The root's note action is disabled with an explanation in its tooltip.
 - Right-click and **…** call the same action builder. The menu supports arrows, Home/End and Escape, and restores focus when closed. File operations currently include open, open to side, bookmark, icon, source inspection, path copy, reveal, refresh and collapse. It does not pretend to offer unimplemented rename/delete/move actions.
 - Starred and Recent share one scrolling panel. Empty Starred occupies only its header, which accepts drops. Document icons stay visible on hover/drag; there is no section drop highlight. Recent stays chronological. Starred is manually ordered. Dragging changes bookmarks, never file locations. The precise drag behavior is in [drag-and-drop.md](interactions/drag-and-drop.md).
+
+## Side Dock tabs and motion
+
+Side Docks and the Main Dock share the View/Tab Group model but have distinct tab styling. Main Dock tabs retain their existing appearance. In each Side Dock Tab Group, the active tab shows its icon and View name on the same surface as its content, with no gap or border between them. Inactive tabs show icons only. Names truncate when space is tight; tooltips and accessible names retain the full title. Tabs keep their order when selected, and overflow scrolls horizontally, keeping the selected tab visible after it expands. The View name is not repeated in a content heading; View-specific tools remain inside the content.
+
+Motion uses CSS tokens in `styles.css`:
+
+| Token | Default | Use |
+| --- | --- | --- |
+| `--motion-fast` | 120 ms | Hover, focus, color and opacity feedback. |
+| `--motion-normal` | 180 ms | Small state changes, including active Side Dock tab expansion. |
+| `--motion-ease` | `cubic-bezier(.2,0,0,1)` | Ease out without bounce or overshoot. |
+
+Keep motion local: Side Dock tab widths and labels transition, while content switches immediately without sliding or fading the whole View. Prefer transform/opacity for other motion; the short tab row is the deliberate size-animation exception. Avoid `transition: all`. Dragging, resizing and whiteboard navigation must track the pointer without easing; tab transitions are disabled during dock dragging. Reduced motion sets these durations to zero. The existing 650 ms Main Dock focus indicator remains a separate attention cue and is disabled under reduced motion. New animations should use these conventions rather than add arbitrary timings or a motion library.
 
 ## Whiteboard cards
 

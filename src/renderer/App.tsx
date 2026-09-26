@@ -208,8 +208,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </div>;
   }
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
-    if(module==='history')return <><div className="module-toolbar"><strong>History</strong><div className="toolbar-spacer"/><Tool icon="plus" label="Save workspace checkpoint · ⌘S / Ctrl+S" disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
-    if(module==='agent')return <><div className="module-toolbar"><strong>Agent console</strong></div><div className="agent-empty">Agent integration is not connected yet.</div></>;
+    if(module==='history')return <><div className="module-toolbar"><div className="toolbar-spacer"/><Tool icon="plus" label="Save workspace checkpoint · ⌘S / Ctrl+S" disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
+    if(module==='agent')return <div className="agent-empty">Agent integration is not connected yet.</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
   }
   return <div className={'app platform-'+window.door.platform+(dockDrag?' docking':'')} inert={state.status==='Opening workspace…'} style={{'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>

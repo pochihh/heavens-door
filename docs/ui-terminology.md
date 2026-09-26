@@ -48,7 +48,7 @@ A plugin can provide Views and actions. **Plugin** describes an extension; **Vie
 | Agent Console | The reserved agent surface; agent integration is currently disconnected. | Either Side Dock |
 | History | Persistent Workspace Git checkpoints and restore actions. | Either Side Dock |
 
-**Whiteboard View** displays a board; **Whiteboard Explorer** navigates boards. **Card View** displays one card; **File Explorer** navigates files. A card edited directly on a whiteboard stays inside Whiteboard View. The shorter navigation labels above are also Views; the word “View” need not appear on every tab. Graph View is not implemented in this preview.
+**Whiteboard View** displays a board; **Whiteboard Explorer** navigates boards. **Card View** displays one card; **File Explorer** navigates files. A card edited directly on a whiteboard stays inside Whiteboard View. Side Dock tabs show the active View's icon and name, joined to its content; inactive tabs show icons only. Main Dock tabs keep their document-tab appearance. The shorter navigation labels above are also Views; the word “View” need not appear on every tab. Graph View is not implemented in this preview.
 
 The initial Left Side Dock has Whiteboard Explorer, File Explorer, Tags and Search in its upper Tab Group, with Starred & Recent below. The initial Right Side Dock contains Agent Console and History and starts collapsed. View-revealing actions activate the chosen View and expand its current dock without relocating it.
 

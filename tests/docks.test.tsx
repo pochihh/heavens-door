@@ -49,6 +49,24 @@ test('dragging module tabs and whole groups moves them between equal docks and c
   const event=async(selector:string,type:string)=>{const el=document.querySelector(selector);assert.ok(el,selector);await act(async()=>{const e=new dom.window.Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'dataTransfer',{value:data});el.dispatchEvent(e);});};
   try{
     await act(async()=>root.render(<Harness/>));
+    const selected=()=>document.querySelector<HTMLButtonElement>('[data-group="navigation"] [aria-selected=true]')!;
+    const assertActive=(title:string)=>{
+      assert.equal(selected().getAttribute('aria-label'),title);
+      assert.equal(selected().querySelector('.module-tab-label')?.getAttribute('aria-hidden'),'false');
+      assert.equal(document.getElementById(selected().getAttribute('aria-controls')!)?.getAttribute('aria-labelledby'),selected().id);
+      assert.ok([...document.querySelectorAll('[data-group="navigation"] [aria-selected=false] .module-tab-label')].every(label=>label.getAttribute('aria-hidden')==='true'));
+    };
+    assertActive('Whiteboard explorer');
+    await event('[role=tab][aria-label="File explorer"]','click');assertActive('File explorer');
+    await act(async()=>{selected().focus();selected().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));});
+    assertActive('Tags');assert.equal(document.activeElement,selected());
+    const tab=selected(),strip=tab.parentElement!,tabBounds=tab.getBoundingClientRect,stripBounds=strip.getBoundingClientRect;
+    tab.getBoundingClientRect=()=>({left:90,right:170}) as DOMRect;strip.getBoundingClientRect=()=>({left:0,right:140}) as DOMRect;
+    await act(async()=>{const end=new dom.window.Event('transitionend',{bubbles:true});Object.defineProperty(end,'propertyName',{value:'flex-basis'});tab.dispatchEvent(end);});
+    assert.equal(strip.scrollLeft,30,'the expanding active tab remains visible in a narrow strip');
+    tab.getBoundingClientRect=tabBounds;strip.getBoundingClientRect=stripBounds;
+    await act(async()=>selected().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Home',bubbles:true})));
+    assertActive('Whiteboard explorer');writes=0;
     await event('[role=tab][aria-label="File explorer"]','dragstart');
     assert.ok(document.querySelector('[data-dock-drop="right:empty"]'),'a collapsed dock exposes a destination');
     await event('[data-dock-drop="right:empty"]','dragover');await event('[data-dock-drop="right:empty"]','drop');
