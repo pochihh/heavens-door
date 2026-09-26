@@ -59,7 +59,7 @@ export type ModuleId=typeof MODULE_IDS[number];
 export type DockSide='left'|'right';
 export interface PanelGroup {id:string;tabs:ModuleId[];active:ModuleId;weight:number}
 export interface Dock {collapsed:boolean;width:number;groups:PanelGroup[]}
-export interface Docks {version:1;left:Dock;right:Dock}
+export interface Docks {version:1;left:Dock;right:Dock;closed?:Partial<Record<ModuleId,{side:DockSide;group:string;index:number;weight:number}>>}
 export interface ViewMemory {camera?:{x:number;y:number;zoom:number};scroll?:number;tagView?:'table'|'kanban';tagGroup?:string}
 export interface DocumentsLayout {tree:Layout;active:string;views:Record<string,ViewMemory>;formatting:string[]}
 export interface NavigationMemory {expanded?:string[];search?:string;scroll?:number}
@@ -78,6 +78,13 @@ export function validateDocks(value:unknown):Docks {
       for(const module of group.tabs){if(!MODULE_IDS.includes(module)||modules.has(module))throw new Error('Duplicate or unknown module');modules.add(module);}
     }
   }
+  if(docks.closed!==undefined){
+    if(!docks.closed||typeof docks.closed!=='object'||Array.isArray(docks.closed))throw new Error('Invalid closed Views');
+    for(const [module,place] of Object.entries(docks.closed)){
+      if(!MODULE_IDS.includes(module as ModuleId)||modules.has(module)||!place||!['left','right'].includes(place.side)||typeof place.group!=='string'||!place.group||place.group.length>100||!Number.isInteger(place.index)||place.index<0||place.index>=MODULE_IDS.length||!Number.isFinite(place.weight)||place.weight<=0||place.weight>10000)throw new Error('Invalid closed View');
+      modules.add(module);
+    }
+  }
   if(modules.size!==MODULE_IDS.length)throw new Error('Missing workspace module');
   return docks;
 }
@@ -85,13 +92,31 @@ export function findModule(docks:Docks,module:ModuleId) {
   for(const side of ['left','right'] as const){const group=docks[side].groups.find(g=>g.tabs.includes(module));if(group)return {side,group};}
   throw new Error('Module is not placed');
 }
+export function closeModule(docks:Docks,module:ModuleId):Docks {
+  if(docks.closed?.[module])return docks;
+  const {side,group}=findModule(docks,module),next=structuredClone(docks),tabs=group.tabs.filter(m=>m!==module);
+  next.closed={...next.closed,[module]:{side,group:group.id,index:group.tabs.indexOf(module),weight:group.weight}};
+  next[side].groups=next[side].groups.flatMap(g=>g.id!==group.id?[g]:tabs.length?[{...g,tabs,active:activeAfterRemoval(g.tabs,g.active,module) as ModuleId}]:[]);
+  if(!next[side].groups.length)next[side].collapsed=true;
+  return next;
+}
 export function revealModule(docks:Docks,module:ModuleId):Docks {
+  const saved=docks.closed?.[module];
+  if(saved){
+    const next=structuredClone(docks),side=(['left','right'] as const).find(side=>next[side].groups.some(g=>g.id===saved.group))??saved.side;
+    const dock=next[side],group=dock.groups.find(g=>g.id===saved.group);dock.collapsed=false;
+    if(group){group.tabs.splice(Math.min(saved.index,group.tabs.length),0,module);group.active=module;}
+    else dock.groups.push({id:saved.group,tabs:[module],active:module,weight:saved.weight});
+    delete next.closed![module];if(!Object.keys(next.closed!).length)delete next.closed;
+    return next;
+  }
   const {side,group}=findModule(docks,module);
   return {...docks,[side]:{...docks[side],collapsed:false,groups:docks[side].groups.map(g=>g.id===group.id?{...g,active:module}:g)}};
 }
 export type DockDrag={module:ModuleId}|{group:string};
 export type DockDrop={side:DockSide;group?:string;position:'tab'|'before'|'after';beforeTab?:ModuleId};
 export function moveModule(docks:Docks,drag:DockDrag,drop:DockDrop):Docks {
+  if('module' in drag&&docks.closed?.[drag.module])return docks;
   const source='module' in drag?findModule(docks,drag.module):(['left','right'] as const).flatMap(side=>docks[side].groups.map(group=>({side,group}))).find(g=>g.group.id===drag.group);
   if(!source||'module' in drag&&drop.beforeTab===drag.module)return docks;
   if(drop.group===source.group.id&&('group' in drag||source.group.tabs.length===1))return docks;

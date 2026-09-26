@@ -84,6 +84,11 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('.activity-bar [aria-label="File explorer"]');
     await click('[data-tooltip="Expand assets"]');
     assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active pane"]'));
+    await act(async()=>document.querySelector('#tab-files')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:150,clientY:70})));
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close View Tab')!.click());await settle();
+    assert.equal(document.querySelector('#tab-files'),null);assert.equal(document.querySelector('.activity-bar [aria-label="File explorer"]')?.getAttribute('aria-pressed'),'false');
+    await act(async()=>session.flushPreferences());assert.ok(snapshot.preferences?.docks?.closed?.files);
+    await click('.activity-bar [aria-label="File explorer"]');assert.equal(document.querySelector('#tab-files')?.getAttribute('aria-selected'),'true');
     await click('.activity-bar [aria-label="Search"]');
     assert.ok(document.querySelector('.module-toolbar input[aria-label="Search cards"]'),'Search keeps its input');
     assert.equal(document.querySelector('[aria-label="Search actions"]'),null);
@@ -137,6 +142,12 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>newNote.click());await settle();
     assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')?.textContent,'untitled.md','Explorer creation opens the note even when its board is active');
     assert.equal(snapshot.boards.find(b=>b.folder==='Ideas')?.cards.at(-1)?.collapsed,true);
+    const boardTab=document.querySelector<HTMLElement>('.active-pane [data-tab-key="board:Ideas"]')!;assert.ok(boardTab);
+    await act(async()=>boardTab.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true})));
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close View Tab')!.click());await settle();
+    assert.equal(document.querySelector('.active-pane [data-tab-key="board:Ideas"]'),null,'Main Dock tabs also close from their context menu');
+    assert.ok(snapshot.boards.some(b=>b.folder==='Ideas'),'closing a tab keeps its file');
+
   } finally {
     await act(async()=>root.unmount());session.dispose();dom.window.close();
   }

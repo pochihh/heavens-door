@@ -6,7 +6,7 @@ import { Explorer } from './Explorer';
 import { SideDock, modules, MODULE_IDS } from './Docks';
 import { WorkspaceMenu,WorkspaceManager } from './WorkspaceMenu';
 import {defaultDocks,findModule,revealModule,moveModule,activeAfterRemoval,type ModuleId,type Docks,type DocumentsLayout} from '../layout';
-import { TooltipHost } from './Overlays';
+import { ActionMenu,TooltipHost,type MenuState } from './Overlays';
 import {useTabDrag} from './tab-drag';
 import { documentInfo, parent } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
@@ -54,7 +54,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [modal,setModal]=useState<'settings'|'folder'|'icon'|'migration'|'workspaces'|null>(null);
   const [folderParent,setFolderParent]=useState(''),[folderName,setFolderName]=useState('');
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
-  const [pulse,setPulse]=useState(0);
+  const [pulse,setPulse]=useState(0),[tabMenu,setTabMenu]=useState<MenuState|null>(null);
+  const dismissTabMenu=useCallback(()=>setTabMenu(null),[]);
   const memories=useRef(new Map<string,ViewMemory>(Object.entries(prefs.documents?.views??{}))),starredTarget=useRef<HTMLDivElement>(null);
   const active=panes(layout).find(p=>p.id===activeId)??panes(layout)[0];
   const rootCards=snapshot.cards.filter(c=>!parent(c.path));
@@ -85,7 +86,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function changeDocks(next:Docks){setDocks(next);session.schedulePreferences({docks:next},snapshot.root);}
   const tabs=useTabDrag((source,target)=>{
     if(source.family==='side'){
-      if(!target.side||!MODULE_IDS.includes(source.key as ModuleId))return;
+      if(!target.side||!MODULE_IDS.includes(source.key as ModuleId)||docks.closed?.[source.key as ModuleId])return;
       const placed=findModule(docks,source.key as ModuleId);if(placed.group.id!==source.group)return;
       const next=moveModule(docks,{module:source.key as ModuleId},{side:target.side,group:target.group||undefined,position:target.position,beforeTab:target.before as ModuleId|undefined});if(next!==docks)changeDocks(next);
     }else{
@@ -170,6 +171,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   }
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
+    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:'View tab actions',x,y,actions:[{label:'Close View Tab',icon:'close',run:()=>close(p,key)}]});
     const info=p.active?documentInfo(p.active,snapshot):null;
     const focused=p.id===active.id;
     const memoryKey=p.id+':'+p.active;
@@ -179,7 +181,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     return <section className={'note-pane '+(focused?'active-pane':'')} data-pane={p.id} data-active={focused} aria-label="Main Dock Tab Group" onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
       <div className="tab-strip">
         <div className="tab-list" role="tablist" aria-label="Open files" data-tab-strip data-tab-family="main" data-tab-group={p.id}>
-          {p.tabs.map(key=>{const info=documentInfo(key,snapshot);return <div className={'tab '+(p.active===key?'active-tab':'')} key={key} data-tab-key={key}>
+          {p.tabs.map(key=>{const info=documentInfo(key,snapshot);return <div className={'tab '+(p.active===key?'active-tab':'')} key={key} data-tab-key={key} onContextMenu={e=>{e.preventDefault();showTabMenu(key,e.clientX,e.clientY);}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();showTabMenu(key,r.left,r.bottom);}}}>
             <button role="tab" onPointerDown={e=>tabs.begin(e,{family:'main',group:p.id,key})} aria-selected={p.active===key} data-tooltip={info.path||info.title} onClick={()=>open(key,p.id)}>{docIcon(key)}<span>{info.title}</span></button>
             <Tool icon="close" label={'Close '+info.title} onClick={()=>close(p,key)}/>
           </div>;})}
@@ -233,7 +235,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
       <nav className="activity-bar" aria-label="Activity bar">
-        {MODULE_IDS.map(module=>{const {side,group}=findModule(docks,module),selected=!docks[side].collapsed&&group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
+        {MODULE_IDS.map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
         <div className="toolbar-spacer"/><Tool icon="settings" label="Workspace settings" onClick={()=>setModal('settings')}/>
       </nav>
       <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
@@ -248,6 +250,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <span data-tooltip="Remote sync is not configured"><Icon name="sync" size={13}/>Sync off</span>
       <span role="status" data-tooltip={state.error||state.status}>{state.status==='Saved locally'?'Saved':state.status}</span>
     </footer>
+    {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip="Copy the unsaved draft before reconciling changes" onClick={()=>attempt(session.copyDraft())}>Copy draft</button><button data-tooltip="Discard this draft and read the current file" onClick={()=>{if(confirm('Discard the unsaved draft and reload from disk?'))attempt(session.reloadDraft());}}>Reload from disk</button></>}<Tool icon="close" label="Dismiss error" onClick={()=>session.update({error:''})}/></div>}
     {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?'Manage workspaces':modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}>
       <div className="panel-title"><strong>{modal==='workspaces'?'Manage workspaces':modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}</strong><Tool icon="close" label="Close dialog" onClick={()=>setModal(null)}/></div>

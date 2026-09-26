@@ -40,13 +40,15 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         }
       }
       if(target){
-        preview.style.visibility=target===source.parentElement?'hidden':'';
         const r=target.getBoundingClientRect(),margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
-        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-rect.width-margin),x-offsetX));
-        const edge=direction>0?left+rect.width:left;
+        const available=rows(target),gap=parseFloat(getComputedStyle(target).columnGap)||0;
+        // A lone Side Dock tab fills its source; fit it beside the destination icons.
+        const width=value.family==='side'&&target!==source.parentElement?Math.min(rect.width,Math.max(phantom.classList.contains('selected')?80:32,r.width-available.reduce((sum,el)=>sum+el.getBoundingClientRect().width,0)-gap*available.length)):rect.width;
+        Object.assign(preview.style,{width:width+'px',flex:'0 0 '+width+'px'});phantom.style.width=width+'px';
+        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-width-margin),x-offsetX*width/rect.width));
+        const edge=direction>0?left+width:left;
         phantom.style.left=left+'px';
         phantom.style.top=(r.top+Math.max(0,(Math.min(r.height,42)-rect.height)/2))+'px';
-        const available=rows(target);
         for(let step=0;step<available.length;step++){
           const children=[...target.children].filter(el=>el===preview||available.includes(el as HTMLElement)),index=children.indexOf(preview);
           const neighbor=children[index+(direction>0?1:-1)] as HTMLElement|undefined;
@@ -57,7 +59,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
           if(!crossed(edge,r.left-shift,r.width,direction))break;
           place(direction>0?(children[index+2] as HTMLElement??null):neighbor);
         }
-      }else{phantom.style.left=x-offsetX+'px';phantom.style.top=y-offsetY+'px';}
+      }else{phantom.style.width=rect.width+'px';phantom.style.left=x-offsetX+'px';phantom.style.top=y-offsetY+'px';}
     };
     const tick=()=>{
       if(!active||ended)return;
@@ -76,8 +78,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         preview=source.cloneNode(true) as HTMLElement;
         for(const el of [preview,...preview.querySelectorAll('*')])for(const attr of ['id','data-tab-key','data-tooltip','aria-controls','aria-labelledby','aria-describedby','role','tabindex'])el.removeAttribute(attr);
         preview.querySelectorAll('[aria-hidden]').forEach(el=>el.removeAttribute('aria-hidden'));
-        const previewWidth=value.family==='side'?Math.max(80,rect.width):rect.width;
-        Object.assign(preview.style,{width:previewWidth+'px',flex:'0 0 '+previewWidth+'px'});
+        Object.assign(preview.style,{width:rect.width+'px',flex:'0 0 '+rect.width+'px',visibility:'hidden'});
         preview.classList.add('tab-drop-preview',value.family==='side'?'selected':'active-tab');preview.setAttribute('aria-hidden','true');preview.inert=true;
         source.style.display='none';document.body.classList.add('list-dragging','tab-dragging');flushSync(()=>setDrag(value));
         // Preserve the source slot at lift, independent of where the tab was grabbed.

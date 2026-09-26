@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {act,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {activeAfterRemoval,moveTab,defaultDocks,findModule,moveModule,revealModule,resizeGroups,validateDocks,pane,openTab,splitPane,MAX_PANES,MAX_TABS,panes,type Layout,type ModuleId,type Docks} from '../src/layout';
+import {activeAfterRemoval,moveTab,defaultDocks,findModule,moveModule,closeModule,revealModule,resizeGroups,validateDocks,pane,openTab,splitPane,MAX_PANES,MAX_TABS,panes,type Layout,type ModuleId,type Docks} from '../src/layout';
 import {readPreferences,writePreferences,defaultPreferences,validatePreferences} from '../src/core/preferences';
 import {WorkspaceRegistry} from '../src/core/registry';
 import {SideDock} from '../src/renderer/Docks';
@@ -39,6 +39,19 @@ test('module layouts keep every module once, persist per workspace, and registra
   const before=await fs.readFile(join(one,'.heavens-door/settings.json'),'utf8');await assert.rejects(()=>writePreferences(one,restored,{docks:broken}),/Duplicate/);assert.equal(await fs.readFile(join(one,'.heavens-door/settings.json'),'utf8'),before);
   assert.throws(()=>validatePreferences({...restored,navigation:{files:4}}),/Invalid module navigation/);
   assert.throws(()=>validatePreferences({...restored,documents:{...restored.documents,views:{bad:{camera:false}}}}),/Invalid document view/);
+  let closed=closeModule(initial,'whiteboards');
+  assert.equal(findModule(closed,'files').group.active,'files');assert.deepEqual(validateDocks(closed),closed);
+  closed=closeModule(closed,'search');assert.equal(findModule(closed,'files').group.active,'files','closing an inactive View preserves selection');
+  closed=closeModule(closed,'bookmarks');assert.equal(closed.left.groups.length,1,'closing the sole tab removes its group');
+  await writePreferences(two,defaultPreferences(),{docks:closed});
+  const savedClosed=(await readPreferences(two)).docks!;assert.deepEqual(savedClosed,closed);
+  const reopened=revealModule(savedClosed,'bookmarks');assert.equal(findModule(reopened,'bookmarks').group.id,'saved');assert.equal(findModule(reopened,'bookmarks').group.weight,38);
+  assert.deepEqual(findModule(revealModule(revealModule(reopened,'search'),'whiteboards'),'whiteboards').group.tabs,initial.left.groups[0].tabs);
+  const duplicate=structuredClone(closed);duplicate.closed!.files=duplicate.closed!.whiteboards;assert.throws(()=>validateDocks(duplicate),/Invalid closed View/);
+  const invalid=structuredClone(closed);invalid.closed!.whiteboards!.index=-1;assert.throws(()=>validateDocks(invalid),/Invalid closed View/);
+  for(const module of ['files','tags','agent','history'] as const)closed=closeModule(closed,module);
+  assert.equal(closed.left.collapsed,true);assert.equal(closed.right.collapsed,true);assert.deepEqual(validateDocks(closed),closed);
+  assert.equal(revealModule(closed,'history').right.collapsed,false,'Action Ribbon can reopen a View after all tabs are closed');
   const registry=new WorkspaceRegistry(join(root,'registered.json'));await registry.register(one);await registry.register(two);await registry.unregister(await fs.realpath(two));assert.equal((await registry.list()).length,1);assert.equal((await fs.stat(two)).isDirectory(),true);
 });
 
@@ -69,7 +82,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     }
     if(el.matches('[data-tab-key],.tab-drop-preview')){
       const parent=el.parentElement!,r=parent.getBoundingClientRect(),visible=[...parent.children].filter(e=>(e as HTMLElement).style.display!=='none');
-      return rect(r.left+visible.indexOf(el)*80,r.top,80,34);
+      return rect(r.left+visible.indexOf(el)*80,r.top,el.dataset.tabKey==='bookmarks'?320:80,34);
     }
     return rect(0,0,0,0);
   };
@@ -90,7 +103,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
 
     await pointer(tab('whiteboards'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);
     assert.ok(document.querySelector('.collapsed-dock-target .tab-drop-preview.selected'));
-    assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'visible','another group keeps its destination preview');
+    assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','another group also shows only the phantom');
     assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.top,'40px','Y is locked to the destination strip');
     await pointer(document,'pointerup',850,50);assert.equal(findModule(current,'whiteboards').side,'right');assert.equal(findModule(current,'files').group.active,'files');assert.equal(writes,1);assert.deepEqual(validateDocks(current),current);
 
@@ -99,6 +112,14 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await pointer(document,'pointermove',30,250);assert.ok(document.querySelector('[data-group="saved"] .tab-drop-preview'));
     assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','returning to the source restores an empty insertion slot');
     await pointer(document,'pointerup',30,250);assert.equal(findModule(current,'bookmarks').group.id,'saved');assert.equal(writes,1,'dropping back is a no-op');
+
+    await pointer(tab('bookmarks'),'pointerdown',30,250);await pointer(document,'pointermove',30,50);
+    assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.width,'80px','a full-width lone tab fits beside the target tabs');
+    assert.equal((document.querySelector('.tab-drop-preview') as HTMLElement).style.width,'80px');
+    assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden');
+    assert.ok(document.querySelector('[data-group="saved"] [aria-label="Empty Tab Group"]'));
+    await pointer(document,'pointermove',30,250);assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.width,'320px','returning restores the original width');
+    await escape();
 
     await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await escape();assert.equal(writes,1);assert.equal(findModule(current,'files').side,'left');assert.equal(document.querySelector('.drag-phantom'),null);
     await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await pointer(document,'pointercancel',850,50);assert.equal(writes,1);
@@ -117,8 +138,8 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     assert.deepEqual(findModule(current,'files').group.tabs,['files','tags','search'],'horizontal reordering works in both directions');
     await pointer(tab('tags'),'pointerdown',110,50);await pointer(document,'pointermove',850,50);
     assert.equal(document.querySelector('.tab-phantom')?.classList.contains('selected'),false,'inactive phantom keeps its original state');
-    assert.ok(document.querySelector('.tab-drop-preview.selected .module-tab-label'),'destination preview still becomes active');
-    assert.ok(parseFloat((document.querySelector('.tab-drop-preview') as HTMLElement).style.width)>=80,'active preview reserves label space');
+    assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','inactive drags also keep the destination slot empty');
+    assert.equal((document.querySelector('.tab-drop-preview') as HTMLElement).style.width,(document.querySelector('.tab-phantom') as HTMLElement).style.width,'slot and phantom have matching widths');
     await escape();
     await act(async()=>{tab('tags').focus();tab('tags').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));});
     assert.ok(document.querySelector('[role=menu][aria-label="Tab Group actions"]'));

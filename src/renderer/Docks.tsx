@@ -1,5 +1,5 @@
 import {Fragment,useCallback,useLayoutEffect,useRef,useState,type PointerEvent,type ReactNode} from 'react';
-import {MODULE_IDS,activeAfterRemoval,moveModule,resizeGroups,type Docks,type DockSide,type ModuleId} from '../layout';
+import {MODULE_IDS,activeAfterRemoval,closeModule,moveModule,resizeGroups,type Docks,type DockSide,type ModuleId} from '../layout';
 import {Icon,type IconName} from './Icons';
 import {ActionMenu,type MenuState} from './Overlays';
 import type {TabDrag} from './tab-drag';
@@ -27,7 +27,8 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
       const openMenu=(target:Element,x:number,y:number)=>{
         const module=(target.closest<HTMLElement>('[data-tab-key]')?.dataset.tabKey??group.active) as ModuleId,other=side==='left'?'right':'left';
         setMenu({label:'Tab Group actions',x,y,actions:[
-            {label:'Move View to '+other+' dock',icon:other,run:()=>onChange(moveModule(docks,{module},{side:other,position:'after'}))},
+            {label:'Close View Tab',icon:'close',run:()=>onChange(closeModule(docks,module))},
+            {separatorBefore:true,label:'Move View to '+other+' dock',icon:other,run:()=>onChange(moveModule(docks,{module},{side:other,position:'after'}))},
             {label:'Move Tab Group to '+other+' dock',icon:other,run:()=>onChange(moveModule(docks,{group:group.id},{side:other,position:'after'}))},
             {label:'Split View above',icon:'up',disabled:group.tabs.length===1,run:()=>onChange(moveModule(docks,{module},{side,group:group.id,position:'before'}))},
             {label:'Split View below',icon:'arrowDown',disabled:group.tabs.length===1,run:()=>onChange(moveModule(docks,{module},{side,group:group.id,position:'after'}))},

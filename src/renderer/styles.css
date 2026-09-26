@@ -107,7 +107,7 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .activity-bar{width:var(--rail-width);flex-shrink:0;display:flex;flex-direction:column;align-items:center;overflow:auto;scrollbar-width:none}.activity-bar>.tool{margin:7px;width:28px;height:28px;padding:5px}
 .workspace-body{padding-right:7px}.side-dock{display:flex;flex-direction:column;min-width:180px;max-width:35vw;min-height:0;flex-shrink:0;gap:0;background:transparent;overflow-y:auto;scrollbar-width:thin}.panel-group{display:flex;flex-direction:column;min-height:62px;position:relative;min-width:0;overflow:hidden}
 /* Side Dock tabs join the content surface; Main Dock tabs keep their own style. */
-.module-tab-strip{height:34px;min-height:34px;display:flex;align-items:center;gap:2px;padding:0 4px 0 0;background:transparent}
+.module-tab-strip{height:34px;min-height:34px;display:flex;align-items:center;background:transparent}
 .module-tabs{display:flex;align-items:stretch;gap:2px;min-width:0;flex:1;height:100%;overflow-x:auto;scrollbar-width:none}
 .module-tab{height:34px;min-width:32px;flex:0 0 32px;padding:0 8px;display:flex;align-items:center;justify-content:flex-start;overflow:hidden;color:var(--muted);border-radius:var(--control-corner) var(--control-corner) 0 0;transition:flex-grow var(--motion-normal) var(--motion-ease),flex-basis var(--motion-normal) var(--motion-ease),background-color var(--motion-fast) var(--motion-ease),color var(--motion-fast) var(--motion-ease)}
 .module-tab.selected{flex:1 0 80px;background:var(--sidebar);color:var(--text)}
@@ -121,13 +121,12 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .dock-drop-zone:first-child{top:34px}.dock-drop-zone:last-child{bottom:0}
 .collapsed-dock-target>.module-tabs{height:34px;min-height:34px;flex:0 0 34px}
 .docking .module-content,.docking .document-content,.docking .document-toolbar{pointer-events:none}
-/* A destination tab is the insertion preview, never a separate line or area tint. */
+/* One visible phantom; an invisible tab-sized slot marks insertion in every group. */
 [data-tab-strip]{min-height:34px}.module-tab,.tab>button[role=tab]{touch-action:none}
 .tab-drop-preview{pointer-events:none;flex-shrink:0}
 [data-tab-preview] .module-tab:not(.tab-drop-preview){flex:0 0 32px;background:transparent;color:var(--muted)}
 [data-tab-preview] .module-tab:not(.tab-drop-preview) .module-tab-label{max-width:0;margin-left:0;opacity:0}
 [data-tab-preview] .tab:not(.tab-drop-preview){background:transparent;color:var(--muted);box-shadow:none}
-[data-tab-preview] .tab.tab-drop-preview{background:var(--selected);color:var(--text);box-shadow:inset 0 0 0 1px var(--tab-border)}
 .tab-dragging .module-tab,.tab-dragging .module-tab-label{transition:none}
 .tab-dragging [data-tab-key]:hover{background:transparent}
 .tab-phantom{contain:layout style}
