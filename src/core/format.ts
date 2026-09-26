@@ -49,7 +49,7 @@ export function validateBoard(board: Board) {
   const ids = new Set<string>();
   for (const p of board.cards) {
     if (!p.id || (!p.cardId && !p.folder) || ids.has(p.id) || ![p.x,p.y,p.width,p.height].every(Number.isFinite) || p.width < 120 || p.height < 80) throw new Error('Invalid board placement');
-    if (p.folder !== undefined && (typeof p.folder !== 'string' || !p.folder || p.folder.startsWith('/') || p.folder.split(/[\\/]/).some(part => !part || part.startsWith('.')))) throw new Error('Invalid sub-whiteboard reference');
+    if (p.folder !== undefined && (typeof p.folder !== 'string' || !p.folder || p.folder.startsWith('/') || p.folder.split(/[\\/]/).some(part => !part || part.startsWith('.')))) throw new Error('Invalid whiteboard reference');
     if(p.collapsed!==undefined&&typeof p.collapsed!=='boolean')throw new Error('Invalid collapsed state');
     ids.add(p.id);
   }

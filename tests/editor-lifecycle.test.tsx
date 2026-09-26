@@ -65,7 +65,7 @@ test('card bodies edit in place with one pinned editor, while card chrome still 
     });
     await act(async () => {pointer(canvas,'pointerdown',0,500);pointer(canvas,'pointerup',0,500);});
     assert.equal(document.querySelector('.tiptap'),null,'clicking the canvas finishes editing');
-    const grip=document.querySelector('.card-grip')!;
+    const grip=document.querySelector('.board-card')!;
     await act(async () => {pointer(grip,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
     assert.equal(saves,1,'card chrome remains draggable');
   } finally {await act(async () => root.unmount());dom.window.close();}

@@ -17,7 +17,7 @@ export function zoomAt(camera: Camera, x: number, y: number, zoom: number): Came
 export function shouldLetCardScroll(event: WheelEvent, viewport: HTMLElement) {
   const target = event.target instanceof HTMLElement ? event.target : null;
   const root = target?.closest<HTMLElement>('.card-preview,.editor-body');
-  if (!root) return false;
+  if (!root?.closest('.board-card.selected') || event.ctrlKey || event.metaKey) return false;
   const dx = normalizedWheelDelta(event.deltaX, event.deltaMode);
   const dy = normalizedWheelDelta(event.deltaY, event.deltaMode);
   for (let element = target; element && element !== viewport && root.contains(element); element = element.parentElement) {
@@ -30,7 +30,7 @@ export function shouldLetCardScroll(event: WheelEvent, viewport: HTMLElement) {
 }
 
 // The camera paints one world transform per frame. React only refreshes the
-// overscanned card set after a substantial move, a detail-level change, or settling.
+// overscanned card set after a substantial move or zoom, or settling.
 export class BoardNavigation {
   current: Camera = { x: 20, y: 20, zoom: 0.85 };
   private published = this.current;
@@ -44,7 +44,7 @@ export class BoardNavigation {
     private viewport: HTMLElement,
     private world: HTMLElement,
     private grid: HTMLElement,
-    private zoomInput: HTMLInputElement,
+    private zoomLabel: HTMLElement,
     private publish: (camera: Camera) => void,
   ) {
     this.win = viewport.ownerDocument.defaultView!;
@@ -95,9 +95,9 @@ export class BoardNavigation {
     // Only the lightweight grid repaints; card positions and edge geometry stay in world coordinates.
     this.grid.style.backgroundSize = `${24 * c.zoom}px ${24 * c.zoom}px`;
     this.grid.style.backgroundPosition = `${c.x}px ${c.y}px`;
-    if (this.viewport.ownerDocument.activeElement !== this.zoomInput) this.zoomInput.value = `${Math.round(c.zoom * 100)}%`;
+    this.zoomLabel.textContent = `${Math.round(c.zoom * 100)}%`;
     const ratio = c.zoom / p.zoom;
-    if (Math.abs(c.x - p.x * ratio) > width * 0.4 || Math.abs(c.y - p.y * ratio) > height * 0.4 || ratio < 0.8 || ratio > 1.25 || (c.zoom < 0.4) !== (p.zoom < 0.4)) this.publishCurrent();
+    if (Math.abs(c.x - p.x * ratio) > width * 0.4 || Math.abs(c.y - p.y * ratio) > height * 0.4 || ratio < 0.8 || ratio > 1.25) this.publishCurrent();
   }
   dispose() {
     if (this.frame !== null) this.win.cancelAnimationFrame(this.frame);

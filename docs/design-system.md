@@ -20,7 +20,7 @@ The bottom-left **workspace switcher** uses Lucide's `ChevronsUpDown` icon, alig
 
 - **Whiteboard explorer** is the daily navigation View: actual whiteboards, cards and tag pages. Ordinary folders and assets stay out. The disclosure arrow expands a whiteboard; clicking its label opens it.
 - **File explorer** is a separate View. Folders expand on click. It shows Markdown, `.whiteboard`, `.tag`, attachments, hidden files and app/Git internals. Listing never changes a folder into a whiteboard. Refresh is explicit for ignored/internal directories that the workspace watcher does not monitor.
-- A row's **+** and **…** appear on hover or keyboard focus; on touch they remain visible. **+** on a folder offers only **New sub-whiteboard** and **New note**. The root's note action is disabled with an explanation in its tooltip.
+- A row's **+** and **…** appear on hover or keyboard focus; on touch they remain visible. **+** on a folder offers only **New whiteboard** and **New note**. The root's note action is disabled with an explanation in its tooltip.
 - An item’s right-click menu and hover **…** call the same action builder: open, open to side, bookmark, icon, source inspection, path copy and reveal. Explorer-wide Refresh and Collapse folders live in its background context menu. Shift+F10 or the Menu key opens the focused item/background menu; menus support arrows, Home/End and Escape, and restore focus when closed. Explorer has no standalone **…** button or empty toolbar row. Search retains its input and clear action. Unimplemented rename/delete/move actions are omitted.
 - Starred and Recent share one scrolling panel. Empty Starred occupies only its header, which accepts drops. Document icons stay visible on hover/drag; there is no section drop highlight. Recent stays chronological. Starred is manually ordered. Dragging changes bookmarks, never file locations. The precise drag behavior is in [drag-and-drop.md](interactions/drag-and-drop.md).
 
@@ -40,7 +40,13 @@ Keep motion local: Side Dock tab widths and labels transition, while content swi
 
 ## Whiteboard cards
 
-The header chevron collapses/expands a card in place. A collapsed card is a 40px-high title row, using its first H1 or its filename; hovering still reveals the file path. It does not mount a preview or editor. Expanded dimensions and coordinates remain saved. Collapse belongs to a placement, so references on other boards can have different states. See [whiteboards.md](whiteboards.md) for automatic column placement and storage.
+Expanded cards have no top bar. A floating upper-right chevron appears on hover, selection or keyboard focus and collapses the card in place; the collapsed title row retains an expand chevron. A collapsed card is a 40px-high title row, using its first H1 or its filename; hovering still reveals the file path. It does not mount a preview or editor. Expanded dimensions and coordinates remain saved. Collapse belongs to a placement, so references on other boards can have different states. See [whiteboards.md](whiteboards.md) for automatic column placement and storage.
+
+Cards and whiteboard tiles share the bottom-right L-shaped resize control. Keep the hit target 20px square with a 9px corner mark; this is a geometric handle, not a diagonal arrow. Drag cards by their 10px outer padding/frame; their content remains directly editable. Whiteboard tiles drag by their body and open by double-click or the corner arrow. Keep selected items above ordinary items, the active editor above those, and moving/resizing items above all three. These layers are temporary interaction state, not stored board order.
+
+Only selected card content scrolls. Unselected previews clip their content and route the wheel to the canvas. Pinch and Ctrl/Command-wheel always zoom. Expanded previews keep the same formatted content at all zoom levels; use offscreen culling, cached HTML and lazy images instead of substituting title-only cards. The zoom percentage is a **Zoom to fit** button, between minus and plus.
+
+A whiteboard tile uses a compact icon/name/count header followed by up to six labeled previews of contained cards or whiteboards and a remaining count. It reads existing workspace metadata, never mounts recursive canvases or loads child note bodies. App actions say **New whiteboard** and **Open whiteboard**, regardless of nesting.
 
 ## Icons and emoji
 

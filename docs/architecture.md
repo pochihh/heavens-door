@@ -52,7 +52,7 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `Overlays.tsx` | Delegated hover/focus tooltip and keyboard-accessible action menu |
 | `sortable.ts` / `tab-drag.ts` | Shared phantom/reorder visuals; separate bookmark and tab pointer sessions; previews never persist layout |
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
-| `Board.tsx` / `navigation.ts` | Visible-card rendering, level of detail, selection and board gestures |
+| `Board.tsx` / `navigation.ts` | Cached full previews, offscreen culling, selection and board gestures |
 | `Editor.tsx` / `editor-schema.ts` | Formatted TipTap editing and supported Markdown conversion |
 | `session.ts` / `history.ts` | In-flight draft protection, mutation sequencing and grouped undo |
 | `Recovery.tsx` | Recoverable renderer-error screen |

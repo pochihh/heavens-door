@@ -57,7 +57,7 @@ export function BoardView({board,snapshot,session,active,memory,onActivate,onOpe
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
   return <Whiteboard board={shown} cards={snapshot.cards} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
-    folders={snapshot.boards.map(b=>b.folder)} onOpenFolder={folder=>onOpen('board:'+folder)}
+    boards={snapshot.boards} onOpenFolder={folder=>onOpen('board:'+folder)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error('Move root cards before changing the mother whiteboard.'));}
       return session.board(next,label,base);

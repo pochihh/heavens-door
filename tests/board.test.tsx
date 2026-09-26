@@ -18,7 +18,7 @@ test('board drags persist final coordinates even when pointer events share a ren
   const saved:Board[]=[];
   const root=createRoot(document.getElementById('root')!);
   await act(async () => root.render(<Whiteboard board={board} cards={[]} onSave={b => { saved.push(b); }} onOpen={() => undefined} onCreate={() => undefined}/>));
-  const grip=document.querySelector('.card-grip')!;
+  const grip=document.querySelector('.board-card')!;
   await act(async () => {
     grip.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0,clientX:100,clientY:100}));
     grip.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:185,clientY:142.5}));
@@ -52,7 +52,7 @@ test('plugin pointer navigation selects with left drag, pans with middle/right/S
   const initial=world.style.transform;
   await act(async () => {pointer(canvas,'pointerdown',0,0);pointer(canvas,'pointermove',650,300);pointer(canvas,'pointerup',650,300);});
   assert.equal(world.style.transform,initial);assert.equal(document.querySelectorAll('.board-card.selected').length,2);
-  const grip=document.querySelector('.card-grip')!;
+  const grip=document.querySelector('.board-card')!;
   await act(async () => {pointer(grip,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
   assert.equal(saved.length,1);assert.deepEqual(saved[0].cards.map(p => p.x),[100,500,800]);
   await drag(1);await frame();assert.notEqual(world.style.transform,initial);
@@ -90,7 +90,7 @@ test('dragged cards keep their latest position through delayed saves, consecutiv
     const canvas=document.querySelector('.canvas')!;
     const card=() => document.querySelector<HTMLElement>('[data-placement="p"]')!;
     const pointer=(target:Element,type:string,x:number,y=100) => target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
-    const down=async () => act(async () => {pointer(card().querySelector('.card-grip')!,'pointerdown',100);});
+    const down=async () => act(async () => {pointer(card(),'pointerdown',100);});
     const up=async (x:number) => act(async () => {pointer(canvas,'pointerup',x);});
     await down();await up(185);
     assert.equal(card().style.left,'100px','dropping must not flash back while saving');
@@ -132,7 +132,7 @@ test('losing pointer capture before release still saves the final drag instead o
   };
   try {
     await act(async () => root.render(<Whiteboard board={board} cards={[]} onOpen={() => undefined} onCreate={() => undefined} onSave={next => {saved.push(next);}}/>));
-    const grip=document.querySelector('.card-grip')!,card=document.querySelector('.board-card')!;
+    const grip=document.querySelector('.board-card')!,card=document.querySelector('.board-card')!;
     await act(async () => {pointer(grip,'pointerdown',100);pointer(card,'pointermove',185);});
     await act(async () => {pointer(card,'lostpointercapture',185);pointer(document,'pointermove',270);pointer(document,'pointerup',270,2);});
     assert.equal(saved.length,0,'another pointer must not end the active drag');
@@ -142,7 +142,7 @@ test('losing pointer capture before release still saves the final drag instead o
   } finally {await act(async () => root.unmount());dom.window.close();}
 });
 
-test('saving a 200-card board preserves existing preview DOM and scroll positions',async () => {
+test('200 full previews keep their DOM through saves and distant zoom, and cache across offscreen culling',async () => {
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe() {} disconnect() {}}});
   const {Whiteboard}=await import('../src/renderer/Board');
@@ -161,6 +161,24 @@ test('saving a 200-card board preserves existing preview DOM and scroll position
     await act(async ()=>render({...board,revision:'r1',cards:board.cards.map((p,i)=>i ? p : {...p,x:100})}));
     assert.ok(previews.every((p,i)=>p.firstElementChild===headings[i] && p.querySelector('img')===images[i]),'unchanged previews must not replace their DOM when the board saves');
     assert.ok(previews.every(p=>p.scrollTop===75));assert.equal(reads,200,'saving geometry does not reload card bodies');
+    const canvas=document.querySelector('.canvas')!;
+    const wheel=async(init:WheelEventInit,count:number)=>act(async()=>{
+      for(let i=0;i<count;i++)canvas.dispatchEvent(new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,...init}));
+      await new Promise(resolve=>setTimeout(resolve,130));
+    });
+    await wheel({deltaY:100},8);
+    assert.ok(Number.parseInt(document.querySelector('.zoom-level')!.textContent!)<40);
+    assert.equal(document.querySelectorAll('.card-preview').length,200,'zoomed-out cards retain full previews');
+    assert.ok(previews.every((p,i)=>p.isConnected && p.firstElementChild===headings[i] && p.querySelector('img')===images[i]));
+    await wheel({deltaY:-100},8);
+    assert.ok(previews.every(p=>p.scrollTop===75));assert.equal(reads,200,'zooming does not reload bodies');
+    await wheel({deltaX:120},100);
+    assert.equal(document.querySelectorAll('.card-preview').length,0,'offscreen cards are still culled');
+    await wheel({deltaX:-120},100);
+    assert.equal(document.querySelectorAll('.card-preview').length,200);assert.equal(reads,200,'returning to a 200-card board reuses cached previews');
+    assert.equal(document.querySelector('.canvas-controls input'),null);
+    await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Zoom to fit"]')!.click();await new Promise(resolve=>setTimeout(resolve,130));});
+    assert.equal(document.querySelector('.zoom-level')!.textContent,'25%','clicking the percentage fits all placements (zero-sized test viewport)');
   } finally {await act(async()=>root.unmount());dom.window.close();}
 });
 
@@ -190,5 +208,39 @@ test('collapsed cards use cached titles without loading bodies and expand withou
     assert.equal(first.style.height,'40px');assert.equal(first.querySelector('.card-preview'),null);assert.equal(latest.cards[0].collapsed,true);
     assert.equal(isVisible({...board.cards[0],y:-100},{x:0,y:0,zoom:1},1000,800,0),false,'visibility uses the collapsed footprint');
     assert.equal(isVisible({...board.cards[0],y:-100,collapsed:false},{x:0,y:0,zoom:1},1000,800,0),true);
+  }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+test('whiteboard tiles preview indexed members without body reads and share card move/resize gestures',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+  dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;
+  dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+  const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react');
+  const cards=[{id:'a',path:'Ideas/a.md',name:'a',title:'Indexed title',revision:'r',legacy:false}];
+  const child:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[{id:'c',cardId:'a',x:0,y:0,width:340,height:280},{id:'nested',cardId:'',folder:'Ideas/Research',x:400,y:0,width:340,height:280}],edges:[]};
+  const board:Board={path:'Test.whiteboard',folder:'',name:'Test',revision:'r',cards:[{id:'tile',cardId:'',folder:'Ideas',x:0,y:0,width:340,height:280}],edges:[]};
+  let latest=board;
+  const opened:string[]=[],saved:Board[]=[];
+  window.door={request:()=>{assert.fail('tile previews must not load note bodies');}} as unknown as typeof window.door;
+  function Fixture(){const [value,setValue]=useState(board);return <Whiteboard board={value} boards={[child]} cards={cards} onOpen={()=>assert.fail('tile cannot open a note editor')} onOpenFolder={folder=>opened.push(folder)} onCreate={()=>undefined} onSave={next=>{latest=next;saved.push(next);setValue(next);}}/>;}
+  const root=createRoot(document.getElementById('root')!);
+  const pointer=(target:Element,type:string,x:number,y=100)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
+  try{
+    await act(async()=>root.render(<Fixture/>));
+    const tile=document.querySelector<HTMLElement>('.board-tile')!,body=tile.querySelector('.board-tile-body')!;
+    assert.equal(tile.querySelector('.card-grip'),null);
+    assert.equal(tile.querySelector('.board-tile-title small')!.textContent,'1 card · 1 whiteboard');
+    assert.deepEqual([...tile.querySelectorAll('.board-tile-item')].map(el=>el.textContent),['Indexed title','Research']);
+    await act(async()=>{pointer(body,'pointerdown',100);});
+    assert.ok(tile.classList.contains('dragging'));
+    await act(async()=>{pointer(tile,'pointermove',185);pointer(tile,'pointerup',185);});
+    assert.equal(latest.cards[0].x,100);assert.equal(tile.classList.contains('dragging'),false);assert.equal(opened.length,0,'a drag does not navigate');
+    await act(async()=>{pointer(tile.querySelector('.resize-handle')!,'pointerdown',100);pointer(tile,'pointerup',185,142.5);});
+    assert.equal(latest.cards[0].width,440);assert.equal(latest.cards[0].height,330);
+    await act(async()=>{tile.querySelector<HTMLButtonElement>('[aria-label="Open whiteboard"]')!.click();body.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));});
+    assert.deepEqual(opened,['Ideas','Ideas']);assert.equal(saved.length,2,'opening leaves geometry/history untouched');
+    await act(async()=>{pointer(body,'pointerdown',100);pointer(tile,'pointercancel',185);});
+    assert.equal(tile.classList.contains('dragging'),false);assert.equal(saved.length,2,'cancellation does not save');
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

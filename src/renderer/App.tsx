@@ -196,7 +196,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <button className="document-icon-button" aria-label="Change this file’s icon" data-tooltip="Change this file’s icon" onClick={()=>editIcon(p.active)}>{docIcon(p.active)}</button>
         <span className="document-breadcrumb" data-tooltip={info.path||snapshot.root}>{info.path||snapshot.name}</span>
         <div className="toolbar-spacer"/>
-        {info.kind==='board'&&<><Tool icon="folder" label="Create sub-whiteboard" onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label="Create card in this whiteboard" onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
+        {info.kind==='board'&&<><Tool icon="folder" label="New whiteboard" onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label="Create card in this whiteboard" onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
         {info.kind==='card'&&<Tool icon="format" label="Show or hide formatting controls" aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
         <Tool icon="star" className={prefs.starred.includes(p.active)?'is-starred':''} label={prefs.starred.includes(p.active)?'Remove from starred':'Add to starred'} onClick={()=>star(p.active)}/>
 

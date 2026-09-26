@@ -57,8 +57,8 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   const creations=(folder:string):MenuAction[]=>{
     const internal=portable(folder).split('/').some(part=>part.startsWith('.')||part==='node_modules');
     return [
-      {label:'New sub-whiteboard',icon:'map',disabled:internal,hint:internal?'Internal folders are read-only in Explorer':undefined,run:()=>onFolder(folder)},
-      {label:'New note',icon:'note',disabled:!folder||internal,hint:!folder?'The mother whiteboard contains sub-whiteboards only':internal?'Internal folders are read-only in Explorer':undefined,run:()=>onCard(folder)},
+      {label:'New whiteboard',icon:'map',disabled:internal,hint:internal?'Internal folders are read-only in Explorer':undefined,run:()=>onFolder(folder)},
+      {label:'New note',icon:'note',disabled:!folder||internal,hint:!folder?'The mother whiteboard contains whiteboards only':internal?'Internal folders are read-only in Explorer':undefined,run:()=>onCard(folder)},
     ];
   };
   function actions(entry:Entry):MenuAction[] {

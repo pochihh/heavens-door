@@ -73,7 +73,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.ok(document.querySelector('[aria-label^="Remove Workspace from registered"]')?.hasAttribute('disabled'));
     await click('[aria-label="Close dialog"]');
     await click('[aria-label="Add in Ideas"]');
-    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['New sub-whiteboard','New note']);
+    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['New whiteboard','New note']);
     await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     await click('[aria-label="More actions for Ideas"]');
     const labels=[...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent);

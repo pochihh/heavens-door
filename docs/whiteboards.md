@@ -41,6 +41,16 @@ References to cards in other folders remain optional placements and may be remov
 - The chevron toggles state; double-clicking a collapsed title expands it. Expanded cards retain in-place editing. Expansion restores the saved height without rearranging neighbors, so it can overlap the next collapsed row; users can drag it to a working area.
 - Collapsed placements mount neither preview bodies nor editors. Titles come from the index. Hit testing, selection, connections, visibility and fit-to-board use the displayed 40-unit height.
 
+## Canvas interactions and rendering
+
+The UI calls every board a **whiteboard**, regardless of its nesting. Expanded cards have no label bar. Click their content to edit in place; drag the outer padding or border to move. Whiteboard tiles drag by their body and open through double-click or the corner arrow. Both use the same L-shaped resize handle. Dragging a selected item moves its selection as a group; resizing affects just that item. Moving/resizing temporarily raises the items above other placements. After release, selected items remain above unselected ones; z-order is not saved.
+
+Unselected cards cannot scroll their content; their wheel input follows normal canvas navigation. Selected preview/editor content scrolls until its directional boundary, then hands the wheel to the board. Pinch and Ctrl/Command-wheel always zoom. The percentage control invokes **Zoom to fit**; there is no separate Fit control or percentage text field.
+
+Expanded card content stays formatted from 20% through 300% zoom. There is no distant title-only rendering mode. Navigation paints one world transform per frame and updates the overscanned card set only after significant motion or settling. Offscreen cards unmount except the active editor or dragged placements. Mounted previews retain their DOM during zoom and geometry saves. A per-view cache holds up to 256 revision-keyed previews of up to 32,000 characters each; oversized previews still render, but are not cached after unmount. Local images use browser lazy loading. No additional editor instances are mounted for previews.
+
+Whiteboard tiles show the board name, separate card/whiteboard counts, and up to six labeled child placements plus a remaining count. They use the existing snapshot/index, including cached H1 titles and missing-card fallbacks, without recursive board rendering or child-body reads.
+
 ## File example
 
 The format remains version 1 with optional collapse and intake-column fields. Membership links and layout placement IDs must agree:
@@ -69,4 +79,4 @@ whiteboard_version: 1
 
 Internal note creation and automatic placement are one revision-checked transaction and one undo action. External discovery changes only the matching `.whiteboard`; the externally authored `.md` remains untouched. A batched watcher updates the incremental index before reconciliation. Startup handles changes made while the app was closed. Board revision conflicts stop a write instead of replacing unseen edits. Geometry already present in the board is preserved.
 
-`tests/workspace.test.ts` covers recognition, external discovery, persistent placement, grouped undo, rename identity and revision conflicts. `tests/board.test.tsx` checks 200 collapsed cards without body reads and expansion without geometry loss, alongside the existing 200-preview and drag regressions. `tests/shell.test.ts` covers root migration and recovery.
+`tests/workspace.test.ts` covers recognition, external discovery, persistent placement, grouped undo, rename identity and revision conflicts. `tests/board.test.tsx` checks 200 collapsed cards without body reads and expansion without geometry loss, alongside 200-preview DOM retention across zoom/saves, cache reuse after culling, board tile gestures, and delayed-save drag regressions. `tests/shell.test.ts` covers root migration and recovery.
