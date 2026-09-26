@@ -145,6 +145,8 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     assert.deepEqual(findModule(current,'files').group.tabs,['files','tags','search'],'horizontal reordering works in both directions');
     await pointer(tab('tags'),'pointerdown',110,50);await pointer(document,'pointermove',850,50);
     assert.ok(document.querySelector('.tab-phantom.selected .module-tab-label'),'inactive tabs lift with an active icon + name phantom');
+    assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.transition,'width var(--motion-normal) var(--motion-ease)');
+    assert.equal((document.querySelector('.tab-phantom .module-tab-label') as HTMLElement).style.width,'auto','the name can expand beyond its initial icon-only width');
     assert.equal(tab('files').getAttribute('aria-selected'),'true','lifting an inactive tab preserves source selection');
     assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','inactive drags also keep the destination slot empty');
     assert.equal((document.querySelector('.tab-drop-preview') as HTMLElement).style.width,(document.querySelector('.tab-phantom') as HTMLElement).style.width,'slot and phantom have matching widths');
@@ -228,4 +230,17 @@ test('wide tabs reorder by their leading edge regardless of grab offset in eithe
       assert.deepEqual(order,moved);assert.equal(writes,1);
     }
   }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+
+test('Side Dock preview tabs retain the shared size and label transitions while dragging',async()=>{
+  const css=await fs.readFile(new URL('../src/renderer/styles.css',import.meta.url),'utf8');
+  const dom=new JSDOM(`<style>${css}</style><body class="tab-dragging"><div class="app docking"><div data-tab-preview><button class="module-tab selected"><span class="module-tab-label">Previous View</span></button></div></div></body>`);
+  try{
+    const tab=dom.window.document.querySelector('.module-tab')!,label=tab.querySelector('.module-tab-label')!;
+    const tabStyle=dom.window.getComputedStyle(tab),labelStyle=dom.window.getComputedStyle(label);
+    assert.match(tabStyle.transition,/flex-basis var\(--motion-normal\) var\(--motion-ease\)/);
+    assert.match(labelStyle.transition,/opacity var\(--motion-fast\) var\(--motion-ease\)/);
+    assert.equal(tabStyle.flexBasis,'32px');assert.equal(labelStyle.opacity,'0','preview collapses the previous active label through its normal transition');
+  }finally{dom.window.close();}
 });

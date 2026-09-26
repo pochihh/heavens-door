@@ -17,6 +17,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
     let phantom:HTMLElement|null=null,preview:HTMLElement|null=null,target:HTMLElement|null=null,duplicate:HTMLElement|null=null;
     const animations=new Map<HTMLElement,Animation>();
     const rows=(strip:HTMLElement)=>[...strip.querySelectorAll<HTMLElement>(':scope > [data-tab-key]')].filter(el=>el!==source&&el!==duplicate);
+    const iconWidth=(el:HTMLElement)=>parseFloat(getComputedStyle(el).minWidth)||el.getBoundingClientRect().width;
     const clearTarget=()=>{preview?.remove();target?.removeAttribute('data-tab-preview');duplicate?.style.removeProperty('display');duplicate=null;target=null;};
     const place=(before:HTMLElement|null)=>{
       if(!target||!preview||preview.parentElement===target&&preview.nextElementSibling===before)return;
@@ -24,7 +25,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
       target.insertBefore(preview,before);animateReorder(bounds,'horizontal',animations);
     };
     const contains=(el:HTMLElement)=>{const r=el.getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;};
-    const update=()=>{
+    const update=(reorder=true)=>{
       if(!active||!phantom||!preview)return;
       if(!source.isConnected){finish(false);return;}
       const candidates=[...document.querySelectorAll<HTMLElement>('[data-tab-strip],[data-tab-drop]')];
@@ -43,13 +44,14 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         const r=target.getBoundingClientRect(),margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
         const available=rows(target),gap=parseFloat(getComputedStyle(target).columnGap)||0;
         // A lone Side Dock tab fills its source; fit it beside the destination icons.
-        const width=value.family==='side'&&target!==source.parentElement?Math.min(activeWidth,Math.max(80,r.width-available.reduce((sum,el)=>sum+el.getBoundingClientRect().width,0)-gap*available.length)):activeWidth;
+        const width=value.family==='side'&&target!==source.parentElement?Math.min(activeWidth,Math.max(80,r.width-available.reduce((sum,el)=>sum+iconWidth(el),0)-gap*available.length)):activeWidth;
         Object.assign(preview.style,{width:width+'px',flex:'0 0 '+width+'px'});phantom.style.width=width+'px';
-        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-width-margin),x-offsetX*width/activeWidth));
-        const edge=direction>0?left+width:left;
+        const visibleWidth=phantom.getBoundingClientRect().width||width;
+        const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-visibleWidth-margin),x-offsetX*width/activeWidth));
+        const edge=direction>0?left+visibleWidth:left;
         phantom.style.left=left+'px';
         phantom.style.top=(r.top+Math.max(0,(Math.min(r.height,42)-rect.height)/2))+'px';
-        for(let step=0;step<available.length;step++){
+        for(let step=0;reorder&&step<available.length;step++){
           const children=[...target.children].filter(el=>el===preview||available.includes(el as HTMLElement)),index=children.indexOf(preview);
           const neighbor=children[index+(direction>0?1:-1)] as HTMLElement|undefined;
           if(!direction||!neighbor)break;
@@ -67,29 +69,41 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         const r=target.getBoundingClientRect(),delta=x<r.left+22?-5:x>r.right-22?5:0,old=target.scrollLeft;
         if(delta){target.scrollLeft+=delta;if(old!==target.scrollLeft){direction=delta;update();}}
       }
+      update(false);
       frame=requestAnimationFrame(tick);
     };
     const move=(e:PointerEvent)=>{
       if(e.pointerId!==pointer)return;x=e.clientX;y=e.clientY;
       if(!active&&Math.hypot(x-startX,y-startY)<5)return;
       e.preventDefault();
+      const expanding=!active&&source.matches('.module-tab:not(.selected)');
       if(!active){
         active=true;
+        const label=source.querySelector<HTMLElement>('.module-tab-label'),labelStyle=label?getComputedStyle(label):null;
+        const initialLabel=labelStyle?{maxWidth:labelStyle.maxWidth,marginLeft:labelStyle.marginLeft,opacity:labelStyle.opacity}:null;
         preview=source.cloneNode(true) as HTMLElement;
         for(const el of [preview,...preview.querySelectorAll('*')])for(const attr of ['id','data-tab-key','data-tooltip','aria-controls','aria-labelledby','aria-describedby','tabindex'])el.removeAttribute(attr);
         preview.querySelectorAll('[aria-hidden]').forEach(el=>el.removeAttribute('aria-hidden'));
-        preview.style.width=rect.width+'px';
+        Object.assign(preview.style,{width:rect.width+'px',flex:'0 0 '+rect.width+'px'});
         preview.classList.add('tab-drop-preview',value.family==='side'?'selected':'active-tab');preview.setAttribute('aria-hidden','true');preview.inert=true;
         source.style.display='none';document.body.classList.add('list-dragging','tab-dragging');flushSync(()=>setDrag(value));
         // Preserve the source slot at lift, independent of where the tab was grabbed.
         target=source.parentElement!;target.dataset.tabPreview='true';target.insertBefore(preview,source);
-        // Measure the active clone in its strip before freezing styles, including an expanded Side Dock label.
-        activeWidth=preview.getBoundingClientRect().width;
+        // Use the settled icon widths so an in-flight collapse cannot change the destination size.
+        if(label){const gap=parseFloat(getComputedStyle(target).columnGap)||0;activeWidth=Math.max(80,target.getBoundingClientRect().width-rows(target).reduce((sum,el)=>sum+iconWidth(el)+gap,0));}
         phantom=createDragPhantom(preview);phantom.classList.remove('tab-drop-preview');phantom.classList.add('tab-phantom');
+        if(initialLabel){
+          const phantomLabel=phantom.querySelector<HTMLElement>('.module-tab-label')!;
+          const finalLabel={maxWidth:phantomLabel.style.maxWidth,marginLeft:phantomLabel.style.marginLeft,opacity:phantomLabel.style.opacity};
+          Object.assign(phantomLabel.style,initialLabel,{width:'auto'});
+          phantom.style.transition='width var(--motion-normal) var(--motion-ease)';
+          // Establish the lifted appearance, then let the normal label transition reveal its name.
+          phantom.getBoundingClientRect();Object.assign(phantomLabel.style,finalLabel);
+        }
         preview.style.visibility='hidden';
         frame=requestAnimationFrame(tick);
       }
-      if(x!==lastX)direction=x-lastX;lastX=x;update();
+      if(x!==lastX)direction=x-lastX;lastX=x;update(!expanding);
     };
     const suppress=(e:MouseEvent)=>{e.preventDefault();e.stopPropagation();};
     const finish=(save:boolean)=>{
@@ -103,7 +117,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
       if(active){document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
       if(drop)onCommit.current(value,drop);
     };
-    const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update();finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};
+    const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update(false);finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};
     const abort=(event?:Event)=>{if(event?.type!=='pointercancel'||(event as PointerEvent).pointerId===pointer)finish(false);};
     const keyboard=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();abort();}};
     cancel.current=abort;document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',keyboard,true);window.addEventListener('blur',abort);

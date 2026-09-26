@@ -114,7 +114,6 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .module-tab-label{min-width:0;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:600;margin-left:0;transition:max-width var(--motion-normal) var(--motion-ease),margin-left var(--motion-normal) var(--motion-ease),opacity var(--motion-fast) var(--motion-ease)}
 .module-tab.selected .module-tab-label{max-width:240px;margin-left:6px;opacity:1}
 .module-content{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--sidebar);border-radius:0 0 var(--corner) var(--corner);overflow:hidden}
-.docking .module-tab,.docking .module-tab-label{transition:none}
 @media(prefers-reduced-motion:reduce){:root{--motion-fast:0ms;--motion-normal:0ms}}
 .module-toolbar{min-height:34px;display:flex;align-items:center;gap:4px;padding:0 8px;font-size:13px;flex-shrink:0}.module-toolbar .search{margin:5px 0;width:100%}.module-toolbar:has(.search){padding-right:4px}.explorer-module{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}.explorer-module>.nav-bottom{flex:1;min-height:0}.dock-splitter{height:7px;flex-shrink:0;cursor:row-resize;touch-action:none}.dock-splitter:hover{background:var(--border)}
 .dock-split-target{position:absolute;left:0;right:0;top:50%;height:40px;max-height:calc(100% - 68px);transform:translateY(-50%);pointer-events:none;z-index:1001}
@@ -127,7 +126,6 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 [data-tab-preview] .module-tab:not(.tab-drop-preview){flex:0 0 32px;background:transparent;color:var(--muted)}
 [data-tab-preview] .module-tab:not(.tab-drop-preview) .module-tab-label{max-width:0;margin-left:0;opacity:0}
 [data-tab-preview] .tab:not(.tab-drop-preview){background:transparent;color:var(--muted);box-shadow:none}
-.tab-dragging .module-tab,.tab-dragging .module-tab-label{transition:none}
 .tab-dragging [data-tab-key]:hover{background:transparent}
 .tab-phantom{contain:layout style}
 
