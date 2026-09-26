@@ -117,8 +117,8 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .docking .module-tab,.docking .module-tab-label{transition:none}
 @media(prefers-reduced-motion:reduce){:root{--motion-fast:0ms;--motion-normal:0ms}}
 .module-toolbar{min-height:34px;display:flex;align-items:center;gap:4px;padding:0 8px;font-size:13px;flex-shrink:0}.module-toolbar .search{margin:5px 0;width:100%}.module-toolbar:has(.search){padding-right:4px}.explorer-module{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}.explorer-module>.nav-bottom{flex:1;min-height:0}.dock-splitter{height:7px;flex-shrink:0;cursor:row-resize;touch-action:none}.dock-splitter:hover{background:var(--border)}
-.dock-drop-zone{position:absolute;left:0;right:0;height:24%;min-height:34px;z-index:15;display:flex;align-items:flex-start;pointer-events:none}
-.dock-drop-zone:first-child{top:34px}.dock-drop-zone:last-child{bottom:0}
+.dock-split-target{position:absolute;left:0;right:0;top:50%;height:40px;max-height:calc(100% - 68px);transform:translateY(-50%);pointer-events:none;z-index:1001}
+.dock-split-target[data-tab-preview]::after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;transform:translateY(-50%);background:var(--accent)}
 .collapsed-dock-target>.module-tabs{height:34px;min-height:34px;flex:0 0 34px}
 .docking .module-content,.docking .document-content,.docking .document-toolbar{pointer-events:none}
 /* One visible phantom; an invisible tab-sized slot marks insertion in every group. */

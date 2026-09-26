@@ -54,7 +54,7 @@ The initial Left Side Dock has Whiteboard Explorer, File Explorer, Tags and Sear
 
 ## Arranging Views
 
-Drag a Side Dock **tab** onto another group's Tab Strip to combine them. Dropping onto an existing tab inserts before it. Drop near the top or bottom of a group's content to create a separate vertical group. There is no Tab Group drag handle; whole-group moves remain in the group menu. A collapsed or empty Side Dock exposes a temporary destination during dragging.
+Drag a Side Dock **tab** onto another group's Tab Strip to combine them. Dropping onto an existing tab inserts before it. Drop around a group's vertical midpoint to split it into top and bottom Tab Groups, with the dragged tab below. An accent divider previews the split; the phantom follows the pointer without snapping. Content edges are not split targets. There is no Tab Group drag handle; whole-group moves remain in the group menu. A collapsed or empty Side Dock exposes a temporary destination during dragging.
 
 The tab context menu provides close, move, split, merge and collapse actions without dragging. Open it with right-click, Shift+F10 or the Menu key. **Close View Tab** preserves files and View settings; the Action Ribbon reopens a closed Side Dock View in its remembered group, recreating the group when necessary. Closing its last tab removes that Side Dock group; an empty dock collapses. Left/Right, Home and End navigate Side Dock tabs. Splitters also respond to arrow keys. Escape or an unfinished drag leaves the arrangement unchanged. Dock dragging operates within one app window; it does not create floating windows.
 

@@ -76,7 +76,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
   dom.window.HTMLElement.prototype.getBoundingClientRect=function(){
     const el=this as HTMLElement;
     if(el.matches('[data-tab-strip],[data-tab-drop]')){
-      if(el.hasAttribute('data-tab-drop')&&el.dataset.tabGroup)return rect(0,0,0,0);
+      if(el.classList.contains('dock-split-target'))return rect(el.dataset.dockSide==='right'?800:10,el.dataset.tabGroup==='saved'?320:120,320,40);
       const main=el.dataset.tabFamily==='main',right=el.dataset.dockSide==='right';
       return rect(main?400:right?800:10,main?(el.dataset.tabGroup===first.id?40:300):(el.dataset.tabGroup==='saved'?240:40),main?220:320,34);
     }
@@ -147,6 +147,34 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(e=>e.textContent==='Move View to right dock')!.click());
     assert.equal(findModule(current,'tags').side,'right','context commands target the clicked tab');
     assert.equal(findModule(current,'files').side,'left');
+
+    const beforeSplit=current,previousWrites=writes;
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',50,85);
+    assert.equal(document.querySelector('.dock-drop-zone'),null,'top and bottom split zones are removed');
+    assert.equal(document.querySelector('[data-tab-drop][data-tab-preview]'),null,'below the header is not a split target');
+    assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.top,'75px','the phantom does not snap to the header bottom');
+    await pointer(document,'pointerup',50,85);assert.equal(current,beforeSplit);assert.equal(writes,previousWrites);
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',100,140);
+    assert.ok(document.querySelector('[data-group=navigation] .dock-split-target[data-tab-preview]'),'middle target shows the divider');
+    assert.equal(document.querySelector('.tab-drop-preview'),null,'splitting never creates a second tab preview');
+    assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.top,'130px','the split phantom follows the pointer');
+    assert.equal(writes,previousWrites,'preview does not save');
+    await pointer(document,'pointermove',100,180);assert.equal(document.querySelector('.dock-split-target[data-tab-preview]'),null,'leaving clears the divider');
+    await pointer(document,'pointermove',100,140);await escape();assert.equal(current,beforeSplit);
+    assert.equal(document.querySelector('.dock-split-target'),null,'cancel removes split targets');
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',100,140);await pointer(document,'pointerup',100,140);
+    assert.deepEqual(current.left.groups.slice(0,2).map(g=>g.tabs),[['search'],['files']]);
+    assert.equal(current.left.groups[0].weight,current.left.groups[1].weight,'new group takes half the destination weight');
+    assert.equal(current.left.groups[1].active,'files');assert.equal(writes,previousWrites+1);
+    const soleGroup=findModule(current,'files').group.id;
+    await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',100,180);
+    assert.equal(document.querySelector('[data-group="'+soleGroup+'"] .dock-split-target'),null,'a lone tab cannot split its own empty group');await escape();
+    await pointer(tab('bookmarks'),'pointerdown',30,250);await pointer(document,'pointermove',850,140);
+    assert.ok(document.querySelector('.right-dock .dock-split-target[data-tab-preview]'));
+    await pointer(document,'pointerup',850,140);
+    assert.equal(document.querySelector('[data-group=saved]'),null,'the empty source disappears after a cross-dock split');
+    assert.deepEqual(current.right.groups[1].tabs,['bookmarks']);assert.equal(current.right.groups[1].active,'bookmarks');
+    assert.equal(current.right.groups[0].weight,current.right.groups[1].weight);assert.deepEqual(validateDocks(current),current);
 
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

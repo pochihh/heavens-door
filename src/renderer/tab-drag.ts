@@ -36,10 +36,10 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
           if(duplicate)duplicate.style.display='none';
           target.dataset.tabPreview='true';
           const before=rows(target).find(el=>{const r=el.getBoundingClientRect();return x<r.left+r.width/2;});
-          place(before??null);
+          if(!target.classList.contains('dock-split-target'))place(before??null);
         }
       }
-      if(target){
+      if(target&&!target.classList.contains('dock-split-target')){
         const r=target.getBoundingClientRect(),margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
         const available=rows(target),gap=parseFloat(getComputedStyle(target).columnGap)||0;
         // A lone Side Dock tab fills its source; fit it beside the destination icons.
