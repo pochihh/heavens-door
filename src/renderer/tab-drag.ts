@@ -40,6 +40,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
         }
       }
       if(target){
+        preview.style.visibility=target===source.parentElement?'hidden':'';
         const r=target.getBoundingClientRect(),margin=parseFloat(getComputedStyle(preview).marginLeft)||0;
         const left=Math.max(r.left+margin,Math.min(Math.max(r.left+margin,r.right-rect.width-margin),x-offsetX));
         const edge=direction>0?left+rect.width:left;

@@ -113,11 +113,10 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .module-tab.selected{flex:1 0 80px;background:var(--sidebar);color:var(--text)}
 .module-tab-label{min-width:0;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:600;margin-left:0;transition:max-width var(--motion-normal) var(--motion-ease),margin-left var(--motion-normal) var(--motion-ease),opacity var(--motion-fast) var(--motion-ease)}
 .module-tab.selected .module-tab-label{max-width:240px;margin-left:6px;opacity:1}
-.module-tab-strip>.tool{height:24px;width:22px;padding:4px}
 .module-content{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--sidebar);border-radius:0 0 var(--corner) var(--corner);overflow:hidden}
 .docking .module-tab,.docking .module-tab-label{transition:none}
 @media(prefers-reduced-motion:reduce){:root{--motion-fast:0ms;--motion-normal:0ms}}
-.module-toolbar{min-height:34px;display:flex;align-items:center;gap:4px;padding:0 8px;font-size:13px;flex-shrink:0}.module-toolbar>.tool{width:23px;height:23px;padding:4px}.module-toolbar .search{margin:5px 0;width:100%}.module-toolbar:has(.search){padding-right:4px}.explorer-module{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}.explorer-module>.nav-bottom{flex:1;min-height:0}.dock-splitter{height:7px;flex-shrink:0;cursor:row-resize;touch-action:none}.dock-splitter:hover{background:var(--border)}
+.module-toolbar{min-height:34px;display:flex;align-items:center;gap:4px;padding:0 8px;font-size:13px;flex-shrink:0}.module-toolbar .search{margin:5px 0;width:100%}.module-toolbar:has(.search){padding-right:4px}.explorer-module{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}.explorer-module>.nav-bottom{flex:1;min-height:0}.dock-splitter{height:7px;flex-shrink:0;cursor:row-resize;touch-action:none}.dock-splitter:hover{background:var(--border)}
 .dock-drop-zone{position:absolute;left:0;right:0;height:24%;min-height:34px;z-index:15;display:flex;align-items:flex-start;pointer-events:none}
 .dock-drop-zone:first-child{top:34px}.dock-drop-zone:last-child{bottom:0}
 .collapsed-dock-target>.module-tabs{height:34px;min-height:34px;flex:0 0 34px}

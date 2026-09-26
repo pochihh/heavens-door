@@ -49,6 +49,13 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     assert.equal(document.querySelectorAll('.activity-bar').length,1);
     assert.equal(document.querySelectorAll('.side-dock').length,1);
+    assert.equal(document.querySelector('[aria-label^="Tab Group actions ·"]'),null);
+    assert.equal(document.querySelector('.explorer-module>.module-toolbar'),null,'navigation has no empty toolbar');
+    const tree=document.querySelector<HTMLElement>('.file-tree')!;
+    await act(async()=>{tree.focus();tree.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));});
+    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['Refresh Explorer','Collapse folders']);
+    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    assert.ok(document.activeElement===tree,'keyboard context menus restore focus: '+document.activeElement?.outerHTML.slice(0,250));
     assert.equal(document.querySelector('.statusbar [aria-label^=Undo]'),null);
     assert.equal(document.querySelector('.statusbar [aria-label^=Redo]'),null);
     assert.ok(document.querySelector('.statusbar .workspace-switcher'));
@@ -77,6 +84,9 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('.activity-bar [aria-label="File explorer"]');
     await click('[data-tooltip="Expand assets"]');
     assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active pane"]'));
+    await click('.activity-bar [aria-label="Search"]');
+    assert.ok(document.querySelector('.module-toolbar input[aria-label="Search cards"]'),'Search keeps its input');
+    assert.equal(document.querySelector('[aria-label="Search actions"]'),null);
     await click('.activity-bar [aria-label="Whiteboard explorer"]');
     const control=document.querySelector<HTMLElement>('[aria-label="Switch workspace · Workspace"]')!;
     await act(async()=>{control.dispatchEvent(new dom.window.MouseEvent('pointerover',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,470));});
@@ -116,7 +126,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(session.state.error,'');
     await click('.activity-bar [aria-label="Agent console"]');
     assert.ok(document.querySelector('.right-dock [aria-label="Agent console"][role=tabpanel]'));
-    await click('[aria-label="Tab Group actions · Agent console"]');
+    await act(async()=>document.querySelector('#tab-agent')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:900,clientY:70})));
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Move View to left dock')!.click());await settle();
     await click('[aria-label="Collapse left dock"]');
     await click('.activity-bar [aria-label="Agent console"]');

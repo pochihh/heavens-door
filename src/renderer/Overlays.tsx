@@ -47,7 +47,7 @@ export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
   },[onClose]);
   return createPortal(<div ref={ref} className="context-menu" role="menu" aria-label={menu.label??"Explorer actions"} onKeyDown={e=>{
     const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
-    if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();onClose();}
+    if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
+    if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();onClose();}
   }}>{menu.actions.map((action,i)=><Fragment key={i}>{action.separatorBefore&&<div role="separator" className="menu-separator"/>}<button role={action.checked!==undefined?'menuitemradio':'menuitem'} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint??action.label} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button></Fragment>)}</div>,document.body);
 }

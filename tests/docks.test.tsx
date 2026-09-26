@@ -44,7 +44,7 @@ test('module layouts keep every module once, persist per workspace, and registra
 
 test('tab pointer drags preview activation, retain empty sources, respect dock families, and cancel without saving',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
-  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const root=createRoot(document.getElementById('root')!);let current=defaultDocks(),writes=0;
   const first=pane('a'),second=pane('c');first.tabs=['a','b'];let documents=splitPane(first,first.id,'row',second),documentWrites=0;
   function Harness(){
@@ -90,12 +90,14 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
 
     await pointer(tab('whiteboards'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);
     assert.ok(document.querySelector('.collapsed-dock-target .tab-drop-preview.selected'));
+    assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'visible','another group keeps its destination preview');
     assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.top,'40px','Y is locked to the destination strip');
     await pointer(document,'pointerup',850,50);assert.equal(findModule(current,'whiteboards').side,'right');assert.equal(findModule(current,'files').group.active,'files');assert.equal(writes,1);assert.deepEqual(validateDocks(current),current);
 
     await pointer(tab('bookmarks'),'pointerdown',30,250);await pointer(document,'pointermove',200,180);
     assert.ok(document.querySelector('[data-group="saved"] [aria-label="Empty Tab Group"]'),'sole-tab source stays open');
     await pointer(document,'pointermove',30,250);assert.ok(document.querySelector('[data-group="saved"] .tab-drop-preview'));
+    assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','returning to the source restores an empty insertion slot');
     await pointer(document,'pointerup',30,250);assert.equal(findModule(current,'bookmarks').group.id,'saved');assert.equal(writes,1,'dropping back is a no-op');
 
     await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',850,50);await escape();assert.equal(writes,1);assert.equal(findModule(current,'files').side,'left');assert.equal(document.querySelector('.drag-phantom'),null);
@@ -118,14 +120,19 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     assert.ok(document.querySelector('.tab-drop-preview.selected .module-tab-label'),'destination preview still becomes active');
     assert.ok(parseFloat((document.querySelector('.tab-drop-preview') as HTMLElement).style.width)>=80,'active preview reserves label space');
     await escape();
-
+    await act(async()=>{tab('tags').focus();tab('tags').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));});
+    assert.ok(document.querySelector('[role=menu][aria-label="Tab Group actions"]'));
+    assert.equal(tab('files').getAttribute('aria-selected'),'true','opening an inactive tab menu does not select it');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(e=>e.textContent==='Move View to right dock')!.click());
+    assert.equal(findModule(current,'tags').side,'right','context commands target the clicked tab');
+    assert.equal(findModule(current,'files').side,'left');
 
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
 test('wide tabs reorder by their leading edge regardless of grab offset in either dock family',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
-  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const root=createRoot(document.getElementById('root')!);let order:string[]=[],writes=0;
   function Harness({family,initial}:{family:'side'|'main';initial:string[]}){
     const [keys,setKeys]=useState(initial);
@@ -148,6 +155,8 @@ test('wide tabs reorder by their leading edge regardless of grab offset in eithe
       const source=document.querySelector<HTMLElement>('[data-tab-key=wide]')!,start=source.getBoundingClientRect().left+offset;
       await pointer(source,'pointerdown',start);await pointer(document,'pointermove',start+direction*5);
       assert.deepEqual(previewOrder(),initial,'lifting at either end preserves the source slot');
+      assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','only the phantom is visible while reordering within the source group');
+      assert.equal(getComputedStyle(document.querySelector('.tab-phantom')!).visibility,'visible');
       await pointer(document,'pointermove',start+direction*13);
       assert.deepEqual(previewOrder(),['b','wide','c'],'the tab edge crosses its neighbor while the cursor stays inside the wide tab');
       await pointer(document,'pointermove',start+direction*45);
