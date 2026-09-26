@@ -160,6 +160,8 @@ test('wide tabs reorder by their leading edge regardless of grab offset in eithe
     const tabs=useTabDrag((source,target)=>{order=keys.filter(key=>key!==source.key);const index=target.before?order.indexOf(target.before):order.length;order.splice(index,0,source.key);writes++;setKeys(order);});
     return <div data-tab-strip data-tab-family={family} data-tab-group="group">{keys.map(key=><button key={key} data-tab-key={key} onPointerDown={e=>tabs.begin(e,{family,group:'group',key})}>{key}</button>)}</div>;
   }
+  // These tabs fit inside the 600px strip; native scrolling stays at zero.
+  Object.defineProperty(dom.window.HTMLElement.prototype,'scrollLeft',{get:()=>0,set:()=>{}});
   const width=(el:HTMLElement)=>parseFloat(el.style.width)||(el.dataset.tabKey==='wide'?180:32);
   const rect=(left:number,size:number)=>({left,top:40,width:size,height:34,right:left+size,bottom:74,x:left,y:40,toJSON(){}});
   dom.window.HTMLElement.prototype.getBoundingClientRect=function(){

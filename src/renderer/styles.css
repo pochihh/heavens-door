@@ -66,9 +66,9 @@ p{margin:0 0 12px}kbd{font-size:11px;color:var(--muted)}.muted,small,.empty-text
 .is-starred{color:#d19b39}.document-content{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;position:relative;background:var(--surface);border-radius:0 0 var(--corner) var(--corner)}
 .pane-focus-flash{position:absolute;inset:42px 0 0;pointer-events:none;border:1px solid var(--accent);border-radius:var(--corner);animation:focus-fade .65s ease-out forwards;z-index:5}
 @keyframes focus-fade{from{opacity:.8}to{opacity:0}}.empty-pane{margin:auto;color:var(--muted);font-size:14px}.empty-pane button{display:flex;align-items:center;gap:8px}
-/* SiYuan's merged-title-bar layout: only top-edge panes enter the native drag row. */
+/* Only top-edge panes enter the title row. The header owns native dragging; overlapping drag regions block the dock buttons. */
 .top-pane>.note-pane{margin-top:calc(-1 * var(--top-height));height:calc(100% + var(--top-height))}
-.top-pane>.note-pane>.tab-strip{background:transparent;position:relative;z-index:4;-webkit-app-region:drag}
+.top-pane>.note-pane>.tab-strip{background:transparent;position:relative;z-index:4}
 .top-pane>.note-pane>.document-toolbar{border-radius:var(--corner) var(--corner) 0 0}
 .top-pane.last-top>.note-pane>.tab-strip{padding-right:64px}.platform-win32 .top-pane.last-top>.note-pane>.tab-strip,.platform-linux .top-pane.last-top>.note-pane>.tab-strip{padding-right:202px}
 .workspace-body:has(.right-dock) .top-pane.last-top>.note-pane>.tab-strip{padding-right:4px}
