@@ -8,7 +8,7 @@ export interface Checkpoint { id: string; parents: string[]; time: number; label
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
 export interface RegisteredWorkspace {root:string;name:string}
-export interface Preferences { newTabDestination?:'other'|'current'; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export interface TagInfo { path: string; name: string; tag: string; revision: string }
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
@@ -22,7 +22,7 @@ export type Request =
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
   | { kind: 'preferences'; patch: Partial<Preferences> }
-  | { kind: 'createFolder'; parent: string; name: string }
+  | { kind: 'createFolder'; parent: string; name: string; position?:{x:number;y:number} }
   | { kind: 'migrateRoot' }
   | { kind: 'tagCards'; tag: string }
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }

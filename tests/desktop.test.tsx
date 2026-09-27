@@ -89,7 +89,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     await click('.activity-bar [aria-label="File explorer"]');
     await click('[data-tooltip="Expand assets"]');
-    assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active pane"]'));
+    assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active Tab Group"]'));
     await act(async()=>document.querySelector('#tab-files')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:150,clientY:70})));
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close View Tab')!.click());await settle();
     assert.equal(document.querySelector('#tab-files'),null);assert.equal(document.querySelector('.activity-bar [aria-label="File explorer"]')?.getAttribute('aria-pressed'),'false');
@@ -107,11 +107,11 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelector('[role=tooltip]'),null);
 
     await click('[data-tooltip="Expand Ideas"]');
-    await click('[data-tooltip="Open Ideas/A.md in the active pane"]');
-    await click('[data-tooltip="Open Ideas/A.md in the active pane"]');
+    await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
+    await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
     assert.equal(document.querySelectorAll('.workspace [role=tab]').length,2,'reopening a card reuses its tab');
     assert.equal(document.querySelectorAll('.tiptap').length,1);
-    await click('[data-tooltip="Open the current file beside this pane"]');
+    await click('[data-tooltip="Open the current file beside this Tab Group"]');
     assert.equal(document.querySelectorAll('.note-pane').length,2);
     assert.equal(document.querySelectorAll('.workspace [role=tab][aria-selected=true]').length,2);
     assert.equal(document.querySelectorAll('.tiptap').length,1,'one focused editor, shared card content');
@@ -162,12 +162,13 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     const ancestor=document.querySelector<HTMLElement>('.active-pane .breadcrumb-part button')!;
     await act(async()=>ancestor.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:160,clientY:90})));
     await click('[role=menuitem]');
-    assert.equal(document.querySelectorAll('.note-pane').length,2,'new-tab action reuses another Tab Group');
-    assert.notEqual(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
+    assert.equal(document.querySelectorAll('.note-pane').length,2,'new-tab action does not change the split layout');
+    assert.equal(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source,'new tab stays in the current Tab Group');
     assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')!.textContent,'Workspace');
     await click('.active-pane [aria-label="Whiteboard actions"]');
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in new tab')!.click());await settle();
-    assert.equal(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another Tab Group')!.click());await settle();
+    assert.equal(document.querySelectorAll('.note-pane').length,2,'other-group command reuses the existing split');
+    assert.notEqual(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
     await click('.active-pane .document-breadcrumb [aria-label="Rename Ideas"]');
     assert.equal(document.querySelector<HTMLInputElement>('.active-pane .document-breadcrumb input')!.value,'Ideas');
     await act(async()=>document.querySelector('.active-pane .document-breadcrumb input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));

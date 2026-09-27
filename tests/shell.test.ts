@@ -72,15 +72,32 @@ test('workspace settings, sub-whiteboard files and root migration preserve ident
 });
 
 
-test('same-tab navigation replaces content and new tabs reuse another group or create the configured split',()=>{
+test('new tabs stay in their group while explicit other-group navigation reuses or creates a split',()=>{
   const first=pane('board:'),same=navigateTab(first,first.id,'board:Ideas','same');
   assert.deepEqual(panes(same.tree)[0].tabs,['board:Ideas']);assert.equal(same.active,first.id);
-  const beside=navigateTab(same.tree,first.id,'card:a','new');
+  const beside=navigateTab(same.tree,first.id,'card:a','other');
   assert.equal(panes(beside.tree).length,2);assert.equal(beside.tree.type==='split'&&beside.tree.axis,'row');
-  const reused=navigateTab(beside.tree,first.id,'board:Other','new');
+  const reused=navigateTab(beside.tree,first.id,'board:Other','other');
   assert.equal(panes(reused.tree).length,2);assert.equal(reused.active,beside.active);
   assert.deepEqual(panes(reused.tree)[1].tabs,['card:a','board:Other']);
-  assert.equal(navigateTab(reused.tree,beside.active,'board:','new').active,first.id);
-  const current=navigateTab(first,first.id,'card:a','new','current');assert.equal(panes(current.tree).length,1);assert.deepEqual(panes(current.tree)[0].tabs,['board:','card:a']);
-  const below=navigateTab(first,first.id,'card:a','new','other','column');assert.equal(below.tree.type==='split'&&below.tree.axis,'column');
+  assert.equal(navigateTab(reused.tree,beside.active,'board:','other').active,first.id);
+  const current=navigateTab(first,first.id,'card:a','new');assert.equal(panes(current.tree).length,1);assert.deepEqual(panes(current.tree)[0].tabs,['board:','card:a']);
+  const below=navigateTab(first,first.id,'card:a','other','column');assert.equal(below.tree.type==='split'&&below.tree.axis,'column');
+});
+
+
+test('whiteboard creation saves the cursor placement with the new board and undoes both together',async t=>{
+  const directory=await fs.mkdtemp(join(tmpdir(),'heavens-door-placement-')),root=join(directory,'Workspace');await fs.mkdir(root);
+  const workspace=await Workspace.open(root,join(directory,'cache'));
+  t.after(async()=>{workspace.close();await fs.rm(directory,{recursive:true,force:true});});
+  const created=await workspace.createFolder('','Ideas',{x:-120.5,y:640});
+  const placement=created.snapshot.boards.find(b=>!b.folder)!.cards.find(p=>p.folder==='Ideas')!;
+  assert.deepEqual([placement.x,placement.y],[-120.5,640]);assert.equal(created.edits.length,2);
+  const nested=await workspace.createFolder('Ideas','Nested',{x:420,y:-250});
+  await workspace.scan();assert.deepEqual(workspace.snapshot().boards.find(b=>b.folder==='Ideas')!.cards.map(p=>[p.x,p.y]),[[420,-250]],'coordinates persist across indexing');
+  const {UndoHistory}=await import('../src/renderer/history'),undo=new UndoHistory();undo.record('Create whiteboard',nested.edits);
+  await undo.travel(false,c=>workspace.write(c));assert.ok(!workspace.snapshot().boards.some(b=>b.folder===join('Ideas','Nested')));assert.equal(workspace.snapshot().boards.find(b=>b.folder==='Ideas')!.cards.length,0);
+  await undo.travel(true,c=>workspace.write(c));assert.equal(workspace.snapshot().boards.find(b=>b.folder==='Ideas')!.cards[0].x,420);
+  await assert.rejects(()=>workspace.createFolder('','Invalid',{x:NaN,y:0}),/Invalid whiteboard position/);
+  await assert.rejects(()=>fs.stat(join(root,'Invalid')),/ENOENT/);
 });

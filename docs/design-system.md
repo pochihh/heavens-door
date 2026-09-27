@@ -42,7 +42,7 @@ Keep motion local: Side Dock tab widths and labels transition, while content swi
 
 The document toolbar uses a compact workspace-relative breadcrumb trail. Ancestor whiteboards are clickable, separated by quiet slashes; ordinary folders are plain labels. The current item pairs its icon with an editable filename or whiteboard name. Parent labels truncate first when space is limited. Click an ancestor to navigate in the same tab; right-click or Shift+F10 offers **Open in new tab** through the shared menu. The mother whiteboard name is read-only.
 
-Double-clicking a whiteboard tile also navigates in the same tab. Its menu offers **Open whiteboard** and **Open in new tab**. The new-tab command follows workspace settings: another Main Dock Tab Group by default, reusing an existing split or creating one to the right. Users can choose the current group or change new split direction to below. Each group keeps independent view state. See [whiteboard navigation](whiteboards.md#breadcrumb-navigation-and-whiteboard-renaming) for rename and storage behavior.
+Double-clicking a whiteboard tile also navigates in the same tab. Its menu offers **Open whiteboard**, **Open in new tab** (current Tab Group), and **Open in another Tab Group** (reuse another group or create a split). These last two commands also appear in Explorer and breadcrumb menus. New splits open to the right by default, configurable to below. Each group keeps independent view state. See [whiteboard navigation](whiteboards.md#breadcrumb-navigation-and-whiteboard-renaming) for rename and storage behavior.
 
 ## Whiteboard cards
 

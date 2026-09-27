@@ -1,3 +1,4 @@
+import type { NavigationMode } from '../layout';
 import { useEffect, useRef, useState } from 'react';
 import type { Board, Card, FileInspection, Snapshot, TagInfo, TagResult } from '../shared';
 import type { Session } from './session';
@@ -51,20 +52,20 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     </details>
   </section>;
 }
-export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onNavigate,onCreate,onMigrate,onViewChange}:{
-  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onNavigate:(key:string,newTab?:boolean)=>void;onCreate:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;
+export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onNavigate,onCreate,onCreateBoard,onMigrate,onViewChange}:{
+  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onNavigate:(key:string,mode?:NavigationMode)=>void;onCreate:(x:number,y:number)=>void;onCreateBoard:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;
 }) {
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
   return <Whiteboard board={shown} cards={snapshot.cards} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
-    boards={snapshot.boards} onOpenFolder={(folder,newTab)=>onNavigate('board:'+folder,newTab)}
+    boards={snapshot.boards} onOpenFolder={(folder,mode)=>onNavigate('board:'+folder,mode)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error('Move root cards before changing the mother whiteboard.'));}
       return session.board(next,label,base);
     }}
     onOpen={path=>{onActivate();void session.select(path).catch(()=>undefined);}}
     onReference={id=>onOpen('card:'+id)} onRename={(id,stem)=>session.renameCard(id,stem)}
-    onCreate={onCreate}
+    onCreate={onCreate} onCreateBoard={onCreateBoard}
     draft={active?session.state.draft:null} onEdit={body=>session.edit(body)}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;
 }

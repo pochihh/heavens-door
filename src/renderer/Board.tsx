@@ -1,3 +1,4 @@
+import type { NavigationMode } from '../layout';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { placementHeight, type Board, type Card, type CardInfo, type Placement } from '../shared';
 import { leadingTitle } from '../card-title';
@@ -44,15 +45,15 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
 interface Props {
-  enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,newTab?:boolean)=>void; onReference?: (id:string)=>void;
+  enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,mode?:NavigationMode)=>void; onReference?: (id:string)=>void;
   onRename?:(id:string,stem:string)=>Promise<void>;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
-  onOpen: (path: string) => void; onCreate: (x: number, y: number) => void;
+  onOpen: (path: string) => void; onCreate: (x: number, y: number) => void; onCreateBoard?:(x:number,y:number)=>void;
   draft?: { card: Card; body: string } | null; onEdit?: (body: string) => void; onFinish?: () => void; cardDetails?: ReactNode;
 }
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
-  board: Board; camera: Camera; rect: DOMRect; additive: boolean; initialSelection: string[];
+  board: Board; camera: Camera; rect: DOMRect; button:number; additive: boolean; initialSelection: string[];
   moved: boolean; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
@@ -60,7 +61,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, draft, onEdit, onFinish, cardDetails, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
+export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -68,6 +69,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const selectionBox = useRef<HTMLDivElement>(null);
   const navigation = useRef<BoardNavigation | null>(null);
   const spaceDown = useRef(false);
+  const rightPress = useRef(false);
   const gesture = useRef<Gesture | null>(null);
   const pendingSave = useRef<Board | null>(null);
   const dragFrame = useRef<number | null>(null);
@@ -83,7 +85,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const measuredHeight=(p:Placement)=>{const measured=measuredHeights[heightKey(p)];return measured?.signature===heightSignature(p)?measured.height:undefined;};
   const heightOf=(p:Placement)=>p.collapsed||autoHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;
   const expandedHeight=(p:Placement)=>autoHeight(p)?(measuredHeight({...p,collapsed:false})??p.height):p.height;
-  const [menu,setMenu]=useState<(MenuState&{placementId:string})|null>(null);
+  const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
   const [dragged, setDragged] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [connecting, setConnecting] = useState(false);
@@ -162,7 +164,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     nav.flush();
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
     gesture.current = { type, ids, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: pendingSave.current ?? current,
-      camera: { ...nav.current }, rect: element.getBoundingClientRect(),
+      camera: { ...nav.current }, rect: element.getBoundingClientRect(), button:e.button,
       additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected, moved:false,
       resizeHeight:type==='resize'?heightOf(current.cards.find(p=>p.id===ids[0])!):undefined };
     // Keep card clicks on the card; viewport capture would turn double-clicks into card creation.
@@ -172,6 +174,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   }
   function capture(e: PointerEvent) {
     const target = e.target as HTMLElement;
+    rightPress.current=e.button===2;
     if (target.closest('.canvas-controls,.selection-tools,.canvas-empty button,.card-editor') || editable(target)) return;
     const card = target.closest<HTMLElement>('.board-card');
     if (e.button === 1 || (e.button === 0 && spaceDown.current) || (e.button === 2 && !card)) {
@@ -245,6 +248,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
+    if(g.type==='pan'&&g.button===2&&!moved)openCanvasMenu(e.clientX,e.clientY);
     if(!moved&&g.editOnClick){
       const {id,focus}=g.editOnClick,placement=current.cards.find(p=>p.id===id),card=placement&&lookup.get(placement.cardId);
       if(card){
@@ -277,10 +281,19 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   }
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
     setMenu({anchor,placementId:p.id,label:p.folder?'Whiteboard actions':'Card actions',x,y,actions:p.folder?
-      [{label:'Open whiteboard',icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:'Open in new tab',icon:'external',run:()=>onOpenFolder?.(p.folder!,true)}]:
+      [{label:'Open whiteboard',icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:'Open in new tab',icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:'Open in another Tab Group',icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
       [{label:'Auto height',checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?'Use fixed card height':'Use auto card height');
       }}]});
+  }
+  function openCanvasMenu(clientX:number,clientY:number) {
+    const element=viewport.current!,nav=navigation.current!;nav.flush();
+    const rect=element.getBoundingClientRect(),x=(clientX-rect.left-nav.current.x)/nav.current.zoom,y=(clientY-rect.top-nav.current.y)/nav.current.zoom;
+    onFinish?.();
+    setMenu({label:'Canvas actions',x:clientX,y:clientY,actions:[
+      {label:'New card',icon:'note',disabled:!board.folder,hint:!board.folder?'The mother whiteboard contains whiteboards only':undefined,run:()=>onCreate(x,y)},
+      {label:'New whiteboard',icon:'map',run:()=>onCreateBoard?.(x,y)},
+    ]});
   }
   function fit() {
     const nav = navigation.current, element = viewport.current;
@@ -314,7 +327,11 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
     <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label="Whiteboard canvas"
-      onPointerDownCapture={capture} onContextMenu={e => e.preventDefault()}
+      onPointerDownCapture={capture} onContextMenu={e=>{
+        e.preventDefault();
+        // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
+        if(!rightPress.current&&!(e.target as HTMLElement).closest('.board-card,button,input,.selection-tools'))openCanvasMenu(e.clientX,e.clientY);
+      }} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}}}
       onDoubleClick={e => {
         if (e.target === viewport.current) {
           const rect = viewport.current.getBoundingClientRect(), camera = navigation.current!.current;

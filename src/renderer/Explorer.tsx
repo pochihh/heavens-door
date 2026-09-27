@@ -67,7 +67,8 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
       ...(entry.folder!==undefined?creations(entry.folder):[]),
       ...(key&&!entry.symlink?[
         {label:'Open',icon:'file' as const,run:()=>onOpen(key)},
-        {label:'Open in new tab',icon:'splitRight' as const,run:()=>onSplit(key)},
+        {label:'Open in new tab',icon:'external' as const,run:()=>onOpen(key)},
+        {label:'Open in another Tab Group',icon:'splitRight' as const,run:()=>onSplit(key)},
         {label:index>=0?'Remove from Starred':'Add to Starred',icon:'star' as const,run:()=>star(key)},
         {label:'Change icon…',icon:'art' as const,run:()=>onIcon(key)},
         ...(index>=0?[
@@ -97,7 +98,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
       onContextMenu={e=>{e.preventDefault();show(actions(entry),e,true);}}
       onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();show(actions(entry),e);}}}>
       {!saved&&(folder!==undefined?<button className="tree-disclosure" data-tooltip={(expandedHere?'Collapse ':'Expand ')+(entry.path||snapshot.name)} aria-label={(expandedHere?'Collapse ':'Expand ')+(entry.path||snapshot.name)} aria-expanded={expandedHere} onClick={()=>toggle(folder)}><Icon name={expandedHere?'down':'chevron'} size={12}/></button>:<span className="tree-spacer"/>)}
-      <button className="file-button" disabled={entry.symlink} data-tooltip={entry.symlink?'Symbolic link · '+entry.path:'Open '+(entry.path||snapshot.name)+' in the active pane'}
+      <button className="file-button" disabled={entry.symlink} data-tooltip={entry.symlink?'Symbolic link · '+entry.path:'Open '+(entry.path||snapshot.name)+' in the active Tab Group'}
         onPointerDown={key?e=>drag(e,key,saved==='starred'):undefined}
         onKeyDown={e=>{if(saved==='starred'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+(e.key==='ArrowUp'?-1:1),true)}));}}}
         onClick={()=>{if(physical&&folder!==undefined)toggle(folder);else if(key)onOpen(key);}}>

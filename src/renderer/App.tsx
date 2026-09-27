@@ -15,7 +15,7 @@ import { documentInfo, parent } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
 import { BoardView, FileView, HistoryPanel, NoteView, TagView, type ViewMemory } from './DocumentViews';
-import { MAX_PANES, MAX_TABS, updatePane, navigateTab, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type Layout, type Pane } from '../layout';
+import { MAX_PANES, MAX_TABS, updatePane, navigateTab, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
@@ -55,6 +55,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const left=!docks.left.collapsed&&!!docks.left.groups.length,right=!docks.right.collapsed&&!!docks.right.groups.length;
   const [formatting,setFormatting]=useState(new Set(prefs.documents?.formatting??[]));
   const [modal,setModal]=useState<'settings'|'folder'|'icon'|'migration'|'workspaces'|null>(null);
+  const [folderPosition,setFolderPosition]=useState<{x:number;y:number}>();
   const [folderParent,setFolderParent]=useState(''),[folderName,setFolderName]=useState('');
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
   const [pulse,setPulse]=useState(0),[tabMenu,setTabMenu]=useState<MenuState|null>(null);
@@ -136,7 +137,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const open=useCallback((key:string,id=activeId)=>{
     attempt((async()=>{
       const target=panes(layout).find(p=>p.id===id);
-      if(target&&!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS){session.update({error:'Close a document tab before opening more in this pane.'});return;}
+      if(target&&!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS){session.update({error:'Close a document tab before opening more in this Tab Group.'});return;}
       const info=documentInfo(key,session.state.snapshot!);
       if(!info.exists){session.update({error:'This file is no longer in the workspace.'});return;}
       await session.select(info.kind==='card'?info.path:null);
@@ -160,18 +161,18 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     document.querySelectorAll('details.pane-menu[open]').forEach(el=>el.removeAttribute('open'));
     const next=pane(p.active);setLayout(current=>splitPane(current,p.id,axis,next));setActiveId(next.id);
   }
-  function createFolder(folder:string){setFolderParent(folder);setFolderName('');setModal('folder');}
+  function createFolder(folder:string,position?:{x:number;y:number}){setFolderPosition(position);setFolderParent(folder);setFolderName('');setModal('folder');}
   async function submitFolder(){
     await session.run(async()=>{
       await session.flush();
-      const result=await window.door.request<Mutation>({kind:'createFolder',parent:folderParent,name:folderName});
+      const result=await window.door.request<Mutation>({kind:'createFolder',parent:folderParent,name:folderName,position:folderPosition});
       session.undoHistory.record('Create whiteboard',result.edits);session.update({snapshot:result.snapshot,error:''});
     });
     const path=folderParent?folderParent+'/'+folderName:folderName;
-    setModal(null);open('board:'+path);
+    setModal(null);if(!folderPosition)open('board:'+path);
   }
   function createCard(folder:string,x?:number,y?:number,paneId=activeId){
-    if(!folder){createFolder('');return;}
+    if(!folder){createFolder('',x!==undefined&&y!==undefined?{x,y}:undefined);return;}
     attempt((async()=>{await session.create(folder,prefs.stem,x??80,y??80,x!==undefined&&y!==undefined);const card=session.state.draft?.card;
       if(card){const p=panes(layout).find(p=>p.id===paneId);if(x===undefined||y===undefined||p?.active!=='board:'+folder)open('card:'+card.id,paneId);}
     })());
@@ -179,20 +180,20 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function star(key:string){changePrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));}
   function docIcon(key:string){const info=documentInfo(key,snapshot);return <DocumentIcon value={prefs.icons[key]} fallback={info.icon}/>;}
   function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
-  function navigate(key:string,id:string,newTab=false){
+  function navigate(key:string,id:string,mode:NavigationMode='same'){
     attempt((async()=>{
       const info=documentInfo(key,session.state.snapshot!);
       if(!info.exists)throw new Error('This file is no longer in the workspace.');
-      const next=navigateTab(layout,id,key,newTab?'new':'same',prefs.newTabDestination,prefs.newSplitDirection);
+      const next=navigateTab(layout,id,key,mode,prefs.newSplitDirection);
       await session.select(info.kind==='card'?info.path:null);
       setLayout(next.tree);setActiveId(next.active);setPulse(v=>v+1);
       changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
     })().catch(error=>{session.update({error:String(error)});}));
   }
-  function openBeside(key:string){navigate(key,activeId,true);}
+  function openBeside(key:string){navigate(key,activeId,'other');}
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
-    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:'View tab actions',x,y,actions:[{label:'Close View Tab',icon:'close',run:()=>close(p,key)}]});
+    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:'View tab actions',x,y,actions:[{label:'Open in another Tab Group',icon:'splitRight',run:()=>navigate(key,p.id,'other')},{label:'Close View Tab',icon:'close',run:()=>close(p,key)}]});
     const info=p.active?documentInfo(p.active,snapshot):null;
     const focused=p.id===active.id;
     const memoryKey=p.id+':'+p.active;
@@ -207,14 +208,14 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
             <Tool icon="close" label={'Close '+info.title} onClick={()=>close(p,key)}/>
           </div>;})}
         </div>
-        <details className="menu pane-menu"><summary data-tooltip="Pane actions" aria-label="Pane actions"><Icon name="down" size={12}/></summary><div className="menu-content">
-          <button data-tooltip="Open the current file beside this pane" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
-          <button data-tooltip="Open the current file below this pane" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
-          <button data-tooltip="Close this pane; keep files on disk" disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>Close pane</button>
+        <details className="menu pane-menu"><summary data-tooltip="Tab Group actions" aria-label="Tab Group actions"><Icon name="down" size={12}/></summary><div className="menu-content">
+          <button data-tooltip="Open the current file beside this Tab Group" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
+          <button data-tooltip="Open the current file below this Tab Group" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
+          <button data-tooltip="Close this Tab Group; keep files on disk" disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>Close Tab Group</button>
         </div></details>
       </div>
       {info&&<div className="document-toolbar">
-        <Breadcrumbs key={p.active} documentKey={p.active} snapshot={snapshot} onNavigate={(key,newTab)=>navigate(key,p.id,newTab)} onIcon={()=>editIcon(p.active)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else await session.renameBoard(info.id,name);}}/>
+        <Breadcrumbs key={p.active} documentKey={p.active} snapshot={snapshot} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onIcon={()=>editIcon(p.active)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else await session.renameBoard(info.id,name);}}/>
         <div className="toolbar-spacer"/>
         {info.kind==='board'&&<><Tool icon="folder" label="New whiteboard" onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label="Create card in this whiteboard" onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
         {info.kind==='card'&&<Tool icon="format" label="Show or hide formatting controls" aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
@@ -224,7 +225,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="document-content">
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label="Empty Tab Group"/>:<div className="empty-pane"><button data-tooltip="Open the mother whiteboard" onClick={()=>open('board:',p.id)}><Icon name="map"/>Open whiteboard</button></div>):
           !info.exists?<p className="notice">This file is no longer in the workspace.</p>:
-          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onNavigate={(key,newTab)=>navigate(key,p.id,newTab)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews}/>:
+          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews}/>:
           tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onViewChange={rememberViews}/>}
       </div>
@@ -278,7 +279,6 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
         <label>Empty card title<input aria-label="Empty card title placeholder" maxLength={120} defaultValue={prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER} onBlur={e=>changePrefs(()=>({titlePlaceholder:e.target.value.trim()||DEFAULT_TITLE_PLACEHOLDER}))}/></label>
-        <label>Open in new tab<select aria-label="New tab destination" value={prefs.newTabDestination??'other'} onChange={e=>changePrefs(()=>({newTabDestination:e.target.value as Preferences['newTabDestination']}))}><option value="other">Another Tab Group (create if needed)</option><option value="current">Current Tab Group</option></select></label>
         <label>New split direction<select aria-label="New split direction" value={prefs.newSplitDirection??'row'} onChange={e=>changePrefs(()=>({newSplitDirection:e.target.value as Preferences['newSplitDirection']}))}><option value="row">Right</option><option value="column">Below</option></select></label>
         <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
         <small>Settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
@@ -293,7 +293,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
 }
 function SplitDivider({node,onResize}:{node:Extract<Layout,{type:'split'}>;onResize:(ratio:number)=>void}) {
   const drag=useRef<{start:number;ratio:number;size:number}|null>(null);
-  return <div className={'divider '+node.axis} role="separator" tabIndex={0} aria-label="Resize split panes" aria-orientation={node.axis==='row'?'vertical':'horizontal'} aria-valuenow={Math.round(node.ratio*100)}
+  return <div className={'divider '+node.axis} role="separator" tabIndex={0} aria-label="Resize Tab Groups" aria-orientation={node.axis==='row'?'vertical':'horizontal'} aria-valuenow={Math.round(node.ratio*100)}
     onPointerDown={e=>{const rect=e.currentTarget.parentElement!.getBoundingClientRect();drag.current={start:node.axis==='row'?e.clientX:e.clientY,ratio:node.ratio,size:node.axis==='row'?rect.width:rect.height};e.currentTarget.setPointerCapture(e.pointerId);e.preventDefault();}}
     onPointerMove={e=>{if(drag.current)onResize(drag.current.ratio+((node.axis==='row'?e.clientX:e.clientY)-drag.current.start)/drag.current.size);}}
     onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}

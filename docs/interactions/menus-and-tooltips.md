@@ -67,7 +67,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, and `Work
 | Duplicate labels | Only an explicit additional `hint` supplies a menu tooltip. | Detect genuine truncation if full-label tooltips are needed later. |
 | Tooltip position | The shared host places all tips below/above their owner. | Add menu-aware placement outside the menu. |
 | Dismissal and focus | `ActionMenu` handles outside pointer-down in capture (including canvas drags), blur, resize, and Escape/Tab received inside the menu. Outside-click dismissal preserves the new focus target. Card triggers are exempt from outside dismissal so a second click toggles their menu. | Make Escape reliable for the open surface, define scrolling and Tab dismissal as above. |
-| Alternate menus | Main Dock “Pane actions” and the card-link picker use independent `<details>` surfaces. | Bring their floating-surface dismissal under this contract. The link picker remains a form popover. |
+| Alternate menus | Main Dock “Tab Group actions” and the card-link picker use independent `<details>` surfaces. | Bring their floating-surface dismissal under this contract. The link picker remains a form popover. |
 | Menu lifecycle | Individual components own menu state; there is no shared rule enforcing one open menu or invalidating tooltip timers on menu opening. | Coordinate opening, replacement, closing, and tooltip ownership through the shared interaction layer. |
 
 ## Acceptance checks

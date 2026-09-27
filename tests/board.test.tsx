@@ -322,3 +322,33 @@ test('a tall auto-height card is measured before culling when the camera starts 
     assert.equal(document.querySelector('line')?.getAttribute('y1'),'-1250','connections use measured content height');
   }finally{await act(async()=>root.unmount());}
 });
+
+
+test('canvas menu captures board coordinates, preserves right-drag panning and restricts root creation',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+  dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+  const {Whiteboard}=await import('../src/renderer/Board');
+  const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[],edges:[]},created:unknown[]=[];
+  const root=createRoot(document.getElementById('root')!);
+  const render=(value:Board)=>root.render(<Whiteboard board={value} cards={[]} initialCamera={{x:-100,y:50,zoom:.5}} onSave={()=>assert.fail('menu navigation must not save')} onOpen={()=>undefined} onCreate={(x,y)=>created.push(['card',x,y])} onCreateBoard={(x,y)=>created.push(['board',x,y])}/>);
+  try{
+    await act(async()=>render(board));
+    const canvas=document.querySelector<HTMLElement>('.canvas')!;canvas.getBoundingClientRect=()=>({left:40,top:30,width:1000,height:600} as DOMRect);
+    const pointer=(type:string,x=300,y=200)=>canvas.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:2,clientX:x,clientY:y}));
+    const context=()=>canvas.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2,clientX:300,clientY:200}));
+    await act(async()=>{pointer('pointerdown');context();});assert.equal(document.querySelector('[role=menu]'),null,'press-time contextmenu waits for quiet release');
+    await act(async()=>{pointer('pointerup');context();});
+    assert.equal(document.querySelectorAll('[role=menu]').length,1);assert.equal(document.querySelector('[role=menu]')?.getAttribute('aria-label'),'Canvas actions');
+    const choose=async(label:string)=>act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent===label)!.click());
+    await choose('New card');assert.deepEqual(created,[['card',720,240]]);
+    await act(async()=>{pointer('pointerdown');pointer('pointerup');});await choose('New whiteboard');assert.deepEqual(created.at(-1),['board',720,240]);
+    await act(async()=>{pointer('pointerdown');context();pointer('pointermove',360,260);pointer('pointerup',360,260);context();});
+    assert.equal(document.querySelector('[role=menu]'),null,'release-time contextmenu stays suppressed after right-drag');assert.equal(created.length,2);
+    await act(async()=>{pointer('pointerdown');pointer('pointerup');});
+    await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null);
+    await act(async()=>render({...board,folder:'',path:'Workspace.whiteboard'}));
+    await act(async()=>{pointer('pointerdown');pointer('pointerup');});assert.equal(document.querySelector<HTMLButtonElement>('[role=menuitem]')!.disabled,true,'mother whiteboard cannot contain cards');
+    await act(async()=>document.body.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null,'outside click dismisses canvas menu');
+  }finally{await act(async()=>root.unmount());}
+});

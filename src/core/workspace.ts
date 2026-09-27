@@ -252,14 +252,22 @@ export class Workspace {
     this.preferences=await writePreferences(this.root,this.preferences,patch);
     return this.snapshot();
   }
-  async createFolder(parent: string, name: string) {
+  async createFolder(parent: string, name: string, position?:{x:number;y:number}) {
+    if(position!==undefined&&(!position||!Number.isFinite(position.x)||!Number.isFinite(position.y)))throw new Error('Invalid whiteboard position');
+    const container=position?this.allBoards().find(b=>b.folder===parent):undefined;
+    if(position&&!container)throw new Error('The parent whiteboard is missing');
     if (!name || name.startsWith('.') || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || [...name].some(c => c.charCodeAt(0)<32) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) throw new Error('Choose a valid folder name');
     if (parent) await fs.access(await this.path(parent));
     const path=join(parent,name);
     await fs.mkdir(await this.path(path));
     this.folders.add(path);
     const board=emptyBoard(join(path,name+'.whiteboard'));
-    return this.write([{path:board.path,content:writeBoard(board),expected:null}]);
+    const changes:Write[]=[{path:board.path,content:writeBoard(board),expected:null}];
+    if(container&&position){
+      container.cards.push({id:randomUUID(),cardId:'',folder:path,x:position.x,y:position.y,width:320,height:160});
+      changes.push({path:container.path,content:writeBoard(container),expected:container.revision||null});
+    }
+    return this.write(changes);
   }
   tagCards(tag: string): TagResult[] {
     // Properties come from the incremental index, not another filesystem scan.

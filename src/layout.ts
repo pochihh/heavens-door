@@ -11,10 +11,11 @@ export function updatePane(layout:Layout,id:string,change:(pane:Pane)=>Layout):L
 export function openTab(layout:Layout,id:string,key:string) {
   return updatePane(layout,id,p=>!p.tabs.includes(key)&&p.tabs.length>=MAX_TABS?p:({...p,tabs:p.tabs.includes(key)?p.tabs:[...p.tabs,key],active:key}));
 }
-export function navigateTab(layout:Layout,source:string,key:string,mode:'same'|'new',destination:'other'|'current'='other',axis:'row'|'column'='row') {
+export type NavigationMode='same'|'new'|'other';
+export function navigateTab(layout:Layout,source:string,key:string,mode:NavigationMode,axis:'row'|'column'='row') {
   const groups=panes(layout),origin=groups.find(p=>p.id===source)??groups[0];
   if(mode==='same')return {tree:updatePane(layout,origin.id,p=>({...p,tabs:p.tabs.includes(key)?p.tabs.filter(k=>k!==p.active||k===key):p.active?p.tabs.map(k=>k===p.active?key:k):[key],active:key})),active:origin.id};
-  const target=destination==='current'?origin:groups.find(p=>p.id!==origin.id);
+  const target=mode==='new'?origin:groups.find(p=>p.id!==origin.id);
   if(target){
     if(!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS)throw new Error('Close a tab before opening another in this Tab Group.');
     return {tree:openTab(layout,target.id,key),active:target.id};
