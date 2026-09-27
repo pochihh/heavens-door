@@ -1,6 +1,6 @@
 # Menus and tooltips
 
-This is the shared interaction contract for Heaven’s Door. It defines the target behavior; the implementation gaps below still need fixes. Apply it to Explorer menus, View tab menus, Tab Group actions, workspace switching, and future plugin menus.
+This is the shared interaction contract for Heaven’s Door. It defines the target behavior; the implementation gaps below still need fixes. Apply it to Explorer menus, View tab menus, Tab Group actions, workspace switching, card/whiteboard actions, and future plugin menus.
 
 ## Terms and scope
 
@@ -63,10 +63,10 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, and `Work
 
 | Area | Current behavior | Required correction |
 | --- | --- | --- |
-| Tooltip on menu opening | `ActionMenu` focuses the first item; `TooltipHost` shows a tooltip immediately on `focusin`. | Distinguish opening/focus from genuine pointer hover. This causes the reported screenshot. |
-| Duplicate labels | Every action gets `data-tooltip={action.hint ?? action.label}`. | Only supply useful additional hints or genuinely truncated text. |
+| Tooltip on menu opening | `ActionMenu` focuses the first item; tooltips now ignore focus events and retain the 450ms hover delay. | Still distinguish a newly mounted row under a stationary pointer from genuine movement. |
+| Duplicate labels | Only an explicit additional `hint` supplies a menu tooltip. | Detect genuine truncation if full-label tooltips are needed later. |
 | Tooltip position | The shared host places all tips below/above their owner. | Add menu-aware placement outside the menu. |
-| Dismissal and focus | `ActionMenu` already handles outside pointer-down, blur, resize, and Escape/Tab received inside the menu. Cleanup always restores prior focus. | Make Escape reliable for the open surface, preserve outside-click focus, and define scrolling and Tab dismissal as above. |
+| Dismissal and focus | `ActionMenu` handles outside pointer-down in capture (including canvas drags), blur, resize, and Escape/Tab received inside the menu. Outside-click dismissal preserves the new focus target. Card triggers are exempt from outside dismissal so a second click toggles their menu. | Make Escape reliable for the open surface, define scrolling and Tab dismissal as above. |
 | Alternate menus | Main Dock “Pane actions” and the card-link picker use independent `<details>` surfaces. | Bring their floating-surface dismissal under this contract. The link picker remains a form popover. |
 | Menu lifecycle | Individual components own menu state; there is no shared rule enforcing one open menu or invalidating tooltip timers on menu opening. | Coordinate opening, replacement, closing, and tooltip ownership through the shared interaction layer. |
 

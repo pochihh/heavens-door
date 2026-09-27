@@ -52,6 +52,7 @@ export function validateBoard(board: Board) {
     if (!p.id || (!p.cardId && !p.folder) || ids.has(p.id) || ![p.x,p.y,p.width,p.height].every(Number.isFinite) || p.width < 120 || p.height < 80) throw new Error('Invalid board placement');
     if (p.folder !== undefined && (typeof p.folder !== 'string' || !p.folder || p.folder.startsWith('/') || p.folder.split(/[\\/]/).some(part => !part || part.startsWith('.')))) throw new Error('Invalid whiteboard reference');
     if(p.collapsed!==undefined&&typeof p.collapsed!=='boolean')throw new Error('Invalid collapsed state');
+    if(p.autoHeight!==undefined&&typeof p.autoHeight!=='boolean')throw new Error('Invalid auto height mode');
     ids.add(p.id);
   }
   const edges = new Set<string>();
@@ -63,6 +64,6 @@ export function validateBoard(board: Board) {
 export function writeBoard(board: Board) {
   validateBoard(board);
   const members = board.cards.map(c => c.folder ? `- [Whiteboard](board:${encodeURIComponent(c.folder)}) ^${c.id}` : `- [Card](card:${c.cardId}) ^${c.id}`).join('\n');
-  const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,x:p.x,y:p.y,width:p.width,height:p.height,...(p.collapsed!==undefined?{collapsed:p.collapsed}:{})})), edges: board.edges, ...(board.inbox?{inbox:board.inbox}:{}) };
+  const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,x:p.x,y:p.y,width:p.width,height:p.height,...(p.collapsed!==undefined?{collapsed:p.collapsed}:{}),...(p.autoHeight!==undefined?{autoHeight:p.autoHeight}:{})})), edges: board.edges, ...(board.inbox?{inbox:board.inbox}:{}) };
   return `---\nwhiteboard: true\nwhiteboard_version: 1\n---\n# ${board.name}\n\n## Cards\n${members}\n\n%% whiteboard-layout\n${JSON.stringify(layout, null, 2)}\n%%\n`;
 }

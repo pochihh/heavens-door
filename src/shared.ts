@@ -1,7 +1,7 @@
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
 export interface Card { id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
-export interface Placement { id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; folder?: string }
+export interface Placement { id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
 export interface Edge { id: string; from: string; to: string }
 export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; inbox?:{x:number;y:number} }
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }

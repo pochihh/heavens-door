@@ -33,17 +33,28 @@ References to cards in other folders remain optional placements and may be remov
 
 ## Default column and collapse
 
-- Canvas creation uses the chosen coordinates and an expanded 340 × 280 card.
+- Canvas creation uses the chosen coordinates and an expanded 340px-wide card in auto-height mode (120px minimum). The stored initial height of 280 is a fallback until measured.
 - Other newly discovered cards use a collapsed 340px-wide card with a minimum 70px title footprint. The leading H1 retains its formatting and wrapping; an empty title shows the workspace prompt. The full path remains available on hover.
 - On first automatic insertion, the board records `inbox: {x, y}`. It starts 80 canvas units to the right of existing content, with `y: 60`; an empty board starts at `x: 80`.
 - New arrivals append below placements overlapping that column, with a 12-unit gap. The anchor persists, so later discoveries and restarts do not move existing cards. Batch discovery uses filename order; later arrivals append regardless of alphabetical position.
-- Collapse is per placement, stored as optional `collapsed: true/false`. Omitted means expanded. The existing `width` and `height` retain the expanded dimensions. Collapse/expand changes neither note content nor position, and participates in shared undo and persistent history.
-- The same upper-right chevron toggles state without moving. Clicking a collapsed title expands it for direct editing; double-clicking its outer frame also expands it. Expanded cards retain in-place editing. Expansion restores the saved height without rearranging neighbors, so it can overlap the next collapsed row; users can drag it to a working area.
-- Collapsed placements mount neither note bodies nor editors. Plain titles and their inline Markdown come from the derived index. The same H1 styles are used in both states. One ResizeObserver per board measures wrapped collapsed titles, so selection, connections, culling and Zoom to fit use their displayed heights. New intake rows reserve 70 units plus the existing 12-unit gap. Existing placement coordinates remain untouched; wrapped titles can extend beyond that default spacing, just as expanding a card can overlap its neighbors.
+- Collapse is per placement, stored as optional `collapsed: true/false`. Omitted means expanded. The existing `width` and `height` retain the expanded width and fixed/fallback height. Collapse/expand changes neither note content nor position, and participates in shared undo and persistent history.
+- The same upper-right chevron toggles state without moving. Clicking a collapsed title expands it for direct editing; double-clicking its outer frame also expands it. Expanded cards retain in-place editing. Expansion restores fixed height or fits the current content in auto-height mode, without rearranging neighbors, so it can overlap the next collapsed row; users can drag it to a working area.
+- Collapsed placements mount neither note bodies nor editors. Plain titles and their inline Markdown come from the derived index. The same H1 styles are used in both states. One ResizeObserver per board measures wrapped collapsed titles and auto-height cards, so selection, connections, culling and Zoom to fit use their displayed heights. New intake rows reserve 70 units plus the existing 12-unit gap. Existing placement coordinates remain untouched; wrapped titles can extend beyond that default spacing, just as expanding a card can overlap its neighbors.
+
+## Card height and action menus
+
+Cards have a three-dot **Card actions** button directly above the collapse chevron. The chevron stays at its existing coordinates in both states. Both controls appear on hover, selection or keyboard focus. Whiteboard tiles have the matching **Whiteboard actions** menu with **Open whiteboard**; their preview grids remain manually sized.
+
+- **Auto height** is checked by default. A missing `autoHeight` field means enabled for cards; whiteboard tiles always keep fixed geometry. This also makes existing cards without a mode use auto height.
+- Auto-height cards grow and shrink with formatted content, live edits, wrapping and loaded images, with a minimum expanded height of 120 canvas units. CSS supplies the natural height; there is no per-card editor or autosave loop for measuring it.
+- Unchecking **Auto height** freezes the measured expanded height. Dragging the L-shaped corner likewise switches to fixed height, starting from the displayed size; even a width-only resize selects fixed mode. Recheck the menu item to fit content again.
+- Collapse preserves height mode. A mode change while collapsed uses the last measured expanded height, or the stored fallback if the body has not yet rendered. It never stores the title-only height as the expanded height.
+- `autoHeight` is an optional per-placement boolean in `.whiteboard`. Mode changes, manual resize and collapse participate in normal undo/history and revision checks. Measurements themselves are derived view state and produce no file writes or history entries.
+- Geometry measurements are separate for expanded/collapsed states and invalidated by card revision or width changes. Unknown auto-height cards above the viewport are rendered once to measure their extent before culling; this keeps tall cards visible when restoring a camera near their bottom. Cards below the viewport or far to either side remain culled. Content completion and ResizeObserver update connections, selection and Zoom to fit.
 
 ## Canvas interactions and rendering
 
-The UI calls every board a **whiteboard**, regardless of its nesting. Expanded cards have no label bar. A content press starts a pending move; release within the 3px screen-space threshold (|dx| + |dy|) enables editing at the clicked position. Crossing that threshold makes the entire gesture a drag, including when it returns to its start. Cancellation never opens an editor. Drag previews, outer padding or borders to move; an already active editor keeps normal text selection. Existing multi-card selections do not open an editor on release. Collapsed titles follow the same rule: drag to move, click-release to expand and edit. Whiteboard tiles drag by their body and open through double-click or the corner arrow. Both use the same L-shaped resize handle. Dragging a selected item moves its selection as a group; resizing affects just that item. Moving/resizing temporarily raises the items above other placements. After release, selected items remain above unselected ones; z-order is not saved.
+The UI calls every board a **whiteboard**, regardless of its nesting. Expanded cards have no label bar. A content press starts a pending move; release within the 3px screen-space threshold (|dx| + |dy|) enables editing at the clicked position. Crossing that threshold makes the entire gesture a drag, including when it returns to its start. Cancellation never opens an editor. Drag previews, outer padding or borders to move; an already active editor keeps normal text selection. Existing multi-card selections do not open an editor on release. Collapsed titles follow the same rule: drag to move, click-release to expand and edit. Whiteboard tiles drag by their body and open through double-click or **Open whiteboard** in its three-dot menu. Both use the same L-shaped resize handle. Dragging a selected item moves its selection as a group; resizing affects just that item. Moving/resizing temporarily raises the items above other placements. After release, selected items remain above unselected ones; z-order is not saved.
 
 Unselected cards cannot scroll their content; their wheel input follows normal canvas navigation. Selected preview/editor content scrolls until its directional boundary, then hands the wheel to the board. Pinch and Ctrl/Command-wheel always zoom. The percentage control invokes **Zoom to fit**; there is no separate Fit control or percentage text field.
 
@@ -59,7 +70,7 @@ Typing in the empty title creates `# Your title`. The editor keeps that first bl
 
 ## File example
 
-The format remains version 1 with optional collapse and intake-column fields. Membership links and layout placement IDs must agree:
+The format remains version 1 with optional collapse, auto-height and intake-column fields. Membership links and layout placement IDs must agree:
 
 ```markdown
 ---
@@ -74,7 +85,7 @@ whiteboard_version: 1
 %% whiteboard-layout
 {
   "version": 1,
-  "cards": [{"id": "placement-id", "x": 520, "y": 60, "width": 340, "height": 280, "collapsed": true}],
+  "cards": [{"id": "placement-id", "x": 520, "y": 60, "width": 340, "height": 280, "collapsed": true, "autoHeight": true}],
   "edges": [],
   "inbox": {"x": 520, "y": 60}
 }
@@ -85,4 +96,4 @@ whiteboard_version: 1
 
 Internal note creation and automatic placement are one revision-checked transaction and one undo action. External discovery changes only the matching `.whiteboard`; the externally authored `.md` remains untouched. A batched watcher updates the incremental index before reconciliation. Startup handles changes made while the app was closed. Board revision conflicts stop a write instead of replacing unseen edits. Geometry already present in the board is preserved.
 
-`tests/workspace.test.ts` covers recognition, external discovery, persistent placement, grouped undo, rename identity and revision conflicts. `tests/board.test.tsx` checks 200 collapsed cards without body reads and expansion without geometry loss, alongside 200-preview DOM retention across zoom/saves, cache reuse after culling, board tile gestures, and delayed-save drag regressions. `tests/shell.test.ts` covers root migration and recovery.
+`tests/workspace.test.ts` covers recognition, external discovery, persistent placement, grouped undo, rename identity and revision conflicts. `tests/board.test.tsx` checks 200 collapsed cards without body reads and expansion without geometry loss, alongside 200-preview DOM retention across zoom/saves, cache reuse after culling, board tile gestures, auto-height menus/resize/geometry, and delayed-save drag regressions. Session tests also reject stale edits that would overwrite a newer height mode. `tests/shell.test.ts` covers root migration and recovery.

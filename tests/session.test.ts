@@ -110,6 +110,12 @@ test('rapid board edits save against their predecessor and remain undoable witho
   await session.undo();assert.equal(boardNow().cards[0].x,100);
   await session.undo();assert.equal(boardNow().cards[0].x,0);
   await session.undo(true);await session.undo(true);assert.equal(boardNow().cards[0].x,200);
+  const auto=boardNow(),fixed={...auto,cards:auto.cards.map(p=>({...p,autoHeight:false}))};
+  await session.board(fixed,'Use fixed card height',auto);
+  assert.equal(boardNow().cards[0].autoHeight,false);
+  await assert.rejects(()=>session.board({...auto,cards:auto.cards.map(p=>({...p,x:300}))},'Stale move',auto),/changed/);
+  assert.equal(boardNow().cards[0].autoHeight,false,'a stale gesture cannot overwrite a newer height mode');
+  await session.undo();assert.equal(boardNow().cards[0].autoHeight,undefined);
   const before=boardNow(),external={...before,cards:before.cards.map(p => ({...p,y:500}))};
   await w.saveBoard(external,before.revision);await session.refresh();
   await assert.rejects(() => session.board({...before,cards:before.cards.map(p => ({...p,x:300}))},'Move cards',before),/changed|changes/i);

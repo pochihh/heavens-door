@@ -207,7 +207,7 @@ test('collapsed cards use cached titles without loading bodies and expand withou
     const summary=first.querySelector('.card-title')!.innerHTML,chevron=first.querySelector('[aria-label="Expand card"]');
     assert.equal(first.querySelector('.resize-handle'),null);
     await act(async()=>first.querySelector<HTMLButtonElement>('[aria-label="Expand card"]')!.click());
-    assert.equal(reads,1);assert.equal(first.style.height,'280px');assert.ok(first.querySelector('.card-preview p'),'expansion mounts the body');
+    assert.equal(reads,1);assert.equal(first.style.height,'auto');assert.ok(first.querySelector('.card-preview p'),'expansion mounts the body');
     assert.equal(first.querySelector('.card-title')!.innerHTML,summary,'heading formatting stays identical');
     assert.equal(first.querySelector('[aria-label="Collapse card"]'),chevron,'the same button stays mounted');
     assert.deepEqual([latest.cards[0].x,latest.cards[0].y,latest.cards[0].height],[0,0,280]);
@@ -250,9 +250,75 @@ test('whiteboard tiles preview indexed members without body reads and share card
     await act(async()=>{pointer(tile.querySelector('.resize-handle')!,'pointerdown',100);pointer(tile,'pointerup',185,142.5);});
     assert.equal(latest.cards[0].width,440);assert.equal(latest.cards[0].height,330);
     assert.equal(tile.querySelectorAll('.board-tile-item').length,24,'resizing reveals more indexed titles');
-    await act(async()=>{tile.querySelector<HTMLButtonElement>('[aria-label="Open whiteboard"]')!.click();body.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));});
+    Object.assign(globalThis,{innerWidth:1200,innerHeight:800});
+    await act(async()=>tile.querySelector<HTMLButtonElement>('[aria-label="Whiteboard actions"]')!.click());
+    await act(async()=>{document.querySelector<HTMLButtonElement>('[role=menuitem]')!.click();body.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));});
     assert.deepEqual(opened,['Ideas','Ideas']);assert.equal(saved.length,2,'opening leaves geometry/history untouched');
     await act(async()=>{pointer(body,'pointerdown',100);pointer(tile,'pointercancel',185);});
     assert.equal(tile.classList.contains('dragging'),false);assert.equal(saved.length,2,'cancellation does not save');
+  }finally{await act(async()=>root.unmount());}
+});
+
+
+test('card auto height defaults on, toggles at its measured height, and manual resizing fixes that height',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  let measuredHeight=560;
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+  Object.defineProperty(dom.window.HTMLElement.prototype,'offsetHeight',{get(){return this.classList.contains('collapsed')?70:measuredHeight;}});
+  dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;
+  dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+  const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react');
+  const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[{id:'p',cardId:'c',x:0,y:0,width:340,height:280}],edges:[]};
+  const cards=[{id:'c',path:'Ideas/card.md',name:'card',title:'Title',revision:'r',legacy:false}];
+  window.door={assetUrl:(p:string)=>p,request:async()=>({...cards[0],body:'# Title\n\nBody'})} as unknown as typeof window.door;
+  const saved:Board[]=[];let latest=board;
+  function Fixture(){const [value,setValue]=useState(board);return <Whiteboard board={value} cards={cards} onOpen={()=>undefined} onCreate={()=>undefined} onSave={b=>{saved.push(b);latest=b;setValue(b);}}/>;}
+  const root=createRoot(document.getElementById('root')!);
+  const pointer=(target:Element,type:string,x:number,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
+  const open=async()=>act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Card actions"]')!.click());
+  const toggle=async()=>act(async()=>document.querySelector<HTMLButtonElement>('[role=menuitemcheckbox]')!.click());
+  try{
+    await act(async()=>root.render(<Fixture/>));
+    const card=document.querySelector<HTMLElement>('.board-card')!;
+    assert.ok(card.classList.contains('auto-height'));assert.equal(card.style.height,'auto');
+    assert.equal(saved.length,0,'measuring content does not add history entries');
+    await open();
+    assert.equal(document.querySelector('[role=menuitemcheckbox]')?.getAttribute('aria-checked'),'true');
+    assert.equal(document.querySelector('[role=menuitemcheckbox]')?.hasAttribute('data-tooltip'),false,'the visible menu label is not repeated in a tooltip');
+    await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    assert.equal(!!document.querySelector('[role=menu]'),false);
+    await open();await open();assert.equal(!!document.querySelector('[role=menu]'),false,'the same trigger toggles the menu');
+    await open();await act(async()=>pointer(document.querySelector('.canvas')!,'pointerdown',900,700));
+    assert.equal(!!document.querySelector('[role=menu]'),false,'outside press closes the menu');
+    await act(async()=>pointer(document.querySelector('.canvas')!,'pointercancel',900,700));
+    await open();await toggle();
+    assert.equal(latest.cards[0].autoHeight,false);assert.equal(card.style.height,'560px');
+    await open();assert.equal(document.querySelector('[role=menuitemcheckbox]')?.getAttribute('aria-checked'),'false');
+    await toggle();assert.equal(latest.cards[0].autoHeight,true);assert.equal(card.style.height,'auto');
+    await act(async()=>card.querySelector<HTMLButtonElement>('[aria-label="Collapse card"]')!.click());
+    assert.equal(latest.cards[0].height,560,'collapse remembers expanded height independently');
+    await open();await toggle();assert.equal(latest.cards[0].height,560,'switching mode while collapsed never saves the collapsed height');
+    await act(async()=>card.querySelector<HTMLButtonElement>('[aria-label="Expand card"]')!.click());
+    assert.equal(card.style.height,'560px');
+    measuredHeight=720;await open();await toggle();
+    await act(async()=>{pointer(card.querySelector('.resize-handle')!,'pointerdown',340,720);pointer(card,'pointerup',425,762.5);});
+    assert.equal(latest.cards[0].autoHeight,false);assert.equal(latest.cards[0].height,770,'resizing starts from measured content height');assert.equal(latest.cards[0].width,440);
+  }finally{await act(async()=>root.unmount());}
+});
+
+
+test('a tall auto-height card is measured before culling when the camera starts below its top',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+  Object.defineProperty(dom.window.HTMLElement.prototype,'offsetHeight',{get(){return 3500;}});
+  const {Whiteboard}=await import('../src/renderer/Board');
+  const card={id:'c',path:'Ideas/card.md',name:'card',revision:'r',legacy:false};
+  window.door={request:async()=>({...card,body:'# Tall note\n\nBody'})} as unknown as typeof window.door;
+  const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[{id:'p',cardId:'c',x:0,y:-3000,width:340,height:280}],edges:[{id:'e',from:'p',to:'p'}]};
+  const root=createRoot(document.getElementById('root')!);
+  try{
+    await act(async()=>root.render(<Whiteboard board={board} cards={[card]} onOpen={()=>undefined} onCreate={()=>undefined} onSave={()=>assert.fail('measurement must not save')}/>));
+    assert.equal(document.querySelectorAll('.card-preview').length,1,'visible tail renders even when saved fallback height is offscreen');
+    assert.equal(document.querySelector('line')?.getAttribute('y1'),'-1250','connections use measured content height');
   }finally{await act(async()=>root.unmount());}
 });

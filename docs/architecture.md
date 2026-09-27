@@ -26,7 +26,7 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 | Data | Owner and location |
 | --- | --- |
 | Card content and stable identity | `.md`, YAML `card-id`; `src/core/format.ts` |
-| Placement identity, geometry, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
+| Placement identity, geometry, height mode, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
 | Tag definitions | `.tag`, indexed by `Workspace` |
 | Theme, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
 | Search, backlinks and file revisions | Rebuildable SQLite index under Electron user data |
