@@ -7,8 +7,16 @@ export function normalizedWheelDelta(delta: number, mode: number) {
   if (mode === 2) return delta * 800;
   return Math.max(-120, Math.min(120, delta));
 }
-export function looksLikeMouseWheel(event: Pick<WheelEvent, 'deltaMode' | 'deltaX' | 'deltaY'>) {
-  return event.deltaMode !== 0 || (Math.abs(event.deltaX) < 1 && Math.abs(event.deltaY) >= 48);
+type WheelMode = 'pan' | 'zoom';
+const GESTURE_GAP = 180, SAMPLE_WAIT = 32, INPUT_MEMORY = 5000;
+// Session-only memory follows input across whiteboards in the same window.
+const wheelMemory = new WeakMap<Window, { mode: WheelMode; time: number }>();
+function wheelHint(event: WheelEvent): WheelMode | null {
+  // ponytail: browser wheel events have no device ID. These are hints, not hardware
+  // identification; refine using recorded device traces if a device is misclassified.
+  if (event.deltaMode !== 0) return 'zoom';
+  if (Math.abs(event.deltaX) >= 1) return 'pan';
+  return Math.abs(event.deltaY) >= 48 ? 'zoom' : null;
 }
 export function zoomAt(camera: Camera, x: number, y: number, zoom: number): Camera {
   const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
@@ -18,13 +26,13 @@ export function shouldLetCardScroll(event: WheelEvent, viewport: HTMLElement) {
   const target = event.target instanceof HTMLElement ? event.target : null;
   const root = target?.closest<HTMLElement>('.card-preview,.editor-body');
   if (!root?.closest('.board-card.selected') || event.ctrlKey || event.metaKey) return false;
-  const dx = normalizedWheelDelta(event.deltaX, event.deltaMode);
-  const dy = normalizedWheelDelta(event.deltaY, event.deltaMode);
+  const win = viewport.ownerDocument.defaultView!;
   for (let element = target; element && element !== viewport && root.contains(element); element = element.parentElement) {
-    if ((dy < 0 && element.scrollTop > 0) ||
-        (dy > 0 && element.scrollTop + element.clientHeight < element.scrollHeight - 1) ||
-        (dx < 0 && element.scrollLeft > 0) ||
-        (dx > 0 && element.scrollLeft + element.clientWidth < element.scrollWidth - 1)) return true;
+    const style = win.getComputedStyle(element);
+    const scrollable = (overflow: string) => /^(auto|scroll|overlay)$/.test(overflow);
+    // Selected scroll containers keep the wheel at their boundaries, too.
+    if (event.deltaY !== 0 && scrollable(style.overflowY || style.overflow) && element.scrollHeight > element.clientHeight + 1 ||
+        event.deltaX !== 0 && scrollable(style.overflowX || style.overflow) && element.scrollWidth > element.clientWidth + 1) return true;
   }
   return false;
 }
@@ -36,9 +44,13 @@ export class BoardNavigation {
   private published = this.current;
   private frame: number | null = null;
   private settle: ReturnType<typeof setTimeout> | undefined;
-  private pan = { x: 0, y: 0 };
-  private zoomDelta = 0;
-  private zoomPoint = { x: 0, y: 0 };
+  private pending: Camera | null = null;
+  private wheelMode: WheelMode | null = null;
+  private wheelLast = -Infinity;
+  private modifiedWheel = false;
+  private hintedWheel = false;
+  private samples: WheelEvent[] = [];
+  private sampleTimer: ReturnType<typeof setTimeout> | undefined;
   private win: Window;
   constructor(
     private viewport: HTMLElement,
@@ -51,21 +63,62 @@ export class BoardNavigation {
     this.paint();
   }
   wheel(event: WheelEvent) {
-    if (shouldLetCardScroll(event, this.viewport)) return;
+    if (shouldLetCardScroll(event, this.viewport)) { this.stopWheel(); event.stopPropagation(); return; }
     event.preventDefault(); event.stopPropagation();
-    if (event.ctrlKey || event.metaKey || looksLikeMouseWheel(event)) {
-      this.zoomDelta += normalizedWheelDelta(event.deltaY, event.deltaMode) * (event.ctrlKey ? 8 : 1);
+    if (!event.deltaX && !event.deltaY) return;
+    const now = this.win.performance.now(), modified = event.ctrlKey || event.metaKey;
+    if (now - this.wheelLast > GESTURE_GAP || modified !== this.modifiedWheel) {
+      this.resolveSamples();
+      this.wheelMode = null; this.hintedWheel = false;
+    }
+    this.wheelLast = now; this.modifiedWheel = modified;
+    if (modified) this.wheelMode = 'zoom';
+    if (this.wheelMode) {
+      const remembered = wheelMemory.get(this.win);
+      const hint = !modified && !this.hintedWheel ? wheelHint(event) : null;
+      if (hint) {
+        // Learn late evidence for the next gesture without changing this one.
+        wheelMemory.set(this.win, { mode: hint, time: now }); this.hintedWheel = true;
+      } else if (!modified && remembered?.mode === this.wheelMode) remembered.time = now;
+      this.applyWheel(event, this.wheelMode); return;
+    }
+
+    const hint = wheelHint(event), remembered = wheelMemory.get(this.win);
+    const recent = remembered && now - remembered.time < INPUT_MEMORY ? remembered.mode : null;
+    this.samples.push(event);
+    // A strong hint can override recent memory at the start, never halfway through
+    // a gesture. Small leading/trailing mouse events inherit the remembered zoom.
+    if (hint) this.resolveSamples(hint, true);
+    else if (recent) this.resolveSamples(recent);
+    else if (!this.sampleTimer) this.sampleTimer = setTimeout(() => this.resolveSamples(), SAMPLE_WAIT);
+  }
+  private resolveSamples(mode?: WheelMode, hinted = false) {
+    clearTimeout(this.sampleTimer); this.sampleTimer = undefined;
+    if (!this.samples.length) return;
+    this.wheelMode = mode ?? 'pan'; this.hintedWheel = hinted;
+    // Only confident evidence is remembered; an ambiguous cold-start pan is not.
+    if (mode) wheelMemory.set(this.win, { mode, time: this.wheelLast });
+    for (const event of this.samples) this.applyWheel(event, this.wheelMode);
+    this.samples = [];
+  }
+  private applyWheel(event: WheelEvent, mode: WheelMode) {
+    const camera = this.pending ?? this.current;
+    if (mode === 'zoom') {
+      const delta = normalizedWheelDelta(event.deltaY, event.deltaMode) * (event.ctrlKey ? 8 : 1);
       const rect = this.viewport.getBoundingClientRect();
-      this.zoomPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      this.pending = zoomAt(camera, event.clientX - rect.left, event.clientY - rect.top, camera.zoom * Math.exp(-delta * 0.0012));
     } else {
-      this.pan.x += normalizedWheelDelta(event.deltaX, event.deltaMode);
-      this.pan.y += normalizedWheelDelta(event.deltaY, event.deltaMode);
+      this.pending = { ...camera, x: camera.x - normalizedWheelDelta(event.deltaX, event.deltaMode), y: camera.y - normalizedWheelDelta(event.deltaY, event.deltaMode) };
     }
     this.requestFrame();
   }
-  set(camera: Camera) { this.current = camera; this.requestFrame(); }
+  stopWheel() {
+    clearTimeout(this.sampleTimer); this.sampleTimer = undefined;
+    this.samples = []; this.wheelMode = null; this.wheelLast = -Infinity;
+  }
+  set(camera: Camera) { this.stopWheel(); this.pending = null; this.current = camera; this.requestFrame(); }
   zoomTo(zoom: number) {
-    this.flush();
+    this.stopWheel(); this.flush();
     this.set(zoomAt(this.current, this.viewport.clientWidth / 2, this.viewport.clientHeight / 2, zoom));
   }
   private requestFrame() {
@@ -75,12 +128,7 @@ export class BoardNavigation {
   }
   flush() {
     if (this.frame !== null) { this.win.cancelAnimationFrame(this.frame); this.frame = null; }
-    if (this.zoomDelta !== 0) {
-      this.current = zoomAt(this.current, this.zoomPoint.x, this.zoomPoint.y, this.current.zoom * Math.exp(-this.zoomDelta * 0.0012));
-    } else if (this.pan.x || this.pan.y) {
-      this.current = { ...this.current, x: this.current.x - this.pan.x, y: this.current.y - this.pan.y };
-    }
-    this.zoomDelta = 0; this.pan = { x: 0, y: 0 };
+    if (this.pending) { this.current = this.pending; this.pending = null; }
     this.paint();
   }
   private publishCurrent() {
@@ -100,6 +148,7 @@ export class BoardNavigation {
     if (Math.abs(c.x - p.x * ratio) > width * 0.4 || Math.abs(c.y - p.y * ratio) > height * 0.4 || ratio < 0.8 || ratio > 1.25) this.publishCurrent();
   }
   dispose() {
+    this.stopWheel();
     if (this.frame !== null) this.win.cancelAnimationFrame(this.frame);
     clearTimeout(this.settle);
   }

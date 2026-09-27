@@ -141,7 +141,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     element.ownerDocument.addEventListener('pointermove', pointermove, true);
     element.ownerDocument.addEventListener('pointerup', pointerup, true);
     element.ownerDocument.addEventListener('pointercancel', pointercancel, true);
-    const blur = () => { spaceDown.current = false; delete element.dataset.space; cancel(); };
+    const blur = () => { nav.stopWheel(); spaceDown.current = false; delete element.dataset.space; cancel(); };
     element.addEventListener('wheel', wheel, { passive: false, capture: true });
     element.ownerDocument.addEventListener('keydown', keydown);
     element.ownerDocument.addEventListener('keyup', keyup);
@@ -161,7 +161,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
 
   function begin(e: PointerEvent, type: Gesture['type'], ids: string[] = []) {
     const element = viewport.current!, nav = navigation.current!;
-    nav.flush();
+    nav.stopWheel(); nav.flush();
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
     gesture.current = { type, ids, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: pendingSave.current ?? current,
       camera: { ...nav.current }, rect: element.getBoundingClientRect(), button:e.button,

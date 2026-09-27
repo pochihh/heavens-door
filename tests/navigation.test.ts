@@ -1,18 +1,20 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { BoardNavigation, looksLikeMouseWheel, normalizedWheelDelta, zoomAt } from '../src/renderer/navigation';
+import { BoardNavigation, normalizedWheelDelta, zoomAt } from '../src/renderer/navigation';
 
-function setup() {
-  const dom = new JSDOM('<div id="viewport"><div id="grid"></div><div id="world"><article class="board-card"><div class="card-preview"><p>Note</p></div></article></div><button>85%</button></div>');
+function setup(t: TestContext) {
+  const dom = new JSDOM('<div id="viewport"><div id="grid"></div><div id="world"><article class="board-card"><div class="card-preview" style="overflow-x:auto;overflow-y:auto"><p>Note</p></div></article></div><button>85%</button></div>');
   Object.assign(globalThis, { HTMLElement: dom.window.HTMLElement });
   const viewport = dom.window.document.getElementById('viewport')!;
   const world = dom.window.document.getElementById('world')!;
   const grid = dom.window.document.getElementById('grid')!;
   Object.defineProperties(viewport, { clientWidth: { value: 1000 }, clientHeight: { value: 800 } });
-  const frames = new Map<number, FrameRequestCallback>(); let id = 0;
+  const frames = new Map<number, FrameRequestCallback>(); let id = 0, now = 0;
   dom.window.requestAnimationFrame = callback => { frames.set(++id, callback); return id; };
   dom.window.cancelAnimationFrame = id => { frames.delete(id); };
+  dom.window.performance.now = () => now;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   let publications = 0;
   const nav = new BoardNavigation(viewport, world, grid, viewport.querySelector('button')!, () => { publications++; });
   viewport.addEventListener('wheel', event => nav.wheel(event), { passive: false });
@@ -21,13 +23,18 @@ function setup() {
     target.dispatchEvent(event); return event;
   };
   const frame = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(0)); };
-  return { dom, viewport, world, nav, frames, frame, wheel, publications: () => publications, close: () => { nav.dispose(); dom.window.close(); } };
+  const advance = (ms: number) => { now += ms; t.mock.timers.tick(ms); };
+  t.after(() => { nav.dispose(); dom.window.close(); });
+  return { dom, viewport, world, nav, frames, frame, wheel, advance, publications: () => publications };
 }
 
-test('plugin wheel rules distinguish mouse zoom, trackpad pan, and pinch with anchored zoom limits', t => {
-  const f = setup(); t.after(f.close);
-  assert.equal(looksLikeMouseWheel({ deltaMode: 0, deltaX: 0, deltaY: 48 }), true);
-  assert.equal(looksLikeMouseWheel({ deltaMode: 0, deltaX: 3, deltaY: 9 }), false);
+function assertAnchored(before: { x: number; y: number; zoom: number }, after: typeof before) {
+  assert.ok(Math.abs((300 - before.x) / before.zoom - (300 - after.x) / after.zoom) < 1e-9, 'horizontal world point under pointer stays fixed');
+  assert.ok(Math.abs((200 - before.y) / before.zoom - (200 - after.y) / after.zoom) < 1e-9, 'vertical world point under pointer stays fixed');
+}
+
+test('automatic navigation paints once per frame, switches devices between gestures, and anchors zoom', t => {
+  const f = setup(t);
   assert.equal(normalizedWheelDelta(2, 1), 32);
   assert.equal(normalizedWheelDelta(1, 2), 800);
   assert.equal(normalizedWheelDelta(500, 0), 120);
@@ -38,33 +45,87 @@ test('plugin wheel rules distinguish mouse zoom, trackpad pan, and pinch with an
   f.frame();
   assert.deepEqual(f.nav.current, { ...start, x: start.x - 18, y: start.y - 12 });
   assert.equal(f.publications(), 0, 'small pans do not rerender the React card tree');
+  f.advance(200);
   const before = { ...f.nav.current };
   f.wheel({ deltaY: 100 }); f.frame();
   const after = f.nav.current;
-  assert.ok(after.zoom < before.zoom, 'mouse wheel zooms rather than pans');
-  assert.ok(Math.abs((300 - before.x) / before.zoom - (300 - after.x) / after.zoom) < 1e-9);
+  assert.ok(after.zoom < before.zoom, 'mouse wheel zooms after a trackpad gesture');
+  assertAnchored(before, after);
   f.wheel({ deltaY: -2, ctrlKey: true }); f.frame();
   assert.ok(Math.abs(f.nav.current.zoom - after.zoom * Math.exp(16 * 0.0012)) < 1e-9);
   assert.equal(zoomAt(start, 0, 0, 100).zoom, 3);
   assert.equal(zoomAt(start, 0, 0, 0.001).zoom, 0.2);
 });
 
-test('only selected card content scrolls, until its boundary; pinch always zooms', t => {
-  const f = setup(); t.after(f.close);
-  const preview = f.viewport.querySelector<HTMLElement>('.card-preview')!;
-  Object.defineProperties(preview, { clientHeight: { value: 100 }, scrollHeight: { value: 300 } });
-  assert.equal(f.wheel({ deltaY: 100 }, preview.querySelector('p')!).defaultPrevented, true, 'unselected content must zoom the canvas');
-  f.frame();
-  preview.closest('.board-card')!.classList.add('selected');
-  assert.equal(f.wheel({ deltaY: 100 }, preview.querySelector('p')!).defaultPrevented, false);
-  assert.equal(f.frames.size, 0);
-  assert.equal(f.wheel({ deltaY: 2, ctrlKey: true }, preview).defaultPrevented, true, 'pinch on selected content still zooms');
-  f.frame();
-  preview.scrollTop = 200;
-  assert.equal(f.wheel({ deltaY: 100 }, preview).defaultPrevented, true);
+test('small leading mouse events wait, and variable wheel deltas never alternate pan and zoom', t => {
+  const f = setup(t), start = { ...f.nav.current };
+  f.wheel({ deltaY: 8 }); f.frame(); f.advance(8);
+  f.wheel({ deltaY: 32 }); f.frame(); f.advance(8);
+  assert.deepEqual(f.nav.current, start, 'ambiguous leading events must not pan before mouse detection');
+  f.wheel({ deltaY: 60 }); f.frame();
+  assert.ok(Math.abs(f.nav.current.zoom - start.zoom * Math.exp(-100 * .0012)) < 1e-9, 'buffered deltas are applied once, without loss');
+  for (const deltaY of [18, 3, -4, -52, -16]) {
+    f.advance(12); f.wheel({ deltaY }); f.frame();
+    assertAnchored(start, f.nav.current);
+  }
+  f.advance(200);
+  const before = { ...f.nav.current };
+  f.wheel({ deltaY: 2 }); f.frame();
+  assert.ok(f.nav.current.zoom < before.zoom, 'a new gesture can use recent mouse memory immediately');
+  assertAnchored(start, f.nav.current);
+  f.advance(200);
+  const zoom = f.nav.current.zoom;
+  f.wheel({ deltaX: 3, deltaY: 4 }); f.frame();
+  for (const deltaY of [80, 100, 12, 2]) { f.advance(12); f.wheel({ deltaY }); f.frame(); }
+  assert.equal(f.nav.current.zoom, zoom, 'trackpad acceleration and inertia remain pan throughout the gesture');
+});
+
+test('ambiguous input waits at most 32ms; memory expires; explicit navigation cancels pending detection', t => {
+  const f = setup(t), start = { ...f.nav.current };
+  f.wheel({ deltaY: 4 }); f.advance(31); f.frame();
+  assert.deepEqual(f.nav.current, start);
+  f.advance(1); f.frame();
+  assert.deepEqual(f.nav.current, { ...start, y: start.y - 4 });
+  f.wheel({ deltaY: 100 }); f.frame();
+  assert.equal(f.nav.current.zoom, start.zoom, 'a late large event cannot change an already committed pan');
+  f.advance(200); f.wheel({ deltaY: 3 }); f.frame();
+  assert.ok(f.nav.current.zoom < start.zoom, 'late mouse evidence informs the next gesture even when it starts small');
+  f.advance(200); f.wheel({ deltaY: 3, deltaMode: 1 }); f.frame();
+  f.advance(5100);
+  const before = { ...f.nav.current };
+  f.wheel({ deltaY: 2 }); f.frame();
+  assert.deepEqual(f.nav.current, before, 'stale mouse memory must not force a device choice');
+  f.nav.stopWheel(); f.advance(100); f.frame();
+  assert.deepEqual(f.nav.current, before, 'starting a pointer gesture cancels buffered wheel input');
+  f.wheel({ deltaY: 2 }); f.nav.dispose(); f.advance(100); f.frame();
+  assert.deepEqual(f.nav.current, before, 'unmounted boards cannot apply delayed input');
+});
+
+test('pan and explicit pinch in the same frame apply in order without dropping either input', t => {
+  const f = setup(t), start = { ...f.nav.current };
+  f.wheel({ deltaX: 5, deltaY: 3 });
+  f.wheel({ deltaY: -2, ctrlKey: true });
   assert.equal(f.frames.size, 1);
   f.frame();
-  assert.equal(f.wheel({ deltaY: -100 }, preview).defaultPrevented, false);
-  preview.scrollTop = 0;
-  assert.equal(f.wheel({ deltaY: -100 }, preview).defaultPrevented, true);
+  const expected = zoomAt({ ...start, x: start.x - 5, y: start.y - 3 }, 300, 200, start.zoom * Math.exp(16 * .0012));
+  assert.deepEqual(f.nav.current, expected);
+});
+
+test('selected scroll containers keep input at both boundaries; pinch still zooms and auto-height content navigates', t => {
+  const f = setup(t);
+  const preview = f.viewport.querySelector<HTMLElement>('.card-preview')!;
+  Object.defineProperties(preview, { clientHeight: { value: 100 }, scrollHeight: { value: 300 } });
+  assert.equal(f.wheel({ deltaY: 100 }, preview.querySelector('p')!).defaultPrevented, true);
+  f.frame();
+  preview.closest('.board-card')!.classList.add('selected');
+  const camera = { ...f.nav.current };
+  for (const [top, deltaY] of [[0, -100], [0, 100], [200, 100], [200, -100]]) {
+    preview.scrollTop = top;
+    assert.equal(f.wheel({ deltaY }, preview.querySelector('p')!).defaultPrevented, false);
+    f.frame(); assert.deepEqual(f.nav.current, camera);
+  }
+  assert.equal(f.wheel({ deltaY: 2, ctrlKey: true }, preview).defaultPrevented, true);
+  f.frame(); assert.ok(f.nav.current.zoom < camera.zoom);
+  preview.style.overflowX = 'visible'; preview.style.overflowY = 'visible';
+  assert.equal(f.wheel({ deltaY: 100 }, preview).defaultPrevented, true, 'auto-height content is not a native scroll container');
 });

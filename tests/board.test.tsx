@@ -167,7 +167,7 @@ test('200 full previews keep their DOM through saves and distant zoom, and cache
     const canvas=document.querySelector('.canvas')!;
     const wheel=async(init:WheelEventInit,count:number)=>act(async()=>{
       for(let i=0;i<count;i++)canvas.dispatchEvent(new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,...init}));
-      await new Promise(resolve=>setTimeout(resolve,130));
+      await new Promise(resolve=>setTimeout(resolve,200));
     });
     await wheel({deltaY:100},8);
     assert.ok(Number.parseInt(document.querySelector('.zoom-level')!.textContent!)<40);
