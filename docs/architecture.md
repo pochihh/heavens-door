@@ -49,7 +49,7 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `Explorer.tsx` | Whiteboard/file explorer, tags, search and saved-list Views with shared context actions |
 | `documents.ts` | Snapshot-scoped identity/path maps; avoids a full card search for every row |
 | `Icons.tsx` / `IconPicker.tsx` | Named Lucide imports and lazy, locally bundled Emoji Mart picker |
-| `Overlays.tsx` | Delegated hover/focus tooltip and keyboard-accessible action menu |
+| `Overlays.tsx` | Delegated hover-only tooltip and keyboard-accessible action menu |
 | `sortable.ts` / `tab-drag.ts` | Shared phantom/reorder visuals; separate bookmark and tab pointer sessions; previews never persist layout |
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
 | `Board.tsx` / `navigation.ts` | Cached full previews, offscreen culling, selection and board gestures |
@@ -62,6 +62,8 @@ Explorer's whiteboard tree uses the index snapshot. Physical-file mode enumerate
 ## Editing, switching and recovery
 
 A `Session` serializes app commands. UI preference patches are debounced for 250ms, merged by View for navigation state, and flushed before close/reload/workspace switching. Failed writes retain pending preferences for retry; callbacks from an old workspace are ignored. Static layout JSON is independent of the rebuildable index. See [UI terminology and state ownership](ui-terminology.md). Draft saves retain keystrokes arriving during an earlier save. Every persisted edit checks the observed revision; external conflicts preserve the draft. Undo groups nearby typing and shares the command order with board edits. Board movement updates DOM transforms while dragging and persists final geometry once the gesture ends. Its document-level pointer handlers tolerate losing pointer capture.
+
+`renameCard` uses the existing multi-file journal and undo machinery for a same-folder rename. It preserves the card ID and checks the source revision and destination collision before writing. Session refresh and rename undo resolve the draft by identity, so changing its path does not detach it from its editor. Keystrokes arriving during rename remain dirty and save to the new path. See [inline filename editing](whiteboards.md#inline-filename-editing) for UI behavior and current limits.
 
 Switching workspaces first flushes the current draft. While opening, the workspace UI is inert. Main attaches the new worker only after it has opened successfully, and the renderer clears session undo only after receiving the new snapshot. An unavailable workspace leaves the previous workspace selected. Registered paths are canonicalized, deduplicated and written atomically. Registration is local to the desktop application; appearance and navigation preferences belong to each workspace.
 

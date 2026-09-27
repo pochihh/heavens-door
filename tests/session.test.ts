@@ -170,3 +170,33 @@ test('pending workspace layout saves before closing or switching and survives a 
   closing('reload');await session.run(async()=>undefined);assert.deepEqual(completed,['reload']);assert.equal(session.hasPendingPreferences('docks'),false);
   await session.open(false,'/second');session.schedulePreferences({docks:defaultDocks()},w.root);assert.equal(session.hasPendingPreferences('docks'),false,'late callbacks from the previous workspace cannot change the new workspace');
 });
+
+test('renaming flushes drafts, retains edits arriving during rename and follows the card through undo',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-door-rename-')),root=join(folder,'notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));await w.createFolder('','Ideas');await w.create('Ideas','original',0,0);
+  const original=await w.card('Ideas/original.md');
+  let release:()=>void=()=>undefined,started:()=>void=()=>undefined;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),renaming=new Promise<void>(resolve=>{started=resolve;});
+  const bridge={request:async r=>{
+    if(r.kind==='card')return w.card(r.path);
+    if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected);
+    if(r.kind==='renameCard'){started();await gate;return w.renameCard(r.path,r.stem,r.expected);}
+    if(r.kind==='write')return w.write(r.changes);
+    if(r.kind==='snapshot')return w.snapshot();
+    throw new Error('Unexpected request '+r.kind);
+  }} as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});
+  t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  await session.select(original.path);session.edit('# Unsaved title');
+  const pending=session.renameCard(original.id,'renamed');await renaming;
+  session.edit('# Unsaved title\n\nTyped during rename');release();await pending;
+  assert.equal(session.state.draft?.card.path,'Ideas/renamed.md');assert.equal(session.state.draft?.dirty,true);
+  await session.run(()=>session.flush());assert.match((await w.card('Ideas/renamed.md')).body,/Typed during rename/);
+  await assert.rejects(()=>w.read(original.path),/ENOENT/);
+  await session.undo();await session.undo();
+  assert.equal(session.state.draft?.card.path,original.path);assert.equal(session.state.draft?.card.id,original.id);
+  assert.equal((await w.card(original.path)).body,'# Unsaved title');
+  await session.undo(true);assert.equal(session.state.draft?.card.path,'Ideas/renamed.md');
+  const {documentInfo}=await import('../src/renderer/documents');
+  assert.equal(documentInfo('card:'+original.id,session.state.snapshot!).title,'renamed.md','ID-based tabs and starred entries resolve the new filename');
+});

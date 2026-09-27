@@ -31,10 +31,16 @@ A valid `.md` file directly inside a whiteboard folder must have a placement on 
 
 References to cards in other folders remain optional placements and may be removed without deleting notes. A deleted note leaves a recognizable missing reference. Invalid Markdown/frontmatter is reported rather than silently rewritten. Imported notes without a `card-id` receive a provisional path-based identity; discovery preserves their bytes, and the ID is written when they are edited. External renames of such ID-less notes cannot preserve their identity until an ID is stored.
 
+## Inline filename editing
+
+Click the filename above a card to rename it. The current stem is selected; `.md` is a protected suffix. Enter or clicking away saves once; Escape cancels. Filename interactions do not drag the card or activate its body editor. Errors retain the entered name for correction. The full-path tooltip belongs to the filename, not the card body.
+
+Renaming stays within the current folder and does not change the H1. Pending content edits save first. The revision-checked recovery transaction removes the old path and creates the new one as a single undo action. Existing card IDs remain stable; imported cards without a stored ID persist their existing provisional identity before the path changes. Placements, `card:` links, tabs and saved navigation entries continue to resolve by ID. Literal path-based Markdown/wiki links are not rewritten by this operation. Filename collisions and invalid names are rejected; capitalization-only renames currently require an intermediate name to remain safe on case-insensitive filesystems.
+
 ## Default column and collapse
 
 - Canvas creation uses the chosen coordinates and an expanded 340px-wide card in auto-height mode (120px minimum). The stored initial height of 280 is a fallback until measured.
-- Other newly discovered cards use a collapsed 340px-wide card with a minimum 70px title footprint. The leading H1 retains its formatting and wrapping; an empty title shows the workspace prompt. The full path remains available on hover.
+- Other newly discovered cards use a collapsed 340px-wide card with a minimum 70px title footprint. The leading H1 retains its formatting and wrapping; an empty title shows the workspace prompt. The full path remains available by hovering the filename.
 - On first automatic insertion, the board records `inbox: {x, y}`. It starts 80 canvas units to the right of existing content, with `y: 60`; an empty board starts at `x: 80`.
 - New arrivals append below placements overlapping that column, with a 12-unit gap. The anchor persists, so later discoveries and restarts do not move existing cards. Batch discovery uses filename order; later arrivals append regardless of alphabetical position.
 - Collapse is per placement, stored as optional `collapsed: true/false`. Omitted means expanded. The existing `width` and `height` retain the expanded width and fixed/fallback height. Collapse/expand changes neither note content nor position, and participates in shared undo and persistent history.
@@ -43,7 +49,7 @@ References to cards in other folders remain optional placements and may be remov
 
 ## Card height and action menus
 
-Cards have a three-dot **Card actions** button directly above the collapse chevron. The chevron stays at its existing coordinates in both states. Both controls appear on hover, selection or keyboard focus. Whiteboard tiles have the matching **Whiteboard actions** menu with **Open whiteboard**; their preview grids remain manually sized.
+Cards have a floating row above their top edge: editable filename on the left, three-dot **Card actions** on the right. The collapse chevron sits inside the upper-right corner with a 7px inset, at the same coordinates in both states. Controls appear on hover, selection or keyboard focus; the row also remains visible during editing and while its menu is open. Crossing from the card into the row preserves hover. Whiteboard tiles use the same menu position for **Whiteboard actions**, with **Open whiteboard**; their preview grids remain manually sized.
 
 - **Auto height** is checked by default. A missing `autoHeight` field means enabled for cards; whiteboard tiles always keep fixed geometry. This also makes existing cards without a mode use auto height.
 - Auto-height cards grow and shrink with formatted content, live edits, wrapping and loaded images, with a minimum expanded height of 120 canvas units. CSS supplies the natural height; there is no per-card editor or autosave loop for measuring it.

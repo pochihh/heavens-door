@@ -63,7 +63,7 @@ export function BoardView({board,snapshot,session,active,memory,onActivate,onOpe
       return session.board(next,label,base);
     }}
     onOpen={path=>{onActivate();void session.select(path).catch(()=>undefined);}}
-    onReference={id=>onOpen('card:'+id)}
+    onReference={id=>onOpen('card:'+id)} onRename={(id,stem)=>session.renameCard(id,stem)}
     onCreate={onCreate}
     draft={active?session.state.draft:null} onEdit={body=>session.edit(body)}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;

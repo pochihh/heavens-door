@@ -25,6 +25,7 @@ export type Request =
   | { kind: 'migrateRoot' }
   | { kind: 'tagCards'; tag: string }
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
+  | { kind: 'renameCard'; path:string; stem:string; expected:string }
   | { kind: 'saveCard'; path: string; body: string; expected: string }
   | { kind: 'saveBoard'; board: Board; expected: string }
   | { kind: 'query'; text: string }

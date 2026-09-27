@@ -127,9 +127,9 @@ export class Session {
       this.update({snapshot});
       const draft=this.state.draft;
       if (!draft || draft.dirty) return;
-      const info=snapshot.cards.find(c => c.path === draft.card.path);
+      const info=snapshot.cards.find(c => c.id === draft.card.id);
       if (!info) { this.update({draft:null}); return; }
-      if (info.revision !== draft.card.revision) {
+      if (info.revision !== draft.card.revision || info.path !== draft.card.path) {
         const card=await this.bridge.request<Card>({kind:'card',path:info.path});
         if (!this.state.draft?.dirty) this.update({draft:{card,body:card.body,dirty:false}});
       }
@@ -143,6 +143,17 @@ export class Session {
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});
       this.update({draft:{card,body:card.body,dirty:false}});
+    });
+  }
+  renameCard(id:string,stem:string) {
+    return this.run(async()=>{
+      await this.flush();
+      const card=this.state.snapshot?.cards.find(c=>c.id===id);
+      if(!card)throw new Error('This card is no longer in the workspace');
+      const result=await this.bridge.request<Mutation>({kind:'renameCard',path:card.path,stem,expected:card.revision});
+      this.accept(result,`Rename ${card.path}`);
+      const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===id);
+      if(draft?.card.id===id&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
     });
   }
   board(board: Board,label: string,base = this.state.snapshot?.boards.find(b => b.path === board.path)) {
@@ -165,9 +176,9 @@ export class Session {
         const result=await this.bridge.request<Mutation>({kind:'write',changes});
         this.update({snapshot:result.snapshot,status:redo ? 'Redone' : 'Undone',error:''});
       });
-      const path=this.state.draft?.card.path;
-      if (path && this.state.snapshot?.cards.some(c => c.path === path)) {
-        const card=await this.bridge.request<Card>({kind:'card',path});
+      const info=this.state.snapshot?.cards.find(c=>c.id===this.state.draft?.card.id);
+      if (info) {
+        const card=await this.bridge.request<Card>({kind:'card',path:info.path});
         this.update({draft:{card,body:card.body,dirty:false}});
       } else this.update({draft:null});
     });

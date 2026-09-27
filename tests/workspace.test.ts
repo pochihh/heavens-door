@@ -175,3 +175,29 @@ test('matching folders reconcile direct Markdown cards into a persistent collaps
   await assert.rejects(()=>w.create('Ideas','race',0,0,false),/External changes/);
   await assert.rejects(()=>w.read('Ideas/race.md'),'a stale board revision prevents partial creation');
 });
+
+test('card renaming preserves Markdown, identity and placements, rejects collisions and remains undoable',async t=>{
+  const f=await fixture(),w=await Workspace.open(f.root,f.cache);
+  t.after(async()=>{w.close();await fs.rm(f.folder,{recursive:true,force:true});});
+  await w.createFolder('','Ideas');
+  const raw='---\ncustom: keep\n---\n# A title independent of the filename\n\n![Picture](picture.svg)\n';
+  await fs.writeFile(join(f.root,'Ideas/imported.md'),raw);await w.refresh('Ideas/imported.md');
+  const old=await w.card('Ideas/imported.md'),boardBefore=w.snapshot().boards.find(b=>b.folder==='Ideas')!;
+  await w.write([{path:'incoming.md',content:`[Imported](card:${old.id})`,expected:null}]);
+  const renamed=await w.renameCard(old.path,'research',old.revision),undo=new UndoHistory();undo.record('Rename card',renamed.edits);
+  const current=await w.card('Ideas/research.md');
+  assert.equal(current.id,old.id);assert.equal(current.body,old.body);assert.equal(current.legacy,false);
+  assert.equal(renamed.edits.length,2);await assert.rejects(()=>w.read(old.path),/ENOENT/);
+  assert.deepEqual(w.snapshot().boards.find(b=>b.folder==='Ideas')!.cards,boardBefore.cards);
+  assert.equal(w.query('backlinks:'+old.id).length,1);assert.equal(w.query('research').length,1);
+  await undo.travel(false,c=>w.write(c));assert.equal(await w.read(old.path),raw);
+  await undo.travel(true,c=>w.write(c));assert.equal((await w.card(current.path)).id,old.id);
+  const saved=await w.read(current.path);
+  await w.renameCard(current.path,'final',current.revision);assert.equal(await w.read('Ideas/final.md'),saved,'stable card bytes and H1 stay unchanged');
+  const final=await w.card('Ideas/final.md');await w.create('Ideas','occupied',0,0);
+  for(const name of ['occupied','OCCUPIED','FINAL','../escape','CON','NUL.txt','',' '])await assert.rejects(()=>w.renameCard(final.path,name,final.revision),/exists|valid filename/);
+  assert.equal(await w.read(final.path),saved);
+  await fs.writeFile(join(f.root,final.path),saved+'External addition');
+  await assert.rejects(()=>w.renameCard(final.path,'stale',final.revision),/External changes/);
+  assert.match(await w.read(final.path),/External addition/);await assert.rejects(()=>w.read('Ideas/stale.md'),/ENOENT/);
+});

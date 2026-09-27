@@ -9,6 +9,10 @@ import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNot
 import { COLLAPSED_CARD_HEIGHT, placementHeight } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult } from '../shared';
 
+function validateStem(stem:string) {
+    if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error('Choose a valid filename base');
+}
+
 export class Workspace {
   readonly history: History;
   private db: DatabaseSync;
@@ -321,7 +325,7 @@ export class Workspace {
   }
 
   async create(folder: string, stem: string, x: number, y: number,place=true) {
-    if (!stem || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) throw new Error('Choose a valid filename base');
+    validateStem(stem);
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Invalid position');
     if (folder) await fs.access(await this.path(folder));
     const directory = folder ? await this.path(folder) : this.root;
@@ -334,6 +338,18 @@ export class Workspace {
     const board=structuredClone(this.boards.get(boardPath)??emptyBoard(boardPath));
     board.cards.push({id:randomUUID(),cardId:card.id,x,y,width:340,height:280});
     return this.write([{path,content:raw,expected:null},{path:board.path,content:writeBoard(board),expected:board.revision || null}]);
+  }
+  async renameCard(path:string,stem:string,expected:string):Promise<Mutation> {
+    validateStem(stem);
+    if(extname(path)!=='.md')throw new Error('Only Markdown cards can be renamed here');
+    const raw=await this.read(path),card=readCard(path,raw),next=join(dirname(path),stem+'.md');
+    if(card.revision!==expected)throw new Error(`External changes detected in ${path}. The card has not been renamed.`);
+    if(next===path)return {snapshot:this.snapshot(),edits:[]};
+    const names=await fs.readdir(dirname(await this.path(path)));
+    if(names.some(name=>name.toLocaleLowerCase()===(stem+'.md').toLocaleLowerCase()))throw new Error('A file with that name already exists. For a capitalization-only change, use an intermediate name.');
+    // Reuse the journaled transaction so rename is recoverable and one undo action.
+    // Persist a legacy card's existing provisional identity before its path changes.
+    return this.write([{path,content:null,expected},{path:next,content:editCard(raw,card,card.body),expected:null}]);
   }
   async saveCard(path: string, body: string, expected: string) {
     const raw = await this.read(path), card = readCard(path,raw);

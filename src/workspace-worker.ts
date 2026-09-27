@@ -62,6 +62,9 @@ async function dispatch(request: Request) {
       string(request.folder); string(request.stem);
       if(request.place!==undefined&&typeof request.place!=='boolean')throw new Error('Invalid placement flag');
       return workspace.create(request.folder,request.stem,request.x,request.y,request.place);
+    case 'renameCard':
+      string(request.path); string(request.stem); string(request.expected);
+      return workspace.renameCard(request.path,request.stem,request.expected);
     case 'saveCard':
       string(request.path); string(request.body); string(request.expected);
       return workspace.saveCard(request.path,request.body,request.expected);
