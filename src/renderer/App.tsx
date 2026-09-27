@@ -1,5 +1,7 @@
 import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
-import { useCallback, useEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { remapKey } from '../path-remap';
+import { Breadcrumbs } from './Breadcrumbs';
 import { Session } from './session';
 import type { Mutation, Preferences, Snapshot } from '../shared';
 import { DocumentIcon, Icon, Tool } from './Icons';
@@ -13,7 +15,7 @@ import { documentInfo, parent } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
 import { BoardView, FileView, HistoryPanel, NoteView, TagView, type ViewMemory } from './DocumentViews';
-import { MAX_PANES, MAX_TABS, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type Layout, type Pane } from '../layout';
+import { MAX_PANES, MAX_TABS, updatePane, navigateTab, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
@@ -58,6 +60,17 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [pulse,setPulse]=useState(0),[tabMenu,setTabMenu]=useState<MenuState|null>(null);
   const dismissTabMenu=useCallback(()=>setTabMenu(null),[]);
   const memories=useRef(new Map<string,ViewMemory>(Object.entries(prefs.documents?.views??{}))),starredTarget=useRef<HTMLDivElement>(null);
+  const seenMoves=useRef(snapshot.pathMoves?.length??0);
+  useLayoutEffect(()=>{
+    const moves=snapshot.pathMoves?.slice(seenMoves.current)??[];seenMoves.current=snapshot.pathMoves?.length??0;
+    if(!moves.length)return;
+    setLayout(current=>{
+      let next=current;
+      for(const {from,to} of moves)for(const group of panes(next))next=updatePane(next,group.id,p=>({...p,tabs:p.tabs.map(k=>remapKey(k,from,to)),active:remapKey(p.active,from,to)}));
+      return next;
+    });
+    for(const {from,to} of moves)memories.current=new Map([...memories.current].map(([key,value])=>{const at=key.indexOf(':');return [key.slice(0,at+1)+remapKey(key.slice(at+1),from,to),value];}));
+  },[snapshot.pathMoves]);
   const active=panes(layout).find(p=>p.id===activeId)??panes(layout)[0];
   const rootCards=snapshot.cards.filter(c=>!parent(c.path));
   useEffect(()=>{
@@ -166,10 +179,17 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function star(key:string){changePrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));}
   function docIcon(key:string){const info=documentInfo(key,snapshot);return <DocumentIcon value={prefs.icons[key]} fallback={info.icon}/>;}
   function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
-  function openBeside(key:string){
-    if(panes(layout).length>=MAX_PANES){session.update({error:'Close a document pane before creating another split.'});return;}
-    attempt((async()=>{await session.flush();const next=pane(key);setLayout(current=>splitPane(current,activeId,'row',next));setActiveId(next.id);open(key,next.id);})());
+  function navigate(key:string,id:string,newTab=false){
+    attempt((async()=>{
+      const info=documentInfo(key,session.state.snapshot!);
+      if(!info.exists)throw new Error('This file is no longer in the workspace.');
+      const next=navigateTab(layout,id,key,newTab?'new':'same',prefs.newTabDestination,prefs.newSplitDirection);
+      await session.select(info.kind==='card'?info.path:null);
+      setLayout(next.tree);setActiveId(next.active);setPulse(v=>v+1);
+      changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
+    })().catch(error=>{session.update({error:String(error)});}));
   }
+  function openBeside(key:string){navigate(key,activeId,true);}
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
     const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:'View tab actions',x,y,actions:[{label:'Close View Tab',icon:'close',run:()=>close(p,key)}]});
@@ -194,8 +214,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         </div></details>
       </div>
       {info&&<div className="document-toolbar">
-        <button className="document-icon-button" aria-label="Change this file’s icon" data-tooltip="Change this file’s icon" onClick={()=>editIcon(p.active)}>{docIcon(p.active)}</button>
-        <span className="document-breadcrumb" data-tooltip={info.path||snapshot.root}>{info.path||snapshot.name}</span>
+        <Breadcrumbs key={p.active} documentKey={p.active} snapshot={snapshot} onNavigate={(key,newTab)=>navigate(key,p.id,newTab)} onIcon={()=>editIcon(p.active)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else await session.renameBoard(info.id,name);}}/>
         <div className="toolbar-spacer"/>
         {info.kind==='board'&&<><Tool icon="folder" label="New whiteboard" onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label="Create card in this whiteboard" onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
         {info.kind==='card'&&<Tool icon="format" label="Show or hide formatting controls" aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
@@ -205,7 +224,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="document-content">
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label="Empty Tab Group"/>:<div className="empty-pane"><button data-tooltip="Open the mother whiteboard" onClick={()=>open('board:',p.id)}><Icon name="map"/>Open whiteboard</button></div>):
           !info.exists?<p className="notice">This file is no longer in the workspace.</p>:
-          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews}/>:
+          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onNavigate={(key,newTab)=>navigate(key,p.id,newTab)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews}/>:
           tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onViewChange={rememberViews}/>}
       </div>
@@ -259,6 +278,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
         <label>Empty card title<input aria-label="Empty card title placeholder" maxLength={120} defaultValue={prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER} onBlur={e=>changePrefs(()=>({titlePlaceholder:e.target.value.trim()||DEFAULT_TITLE_PLACEHOLDER}))}/></label>
+        <label>Open in new tab<select aria-label="New tab destination" value={prefs.newTabDestination??'other'} onChange={e=>changePrefs(()=>({newTabDestination:e.target.value as Preferences['newTabDestination']}))}><option value="other">Another Tab Group (create if needed)</option><option value="current">Current Tab Group</option></select></label>
+        <label>New split direction<select aria-label="New split direction" value={prefs.newSplitDirection??'row'} onChange={e=>changePrefs(()=>({newSplitDirection:e.target.value as Preferences['newSplitDirection']}))}><option value="row">Right</option><option value="column">Below</option></select></label>
         <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
         <small>Settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
         {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}

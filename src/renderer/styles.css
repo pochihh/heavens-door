@@ -172,3 +172,16 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .board-card .card-title.is-empty::before{max-width:calc(100% - 22px)}
 .prose .card-title.is-empty{min-height:1.3em}
 .prose .card-title.is-empty::before{content:var(--card-title-placeholder);position:absolute;left:0;top:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);opacity:.65;pointer-events:none}
+
+.card-drag-strip{position:absolute;top:0;left:10px;right:32px;height:10px;cursor:grab;z-index:1}
+.card-editor,.card-editor .tiptap{cursor:text}.card-preview a,.card-editor a{cursor:pointer}
+.board-card.dragging,.board-card.dragging *{cursor:grabbing!important}
+
+.document-breadcrumb{display:flex;align-items:center;min-width:0;flex:0 1 auto;overflow:visible;gap:2px}
+.breadcrumb-part{display:flex;align-items:center;min-width:30px;flex:0 1 auto;color:var(--muted)}
+.breadcrumb-part>button,.breadcrumb-part>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;padding:4px 6px;font-size:inherit}
+.breadcrumb-divider{padding:0 3px;color:var(--muted);opacity:.65}
+.breadcrumb-current{display:flex;align-items:center;min-width:80px;flex:0 1 auto;position:relative}
+.breadcrumb-current .card-filename{font-size:14px;color:var(--text);min-width:40px}
+.breadcrumb-current .card-filename>button{width:auto;max-width:300px;text-shadow:none}
+.breadcrumb-current .card-filename-input{min-width:140px}

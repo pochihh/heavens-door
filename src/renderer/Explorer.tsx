@@ -67,7 +67,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
       ...(entry.folder!==undefined?creations(entry.folder):[]),
       ...(key&&!entry.symlink?[
         {label:'Open',icon:'file' as const,run:()=>onOpen(key)},
-        {label:'Open to the side',icon:'splitRight' as const,run:()=>onSplit(key)},
+        {label:'Open in new tab',icon:'splitRight' as const,run:()=>onSplit(key)},
         {label:index>=0?'Remove from Starred':'Add to Starred',icon:'star' as const,run:()=>star(key)},
         {label:'Change icon…',icon:'art' as const,run:()=>onIcon(key)},
         ...(index>=0?[

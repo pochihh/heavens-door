@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Workspace} from '../src/core/workspace';
-import {pane,panes,openTab,splitPane,moveTab,closeTab,removePane,restoreLayout} from '../src/layout';
+import {pane,panes,openTab,navigateTab,splitPane,moveTab,closeTab,removePane,restoreLayout} from '../src/layout';
 
 test('tabs are unique within a pane, can share a file across splits, and survive layout restore',()=>{
   const first=pane('board:');
@@ -69,4 +69,18 @@ test('workspace settings, sub-whiteboard files and root migration preserve ident
   assert.equal(workspace.snapshot().preferences?.titlePlaceholder,'Start a thought');
   assert.deepEqual(workspace.snapshot().preferences?.starred,['card:'+card.id]);
   assert.equal(workspace.snapshot().boards.find(b=>b.folder==='Existing')!.cards.find(p=>p.folder)!.folder,join('Existing','Nested'));
+});
+
+
+test('same-tab navigation replaces content and new tabs reuse another group or create the configured split',()=>{
+  const first=pane('board:'),same=navigateTab(first,first.id,'board:Ideas','same');
+  assert.deepEqual(panes(same.tree)[0].tabs,['board:Ideas']);assert.equal(same.active,first.id);
+  const beside=navigateTab(same.tree,first.id,'card:a','new');
+  assert.equal(panes(beside.tree).length,2);assert.equal(beside.tree.type==='split'&&beside.tree.axis,'row');
+  const reused=navigateTab(beside.tree,first.id,'board:Other','new');
+  assert.equal(panes(reused.tree).length,2);assert.equal(reused.active,beside.active);
+  assert.deepEqual(panes(reused.tree)[1].tabs,['card:a','board:Other']);
+  assert.equal(navigateTab(reused.tree,beside.active,'board:','new').active,first.id);
+  const current=navigateTab(first,first.id,'card:a','new','current');assert.equal(panes(current.tree).length,1);assert.deepEqual(panes(current.tree)[0].tabs,['board:','card:a']);
+  const below=navigateTab(first,first.id,'card:a','new','other','column');assert.equal(below.tree.type==='split'&&below.tree.axis,'column');
 });

@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { placementHeight, type Board, type Card, type CardInfo, type Placement } from '../shared';
 import { leadingTitle } from '../card-title';
-import { leaf, parent, portable } from './documents';
+import { parent, portable } from './documents';
 import { preview, titlePreview } from './markdown';
 import { BoardNavigation, type Camera } from './navigation';
 import { Icon, Tool } from './Icons';
+import { InlineName } from './InlineName';
 import { ActionMenu, type MenuState } from './Overlays';
 import { CardEditor, type EditorFocus } from './Editor';
 import type { ReactNode } from 'react';
@@ -42,30 +43,8 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
   }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
-function CardFilename({card,onRename,onStart}:{card:CardInfo;onRename?:(id:string,stem:string)=>Promise<void>;onStart:()=>void}) {
-  const [editing,setEditing]=useState(false),[name,setName]=useState(''),[error,setError]=useState(''),[pending,setPending]=useState(false);
-  const input=useRef<HTMLInputElement>(null),finished=useRef(false);
-  useLayoutEffect(()=>{if(editing){input.current?.focus();input.current?.select();}},[editing]);
-  useLayoutEffect(()=>{if(error&&!pending)input.current?.focus();},[error,pending]);
-  async function commit(){
-    if(finished.current||!onRename)return;
-    finished.current=true;
-    const stem=name.trim().replace(/\.md$/i,'');
-    if(stem===card.name){setEditing(false);return;}
-    setPending(true);setError('');
-    try{await onRename(card.id,stem);setEditing(false);}
-    catch(error){setError(String(error));finished.current=false;}
-    finally{setPending(false);}
-  }
-  return <div className="card-filename" onPointerDown={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}>
-    {editing?<><div className="card-filename-input"><input ref={input} aria-label="Filename" aria-invalid={!!error} value={name} disabled={pending} onChange={e=>{setName(e.target.value);setError('');}}
-      onBlur={()=>void commit()} onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();void commit();}if(e.key==='Escape'){e.preventDefault();finished.current=true;setEditing(false);}}}/><span>.md</span></div>
-      {error&&<span className="card-rename-error" role="alert">{error}</span>}</>:
-      <button type="button" disabled={!onRename} aria-label={'Rename '+leaf(card.path)} data-tooltip={card.path} onClick={()=>{onStart();finished.current=false;setName(card.name);setError('');setEditing(true);}}>{leaf(card.path)}</button>}
-  </div>;
-}
 interface Props {
-  enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string)=>void; onReference?: (id:string)=>void;
+  enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,newTab?:boolean)=>void; onReference?: (id:string)=>void;
   onRename?:(id:string,stem:string)=>Promise<void>;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
   onOpen: (path: string) => void; onCreate: (x: number, y: number) => void;
@@ -260,7 +239,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       if (moved) selectRegion(g, e.clientX, e.clientY); else if (!g.additive) setSelected([]);
     } else if (moved) {
       // The last pointer event may arrive before React renders the last move.
-      save(movedBoard(g, e.clientX, e.clientY), g.type === 'move' ? 'Move cards' : 'Resize card', g.board);
+      const next=movedBoard(g,e.clientX,e.clientY);
+      if(g.type==='move')next.cards=[...next.cards.filter(p=>!g.ids.includes(p.id)),...next.cards.filter(p=>g.ids.includes(p.id))];
+      save(next, g.type === 'move' ? 'Move cards' : 'Resize card', g.board);
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
@@ -296,7 +277,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   }
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
     setMenu({anchor,placementId:p.id,label:p.folder?'Whiteboard actions':'Card actions',x,y,actions:p.folder?
-      [{label:'Open whiteboard',icon:'external',run:()=>onOpenFolder?.(p.folder!)}]:
+      [{label:'Open whiteboard',icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:'Open in new tab',icon:'external',run:()=>onOpenFolder?.(p.folder!,true)}]:
       [{label:'Auto height',checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?'Use fixed card height':'Use auto card height');
       }}]});
@@ -363,8 +344,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
+            {!p.folder&&<div className="card-drag-strip" data-tooltip="Drag card"/>}
             <div className="card-top-row">
-              {!p.folder&&card&&<CardFilename card={card} onRename={onRename} onStart={()=>{setSelected([p.id]);onFinish?.();}}/>}
+              {!p.folder&&card&&<InlineName name={card.name} suffix=".md" tooltip={card.path} onRename={onRename?stem=>onRename(card.id,stem):undefined} onStart={()=>{setSelected([p.id]);onFinish?.();}}/>}
               <Tool icon="more" className="card-more" label={p.folder?'Whiteboard actions':'Card actions'} aria-haspopup="menu" aria-expanded={menu?.placementId===p.id}
               onPointerDown={e=>e.stopPropagation()} onClick={e=>{
                 if(menu?.placementId===p.id){setMenu(null);return;}

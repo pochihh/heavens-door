@@ -57,7 +57,7 @@ test('plugin pointer navigation selects with left drag, pans with middle/right/S
   assert.equal(world.style.transform,initial);assert.equal(document.querySelectorAll('.board-card.selected').length,2);
   const grip=document.querySelector('.board-card')!;
   await act(async () => {pointer(grip,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
-  assert.equal(saved.length,1);assert.deepEqual(saved[0].cards.map(p => p.x),[100,500,800]);
+  assert.equal(saved.length,1);assert.deepEqual(saved[0].cards.map(p => [p.id,p.x]),[['p2',800],['p0',100],['p1',500]],'dropped selection is saved after other placements');
   await drag(1);await frame();assert.notEqual(world.style.transform,initial);
   const middle=world.style.transform;await drag(2);await frame();assert.notEqual(world.style.transform,middle);
   await act(async () => document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true})));

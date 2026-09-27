@@ -82,9 +82,12 @@ test('card bodies edit only after a click, drag without opening an editor, and r
     assert.equal(opens,before,'cancelled presses do not edit');assert.equal(saves,2);
     await act(async()=>{pointer(preview,'pointerdown',100,100);pointer(canvas,'pointerup',185,100);});
     assert.equal(opens,before,'a fast drag with no move event still does not edit');assert.equal(saves,3);
-    const grip=document.querySelector('.board-card')!;
+    await act(async()=>{pointer(document.querySelector('.card-preview')!,'pointerdown',100,100);pointer(canvas,'pointerup',100,100);});
+    assert.ok(document.querySelector('.board-card.editing'));
+    const grip=document.querySelector('.board-card.editing .card-drag-strip')!;
     await act(async () => {pointer(grip,'pointerdown',100,100);pointer(canvas,'pointermove',185,100);pointer(canvas,'pointerup',185,100);});
-    assert.equal(saves,4,'card chrome remains draggable');
+    assert.equal(saves,4,'the top empty strip drags an actively edited card');
+    assert.equal(document.querySelector('.tiptap'),null,'dragging its strip finishes editing');
   } finally {await act(async () => root.unmount());}
 });
 

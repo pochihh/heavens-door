@@ -51,13 +51,13 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     </details>
   </section>;
 }
-export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onCreate,onMigrate,onViewChange}:{
-  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onCreate:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;
+export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onNavigate,onCreate,onMigrate,onViewChange}:{
+  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onNavigate:(key:string,newTab?:boolean)=>void;onCreate:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;
 }) {
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
   return <Whiteboard board={shown} cards={snapshot.cards} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
-    boards={snapshot.boards} onOpenFolder={folder=>onOpen('board:'+folder)}
+    boards={snapshot.boards} onOpenFolder={(folder,newTab)=>onNavigate('board:'+folder,newTab)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error('Move root cards before changing the mother whiteboard.'));}
       return session.board(next,label,base);

@@ -4,6 +4,7 @@ import {JSDOM} from 'jsdom';
 import {act} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Bridge,Card,Preferences,Snapshot} from '../src/shared';
+import {remapPath,remapPreferences} from '../src/path-remap';
 
 test('desktop shell reuses tabs, splits the same card, shares edits and restores pane layout',async()=>{
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'https://workspace.test',pretendToBeVisual:true});
@@ -14,7 +15,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
 
   const card:Card={id:'a',path:'Ideas/A.md',name:'A',body:'# First card\n\nOriginal text',revision:'r1',legacy:false};
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
-  let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
+  let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[{id:'ideas',cardId:'',folder:'Ideas',x:20,y:20,width:340,height:280}],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];
   window.door={unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
@@ -28,6 +29,11 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
         assert.equal(request.place,false,'Explorer creation requests automatic placement');
         snapshot={...snapshot,cards:[...snapshot.cards,created],boards:snapshot.boards.map(b=>b.folder==='Ideas'?{...b,cards:[...b.cards,{id:'created-placement',cardId:created.id,x:500,y:60,width:340,height:280,collapsed:true}]}:b)};
         return {snapshot,edits:[{path:created.path,before:null,after:'New note'}]};
+      }
+      case 'renameBoard':{
+        const from=request.folder,to=request.name;
+        snapshot={...snapshot,pathMoves:[...(snapshot.pathMoves??[]),{from,to}],preferences:remapPreferences(snapshot.preferences!,from,to),cards:snapshot.cards.map(c=>({...c,path:remapPath(c.path,from,to)})),boards:snapshot.boards.map(b=>({...b,folder:remapPath(b.folder,from,to),path:b.folder===from?to+'/'+to+'.whiteboard':remapPath(b.path,from,to),cards:b.cards.map(p=>({...p,folder:p.folder?remapPath(p.folder,from,to):undefined}))}))};
+        card.path=remapPath(card.path,from,to);return {snapshot,edits:[],move:{from,to}};
       }
       case 'query':return [];
       case 'preferences':snapshot={...snapshot,preferences:{...snapshot.preferences!,...request.patch}};return snapshot;
@@ -147,6 +153,33 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close View Tab')!.click());await settle();
     assert.equal(document.querySelector('.active-pane [data-tab-key="board:Ideas"]'),null,'Main Dock tabs also close from their context menu');
     assert.ok(snapshot.boards.some(b=>b.folder==='Ideas'),'closing a tab keeps its file');
+    await click('.active-pane .document-breadcrumb .breadcrumb-part button');
+    const source=document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,tabCount=document.querySelectorAll('.active-pane [role=tab]').length;
+    await act(async()=>document.querySelector('.active-pane .board-tile-body')!.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true})));await settle();
+    assert.equal(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
+    assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')!.textContent,'Ideas');
+    assert.equal(document.querySelectorAll('.active-pane [role=tab]').length,tabCount,'nested board replaces the current tab');
+    const ancestor=document.querySelector<HTMLElement>('.active-pane .breadcrumb-part button')!;
+    await act(async()=>ancestor.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:160,clientY:90})));
+    await click('[role=menuitem]');
+    assert.equal(document.querySelectorAll('.note-pane').length,2,'new-tab action reuses another Tab Group');
+    assert.notEqual(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
+    assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')!.textContent,'Workspace');
+    await click('.active-pane [aria-label="Whiteboard actions"]');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in new tab')!.click());await settle();
+    assert.equal(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
+    await click('.active-pane .document-breadcrumb [aria-label="Rename Ideas"]');
+    assert.equal(document.querySelector<HTMLInputElement>('.active-pane .document-breadcrumb input')!.value,'Ideas');
+    await act(async()=>document.querySelector('.active-pane .document-breadcrumb input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await act(async()=>session.renameBoard('Ideas','Research'));await settle();
+    assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')!.textContent,'Research');
+    assert.ok(document.querySelector('.active-pane .document-breadcrumb [aria-label="Rename Research"]'));
+    await act(async()=>session.flushPreferences());
+    assert.ok(JSON.stringify(snapshot.preferences!.documents).includes('board:Research'));
+    assert.ok(!JSON.stringify(snapshot.preferences!.documents).includes('board:Ideas'),'saved tabs follow board rename');
+    await act(async()=>session.undo());await settle();
+    assert.ok(document.querySelector('.active-pane .document-breadcrumb [aria-label="Rename Ideas"]'),'undo restores the breadcrumb and active tab');
+
 
   } finally {
     await act(async()=>root.unmount());session.dispose();dom.window.close();

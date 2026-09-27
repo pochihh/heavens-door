@@ -8,12 +8,13 @@ export interface Checkpoint { id: string; parents: string[]; time: number; label
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
 export interface RegisteredWorkspace {root:string;name:string}
-export interface Preferences { docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { newTabDestination?:'other'|'current'; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export interface TagInfo { path: string; name: string; tag: string; revision: string }
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
-export interface Snapshot { assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
+export interface Snapshot { pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
-export interface Mutation { snapshot: Snapshot; edits: Edit[] }
+export interface BoardMove { from:string; to:string }
+export interface Mutation { snapshot: Snapshot; edits: Edit[]; move?:BoardMove }
 export interface Write { path: string; content: string | null; expected: string | null }
 export type Request =
   | { kind: 'open'; root: string; cache: string }
@@ -25,6 +26,7 @@ export type Request =
   | { kind: 'migrateRoot' }
   | { kind: 'tagCards'; tag: string }
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
+  | { kind: 'renameBoard'; folder:string; name:string; expected:string }
   | { kind: 'renameCard'; path:string; stem:string; expected:string }
   | { kind: 'saveCard'; path: string; body: string; expected: string }
   | { kind: 'saveBoard'; board: Board; expected: string }

@@ -181,6 +181,7 @@ test('renaming flushes drafts, retains edits arriving during rename and follows 
     if(r.kind==='card')return w.card(r.path);
     if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected);
     if(r.kind==='renameCard'){started();await gate;return w.renameCard(r.path,r.stem,r.expected);}
+    if(r.kind==='renameBoard')return w.renameBoard(r.folder,r.name,r.expected);
     if(r.kind==='write')return w.write(r.changes);
     if(r.kind==='snapshot')return w.snapshot();
     throw new Error('Unexpected request '+r.kind);
@@ -199,4 +200,7 @@ test('renaming flushes drafts, retains edits arriving during rename and follows 
   await session.undo(true);assert.equal(session.state.draft?.card.path,'Ideas/renamed.md');
   const {documentInfo}=await import('../src/renderer/documents');
   assert.equal(documentInfo('card:'+original.id,session.state.snapshot!).title,'renamed.md','ID-based tabs and starred entries resolve the new filename');
+  await session.renameBoard('Ideas','Thoughts');assert.equal(session.state.draft?.card.path,'Thoughts/renamed.md');
+  await session.undo();assert.equal(session.state.draft?.card.path,'Ideas/renamed.md');
+  await session.undo(true);assert.equal(session.state.draft?.card.path,'Thoughts/renamed.md');
 });

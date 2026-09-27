@@ -86,7 +86,7 @@ export class Session {
     });
   }
   private accept(result: Mutation,label: string,group=false) {
-    this.undoHistory.record(label,result.edits,group);
+    this.undoHistory.record(label,result.edits,group,Date.now(),result.move);
     this.update({snapshot:result.snapshot,status:'Saved locally',error:''});
     clearTimeout(this.checkpointTimer);
     if (result.snapshot.historyAvailable) this.checkpointTimer=setTimeout(() => { void this.checkpoint('Automatic checkpoint').catch(() => undefined); },5*60*1000);
@@ -126,8 +126,9 @@ export class Session {
       const snapshot=await this.bridge.request<Snapshot>({kind:'snapshot'});
       this.update({snapshot});
       const draft=this.state.draft;
-      if (!draft || draft.dirty) return;
+      if (!draft) return;
       const info=snapshot.cards.find(c => c.id === draft.card.id);
+      if(draft.dirty){if(info&&info.path!==draft.card.path)this.update({draft:{...draft,card:{...draft.card,path:info.path,name:info.name}}});return;}
       if (!info) { this.update({draft:null}); return; }
       if (info.revision !== draft.card.revision || info.path !== draft.card.path) {
         const card=await this.bridge.request<Card>({kind:'card',path:info.path});
@@ -143,6 +144,20 @@ export class Session {
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});
       this.update({draft:{card,body:card.body,dirty:false}});
+    });
+  }
+  renameBoard(folder:string,name:string) {
+    return this.run(async()=>{
+      await this.flush();
+      const board=this.state.snapshot?.boards.find(b=>b.folder===folder);
+      if(!board)throw new Error('This whiteboard is no longer in the workspace');
+      const result=await this.bridge.request<Mutation>({kind:'renameBoard',folder,name,expected:board.revision});
+      this.accept(result,`Rename ${folder}`);
+      const info=result.snapshot.cards.find(c=>c.id===this.state.draft?.card.id);
+      if(info){
+        const card=await this.bridge.request<Card>({kind:'card',path:info.path}),draft=this.state.draft;
+        if(draft?.card.id===info.id)this.update({draft:draft.dirty?{...draft,card:{...draft.card,path:info.path,name:info.name}}:{card,body:card.body,dirty:false}});
+      }
     });
   }
   renameCard(id:string,stem:string) {
@@ -175,6 +190,11 @@ export class Session {
       await this.undoHistory.travel(redo,async changes => {
         const result=await this.bridge.request<Mutation>({kind:'write',changes});
         this.update({snapshot:result.snapshot,status:redo ? 'Redone' : 'Undone',error:''});
+      },async move=>{
+        const board=this.state.snapshot?.boards.find(b=>b.folder===move.from);
+        if(!board)throw new Error('The whiteboard to rename is missing');
+        const result=await this.bridge.request<Mutation>({kind:'renameBoard',folder:move.from,name:move.to.split(/[\\/]/).at(-1)!,expected:board.revision});
+        this.update({snapshot:result.snapshot,status:redo?'Redone':'Undone',error:''});
       });
       const info=this.state.snapshot?.cards.find(c=>c.id===this.state.draft?.card.id);
       if (info) {

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
+import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote } from './format';
 import { COLLAPSED_CARD_HEIGHT, placementHeight } from '../shared';
@@ -22,6 +23,9 @@ export class Workspace {
   private boards = new Map<string, Board>();
   private issues = new Map<string, string>();
   private scanning = false;
+  private renamePending=false;
+  // ponytail: retain rename notifications until worker exit; add window acknowledgements if this grows large.
+  private pathMoves:{from:string;to:string}[]=[];
   constructor(readonly root: string, readonly cache: string) {
     this.history = new History(root);
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
@@ -50,6 +54,7 @@ export class Workspace {
     } catch(error) { workspace.close(); throw error; }
   }
   close() { this.db.close(); }
+  assertReady(){if(this.renamePending)throw new Error('An interrupted whiteboard rename needs recovery. Close and reopen the workspace; recovery copies are preserved.');}
   private async path(path: string) {
     if (!path || isAbsolute(path) || path.includes('\0') || path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.'))) throw new Error('Invalid workspace path');
     const target = resolve(this.root,path);
@@ -75,6 +80,7 @@ export class Workspace {
     try { await fs.rename(temporary,target); } finally { await fs.unlink(temporary).catch(() => undefined); }
   }
   private async recover() {
+    await this.recoverBoardRename();
     const file = join(this.cache,'transaction.json');
     let journal: { path: string; before: string | null; after: string | null }[];
     try { journal = JSON.parse(await fs.readFile(file,'utf8')); } catch(e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; throw e; }
@@ -86,6 +92,7 @@ export class Workspace {
     await fs.unlink(file);
   }
   async write(changes: Write[]): Promise<Mutation> {
+    this.assertReady();
     if (!changes.length || new Set(changes.map(c => c.path)).size !== changes.length) throw new Error('Invalid edit');
     changes=this.automaticPlacements(changes);
     const journal = [];
@@ -179,7 +186,7 @@ export class Workspace {
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
     const cards = this.db.prepare('SELECT path,id,name,title,titleMarkdown,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -241,6 +248,7 @@ export class Workspace {
     if(additions.length)await this.write(additions);
   }
   async setPreferences(patch: Partial<Preferences>) {
+    this.assertReady();
     this.preferences=await writePreferences(this.root,this.preferences,patch);
     return this.snapshot();
   }
@@ -338,6 +346,91 @@ export class Workspace {
     const board=structuredClone(this.boards.get(boardPath)??emptyBoard(boardPath));
     board.cards.push({id:randomUUID(),cardId:card.id,x,y,width:340,height:280});
     return this.write([{path,content:raw,expected:null},{path:board.path,content:writeBoard(board),expected:board.revision || null}]);
+  }
+  private async recoverBoardRename() {
+    const file=join(this.cache,'board-rename.json');
+    let journal:{from:string;to:string;edits:{path:string;before:string;after:string}[];preferences:Preferences;nextPreferences:Preferences};
+    try{journal=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e;}
+    const exists=async(path:string)=>{try{await fs.lstat(await this.path(path));return true;}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return false;throw e;}};
+    const oldExists=await exists(journal.from),newExists=await exists(journal.to);
+    if(oldExists===newExists)throw new Error('Whiteboard rename recovery needs attention; both folder paths or neither exist. Recovery journal preserved.');
+    const folder=newExists?journal.to:journal.from,oldBoard=join(folder,basename(journal.from)+'.whiteboard'),newBoard=join(folder,basename(journal.to)+'.whiteboard');
+    const boardRenamed=await exists(newBoard);
+    const both=boardRenamed&&await exists(oldBoard);
+    if(both){const a=await fs.stat(await this.path(oldBoard)),b=await fs.stat(await this.path(newBoard));if(a.dev!==b.dev||a.ino!==b.ino)throw new Error('Whiteboard rename recovery found conflicting metadata files. Recovery journal preserved.');}
+    const actual=(path:string)=>path===this.boardPath(journal.from)?(boardRenamed&&!both?newBoard:oldBoard):newExists?remapPath(path,journal.from,journal.to):path;
+    const preferences=await readPreferences(this.root);
+    if(JSON.stringify(preferences)!==JSON.stringify(journal.preferences)&&JSON.stringify(preferences)!==JSON.stringify(journal.nextPreferences))throw new Error('Workspace settings changed during rename recovery. Recovery journal preserved.');
+    for(const edit of journal.edits){const raw=await this.read(actual(edit.path));if(raw!==edit.before&&raw!==edit.after)throw new Error('Concurrent change in '+edit.path+'. Rename recovery journal preserved.');}
+    for(const edit of journal.edits)await this.atomic(actual(edit.path),edit.before);
+    if(both)await fs.unlink(await this.path(newBoard));
+    else if(boardRenamed)await fs.rename(await this.path(newBoard),await this.path(oldBoard));
+    if(newExists)await fs.rename(await this.path(journal.to),await this.path(journal.from));
+    this.preferences=await writePreferences(this.root,preferences,journal.preferences);
+    await fs.unlink(file);this.renamePending=false;
+  }
+  async renameBoard(folder:string,name:string,expected:string):Promise<Mutation> {
+    this.assertReady();
+    validateStem(name);
+    if(!folder)throw new Error('Rename the workspace folder outside the app while it is closed.');
+    const from=join(folder),to=join(dirname(from),name),boardPath=this.boardPath(from),board=this.boards.get(boardPath);
+    if(!board||board.revision!==expected||revision(await this.read(boardPath))!==expected)throw new Error('The whiteboard changed before it could be renamed. Refresh and try again.');
+    if(from===to)return {snapshot:this.snapshot(),edits:[]};
+    if(Buffer.byteLength(name+'.whiteboard')>255)throw new Error('Choose a shorter whiteboard name');
+    const target=await this.path(to),source=await this.path(from);
+    if((await fs.readdir(dirname(source))).some(n=>n.toLowerCase()===name.toLowerCase()))throw new Error('A folder with this name already exists. Capitalization-only renames require an intermediate name.');
+    if((await fs.readdir(source)).some(n=>n.toLowerCase()===(name+'.whiteboard').toLowerCase()))throw new Error('The new whiteboard metadata filename already exists.');
+    const known=new Set([...this.boards.keys(),...(this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(c=>c.path)]);
+    const checkIndexed=async(folder:string):Promise<void>=>{for(const entry of await fs.readdir(await this.path(folder),{withFileTypes:true})){
+      if(entry.name.startsWith('.')||entry.name==='node_modules'||entry.isSymbolicLink())continue;
+      const path=join(folder,entry.name);
+      if(entry.isDirectory())await checkIndexed(path);
+      else if(/\.(md|whiteboard)$/.test(entry.name)&&!known.has(path))throw new Error('Wait for indexing or fix invalid content before renaming: '+path);
+    }};
+    await checkIndexed(from);
+    const edits:{path:string;before:string;after:string}[]=[];
+    // ponytail: rename scans note links; add a path-link index if large-workspace renames become slow.
+    for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
+      const path=String(row.path),before=await this.read(path);
+      if(revision(before)!==row.revision)throw new Error('External changes detected in '+path+'. Refresh before renaming.');
+      const card=readCard(path,before),nextPath=remapPath(path,from,to);
+      const rewrite=(href:string)=>{
+        if(/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href))return href;
+        const [link]=href.split(/[?#]/),tail=href.slice(link.length);
+        let decoded:string;try{decoded=decodeURIComponent(link);}catch{return href;}
+        const target=relative(this.root,resolve(this.root,dirname(path),decoded)),mapped=remapFilePath(target,from,to);
+        const next=relative(dirname(nextPath),mapped).split(sep).map(encodeURIComponent).join('/');
+        return next===relative(dirname(path),target).split(sep).map(encodeURIComponent).join('/')?href:next+tail;
+      };
+      let body=card.body;
+      marked.walkTokens(marked.lexer(body),token=>{if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}});
+      body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(all,lead,href)=>{const next=rewrite(href);return next===href?all:lead+'<'+next+'>';});
+      const after=body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before;
+      if(after!==before)edits.push({path,before,after});
+    }
+    for(const b of this.boards.values()){
+      const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error('External changes detected in '+b.path+'. Refresh before renaming.');
+      const cards=b.cards.map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p);
+      if(b.path===boardPath||cards.some((p,i)=>p.folder!==b.cards[i].folder))edits.push({path:b.path,before,after:writeBoard({...b,name:b.path===boardPath?name:b.name,cards})});
+    }
+    const preferences=await readPreferences(this.root),nextPreferences=remapPreferences(preferences,from,to);
+    const journalFile=join(this.cache,'board-rename.json'),handle=await fs.open(journalFile,'wx');
+    this.renamePending=true;
+    try{await handle.writeFile(JSON.stringify({from,to,edits,preferences,nextPreferences}));await handle.sync();}finally{await handle.close();}
+    try{
+      for(const edit of edits){if(await this.read(edit.path)!==edit.before)throw new Error('Concurrent change in '+edit.path);await this.atomic(edit.path,edit.after);}
+      // link fails if the destination appeared externally; rename would overwrite it.
+      await fs.link(await this.path(boardPath),await this.path(join(from,name+'.whiteboard')));
+      await fs.unlink(await this.path(boardPath));
+      try{await fs.lstat(target);throw new Error('The destination folder appeared during rename. Recovery copies preserved.');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
+      if(JSON.stringify(await readPreferences(this.root))!==JSON.stringify(preferences))throw new Error('Workspace settings changed during rename. Recovery copies preserved.');
+      await fs.rename(source,target);
+      this.preferences=await writePreferences(this.root,preferences,nextPreferences);
+      await fs.unlink(journalFile);this.renamePending=false;
+    }catch(e){await this.recoverBoardRename().catch(()=>undefined);throw e;}
+    this.pathMoves.push({from,to});
+    await this.scan();
+    return {snapshot:this.snapshot(),edits:[],move:{from,to}};
   }
   async renameCard(path:string,stem:string,expected:string):Promise<Mutation> {
     validateStem(stem);

@@ -50,6 +50,7 @@ async function dispatch(request: Request) {
     return workspace.snapshot();
   }
   if (!workspace) throw new Error('Open a workspace first');
+  workspace.assertReady();
   switch (request.kind) {
     case 'preferences': return workspace.setPreferences(request.patch);
     case 'createFolder': string(request.parent); string(request.name); return workspace.createFolder(request.parent,request.name);
@@ -62,6 +63,9 @@ async function dispatch(request: Request) {
       string(request.folder); string(request.stem);
       if(request.place!==undefined&&typeof request.place!=='boolean')throw new Error('Invalid placement flag');
       return workspace.create(request.folder,request.stem,request.x,request.y,request.place);
+    case 'renameBoard':
+      string(request.folder); string(request.name); string(request.expected);
+      return workspace.renameBoard(request.folder,request.name,request.expected);
     case 'renameCard':
       string(request.path); string(request.stem); string(request.expected);
       return workspace.renameCard(request.path,request.stem,request.expected);
