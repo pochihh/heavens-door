@@ -178,16 +178,6 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     };
   }, []);
 
-  useLayoutEffect(() => {
-    const nav=navigation.current, element=viewport.current;
-    if (!active || !nav || !element) return;
-    if (nav.current.zoom < 0.5 || !isVisible(active,nav.current,element.clientWidth,element.clientHeight,0)) {
-      const zoom=Math.max(0.85,nav.current.zoom);
-      nav.set({zoom,x:element.clientWidth/2-(active.x+active.width/2)*zoom,y:element.clientHeight/2-(active.y+active.height/2)*zoom});
-      nav.flush();
-    }
-  },[active?.id]);
-
   function begin(e: PointerEvent, type: Gesture['type'], ids: string[] = []) {
     const element = viewport.current!, nav = navigation.current!;
     nav.flush();

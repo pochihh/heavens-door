@@ -40,12 +40,13 @@ test('card bodies edit only after a click, drag without opening an editor, and r
   let saves=0,opens=0;
   function Fixture() {
     const [draft,setDraft]=useState<{card:typeof cards[number];body:string}|null>(null);
-    return <Whiteboard board={board} cards={cards} draft={draft} onSave={() => {saves++;}} onOpen={path => {opens++;const card=cards.find(c => c.path === path)!;setDraft({card,body:card.body});}} onCreate={() => assert.fail('editing must not create a card')} onEdit={body => setDraft(d => d && {...d,body})} onFinish={() => setDraft(null)}/>;
+    return <Whiteboard board={board} cards={cards} draft={draft} initialCamera={{x:80,y:35,zoom:0.3}} onSave={() => {saves++;}} onOpen={path => {opens++;const card=cards.find(c => c.path === path)!;setDraft({card,body:card.body});}} onCreate={() => assert.fail('editing must not create a card')} onEdit={body => setDraft(d => d && {...d,body})} onFinish={() => setDraft(null)}/>;
   }
   const root=createRoot(document.getElementById('root')!);
   try {
     await act(async () => root.render(<Fixture/>));
     const pointer=(target:Element,type:string,x:number,y:number) => target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
+    const world=document.querySelector<HTMLElement>('.board-world')!,camera=world.style.transform;
     for (const id of ['p0','p1','p0']) {
       const preview=document.querySelector(`[data-placement="${id}"] .card-preview`)!;
       await act(async () => {pointer(preview,'pointerdown',100,100);});
@@ -54,6 +55,8 @@ test('card bodies edit only after a click, drag without opening an editor, and r
       assert.equal(document.querySelectorAll('.tiptap').length,1);
       assert.ok(document.querySelector(`[data-placement="${id}"] .card-editor .tiptap`));
       assert.equal(document.querySelector('.editor-pane'),null);
+      assert.equal(world.style.transform,camera,'selecting and editing at distant zoom must not zoom or recenter the canvas');
+      assert.equal(document.querySelector('.zoom-level')!.textContent,'30%');
     }
     const editor=document.querySelector('.tiptap')!;
     await act(async () => {pointer(editor,'pointerdown',100,100);pointer(editor,'pointermove',200,200);pointer(editor,'pointerup',200,200);});
