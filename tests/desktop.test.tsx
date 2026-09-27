@@ -53,6 +53,15 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   };
   try {
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
+    await click('[aria-label="Navigation mode: Auto"]');
+    assert.equal(snapshot.preferences?.whiteboardInput,'mouse');
+    assert.ok(document.querySelector('.navigation-mode .lucide-mouse'));
+    await click('[aria-label="Navigation mode: Mouse"]');
+    assert.equal(snapshot.preferences?.whiteboardInput,'trackpad');
+    assert.ok(document.querySelector('.navigation-mode .lucide-touchpad'));
+    await click('[aria-label="Navigation mode: Trackpad"]');
+    assert.equal(snapshot.preferences?.whiteboardInput,'auto');
+    assert.ok(document.querySelector('.navigation-mode .lucide-scan'));
     assert.equal(document.querySelectorAll('.activity-bar').length,1);
     assert.equal(document.querySelectorAll('.side-dock').length,1);
     assert.equal(document.querySelector('[aria-label^="Tab Group actions ·"]'),null);

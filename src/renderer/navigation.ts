@@ -1,3 +1,4 @@
+import type { WhiteboardInput } from '../shared';
 // Navigation adapted from Toby's obsidian-whiteboard (MIT); see THIRD_PARTY_NOTICES.md.
 export interface Camera { x: number; y: number; zoom: number }
 export const MIN_ZOOM = 0.2;
@@ -45,6 +46,7 @@ export class BoardNavigation {
   private frame: number | null = null;
   private settle: ReturnType<typeof setTimeout> | undefined;
   private pending: Camera | null = null;
+  private inputMode: WhiteboardInput = 'auto';
   private wheelMode: WheelMode | null = null;
   private wheelLast = -Infinity;
   private modifiedWheel = false;
@@ -62,11 +64,19 @@ export class BoardNavigation {
     this.win = viewport.ownerDocument.defaultView!;
     this.paint();
   }
+  setInputMode(mode: WhiteboardInput) {
+    if (mode === this.inputMode) return;
+    this.stopWheel(); this.flush(); this.inputMode = mode;
+    wheelMemory.delete(this.win);
+  }
   wheel(event: WheelEvent) {
     if (shouldLetCardScroll(event, this.viewport)) { this.stopWheel(); event.stopPropagation(); return; }
     event.preventDefault(); event.stopPropagation();
     if (!event.deltaX && !event.deltaY) return;
     const now = this.win.performance.now(), modified = event.ctrlKey || event.metaKey;
+    if (this.inputMode !== 'auto') {
+      this.applyWheel(event, modified || this.inputMode === 'mouse' ? 'zoom' : 'pan'); return;
+    }
     if (now - this.wheelLast > GESTURE_GAP || modified !== this.modifiedWheel) {
       this.resolveSamples();
       this.wheelMode = null; this.hintedWheel = false;

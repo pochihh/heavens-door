@@ -129,3 +129,29 @@ test('selected scroll containers keep input at both boundaries; pinch still zoom
   preview.style.overflowX = 'visible'; preview.style.overflowY = 'visible';
   assert.equal(f.wheel({ deltaY: 100 }, preview).defaultPrevented, true, 'auto-height content is not a native scroll container');
 });
+
+test('explicit mouse and trackpad modes bypass detection and switching discards undecided input', t => {
+  const f = setup(t), start = { ...f.nav.current };
+  f.wheel({ deltaY: 4 });
+  f.nav.setInputMode('mouse'); f.advance(40); f.frame();
+  assert.deepEqual(f.nav.current, start, 'switching cancels the automatic sample without moving the camera');
+  for (const deltaY of [2, 100, 3]) { f.wheel({ deltaY }); f.frame(); assertAnchored(start, f.nav.current); }
+  assert.ok(f.nav.current.zoom < start.zoom, 'even small mouse deltas zoom immediately');
+  f.nav.setInputMode('trackpad');
+  const before = { ...f.nav.current };
+  f.wheel({ deltaX: 3, deltaY: 100 }); f.frame();
+  assert.deepEqual(f.nav.current, { ...before, x: before.x - 3, y: before.y - 100 }, 'large trackpad deltas always pan');
+  f.wheel({ deltaY: -2, ctrlKey: true }); f.frame();
+  assert.ok(f.nav.current.zoom > before.zoom, 'pinch still zooms in Trackpad mode');
+  f.nav.setInputMode('auto');
+  const camera = { ...f.nav.current };
+  f.wheel({ deltaY: 2 }); f.frame();
+  assert.deepEqual(f.nav.current, camera, 'returning to Auto starts with fresh detection');
+  const preview = f.viewport.querySelector<HTMLElement>('.card-preview')!;
+  Object.defineProperties(preview, { clientHeight: { value: 100 }, scrollHeight: { value: 300 } });
+  preview.closest('.board-card')!.classList.add('selected');
+  for (const mode of ['mouse', 'trackpad'] as const) {
+    f.nav.setInputMode(mode);
+    assert.equal(f.wheel({ deltaY: 100 }, preview).defaultPrevented, false, 'selected card scrolling takes priority in '+mode+' mode');
+  }
+});

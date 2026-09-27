@@ -1,6 +1,6 @@
 import type { NavigationMode } from '../layout';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { placementHeight, type Board, type Card, type CardInfo, type Placement } from '../shared';
+import { placementHeight, type Board, type Card, type CardInfo, type Placement, type WhiteboardInput } from '../shared';
 import { leadingTitle } from '../card-title';
 import { parent, portable } from './documents';
 import { preview, titlePreview } from './markdown';
@@ -45,6 +45,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
 interface Props {
+  inputMode?: WhiteboardInput; onCycleInput?: () => void;
   enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,mode?:NavigationMode)=>void; onReference?: (id:string)=>void;
   onRename?:(id:string,stem:string)=>Promise<void>;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
@@ -61,7 +62,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
+export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -158,6 +159,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       element.ownerDocument.defaultView!.removeEventListener('blur', blur);
     };
   }, []);
+
+  useLayoutEffect(() => { navigation.current?.setInputMode(inputMode); }, [inputMode]);
 
   function begin(e: PointerEvent, type: Gesture['type'], ids: string[] = []) {
     const element = viewport.current!, nav = navigation.current!;
@@ -402,6 +405,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
         <Tool icon="minus" label="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
         <button ref={zoomLabel} className="zoom-level" aria-label="Zoom to fit" data-tooltip="Zoom to fit · ⌘1 / Ctrl+1" onClick={fit}>85%</button>
         <Tool icon="plus" label="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}/>
+        <button type="button" className="tool navigation-mode" aria-label={'Navigation mode: '+({auto:'Auto',mouse:'Mouse',trackpad:'Trackpad'}[inputMode])}
+          data-tooltip={{auto:'Auto · Detect mouse or trackpad. Click for Mouse mode.',mouse:'Mouse · Wheel zooms. Click for Trackpad mode.',trackpad:'Trackpad · Scroll pans; pinch zooms. Click for Auto mode.'}[inputMode]}
+          onClick={onCycleInput}><Icon name={inputMode==='auto'?'autoInput':inputMode}/></button>
       </div>
     </div>
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
