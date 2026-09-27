@@ -405,8 +405,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
         <Tool icon="minus" label="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
         <button ref={zoomLabel} className="zoom-level" aria-label="Zoom to fit" data-tooltip="Zoom to fit · ⌘1 / Ctrl+1" onClick={fit}>85%</button>
         <Tool icon="plus" label="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}/>
-        <button type="button" className="tool navigation-mode" aria-label={'Navigation mode: '+({auto:'Auto',mouse:'Mouse',trackpad:'Trackpad'}[inputMode])}
-          data-tooltip={{auto:'Auto · Detect mouse or trackpad. Click for Mouse mode.',mouse:'Mouse · Wheel zooms. Click for Trackpad mode.',trackpad:'Trackpad · Scroll pans; pinch zooms. Click for Auto mode.'}[inputMode]}
+        <button type="button" className="tool navigation-mode" aria-label={'Navigation device: '+({auto:'Auto',mouse:'Mouse',trackpad:'Trackpad'}[inputMode])}
+          data-tooltip={{auto:'Navigation device: Auto · Detect mouse or trackpad. Click to switch to Mouse.',mouse:'Navigation device: Mouse · Wheel zooms. Click to switch to Trackpad.',trackpad:'Navigation device: Trackpad · Scroll pans; pinch zooms. Click to switch to Auto.'}[inputMode]}
           onClick={onCycleInput}><Icon name={inputMode==='auto'?'autoInput':inputMode}/></button>
       </div>
     </div>
