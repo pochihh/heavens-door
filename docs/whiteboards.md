@@ -33,7 +33,7 @@ References to cards in other folders remain optional placements and may be remov
 
 ## Inline filename editing
 
-Click the filename above a card to rename it. The current stem is selected; `.md` is a protected suffix. Enter or clicking away saves once; Escape cancels. Filename interactions do not drag the card or activate its body editor. Errors retain the entered name for correction. The full-path tooltip belongs to the filename, not the card body.
+Click the filename above a card to rename it. The input receives focus without selecting its text; `.md` is a protected suffix. The navigation breadcrumb uses the same behavior. Enter or clicking away saves once; Escape cancels. Filename interactions do not drag the card or activate its body editor. Errors retain the entered name for correction. The full-path tooltip belongs to the filename, not the card body.
 
 Renaming stays within the current folder and does not change the H1. Pending content edits save first. The revision-checked recovery transaction removes the old path and creates the new one as a single undo action. Existing card IDs remain stable; imported cards without a stored ID persist their existing provisional identity before the path changes. Placements, `card:` links, tabs and saved navigation entries continue to resolve by ID. Literal path-based Markdown/wiki links are not rewritten by this operation. Filename collisions and invalid names are rejected; capitalization-only renames currently require an intermediate name to remain safe on case-insensitive filesystems.
 

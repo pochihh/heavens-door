@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 export function InlineName({name:current,suffix='',tooltip,onRename,onStart}:{name:string;suffix?:string;tooltip:string;onRename?:(stem:string)=>Promise<void>;onStart?:()=>void}) {
   const [editing,setEditing]=useState(false),[name,setName]=useState(''),[error,setError]=useState(''),[pending,setPending]=useState(false);
   const input=useRef<HTMLInputElement>(null),finished=useRef(false);
-  useLayoutEffect(()=>{if(editing){input.current?.focus();input.current?.select();}},[editing]);
+  useLayoutEffect(()=>{if(editing)input.current?.focus();},[editing]);
   useLayoutEffect(()=>{if(error&&!pending)input.current?.focus();},[error,pending]);
   async function commit(){
     if(finished.current||!onRename)return;
