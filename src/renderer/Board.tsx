@@ -326,7 +326,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
-            {!p.folder && <div className="card-actions"><Tool icon={p.collapsed?'chevron':'down'} label={p.collapsed?'Expand card':'Collapse card'} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
+            {!p.folder && <div className="card-actions"><Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?'Expand card':'Collapse card'} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
             {p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current}/>:<div className="missing-card">Missing card</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip="Reference to a card in another whiteboard" aria-label="Card reference"><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
