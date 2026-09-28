@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import {promises as fs} from 'node:fs';
 import {basename,dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -13,7 +14,7 @@ export class WorkspaceRegistry {
   private async read():Promise<string[]> {
     try{
       const value:unknown=JSON.parse(await fs.readFile(this.file,'utf8'));
-      if(!Array.isArray(value)||value.some(p=>typeof p!=='string'))throw new Error('Invalid workspace registry');
+      if(!Array.isArray(value)||value.some(p=>typeof p!=='string'))throw new Error(ui.errors.invalidWorkspaceRegistry);
       return [...new Set(value)] as string[];
     }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;}
   }

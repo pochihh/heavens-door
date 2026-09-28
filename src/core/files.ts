@@ -1,16 +1,17 @@
+import { ui } from '../text/ui';
 import {promises as fs} from 'node:fs';
 import {resolve,relative,isAbsolute,sep,join,extname} from 'node:path';
 import type {FileEntry,FileInspection} from '../shared';
 
 // Browsing allows dotfiles, but never follows symlinks or escapes the selected workspace.
 export async function workspacePath(root:string,path:string) {
-  if(typeof path!=='string'||isAbsolute(path)||path.includes('\0')||path.split(/[\\/]/).some(p=>p==='..'))throw new Error('Invalid workspace path');
+  if(typeof path!=='string'||isAbsolute(path)||path.includes('\0')||path.split(/[\\/]/).some(p=>p==='..'))throw new Error(ui.errors.invalidWorkspacePath);
   const target=resolve(root,path);
-  if(target!==root&&!target.startsWith(root+sep))throw new Error('Path leaves workspace');
+  if(target!==root&&!target.startsWith(root+sep))throw new Error(ui.errors.pathLeavesWorkspace);
   let current=root;
   for(const part of relative(root,target).split(sep).filter(Boolean)){
     current=join(current,part);
-    if((await fs.lstat(current)).isSymbolicLink())throw new Error('Symbolic links are shown but cannot be opened');
+    if((await fs.lstat(current)).isSymbolicLink())throw new Error(ui.errors.symbolicLinkBlocked);
   }
   return target;
 }
@@ -21,7 +22,7 @@ export async function listFiles(root:string,path:string):Promise<FileEntry[]> {
 }
 export async function inspectFile(root:string,path:string):Promise<FileInspection> {
   const target=await workspacePath(root,path),stat=await fs.stat(target);
-  if(!stat.isFile())throw new Error('Select a file');
+  if(!stat.isFile())throw new Error(ui.errors.selectAFile);
   const extension=extname(path).toLowerCase(),size=stat.size;
   if(['.png','.jpg','.jpeg','.gif','.webp','.avif','.svg'].includes(extension))return {kind:'image',size};
   if(extension==='.pdf'||size>2*1024*1024)return {kind:'binary',size};

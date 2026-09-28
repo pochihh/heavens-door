@@ -1,3 +1,5 @@
+import { ui } from '../text/ui';
+import { tooltips } from '../text/tooltips';
 import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { remapKey } from '../path-remap';
@@ -34,14 +36,14 @@ export function App() {
   },[]);
   return <><TooltipHost/>{state.snapshot?<WorkspaceShell key={state.snapshot.root} snapshot={state.snapshot}/>:
     <div className={'app welcome-shell platform-'+window.door.platform}><div className="welcome-drag"/><div className="welcome">
-      <button className="primary" data-tooltip="Open an existing notes folder or create a workspace" onClick={()=>attempt(session.open(false))}>Open workspace</button>
-      <button data-tooltip="Create a temporary workspace with example cards" onClick={()=>attempt(session.open(true))}>Try a sample workspace</button>
+      <button className="primary" data-tooltip={tooltips.workspace.open} onClick={()=>attempt(session.open(false))}>{ui.workspace.open}</button>
+      <button data-tooltip={tooltips.workspace.sampleWorkspace} onClick={()=>attempt(session.open(true))}>{ui.workspace.trySample}</button>
       {state.error&&<p role="alert">{state.error}</p>}
     </div></div>}</>;
 }
 function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:number;onChange:(value:number)=>void;label:string}) {
   const drag=useRef<{coordinate:number;value:number}|null>(null);
-  return <div className={'divider '+axis} role="separator" aria-label={label} aria-orientation={axis==='row'?'vertical':'horizontal'} aria-valuemin={180} aria-valuemax={520} aria-valuenow={Math.round(Math.abs(value))} aria-valuetext={Math.round(Math.abs(value))+' pixels'} tabIndex={0}
+  return <div className={'divider '+axis} role="separator" aria-label={label} aria-orientation={axis==='row'?'vertical':'horizontal'} aria-valuemin={180} aria-valuemax={520} aria-valuenow={Math.round(Math.abs(value))} aria-valuetext={ui.layout.pixels(Math.round(Math.abs(value)))} tabIndex={0}
     onPointerDown={e=>{e.preventDefault();drag.current={coordinate:axis==='row'?e.clientX:e.clientY,value};e.currentTarget.setPointerCapture(e.pointerId);}}
     onPointerMove={e=>{if(drag.current)onChange(drag.current.value+(axis==='row'?e.clientX:e.clientY)-drag.current.coordinate);}}
     onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}
@@ -137,9 +139,9 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const open=useCallback((key:string,id=activeId)=>{
     attempt((async()=>{
       const target=panes(layout).find(p=>p.id===id);
-      if(target&&!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS){session.update({error:'Close a document tab before opening more in this Tab Group.'});return;}
+      if(target&&!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS){session.update({error:ui.errors.tabLimit});return;}
       const info=documentInfo(key,session.state.snapshot!);
-      if(!info.exists){session.update({error:'This file is no longer in the workspace.'});return;}
+      if(!info.exists){session.update({error:ui.errors.fileMissing});return;}
       await session.select(info.kind==='card'?info.path:null);
       setLayout(current=>openTab(current,id,key));setActiveId(id);setPulse(v=>v+1);
       changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
@@ -166,7 +168,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     await session.run(async()=>{
       await session.flush();
       const result=await window.door.request<Mutation>({kind:'createFolder',parent:folderParent,name:folderName,position:folderPosition});
-      session.undoHistory.record('Create whiteboard',result.edits);session.update({snapshot:result.snapshot,error:''});
+      session.undoHistory.record(ui.history.createWhiteboard,result.edits);session.update({snapshot:result.snapshot,error:''});
     });
     const path=folderParent?folderParent+'/'+folderName:folderName;
     setModal(null);if(!folderPosition)open('board:'+path);
@@ -183,7 +185,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function navigate(key:string,id:string,mode:NavigationMode='same'){
     attempt((async()=>{
       const info=documentInfo(key,session.state.snapshot!);
-      if(!info.exists)throw new Error('This file is no longer in the workspace.');
+      if(!info.exists)throw new Error(ui.errors.fileMissing);
       const next=navigateTab(layout,id,key,mode,prefs.newSplitDirection);
       await session.select(info.kind==='card'?info.path:null);
       setLayout(next.tree);setActiveId(next.active);setPulse(v=>v+1);
@@ -193,38 +195,38 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function openBeside(key:string){navigate(key,activeId,'other');}
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
-    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:'View tab actions',x,y,actions:[{label:'Open in another Tab Group',icon:'splitRight',run:()=>navigate(key,p.id,'other')},{label:'Close View Tab',icon:'close',run:()=>close(p,key)}]});
+    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:ui.layout.viewTabActions,x,y,actions:[{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>navigate(key,p.id,'other')},{label:ui.common.closeViewTab,icon:'close',run:()=>close(p,key)}]});
     const info=p.active?documentInfo(p.active,snapshot):null;
     const focused=p.id===active.id;
     const memoryKey=p.id+':'+p.active;
     let memory=memories.current.get(memoryKey);if(!memory){memory={};memories.current.set(memoryKey,memory);}
     const board=info?.kind==='board'?snapshot.boards.find(b=>b.folder===info.id):undefined;
     const tag=info?.kind==='tag'?snapshot.tags?.find(t=>t.path===info.id):undefined;
-    return <section className={'note-pane '+(focused?'active-pane':'')} data-pane={p.id} data-active={focused} aria-label="Main Dock Tab Group" onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
+    return <section className={'note-pane '+(focused?'active-pane':'')} data-pane={p.id} data-active={focused} aria-label={ui.layout.mainDockTabGroup} onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
       <div className="tab-strip">
-        <div className="tab-list" role="tablist" aria-label="Open files" data-tab-strip data-tab-family="main" data-tab-group={p.id}>
+        <div className="tab-list" role="tablist" aria-label={ui.layout.openFiles} data-tab-strip data-tab-family="main" data-tab-group={p.id}>
           {p.tabs.map(key=>{const info=documentInfo(key,snapshot);return <div className={'tab '+(p.active===key?'active-tab':'')} key={key} data-tab-key={key} onContextMenu={e=>{e.preventDefault();showTabMenu(key,e.clientX,e.clientY);}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();showTabMenu(key,r.left,r.bottom);}}}>
             <button role="tab" onPointerDown={e=>tabs.begin(e,{family:'main',group:p.id,key})} aria-selected={p.active===key} data-tooltip={info.path||info.title} onClick={()=>open(key,p.id)}>{docIcon(key)}<span>{info.title}</span></button>
-            <Tool icon="close" label={'Close '+info.title} onClick={()=>close(p,key)}/>
+            <Tool icon="close" label={tooltips.tabs.close(info.title)} onClick={()=>close(p,key)}/>
           </div>;})}
         </div>
-        <details className="menu pane-menu"><summary data-tooltip="Tab Group actions" aria-label="Tab Group actions"><Icon name="down" size={12}/></summary><div className="menu-content">
-          <button data-tooltip="Open the current file beside this Tab Group" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>Split right</button>
-          <button data-tooltip="Open the current file below this Tab Group" disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>Split down</button>
-          <button data-tooltip="Close this Tab Group; keep files on disk" disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>Close Tab Group</button>
+        <details className="menu pane-menu"><summary data-tooltip={tooltips.layout.tabGroupActions} aria-label={ui.layout.tabGroupActions}><Icon name="down" size={12}/></summary><div className="menu-content">
+          <button data-tooltip={tooltips.layout.splitRight} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>{ui.layout.splitRight}</button>
+          <button data-tooltip={tooltips.layout.splitDown} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>{ui.layout.splitDown}</button>
+          <button data-tooltip={tooltips.layout.closeTabGroup} disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>{ui.layout.closeTabGroup}</button>
         </div></details>
       </div>
       {info&&<div className="document-toolbar">
         <Breadcrumbs key={p.active} documentKey={p.active} snapshot={snapshot} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onIcon={()=>editIcon(p.active)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else await session.renameBoard(info.id,name);}}/>
         <div className="toolbar-spacer"/>
-        {info.kind==='board'&&<><Tool icon="folder" label="New whiteboard" onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label="Create card in this whiteboard" onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
-        {info.kind==='card'&&<Tool icon="format" label="Show or hide formatting controls" aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
-        <Tool icon="star" className={prefs.starred.includes(p.active)?'is-starred':''} label={prefs.starred.includes(p.active)?'Remove from starred':'Add to starred'} onClick={()=>star(p.active)}/>
+        {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
+        {info.kind==='card'&&<Tool icon="format" label={tooltips.editor.toggleFormatting} aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
+        <Tool icon="star" className={prefs.starred.includes(p.active)?'is-starred':''} label={prefs.starred.includes(p.active)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(p.active)}/>
 
       </div>}
       <div className="document-content">
-        {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label="Empty Tab Group"/>:<div className="empty-pane"><button data-tooltip="Open the mother whiteboard" onClick={()=>open('board:',p.id)}><Icon name="map"/>Open whiteboard</button></div>):
-          !info.exists?<p className="notice">This file is no longer in the workspace.</p>:
+        {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
+          !info.exists?<p className="notice">{ui.errors.fileMissing}</p>:
           board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onViewChange={rememberViews}/>}
@@ -241,40 +243,40 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </div>;
   }
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
-    if(module==='history')return <><div className="module-toolbar"><div className="toolbar-spacer"/><Tool icon="plus" label="Save workspace checkpoint · ⌘S / Ctrl+S" disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
-    if(module==='agent')return <div className="agent-empty">Agent integration is not connected yet.</div>;
+    if(module==='history')return <><div className="module-toolbar"><div className="toolbar-spacer"/><Tool icon="plus" label={tooltips.history.saveCheckpoint} disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
+    if(module==='agent')return <div className="agent-empty">{ui.agent.disconnected}</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
   }
-  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status==='Opening workspace…'} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
+  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status===ui.status.openingWorkspace} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
-      <Tool icon="left" label={left?'Collapse left dock':'Expand left dock'} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
+      <Tool icon="left" label={left?tooltips.layout.collapseLeftSideDock:tooltips.layout.expandLeftSideDock} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
       <div className="window-drag-space"/>
-      <Tool icon="search" label="Search workspace cards" onClick={()=>changeDocks(revealModule(docks,'search'))}/>
-      <Tool icon="right" label={right?'Collapse right dock':'Expand right dock'} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
+      <Tool icon="search" label={tooltips.workspace.search} onClick={()=>changeDocks(revealModule(docks,'search'))}/>
+      <Tool icon="right" label={right?tooltips.layout.collapseRightSideDock:tooltips.layout.expandRightSideDock} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
       <div className="windows-controls-space"/>
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
-      <nav className="activity-bar" aria-label="Activity bar">
+      <nav className="activity-bar" aria-label={ui.layout.actionRibbon}>
         {MODULE_IDS.map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
         <div className="toolbar-spacer"/><Tool icon="settings" label="Workspace settings" onClick={()=>setModal('settings')}/>
       </nav>
       <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
-      {left&&<Divider value={docks.left.width} label="Resize left dock" onChange={value=>changeDocks({...docks,left:{...docks.left,width:Math.max(180,Math.min(520,value))}})}/>}
-      <main className="workspace" aria-label="Document area">{renderLayout(layout)}</main>
-      {right&&<Divider value={-docks.right.width} label="Resize right dock" onChange={value=>changeDocks({...docks,right:{...docks.right,width:Math.max(180,Math.min(520,-value))}})}/>}
+      {left&&<Divider value={docks.left.width} label={ui.layout.resizeLeftSideDock} onChange={value=>changeDocks({...docks,left:{...docks.left,width:Math.max(180,Math.min(520,value))}})}/>}
+      <main className="workspace" aria-label={ui.layout.mainDock}>{renderLayout(layout)}</main>
+      {right&&<Divider value={-docks.right.width} label={ui.layout.resizeRightSideDock} onChange={value=>changeDocks({...docks,right:{...docks.right,width:Math.max(180,Math.min(520,-value))}})}/>}
       <SideDock side="right" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
     </div>
     <footer className="statusbar">
       <WorkspaceMenu snapshot={snapshot} session={session} onManage={()=>setModal('workspaces')}/>
       <div className="toolbar-spacer"/>
-      <span data-tooltip="Remote sync is not configured"><Icon name="sync" size={13}/>Sync off</span>
-      <span role="status" data-tooltip={state.error||state.status}>{state.status==='Saved locally'?'Saved':state.status}</span>
+      <span data-tooltip={tooltips.status.syncOff}><Icon name="sync" size={13}/>{ui.status.syncOff}</span>
+      <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>
     </footer>
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
-    {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip="Copy the unsaved draft before reconciling changes" onClick={()=>attempt(session.copyDraft())}>Copy draft</button><button data-tooltip="Discard this draft and read the current file" onClick={()=>{if(confirm('Discard the unsaved draft and reload from disk?'))attempt(session.reloadDraft());}}>Reload from disk</button></>}<Tool icon="close" label="Dismiss error" onClick={()=>session.update({error:''})}/></div>}
-    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?'Manage workspaces':modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}>
-      <div className="panel-title"><strong>{modal==='workspaces'?'Manage workspaces':modal==='settings'?'Workspace settings':modal==='folder'?'New whiteboard':modal==='icon'?'Change icon':'Organize root cards'}</strong><Tool icon="close" label="Close dialog" onClick={()=>setModal(null)}/></div>
+    {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{if(confirm(ui.recovery.confirmDiscard))attempt(session.reloadDraft());}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}
+    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?'Workspace settings':modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>
+      <div className="panel-title"><strong>{modal==='workspaces'?ui.workspace.manage:modal==='settings'?'Workspace settings':modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}</strong><Tool icon="close" label={tooltips.common.closeDialog} onClick={()=>setModal(null)}/></div>
       {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<div className="settings-body">
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
@@ -283,17 +285,17 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
         <small>Settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
         {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}
-      </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>Folder name<input autoFocus aria-label="Whiteboard folder name" value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" data-tooltip="Create this folder and its whiteboard" disabled={!folderName.trim()}>Create whiteboard</button></form>:
+      </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>{ui.whiteboard.folderName}<input autoFocus aria-label={ui.whiteboard.whiteboardFolderName} value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" data-tooltip={tooltips.whiteboard.createWhiteboard} disabled={!folderName.trim()}>{ui.history.createWhiteboard}</button></form>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>
-        <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?'Selected icon':'Default icon'}</span></div>
-        <Suspense fallback={<small>Loading icons…</small>}><IconPicker onSelect={setCustomIcon}/></Suspense><div className="dialog-actions"><button type="button" data-tooltip="Restore the default map, note, or tag icon" onClick={()=>setCustomIcon('')}>Default</button><button className="primary" data-tooltip="Save this icon">Save</button></div>
-      </form>:<div className="settings-body"><p>Move {rootCards.length} root-level cards and their whiteboard layouts into a new <strong>Notes</strong> subfolder. An occupied name gets a numbered suffix.</p><p>Card identities stay the same. Local attachment links are adjusted. A backup is kept before files move.</p><button className="primary" data-tooltip="Back up and move root cards into a subfolder" onClick={()=>attempt(session.run(async()=>{await session.flush();const result=await window.door.request<Snapshot>({kind:'migrateRoot'});session.undoHistory.clear();session.update({snapshot:result,draft:null,error:''});setModal(null);}))}>Move cards into Notes</button></div>}
+        <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?ui.icons.selectedIcon:ui.icons.defaultIcon}</span></div>
+        <Suspense fallback={<small>{ui.icons.loading}</small>}><IconPicker onSelect={setCustomIcon}/></Suspense><div className="dialog-actions"><button type="button" data-tooltip={tooltips.icons.restoreDefault} onClick={()=>setCustomIcon('')}>{ui.common.default}</button><button className="primary" data-tooltip={tooltips.icons.save}>{ui.common.save}</button></div>
+      </form>:<div className="settings-body"><p>{ui.migration.description(rootCards.length)}</p><p>{ui.migration.preservedData}</p><button className="primary" data-tooltip={tooltips.migration.moveCards} onClick={()=>attempt(session.run(async()=>{await session.flush();const result=await window.door.request<Snapshot>({kind:'migrateRoot'});session.undoHistory.clear();session.update({snapshot:result,draft:null,error:''});setModal(null);}))}>{ui.migration.moveCards}</button></div>}
     </section></div>}
   </div>;
 }
 function SplitDivider({node,onResize}:{node:Extract<Layout,{type:'split'}>;onResize:(ratio:number)=>void}) {
   const drag=useRef<{start:number;ratio:number;size:number}|null>(null);
-  return <div className={'divider '+node.axis} role="separator" tabIndex={0} aria-label="Resize Tab Groups" aria-orientation={node.axis==='row'?'vertical':'horizontal'} aria-valuenow={Math.round(node.ratio*100)}
+  return <div className={'divider '+node.axis} role="separator" tabIndex={0} aria-label={ui.layout.resizeTabGroups} aria-orientation={node.axis==='row'?'vertical':'horizontal'} aria-valuenow={Math.round(node.ratio*100)}
     onPointerDown={e=>{const rect=e.currentTarget.parentElement!.getBoundingClientRect();drag.current={start:node.axis==='row'?e.clientX:e.clientY,ratio:node.ratio,size:node.axis==='row'?rect.width:rect.height};e.currentTarget.setPointerCapture(e.pointerId);e.preventDefault();}}
     onPointerMove={e=>{if(drag.current)onResize(drag.current.ratio+((node.axis==='row'?e.clientX:e.clientY)-drag.current.start)/drag.current.size);}}
     onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}

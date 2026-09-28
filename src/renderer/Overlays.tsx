@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { useEffect, useLayoutEffect, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon, type IconName } from './Icons';
@@ -46,7 +47,7 @@ export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
     document.addEventListener('pointerdown',outside,true);window.addEventListener('blur',onClose);window.addEventListener('resize',onClose);
     return()=>{document.removeEventListener('pointerdown',outside,true);window.removeEventListener('blur',onClose);window.removeEventListener('resize',onClose);};
   },[onClose,menu.anchor]);
-  return createPortal(<div ref={ref} className="context-menu" role="menu" aria-label={menu.label??"Explorer actions"} onKeyDown={e=>{
+  return createPortal(<div ref={ref} className="context-menu" role="menu" aria-label={menu.label??ui.menus.explorerActions} onKeyDown={e=>{
     const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
     if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();onClose();}

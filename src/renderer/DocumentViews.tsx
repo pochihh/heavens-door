@@ -1,3 +1,5 @@
+import { ui } from '../text/ui';
+import { tooltips } from '../text/tooltips';
 import type { NavigationMode } from '../layout';
 import { useEffect, useRef, useState } from 'react';
 import type { Board, Card, FileInspection, Snapshot, TagInfo, TagResult } from '../shared';
@@ -44,11 +46,11 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     }}>
     {editing?<CardEditor path={path} body={body} cards={snapshot.cards} onEdit={body=>session.edit(body)} autofocus focusPoint={focus}/>:
       <div className="prose editor-body document-preview" dangerouslySetInnerHTML={{__html:preview(body,path)}}/>}
-    <details className="card-details"><summary data-tooltip="Cards that link here, and whiteboards where this card can be placed">Linked from · {backlinks.length}</summary>
-      {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={'Open '+card.path} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
-      {info&&!info.legacy&&<select aria-label="Place card on whiteboard" data-tooltip="Add a reference to this card on another whiteboard" value="" onChange={e=>{
-        const board=snapshot.boards.find(b=>b.path===e.target.value);if(board)void session.board({...board,cards:[...board.cards,{id:crypto.randomUUID(),cardId:info.id,x:120,y:120,width:340,height:280}]},'Place card reference',board).catch(()=>undefined);
-      }}><option value="" disabled>Place on whiteboard…</option>{snapshot.boards.filter(b=>b.folder&&!b.cards.some(p=>p.cardId===info.id)).map(b=><option key={b.path} value={b.path}>{b.folder}</option>)}</select>}
+    <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
+      {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
+      {info&&!info.legacy&&<select aria-label={ui.card.placeCardOnWhiteboard} data-tooltip={tooltips.card.placeReference} value="" onChange={e=>{
+        const board=snapshot.boards.find(b=>b.path===e.target.value);if(board)void session.board({...board,cards:[...board.cards,{id:crypto.randomUUID(),cardId:info.id,x:120,y:120,width:340,height:280}]},ui.history.placeCardReference,board).catch(()=>undefined);
+      }}><option value="" disabled>{ui.card.placeOnWhiteboard}</option>{snapshot.boards.filter(b=>b.folder&&!b.cards.some(p=>p.cardId===info.id)).map(b=><option key={b.path} value={b.path}>{b.folder}</option>)}</select>}
     </details>
   </section>;
 }
@@ -60,7 +62,7 @@ export function BoardView({board,snapshot,session,active,memory,onActivate,onOpe
   return <Whiteboard board={shown} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
     boards={snapshot.boards} onOpenFolder={(folder,mode)=>onNavigate('board:'+folder,mode)}
     onSave={(next,label,base)=>{
-      if(legacyRoot){onMigrate();return Promise.reject(new Error('Move root cards before changing the mother whiteboard.'));}
+      if(legacyRoot){onMigrate();return Promise.reject(new Error(ui.errors.migrateRootFirst));}
       return session.board(next,label,base);
     }}
     onOpen={path=>{onActivate();void session.select(path).catch(()=>undefined);}}
@@ -78,24 +80,24 @@ export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:T
   },[tag.tag,snapshot,session]);
   const fields=[...new Set(rows.flatMap(r=>Object.keys(r.properties)))].filter(k=>!['card-id','tags'].includes(k)).slice(0,8);
   const text=(value:unknown)=>value==null?'':typeof value==='object'?JSON.stringify(value):String(value);
-  const groups=[...new Set(rows.map(row=>text(row.properties[group])||'No '+group))];
+  const groups=[...new Set(rows.map(row=>text(row.properties[group])||ui.tags.noProperty(group)))];
   return <section className="tag-view">
     <div className="tag-view-toolbar">
-      <button data-tooltip="Show tagged cards as a table" className={view==='table'?'selected':''} onClick={()=>{setView('table');memory.tagView='table';onViewChange();}}><Icon name="table"/> Table</button>
-      <button data-tooltip="Group tagged cards by a property; editing properties is a later milestone" className={view==='kanban'?'selected':''} onClick={()=>{setView('kanban');memory.tagView='kanban';onViewChange();}}><Icon name="kanban"/> Kanban</button>
-      {view==='kanban'&&<select aria-label="Group cards by property" data-tooltip="Property used for Kanban columns" value={group} onChange={e=>{setGroup(e.target.value);memory.tagGroup=e.target.value;onViewChange();}}>{[...new Set(['status',...fields])].map(f=><option key={f}>{f}</option>)}</select>}
-      <span className="muted">{rows.length} cards</span>
+      <button data-tooltip={tooltips.tags.table} className={view==='table'?'selected':''} onClick={()=>{setView('table');memory.tagView='table';onViewChange();}}><Icon name="table"/>  {ui.tags.table}</button>
+      <button data-tooltip={tooltips.tags.kanban} className={view==='kanban'?'selected':''} onClick={()=>{setView('kanban');memory.tagView='kanban';onViewChange();}}><Icon name="kanban"/>  {ui.tags.kanban}</button>
+      {view==='kanban'&&<select aria-label={ui.tags.groupCardsByProperty} data-tooltip={tooltips.tags.groupProperty} value={group} onChange={e=>{setGroup(e.target.value);memory.tagGroup=e.target.value;onViewChange();}}>{[...new Set(['status',...fields])].map(f=><option key={f}>{f}</option>)}</select>}
+      <span className="muted">{ui.card.count(rows.length)}</span>
     </div>
-    {view==='table'?<div className="tag-results"><table><thead><tr><th>Card</th>{fields.map(f=><th key={f}>{f}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.card.id}><td><button data-tooltip={'Open '+row.card.path} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button></td>{fields.map(f=><td key={f}>{text(row.properties[f])}</td>)}</tr>)}</tbody></table></div>:
-      <div className="kanban">{groups.map(name=><section key={name}><h3>{name}<span>{rows.filter(r=>(text(r.properties[group])||'No '+group)===name).length}</span></h3>{rows.filter(r=>(text(r.properties[group])||'No '+group)===name).map(row=><button key={row.card.id} data-tooltip={'Open '+row.card.path} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button>)}</section>)}</div>}
-    {!rows.length&&<p className="empty-label">No cards tagged {tag.tag}</p>}
+    {view==='table'?<div className="tag-results"><table><thead><tr><th>{ui.tags.card}</th>{fields.map(f=><th key={f}>{f}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.card.id}><td><button data-tooltip={tooltips.files.open(row.card.path)} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button></td>{fields.map(f=><td key={f}>{text(row.properties[f])}</td>)}</tr>)}</tbody></table></div>:
+      <div className="kanban">{groups.map(name=><section key={name}><h3>{name}<span>{rows.filter(r=>(text(r.properties[group])||ui.tags.noProperty(group))===name).length}</span></h3>{rows.filter(r=>(text(r.properties[group])||ui.tags.noProperty(group))===name).map(row=><button key={row.card.id} data-tooltip={tooltips.files.open(row.card.path)} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button>)}</section>)}</div>}
+    {!rows.length&&<p className="empty-label">{ui.tags.empty(tag.tag)}</p>}
   </section>;
 }
 export function HistoryPanel({session}:{session:Session}) {
   const state=session.state;
   return <>
-    {!state.snapshot?.historyAvailable&&<p className="notice">History is unavailable for this existing Git repository.</p>}
-    <div className="history-list">{state.checkpoints.map(item=><button key={item.id} className={'checkpoint '+(item.active?'active':'')} data-tooltip={(item.active?'Current checkpoint: ':'Restore workspace to ')+item.label} onClick={()=>{if(!item.active)void session.restore(item.id).catch(()=>undefined);}}><span className="history-dot"/><strong>{item.label}</strong><time>{new Date(item.time).toLocaleString()}</time><small>{item.id.slice(0,7)}{item.active?' · Current':''}</small></button>)}</div></>;
+    {!state.snapshot?.historyAvailable&&<p className="notice">{ui.history.unavailable}</p>}
+    <div className="history-list">{state.checkpoints.map(item=><button key={item.id} className={'checkpoint '+(item.active?'active':'')} data-tooltip={tooltips.history.checkpoint(item.label,item.active)} onClick={()=>{if(!item.active)void session.restore(item.id).catch(()=>undefined);}}><span className="history-dot"/><strong>{item.label}</strong><time>{new Date(item.time).toLocaleString()}</time><small>{item.id.slice(0,7)}{item.active?ui.history.current:''}</small></button>)}</div></>;
 }
 
 export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapshot:Snapshot;memory:ViewMemory;onViewChange:()=>void}) {
@@ -108,7 +110,7 @@ export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapsh
   },[path,snapshot]);
   useEffect(()=>{if(container.current)container.current.scrollTop=memory.scroll??0;},[file?.kind,memory]);
   return <div className="file-preview" ref={container} onScroll={e=>{memory.scroll=e.currentTarget.scrollTop;onViewChange();}}>
-    {error?<p role="alert">{error}</p>:!file?<p className="muted">Loading…</p>:file.kind==='text'?<pre>{file.text}</pre>:file.kind==='image'?<img src={window.door.assetUrl(path)} alt={path}/>:<p className="muted">{path} · {file.size.toLocaleString()} bytes</p>}
-    {file?.kind!=='text'&&<button data-tooltip="Show the original file in your system file manager" onClick={()=>{void window.door.revealFile(path).catch(error=>setError(String(error)));}}>Reveal file</button>}
+    {error?<p role="alert">{error}</p>:!file?<p className="muted">{ui.common.loading}</p>:file.kind==='text'?<pre>{file.text}</pre>:file.kind==='image'?<img src={window.door.assetUrl(path)} alt={path}/>:<p className="muted">{ui.files.size(path,file.size)}</p>}
+    {file?.kind!=='text'&&<button data-tooltip={tooltips.files.reveal} onClick={()=>{void window.door.revealFile(path).catch(error=>setError(String(error)));}}>{ui.files.reveal}</button>}
   </div>;
 }

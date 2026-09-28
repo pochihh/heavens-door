@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import type { BoardMove, Edit, Write } from '../shared';
 
 export async function hash(content: string | null) {
@@ -24,7 +25,7 @@ export class UndoHistory {
     const action = source.at(-1);
     if (!action) return;
     if(action.move){
-      if(!rename)throw new Error('Whiteboard rename undo is unavailable');
+      if(!rename)throw new Error(ui.errors.whiteboardRenameUndoIsUnavailable);
       await rename(redo?action.move:{from:action.move.to,to:action.move.from});
     }else{
       const changes = await Promise.all(action.edits.map(async e => ({path:e.path,content:redo ? e.after : e.before,expected:await hash(redo ? e.before : e.after)})));

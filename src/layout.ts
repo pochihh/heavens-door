@@ -1,3 +1,4 @@
+import { ui } from './text/ui';
 export const MAX_PANES=16,MAX_TABS=200;
 export interface Pane {type:'pane';id:string;tabs:string[];active:string}
 export interface Split {type:'split';id:string;axis:'row'|'column';ratio:number;first:Layout;second:Layout}
@@ -17,10 +18,10 @@ export function navigateTab(layout:Layout,source:string,key:string,mode:Navigati
   if(mode==='same')return {tree:updatePane(layout,origin.id,p=>({...p,tabs:p.tabs.includes(key)?p.tabs.filter(k=>k!==p.active||k===key):p.active?p.tabs.map(k=>k===p.active?key:k):[key],active:key})),active:origin.id};
   const target=mode==='new'?origin:groups.find(p=>p.id!==origin.id);
   if(target){
-    if(!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS)throw new Error('Close a tab before opening another in this Tab Group.');
+    if(!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS)throw new Error(ui.errors.tabLimit);
     return {tree:openTab(layout,target.id,key),active:target.id};
   }
-  if(groups.length>=MAX_PANES)throw new Error('Close a Tab Group before creating another split.');
+  if(groups.length>=MAX_PANES)throw new Error(ui.errors.splitLimit);
   const next=pane(key);return {tree:splitPane(layout,origin.id,axis,next),active:next.id};
 }
 export function activeAfterRemoval(tabs:string[],active:string,key:string):string {
@@ -79,30 +80,30 @@ export function defaultDocks():Docks {
   return {version:1,left:{collapsed:false,width:232,groups:[{id:'navigation',tabs:['whiteboards','files','tags','search'],active:'whiteboards',weight:62},{id:'saved',tabs:['bookmarks'],active:'bookmarks',weight:38}]},right:{collapsed:true,width:280,groups:[{id:'tools',tabs:['agent','history'],active:'agent',weight:1}]}};
 }
 export function validateDocks(value:unknown):Docks {
-  if(!value||typeof value!=='object'||(value as Docks).version!==1)throw new Error('Invalid dock layout');
+  if(!value||typeof value!=='object'||(value as Docks).version!==1)throw new Error(ui.errors.invalidDockLayout);
   const docks=value as Docks,ids=new Set<string>(),modules=new Set<string>();
   for(const side of ['left','right'] as const){
     const dock=docks[side];
-    if(!dock||typeof dock.collapsed!=='boolean'||!Number.isFinite(dock.width)||dock.width<180||dock.width>520||!Array.isArray(dock.groups)||dock.groups.length>MODULE_IDS.length)throw new Error('Invalid side dock');
+    if(!dock||typeof dock.collapsed!=='boolean'||!Number.isFinite(dock.width)||dock.width<180||dock.width>520||!Array.isArray(dock.groups)||dock.groups.length>MODULE_IDS.length)throw new Error(ui.errors.invalidSideDock);
     for(const group of dock.groups){
-      if(!group||typeof group.id!=='string'||!group.id||group.id.length>100||ids.has(group.id)||!Number.isFinite(group.weight)||group.weight<=0||group.weight>10000||!Array.isArray(group.tabs)||!group.tabs.length||!group.tabs.includes(group.active))throw new Error('Invalid panel group');
+      if(!group||typeof group.id!=='string'||!group.id||group.id.length>100||ids.has(group.id)||!Number.isFinite(group.weight)||group.weight<=0||group.weight>10000||!Array.isArray(group.tabs)||!group.tabs.length||!group.tabs.includes(group.active))throw new Error(ui.errors.invalidTabGroup);
       ids.add(group.id);
-      for(const module of group.tabs){if(!MODULE_IDS.includes(module)||modules.has(module))throw new Error('Duplicate or unknown module');modules.add(module);}
+      for(const module of group.tabs){if(!MODULE_IDS.includes(module)||modules.has(module))throw new Error(ui.errors.duplicateOrUnknownView);modules.add(module);}
     }
   }
   if(docks.closed!==undefined){
-    if(!docks.closed||typeof docks.closed!=='object'||Array.isArray(docks.closed))throw new Error('Invalid closed Views');
+    if(!docks.closed||typeof docks.closed!=='object'||Array.isArray(docks.closed))throw new Error(ui.errors.invalidClosedViews);
     for(const [module,place] of Object.entries(docks.closed)){
-      if(!MODULE_IDS.includes(module as ModuleId)||modules.has(module)||!place||!['left','right'].includes(place.side)||typeof place.group!=='string'||!place.group||place.group.length>100||!Number.isInteger(place.index)||place.index<0||place.index>=MODULE_IDS.length||!Number.isFinite(place.weight)||place.weight<=0||place.weight>10000)throw new Error('Invalid closed View');
+      if(!MODULE_IDS.includes(module as ModuleId)||modules.has(module)||!place||!['left','right'].includes(place.side)||typeof place.group!=='string'||!place.group||place.group.length>100||!Number.isInteger(place.index)||place.index<0||place.index>=MODULE_IDS.length||!Number.isFinite(place.weight)||place.weight<=0||place.weight>10000)throw new Error(ui.errors.invalidClosedView);
       modules.add(module);
     }
   }
-  if(modules.size!==MODULE_IDS.length)throw new Error('Missing workspace module');
+  if(modules.size!==MODULE_IDS.length)throw new Error(ui.errors.missingWorkspaceView);
   return docks;
 }
 export function findModule(docks:Docks,module:ModuleId) {
   for(const side of ['left','right'] as const){const group=docks[side].groups.find(g=>g.tabs.includes(module));if(group)return {side,group};}
-  throw new Error('Module is not placed');
+  throw new Error(ui.errors.viewIsNotPlaced);
 }
 export function closeModule(docks:Docks,module:ModuleId):Docks {
   if(docks.closed?.[module])return docks;
@@ -157,11 +158,11 @@ export function resizeGroups(docks:Docks,side:DockSide,index:number,fraction:num
   const total=a.weight+b.weight,ratio=Math.max(.12,Math.min(.88,fraction));a.weight=total*ratio;b.weight=total*(1-ratio);return next;
 }
 export function validateDocuments(value:unknown):DocumentsLayout {
-  if(!value||typeof value!=='object')throw new Error('Invalid document layout');
+  if(!value||typeof value!=='object')throw new Error(ui.errors.invalidMainDockLayout);
   const d=value as DocumentsLayout,tree=restoreLayout(JSON.stringify(d.tree));
-  if(JSON.stringify(tree)!==JSON.stringify(d.tree)||!panes(tree).some(p=>p.id===d.active)||!d.views||typeof d.views!=='object'||Array.isArray(d.views)||Object.keys(d.views).length>3200||!Array.isArray(d.formatting)||d.formatting.some(id=>typeof id!=='string')||d.formatting.length>16)throw new Error('Invalid document layout');
+  if(JSON.stringify(tree)!==JSON.stringify(d.tree)||!panes(tree).some(p=>p.id===d.active)||!d.views||typeof d.views!=='object'||Array.isArray(d.views)||Object.keys(d.views).length>3200||!Array.isArray(d.formatting)||d.formatting.some(id=>typeof id!=='string')||d.formatting.length>16)throw new Error(ui.errors.invalidMainDockLayout);
   for(const [key,v] of Object.entries(d.views)){
-    if(key.length>2300||!v||typeof v!=='object'||Array.isArray(v)||v.scroll!==undefined&&(!Number.isFinite(v.scroll)||v.scroll<0)||v.camera!==undefined&&(!v.camera||typeof v.camera!=='object'||![v.camera.x,v.camera.y,v.camera.zoom].every(Number.isFinite)||v.camera.zoom<.2||v.camera.zoom>3)||v.tagView!==undefined&&!['table','kanban'].includes(v.tagView)||v.tagGroup!==undefined&&(typeof v.tagGroup!=='string'||v.tagGroup.length>2048))throw new Error('Invalid document view');
+    if(key.length>2300||!v||typeof v!=='object'||Array.isArray(v)||v.scroll!==undefined&&(!Number.isFinite(v.scroll)||v.scroll<0)||v.camera!==undefined&&(!v.camera||typeof v.camera!=='object'||![v.camera.x,v.camera.y,v.camera.zoom].every(Number.isFinite)||v.camera.zoom<.2||v.camera.zoom>3)||v.tagView!==undefined&&!['table','kanban'].includes(v.tagView)||v.tagGroup!==undefined&&(typeof v.tagGroup!=='string'||v.tagGroup.length>2048))throw new Error(ui.errors.invalidDocumentView);
   }
   return d;
 }

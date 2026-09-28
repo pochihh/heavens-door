@@ -1,3 +1,5 @@
+import { ui } from '../text/ui';
+import { tooltips } from '../text/tooltips';
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from 'react';
 import type { FileEntry, Preferences, Snapshot } from '../shared';
 import type { Session } from './session';
@@ -57,8 +59,8 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   const creations=(folder:string):MenuAction[]=>{
     const internal=portable(folder).split('/').some(part=>part.startsWith('.')||part==='node_modules');
     return [
-      {label:'New whiteboard',icon:'map',disabled:internal,hint:internal?'Internal folders are read-only in Explorer':undefined,run:()=>onFolder(folder)},
-      {label:'New note',icon:'note',disabled:!folder||internal,hint:!folder?'The mother whiteboard contains whiteboards only':internal?'Internal folders are read-only in Explorer':undefined,run:()=>onCard(folder)},
+      {label:ui.common.newWhiteboard,icon:'map',disabled:internal,hint:internal?tooltips.explorer.internalFolder:undefined,run:()=>onFolder(folder)},
+      {label:ui.common.newCard,icon:'note',disabled:!folder||internal,hint:!folder?tooltips.whiteboard.rootWhiteboardsOnly:internal?tooltips.explorer.internalFolder:undefined,run:()=>onCard(folder)},
     ];
   };
   function actions(entry:Entry):MenuAction[] {
@@ -66,25 +68,25 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     return [
       ...(entry.folder!==undefined?creations(entry.folder):[]),
       ...(key&&!entry.symlink?[
-        {label:'Open',icon:'file' as const,run:()=>onOpen(key)},
-        {label:'Open in new tab',icon:'external' as const,run:()=>onOpen(key)},
-        {label:'Open in another Tab Group',icon:'splitRight' as const,run:()=>onSplit(key)},
-        {label:index>=0?'Remove from Starred':'Add to Starred',icon:'star' as const,run:()=>star(key)},
-        {label:'Change icon…',icon:'art' as const,run:()=>onIcon(key)},
+        {label:ui.explorer.open,icon:'file' as const,run:()=>onOpen(key)},
+        {label:ui.common.openInNewTab,icon:'external' as const,run:()=>onOpen(key)},
+        {label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onSplit(key)},
+        {label:index>=0?ui.explorer.removeFromStarred:ui.explorer.addToStarred,icon:'star' as const,run:()=>star(key)},
+        {label:ui.explorer.changeIcon,icon:'art' as const,run:()=>onIcon(key)},
         ...(index>=0?[
-          {label:'Move up in Starred',icon:'up' as const,disabled:index===0,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)-1,true)}))},
-          {label:'Move down in Starred',icon:'arrowDown' as const,disabled:index===prefs.starred.length-1,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+1,true)}))},
+          {label:ui.explorer.moveUpInStarred,icon:'up' as const,disabled:index===0,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)-1,true)}))},
+          {label:ui.explorer.moveDownInStarred,icon:'arrowDown' as const,disabled:index===prefs.starred.length-1,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+1,true)}))},
         ]:[]),
-        ...(entry.folder===undefined&&module==='files'?[{label:'View source',icon:'source' as const,run:()=>onOpen('file:'+entry.path)}]:[]),
+        ...(entry.folder===undefined&&module==='files'?[{label:ui.explorer.viewSource,icon:'source' as const,run:()=>onOpen('file:'+entry.path)}]:[]),
       ]:[]),
-      {label:'Copy relative path',icon:'copy',run:()=>attempt(navigator.clipboard.writeText(entry.path||'.'))},
-      {label:window.door.platform==='darwin'?'Reveal in Finder':'Reveal in file manager',icon:'reveal',disabled:entry.symlink,run:()=>attempt(window.door.revealFile(entry.path))},
+      {label:ui.explorer.copyRelativePath,icon:'copy',run:()=>attempt(navigator.clipboard.writeText(entry.path||'.'))},
+      {label:window.door.platform==='darwin'?ui.explorer.revealInFinder:ui.explorer.revealInFileManager,icon:'reveal',disabled:entry.symlink,run:()=>attempt(window.door.revealFile(entry.path))},
     ];
   }
   function viewActions():MenuAction[] {
     return [
-      {label:'Refresh Explorer',icon:'sync',run:()=>attempt(module==='files'?refresh():session.refresh())},
-      ...(module==='whiteboards'||module==='files'?[{label:'Collapse folders',icon:'collapse' as const,run:()=>setExpanded(()=>new Set(['']))}]:[]),
+      {label:ui.explorer.refreshExplorer,icon:'sync',run:()=>attempt(module==='files'?refresh():session.refresh())},
+      ...(module==='whiteboards'||module==='files'?[{label:ui.explorer.collapseFolders,icon:'collapse' as const,run:()=>setExpanded(()=>new Set(['']))}]:[]),
     ];
   }
   function show(actions:MenuAction[],event:{clientX?:number;clientY?:number;currentTarget:EventTarget|null},context=false) {
@@ -97,14 +99,14 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-key={key} style={{paddingLeft:8+depth*16}}
       onContextMenu={e=>{e.preventDefault();show(actions(entry),e,true);}}
       onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();show(actions(entry),e);}}}>
-      {!saved&&(folder!==undefined?<button className="tree-disclosure" data-tooltip={(expandedHere?'Collapse ':'Expand ')+(entry.path||snapshot.name)} aria-label={(expandedHere?'Collapse ':'Expand ')+(entry.path||snapshot.name)} aria-expanded={expandedHere} onClick={()=>toggle(folder)}><Icon name={expandedHere?'down':'chevron'} size={12}/></button>:<span className="tree-spacer"/>)}
-      <button className="file-button" disabled={entry.symlink} data-tooltip={entry.symlink?'Symbolic link · '+entry.path:'Open '+(entry.path||snapshot.name)+' in the active Tab Group'}
+      {!saved&&(folder!==undefined?<button className="tree-disclosure" data-tooltip={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-label={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-expanded={expandedHere} onClick={()=>toggle(folder)}><Icon name={expandedHere?'down':'chevron'} size={12}/></button>:<span className="tree-spacer"/>)}
+      <button className="file-button" disabled={entry.symlink} data-tooltip={entry.symlink?tooltips.explorer.symbolicLink(entry.path):tooltips.explorer.open(entry.path||snapshot.name)}
         onPointerDown={key?e=>drag(e,key,saved==='starred'):undefined}
         onKeyDown={e=>{if(saved==='starred'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+(e.key==='ArrowUp'?-1:1),true)}));}}}
         onClick={()=>{if(physical&&folder!==undefined)toggle(folder);else if(key)onOpen(key);}}>
         <span className="row-icon"><DocumentIcon value={key?prefs.icons[key]:undefined} fallback={entry.symlink?'link':icon}/></span><span>{entry.name}</span>
       </button>
-      <span className="row-actions">{folder!==undefined&&<Tool icon="plus" label={'Add in '+(entry.path||snapshot.name)} onClick={e=>show(creations(folder),e)}/>}<Tool icon="more" label={'More actions for '+entry.name} onClick={e=>show(actions(entry),e)}/></span>
+      <span className="row-actions">{folder!==undefined&&<Tool icon="plus" label={tooltips.explorer.add(entry.path||snapshot.name)} onClick={e=>show(creations(folder),e)}/>}<Tool icon="more" label={tooltips.common.moreActions(entry.name)} onClick={e=>show(actions(entry),e)}/></span>
     </div>;
   }
   function boardBranch(folder:string,depth=0):ReactNode {
@@ -121,12 +123,12 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   const rememberScroll=(scroll:number)=>session.schedulePreferences({navigation:{[module]:{scroll}}},snapshot.root);
   return <div className="explorer-module" data-module={module}>
     {module==='search'&&<div className="module-toolbar">
-      <label className="search"><Icon name="search" size={14}/><input aria-label="Search cards" data-tooltip="Search filenames and card content" placeholder="Search" value={search} onChange={e=>{setSearch(e.target.value);session.schedulePreferences({navigation:{search:{search:e.target.value}}},snapshot.root);}}/>{search&&<Tool icon="close" label="Clear search" onClick={()=>{setSearch('');onPrefs(p=>({navigation:{...p.navigation,search:{...p.navigation?.search,search:''}}}));}}/>}</label>
+      <label className="search"><Icon name="search" size={14}/><input aria-label={ui.explorer.searchCards} data-tooltip={tooltips.explorer.search} placeholder={ui.layout.search} value={search} onChange={e=>{setSearch(e.target.value);session.schedulePreferences({navigation:{search:{search:e.target.value}}},snapshot.root);}}/>{search&&<Tool icon="close" label={tooltips.explorer.clearSearch} onClick={()=>{setSearch('');onPrefs(p=>({navigation:{...p.navigation,search:{...p.navigation?.search,search:''}}}));}}/>}</label>
     </div>}
     {module==='bookmarks'?<div className="nav-bottom" ref={scroller} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)}>
-      <section className="starred" data-bookmark-target><div className="section-title" data-tooltip="Drag files here to star them. Drag out to remove; drag vertically to reorder."><Icon name="star" size={13}/><strong>Starred</strong></div><div className="saved-files" ref={starred} aria-label="Starred files">{prefs.starred.map(key=>row(entryFor(key),0,'starred'))}</div></section>
-      <section className="recent"><div className="section-title" data-tooltip="Recently opened files. Drag a file into Starred to keep it."><Icon name="clock" size={13}/><strong>Recent</strong></div><div className="saved-files">{prefs.recent.map(key=>row(entryFor(key),0,'recent'))}</div></section>
-    </div>:<div className="file-tree" ref={scroller} role="navigation" tabIndex={0} aria-label={module==='files'?'Workspace files':module==='whiteboards'?'Workspace whiteboards':module==='tags'?'Workspace tags':'Search results'} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)} onContextMenu={e=>{if(!(e.target as Element).closest('.tree-row')){e.preventDefault();show(viewActions(),e,true);}}}
+      <section className="starred" data-bookmark-target><div className="section-title" data-tooltip={tooltips.explorer.starred}><Icon name="star" size={13}/><strong>{ui.explorer.starred}</strong></div><div className="saved-files" ref={starred} aria-label={ui.explorer.starredFiles}>{prefs.starred.map(key=>row(entryFor(key),0,'starred'))}</div></section>
+      <section className="recent"><div className="section-title" data-tooltip={tooltips.explorer.recent}><Icon name="clock" size={13}/><strong>{ui.explorer.recent}</strong></div><div className="saved-files">{prefs.recent.map(key=>row(entryFor(key),0,'recent'))}</div></section>
+    </div>:<div className="file-tree" ref={scroller} role="navigation" tabIndex={0} aria-label={module==='files'?ui.explorer.workspaceFiles:module==='whiteboards'?ui.explorer.workspaceWhiteboards:module==='tags'?ui.explorer.workspaceTags:ui.explorer.searchResults} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)} onContextMenu={e=>{if(!(e.target as Element).closest('.tree-row')){e.preventDefault();show(viewActions(),e,true);}}}
       onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10'))){e.preventDefault();show(viewActions(),e);}}}>
       {module==='tags'?snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path))):module==='search'?results.map(path=>{const key=documentIndex(snapshot).paths.get(portable(path));return key?row(entryFor(key)):null;}):module==='whiteboards'?boardBranch(''):fileBranch({path:'',folder:'',name:snapshot.name})}
     </div>}

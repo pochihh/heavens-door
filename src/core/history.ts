@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
@@ -25,9 +26,9 @@ export class History {
     this.available = true;
   }
   private async ready() {
-    if (!this.available) throw new Error('History is unavailable for an existing repository. Its branches and staging are left untouched.');
-    if (['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','rebase-merge','rebase-apply'].some(p => existsSync(join(this.root,'.git',p)))) throw new Error('Finish the terminal Git operation before using app history.');
-    if (await this.git(['diff','--cached','--name-only'])) throw new Error('The Git index has staged changes. Commit or unstage them in the terminal first.');
+    if (!this.available) throw new Error(ui.errors.unmanagedHistory);
+    if (['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','rebase-merge','rebase-apply'].some(p => existsSync(join(this.root,'.git',p)))) throw new Error(ui.errors.gitOperationInProgress);
+    if (await this.git(['diff','--cached','--name-only'])) throw new Error(ui.errors.gitStagedChanges);
   }
   async checkpoint(label: string) {
     await this.ready();
@@ -37,7 +38,7 @@ export class History {
     try {
       await this.git(['-c','user.name=Heaven’s Door','-c','user.email=local@heavens-door.invalid','commit','-m',label.slice(0,200)]);
     } catch (error) {
-      throw new Error(`Checkpoint failed; staged files are preserved: ${String(error)}`,{cause:error});
+      throw new Error(ui.errors.checkpointFailed(String(error)),{cause:error});
     }
   }
   async list(): Promise<Checkpoint[]> {
@@ -53,8 +54,8 @@ export class History {
   }
   async restore(id: string) {
     await this.ready();
-    if (!/^[a-f0-9]{40,64}$/.test(id) || !(await this.list()).some(c => c.id === id)) throw new Error('Unknown checkpoint');
-    await this.checkpoint('Preserve work before history navigation');
+    if (!/^[a-f0-9]{40,64}$/.test(id) || !(await this.list()).some(c => c.id === id)) throw new Error(ui.errors.unknownCheckpoint);
+    await this.checkpoint(ui.history.preserveWorkBeforeHistoryNavigation);
     // Git refuses unsafe checkout collisions; never force or reset away working data.
     await this.git(['switch','-c',`history/${randomUUID().slice(0,8)}`,id]);
   }

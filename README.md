@@ -66,7 +66,7 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 - Every card reserves a leading H1 in the app. Empty titles show the gray **A new card** prompt; click and type to replace it directly. The prompt is never saved into Markdown. **Workspace settings → Empty card title** customizes it. Cards without a leading H1 retain their existing body until you edit.
 - Change the default `untitled` filename base in **Workspace settings**. Headings and filenames are independent.
 - Explorer, Starred and Recent open files in the active Main Dock Tab Group. Reopening a file selects its existing tab. Use the group dropdown (**Tab Group actions**) to split right or down; the same file may be open in several Tab Groups, with independent scroll/zoom positions and shared edits. Drag tabs between groups. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent Main Dock Tab Groups.
-- **File → New Window** opens another workspace; **New Window for This Workspace** shares the current one. Workspace windows share one index/write queue; conflicting concurrent drafts remain recoverable. Appearance, default filenames, starred/recent entries and icons are stored in that workspace's `.heavens-door/settings.json`. Change an icon from the document breadcrumb. Root migration requires other windows for that workspace to be closed.
+- **File → New window** opens another workspace; **New window for this workspace** shares the current one. Workspace windows share one index/write queue; conflicting concurrent drafts remain recoverable. Appearance, default filenames, starred/recent entries and icons are stored in that workspace's `.heavens-door/settings.json`. Change an icon from the document breadcrumb. Root migration requires other windows for that workspace to be closed.
 
 ## Docks and navigation
 
@@ -77,7 +77,7 @@ The **Action Ribbon** on the far left contains actions. Its View actions reveal 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
 
-The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider; removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate Views; File explorer includes attachments and hidden files. Folder rows show **+** on hover for **New whiteboard** or **New note**. **…** and right-click use the same menu.
+The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider; removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate Views; File explorer includes attachments and hidden files. Folder rows show **+** on hover for **New whiteboard** or **New card**. **…** and right-click use the same menu.
 
 Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological. Both lists share one scroller; an empty Starred header is still a drop target.
 
@@ -90,6 +90,7 @@ Physical-file mode opens indexed notes/boards/tags normally, images as previews,
 - [Codebase architecture](docs/architecture.md)
 - [UI terminology and workspace layout](docs/ui-terminology.md)
 - [Design system](docs/design-system.md)
+- [UI text catalogs and copy review](docs/ui-text.md)
 - [Whiteboard folders, membership and collapsed cards](docs/whiteboards.md)
 - [Shared drag-and-drop specification](docs/interactions/drag-and-drop.md)
 - [Menu and tooltip interaction guideline](docs/interactions/menus-and-tooltips.md)

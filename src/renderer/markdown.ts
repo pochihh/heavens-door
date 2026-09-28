@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { CardInfo } from '../shared';
@@ -28,7 +29,7 @@ function renderPreview(html:string,path:string) {
   let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
   title.classList.add('card-title');
-  if(!title.textContent?.trim()&&!title.querySelector('img')){title.classList.add('is-empty');title.setAttribute('aria-label','Card title');}
+  if(!title.textContent?.trim()&&!title.querySelector('img')){title.classList.add('is-empty');title.setAttribute('aria-label',ui.editor.cardTitle);}
   for (const image of template.content.querySelectorAll('img')) {
     const source=image.getAttribute('src') ?? '';
     const local=assetPath(path,source);

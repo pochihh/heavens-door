@@ -64,7 +64,9 @@ Document icons render through `DocumentIcon`. Settings store either native Unico
 
 ## Tooltips and accessibility
 
-Use `<Tool icon="…" label="Action · shortcut" />` for icon buttons. For other controls, attach `data-tooltip="…"` and provide an accessible name when visible text is insufficient. Avoid native `title` tooltips in app components: the shared `TooltipHost` owns the overlay.
+All authored wording comes from the two [UI text catalogs](ui-text.md), except the deferred Settings copy.
+
+Use `<Tool icon="…" label={tooltips.common.newCard} />` for icon buttons. For other controls, reference the tooltip catalog through `data-tooltip={tooltips.…}` and provide an accessible name when visible text is insufficient. Avoid native `title` tooltips in app components: the shared `TooltipHost` owns the overlay.
 
 The target behavior is a tooltip after 450ms of genuine pointer hover only. Clicking, right-clicking, menu opening, keyboard focus, and programmatic focus must not show one. Opening a menu clears existing and pending tooltips; fully visible menu labels are not repeated in tooltips. Tips anchor to their owner and stay outside actionable menu rows. Accessible names and essential descriptions remain available without hover. See [Menus and tooltips](interactions/menus-and-tooltips.md) for positioning, suppression, dismissal, and the current implementation gaps.
 

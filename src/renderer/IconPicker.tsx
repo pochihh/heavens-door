@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { useEffect, useRef } from 'react';
 import { Picker } from 'emoji-mart';
 import data from '@emoji-mart/data';
@@ -9,5 +10,5 @@ export default function IconPicker({onSelect}:{onSelect:(value:string)=>void}) {
     container.current!.appendChild(picker as unknown as Node);
     return()=>{(picker as unknown as HTMLElement).remove();};
   },[]);
-  return <><div className="icon-options" aria-label="Document icons">{documentIcons.map(icon=><button type="button" key={icon} aria-label={'Use '+icon+' icon'} data-tooltip={icon} onClick={()=>onSelect('icon:'+icon)}><Icon name={icon} size={20}/></button>)}</div><div className="emoji-picker" ref={container}/></>;
+  return <><div className="icon-options" aria-label={ui.icons.fileIcons}>{documentIcons.map(icon=><button type="button" key={icon} aria-label={ui.icons.use(ui.icons.names[icon])} data-tooltip={ui.icons.names[icon]} onClick={()=>onSelect('icon:'+icon)}><Icon name={icon} size={20}/></button>)}</div><div className="emoji-picker" ref={container}/></>;
 }

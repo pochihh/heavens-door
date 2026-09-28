@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { promises as fs } from 'node:fs';
 import { join, resolve, relative, basename, dirname, sep, extname, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,7 +12,7 @@ import { COLLAPSED_CARD_HEIGHT, placementHeight } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult } from '../shared';
 
 function validateStem(stem:string) {
-    if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error('Choose a valid filename base');
+    if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error(ui.errors.invalidFilename);
 }
 
 export class Workspace {
@@ -49,20 +50,20 @@ export class Workspace {
       await workspace.recover();
       await workspace.history.initialize();
       await workspace.scan();
-      if (workspace.history.available && !(await workspace.history.list()).length) await workspace.history.checkpoint('Workspace opened');
+      if (workspace.history.available && !(await workspace.history.list()).length) await workspace.history.checkpoint(ui.history.workspaceOpened);
       return workspace;
     } catch(error) { workspace.close(); throw error; }
   }
   close() { this.db.close(); }
-  assertReady(){if(this.renamePending)throw new Error('An interrupted whiteboard rename needs recovery. Close and reopen the workspace; recovery copies are preserved.');}
+  assertReady(){if(this.renamePending)throw new Error(ui.errors.interruptedRename);}
   private async path(path: string) {
-    if (!path || isAbsolute(path) || path.includes('\0') || path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.'))) throw new Error('Invalid workspace path');
+    if (!path || isAbsolute(path) || path.includes('\0') || path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.'))) throw new Error(ui.errors.invalidWorkspacePath);
     const target = resolve(this.root,path);
-    if (!target.startsWith(this.root + sep)) throw new Error('Path leaves workspace');
+    if (!target.startsWith(this.root + sep)) throw new Error(ui.errors.pathLeavesWorkspace);
     let current = this.root;
     for (const part of relative(this.root,target).split(sep)) {
       current = join(current,part);
-      try { if ((await fs.lstat(current)).isSymbolicLink()) throw new Error('Symbolic links are not supported'); }
+      try { if ((await fs.lstat(current)).isSymbolicLink()) throw new Error(ui.errors.symbolicLinksAreNotSupported); }
       catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
     }
     return target;
@@ -86,20 +87,20 @@ export class Workspace {
     try { journal = JSON.parse(await fs.readFile(file,'utf8')); } catch(e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; throw e; }
     for (const item of journal) {
       const current = await this.raw(item.path);
-      if (current !== item.before && current !== item.after) throw new Error(`Recovery needs attention for ${item.path}. Backups are preserved in ${file}.`);
+      if (current !== item.before && current !== item.after) throw new Error(ui.errors.recoveryNeedsAttention(item.path,file));
     }
     for (const item of journal) await this.atomic(item.path,item.before);
     await fs.unlink(file);
   }
   async write(changes: Write[]): Promise<Mutation> {
     this.assertReady();
-    if (!changes.length || new Set(changes.map(c => c.path)).size !== changes.length) throw new Error('Invalid edit');
+    if (!changes.length || new Set(changes.map(c => c.path)).size !== changes.length) throw new Error(ui.errors.invalidEdit);
     changes=this.automaticPlacements(changes);
     const journal = [];
     for (const change of changes) {
-      if (!['.md','.whiteboard'].includes(extname(change.path)) || (change.content !== null && typeof change.content !== 'string')) throw new Error('Unsupported file edit');
+      if (!['.md','.whiteboard'].includes(extname(change.path)) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
       const before = await this.raw(change.path);
-      if ((before === null ? null : revision(before)) !== change.expected) throw new Error(`External changes detected in ${change.path}. Your edit has not overwritten them.`);
+      if ((before === null ? null : revision(before)) !== change.expected) throw new Error(ui.errors.externalEdit(change.path));
       if (change.content !== null) {
         if (change.path.endsWith('.md')) readCard(change.path,change.content); else readBoard(change.path,change.content);
       }
@@ -110,7 +111,7 @@ export class Workspace {
     try { await handle.writeFile(JSON.stringify(journal)); await handle.sync(); } finally { await handle.close(); }
     try {
       for (const item of journal) {
-        if (await this.raw(item.path) !== item.before) throw new Error(`Concurrent change in ${item.path}; recovery copies retained.`);
+        if (await this.raw(item.path) !== item.before) throw new Error(ui.errors.concurrentEdit(item.path));
         if (item.before === null && item.after !== null) await fs.writeFile(await this.path(item.path),item.after,{flag:'wx'});
         else await this.atomic(item.path,item.after);
       }
@@ -186,7 +187,7 @@ export class Workspace {
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
     const cards = this.db.prepare('SELECT path,id,name,title,titleMarkdown,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => `Duplicate card identity: ${c.id}. These cards need distinct IDs.`)], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -253,10 +254,10 @@ export class Workspace {
     return this.snapshot();
   }
   async createFolder(parent: string, name: string, position?:{x:number;y:number}) {
-    if(position!==undefined&&(!position||!Number.isFinite(position.x)||!Number.isFinite(position.y)))throw new Error('Invalid whiteboard position');
+    if(position!==undefined&&(!position||!Number.isFinite(position.x)||!Number.isFinite(position.y)))throw new Error(ui.errors.invalidWhiteboardPosition);
     const container=position?this.allBoards().find(b=>b.folder===parent):undefined;
-    if(position&&!container)throw new Error('The parent whiteboard is missing');
-    if (!name || name.startsWith('.') || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || [...name].some(c => c.charCodeAt(0)<32) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) throw new Error('Choose a valid folder name');
+    if(position&&!container)throw new Error(ui.errors.parentWhiteboardMissing);
+    if (!name || name.startsWith('.') || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || [...name].some(c => c.charCodeAt(0)<32) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) throw new Error(ui.errors.invalidFolderName);
     if (parent) await fs.access(await this.path(parent));
     const path=join(parent,name);
     await fs.mkdir(await this.path(path));
@@ -284,21 +285,21 @@ export class Workspace {
     const cards=this.snapshot().cards.filter(c => dirname(c.path) === '.');
     if (!cards.length) return this.snapshot();
     const layouts=[...this.boards.values()].filter(b=>!b.folder&&b.cards.some(p=>!p.folder));
-    if(layouts.length>1)throw new Error('Root migration needs manual attention: more than one root whiteboard contains cards.');
+    if(layouts.length>1)throw new Error(ui.errors.multipleRootBoards);
     const source=layouts[0];
     const moving=new Set(cards.map(c => c.path));
     // Refuse a migration whose path-dependent syntax this importer cannot preserve.
     for (const row of this.db.prepare('SELECT path,body FROM cards').all()) {
       const path=String(row.path),body=String(row.body);
       marked.walkTokens(marked.lexer(body),token=>{
-        if (moving.has(path) && (token.type==='html' || token.type==='text' && /\[\[|!\[\[/.test(token.raw))) throw new Error('Root migration needs manual attention for unsupported markup in '+path);
+        if (moving.has(path) && (token.type==='html' || token.type==='text' && /\[\[|!\[\[/.test(token.raw))) throw new Error(ui.errors.migrationMarkup(path));
         if (!moving.has(path) && (token.type==='link' || token.type==='image') && !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(token.href)) {
           const target=relative(this.root,resolve(this.root,dirname(path),decodeURIComponent(token.href.split(/[?#]/)[0])));
-          if (moving.has(target)) throw new Error('Replace the path link to '+target+' in '+path+' with a stable card link before root migration.');
+          if (moving.has(target)) throw new Error(ui.errors.migrationPathLink(target,path));
         }
       });
     }
-    if (this.history.available) await this.history.checkpoint('Before root cards migration');
+    if (this.history.available) await this.history.checkpoint(ui.history.beforeRootCardsMigration);
     const names=new Set((await fs.readdir(this.root)).map(name => name.toLowerCase()));
     let folder='Notes', suffix=0;
     while (names.has(folder.toLowerCase())) folder='Notes_'+(++suffix);
@@ -336,13 +337,13 @@ export class Workspace {
     await fs.writeFile(join(this.cache,'migration-'+randomUUID()+'.json'),JSON.stringify({folder,originals},null,2),{flag:'wx'});
     await this.write(changes);
     await this.scan();
-    if (this.history.available) await this.history.checkpoint('Move root cards into '+folder);
+    if (this.history.available) await this.history.checkpoint(ui.history.moveRootCards(folder));
     return this.snapshot();
   }
 
   async create(folder: string, stem: string, x: number, y: number,place=true) {
     validateStem(stem);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Invalid position');
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(ui.errors.invalidPosition);
     if (folder) await fs.access(await this.path(folder));
     const directory = folder ? await this.path(folder) : this.root;
     const names = new Set((await fs.readdir(directory)).map(n => n.toLocaleLowerCase()));
@@ -361,15 +362,15 @@ export class Workspace {
     try{journal=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e;}
     const exists=async(path:string)=>{try{await fs.lstat(await this.path(path));return true;}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return false;throw e;}};
     const oldExists=await exists(journal.from),newExists=await exists(journal.to);
-    if(oldExists===newExists)throw new Error('Whiteboard rename recovery needs attention; both folder paths or neither exist. Recovery journal preserved.');
+    if(oldExists===newExists)throw new Error(ui.errors.renameRecoveryPaths);
     const folder=newExists?journal.to:journal.from,oldBoard=join(folder,basename(journal.from)+'.whiteboard'),newBoard=join(folder,basename(journal.to)+'.whiteboard');
     const boardRenamed=await exists(newBoard);
     const both=boardRenamed&&await exists(oldBoard);
-    if(both){const a=await fs.stat(await this.path(oldBoard)),b=await fs.stat(await this.path(newBoard));if(a.dev!==b.dev||a.ino!==b.ino)throw new Error('Whiteboard rename recovery found conflicting metadata files. Recovery journal preserved.');}
+    if(both){const a=await fs.stat(await this.path(oldBoard)),b=await fs.stat(await this.path(newBoard));if(a.dev!==b.dev||a.ino!==b.ino)throw new Error(ui.errors.renameRecoveryMetadata);}
     const actual=(path:string)=>path===this.boardPath(journal.from)?(boardRenamed&&!both?newBoard:oldBoard):newExists?remapPath(path,journal.from,journal.to):path;
     const preferences=await readPreferences(this.root);
-    if(JSON.stringify(preferences)!==JSON.stringify(journal.preferences)&&JSON.stringify(preferences)!==JSON.stringify(journal.nextPreferences))throw new Error('Workspace settings changed during rename recovery. Recovery journal preserved.');
-    for(const edit of journal.edits){const raw=await this.read(actual(edit.path));if(raw!==edit.before&&raw!==edit.after)throw new Error('Concurrent change in '+edit.path+'. Rename recovery journal preserved.');}
+    if(JSON.stringify(preferences)!==JSON.stringify(journal.preferences)&&JSON.stringify(preferences)!==JSON.stringify(journal.nextPreferences))throw new Error(ui.errors.renameRecoverySettings);
+    for(const edit of journal.edits){const raw=await this.read(actual(edit.path));if(raw!==edit.before&&raw!==edit.after)throw new Error(ui.errors.renameRecoveryChange(edit.path));}
     for(const edit of journal.edits)await this.atomic(actual(edit.path),edit.before);
     if(both)await fs.unlink(await this.path(newBoard));
     else if(boardRenamed)await fs.rename(await this.path(newBoard),await this.path(oldBoard));
@@ -380,27 +381,27 @@ export class Workspace {
   async renameBoard(folder:string,name:string,expected:string):Promise<Mutation> {
     this.assertReady();
     validateStem(name);
-    if(!folder)throw new Error('Rename the workspace folder outside the app while it is closed.');
+    if(!folder)throw new Error(ui.errors.rootRename);
     const from=join(folder),to=join(dirname(from),name),boardPath=this.boardPath(from),board=this.boards.get(boardPath);
-    if(!board||board.revision!==expected||revision(await this.read(boardPath))!==expected)throw new Error('The whiteboard changed before it could be renamed. Refresh and try again.');
+    if(!board||board.revision!==expected||revision(await this.read(boardPath))!==expected)throw new Error(ui.errors.renameChanged);
     if(from===to)return {snapshot:this.snapshot(),edits:[]};
-    if(Buffer.byteLength(name+'.whiteboard')>255)throw new Error('Choose a shorter whiteboard name');
+    if(Buffer.byteLength(name+'.whiteboard')>255)throw new Error(ui.errors.longWhiteboardName);
     const target=await this.path(to),source=await this.path(from);
-    if((await fs.readdir(dirname(source))).some(n=>n.toLowerCase()===name.toLowerCase()))throw new Error('A folder with this name already exists. Capitalization-only renames require an intermediate name.');
-    if((await fs.readdir(source)).some(n=>n.toLowerCase()===(name+'.whiteboard').toLowerCase()))throw new Error('The new whiteboard metadata filename already exists.');
+    if((await fs.readdir(dirname(source))).some(n=>n.toLowerCase()===name.toLowerCase()))throw new Error(ui.errors.folderNameConflict);
+    if((await fs.readdir(source)).some(n=>n.toLowerCase()===(name+'.whiteboard').toLowerCase()))throw new Error(ui.errors.metadataNameConflict);
     const known=new Set([...this.boards.keys(),...(this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(c=>c.path)]);
     const checkIndexed=async(folder:string):Promise<void>=>{for(const entry of await fs.readdir(await this.path(folder),{withFileTypes:true})){
       if(entry.name.startsWith('.')||entry.name==='node_modules'||entry.isSymbolicLink())continue;
       const path=join(folder,entry.name);
       if(entry.isDirectory())await checkIndexed(path);
-      else if(/\.(md|whiteboard)$/.test(entry.name)&&!known.has(path))throw new Error('Wait for indexing or fix invalid content before renaming: '+path);
+      else if(/\.(md|whiteboard)$/.test(entry.name)&&!known.has(path))throw new Error(ui.errors.renameIndexing(path));
     }};
     await checkIndexed(from);
     const edits:{path:string;before:string;after:string}[]=[];
     // ponytail: rename scans note links; add a path-link index if large-workspace renames become slow.
     for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
       const path=String(row.path),before=await this.read(path);
-      if(revision(before)!==row.revision)throw new Error('External changes detected in '+path+'. Refresh before renaming.');
+      if(revision(before)!==row.revision)throw new Error(ui.errors.renameRefresh(path));
       const card=readCard(path,before),nextPath=remapPath(path,from,to);
       const rewrite=(href:string)=>{
         if(/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href))return href;
@@ -417,7 +418,7 @@ export class Workspace {
       if(after!==before)edits.push({path,before,after});
     }
     for(const b of this.boards.values()){
-      const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error('External changes detected in '+b.path+'. Refresh before renaming.');
+      const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error(ui.errors.renameRefresh(b.path));
       const cards=b.cards.map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p);
       if(b.path===boardPath||cards.some((p,i)=>p.folder!==b.cards[i].folder))edits.push({path:b.path,before,after:writeBoard({...b,name:b.path===boardPath?name:b.name,cards})});
     }
@@ -426,12 +427,12 @@ export class Workspace {
     this.renamePending=true;
     try{await handle.writeFile(JSON.stringify({from,to,edits,preferences,nextPreferences}));await handle.sync();}finally{await handle.close();}
     try{
-      for(const edit of edits){if(await this.read(edit.path)!==edit.before)throw new Error('Concurrent change in '+edit.path);await this.atomic(edit.path,edit.after);}
+      for(const edit of edits){if(await this.read(edit.path)!==edit.before)throw new Error(ui.errors.concurrentChange(edit.path));await this.atomic(edit.path,edit.after);}
       // link fails if the destination appeared externally; rename would overwrite it.
       await fs.link(await this.path(boardPath),await this.path(join(from,name+'.whiteboard')));
       await fs.unlink(await this.path(boardPath));
-      try{await fs.lstat(target);throw new Error('The destination folder appeared during rename. Recovery copies preserved.');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
-      if(JSON.stringify(await readPreferences(this.root))!==JSON.stringify(preferences))throw new Error('Workspace settings changed during rename. Recovery copies preserved.');
+      try{await fs.lstat(target);throw new Error(ui.errors.renameDestinationAppeared);}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
+      if(JSON.stringify(await readPreferences(this.root))!==JSON.stringify(preferences))throw new Error(ui.errors.renameSettingsChanged);
       await fs.rename(source,target);
       this.preferences=await writePreferences(this.root,preferences,nextPreferences);
       await fs.unlink(journalFile);this.renamePending=false;
@@ -442,19 +443,19 @@ export class Workspace {
   }
   async renameCard(path:string,stem:string,expected:string):Promise<Mutation> {
     validateStem(stem);
-    if(extname(path)!=='.md')throw new Error('Only Markdown cards can be renamed here');
+    if(extname(path)!=='.md')throw new Error(ui.errors.onlyMarkdownCardsCanBeRenamedHere);
     const raw=await this.read(path),card=readCard(path,raw),next=join(dirname(path),stem+'.md');
-    if(card.revision!==expected)throw new Error(`External changes detected in ${path}. The card has not been renamed.`);
+    if(card.revision!==expected)throw new Error(ui.errors.renameConflict(path));
     if(next===path)return {snapshot:this.snapshot(),edits:[]};
     const names=await fs.readdir(dirname(await this.path(path)));
-    if(names.some(name=>name.toLocaleLowerCase()===(stem+'.md').toLocaleLowerCase()))throw new Error('A file with that name already exists. For a capitalization-only change, use an intermediate name.');
+    if(names.some(name=>name.toLocaleLowerCase()===(stem+'.md').toLocaleLowerCase()))throw new Error(ui.errors.fileNameConflict);
     // Reuse the journaled transaction so rename is recoverable and one undo action.
     // Persist a legacy card's existing provisional identity before its path changes.
     return this.write([{path,content:null,expected},{path:next,content:editCard(raw,card,card.body),expected:null}]);
   }
   async saveCard(path: string, body: string, expected: string) {
     const raw = await this.read(path), card = readCard(path,raw);
-    if (card.revision !== expected) throw new Error(`External changes detected in ${path}. Your draft is preserved.`);
+    if (card.revision !== expected) throw new Error(ui.errors.draftConflict(path));
     return this.write([{path,content:editCard(raw,card,body),expected}]);
   }
   async saveBoard(board: Board, expected: string) {

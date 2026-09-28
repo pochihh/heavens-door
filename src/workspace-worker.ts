@@ -1,3 +1,4 @@
+import { ui } from './text/ui';
 import { parentPort } from 'node:worker_threads';
 import { relative, sep } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -17,10 +18,10 @@ function enqueue<T>(operation: () => Promise<T>) {
   return next;
 }
 function string(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || value.length > 32 * 1024 * 1024) throw new Error('Invalid request value');
+  if (typeof value !== 'string' || value.length > 32 * 1024 * 1024) throw new Error(ui.errors.invalidRequestValue);
 }
 async function dispatch(request: Request) {
-  if (!request || typeof request !== 'object') throw new Error('Invalid request');
+  if (!request || typeof request !== 'object') throw new Error(ui.errors.invalidRequest);
   if (request.kind === 'open') {
     string(request.root); string(request.cache);
     const next=await Workspace.open(request.root,request.cache);
@@ -49,7 +50,7 @@ async function dispatch(request: Request) {
     await new Promise<void>(resolve => watcher!.once('ready',resolve));
     return workspace.snapshot();
   }
-  if (!workspace) throw new Error('Open a workspace first');
+  if (!workspace) throw new Error(ui.errors.openAWorkspaceFirst);
   workspace.assertReady();
   switch (request.kind) {
     case 'preferences': return workspace.setPreferences(request.patch);
@@ -61,7 +62,7 @@ async function dispatch(request: Request) {
     case 'snapshot': return workspace.snapshot();
     case 'create':
       string(request.folder); string(request.stem);
-      if(request.place!==undefined&&typeof request.place!=='boolean')throw new Error('Invalid placement flag');
+      if(request.place!==undefined&&typeof request.place!=='boolean')throw new Error(ui.errors.invalidPlacementFlag);
       return workspace.create(request.folder,request.stem,request.x,request.y,request.place);
     case 'renameBoard':
       string(request.folder); string(request.name); string(request.expected);
@@ -74,13 +75,13 @@ async function dispatch(request: Request) {
       return workspace.saveCard(request.path,request.body,request.expected);
     case 'saveBoard':
       string(request.expected);
-      if (!request.board || !Array.isArray(request.board.cards) || !Array.isArray(request.board.edges)) throw new Error('Invalid board');
+      if (!request.board || !Array.isArray(request.board.cards) || !Array.isArray(request.board.edges)) throw new Error(ui.errors.invalidBoard);
       string(request.board.path); string(request.board.name);
       return workspace.saveBoard(request.board,request.expected);
     case 'read': string(request.path); return workspace.read(request.path);
     case 'card': string(request.path); return workspace.card(request.path);
     case 'write':
-      if (!Array.isArray(request.changes) || request.changes.length > 10000) throw new Error('Invalid transaction');
+      if (!Array.isArray(request.changes) || request.changes.length > 10000) throw new Error(ui.errors.invalidTransaction);
       for (const change of request.changes) {
         string(change.path);
         if (change.content !== null) string(change.content);
@@ -94,7 +95,7 @@ async function dispatch(request: Request) {
       string(request.id);
       await workspace.history.restore(request.id);
       return workspace.scan();
-    default: throw new Error('Unknown request');
+    default: throw new Error(ui.errors.unknownRequest);
   }
 }
 parentPort!.on('message', ({id,request}: {id:number;request:Request}) => {

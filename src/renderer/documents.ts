@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import type { Snapshot } from '../shared';
 import type { IconName } from './Icons';
 export const portable=(path:string)=>path.replaceAll('\\','/');
@@ -22,5 +23,5 @@ export function documentIndex(snapshot:Snapshot) {
 export function documentInfo(key:string,snapshot:Snapshot):DocumentInfo {
   const info=documentIndex(snapshot).documents.get(portable(key));if(info)return info;
   const split=key.indexOf(':'),kind=key.slice(0,split),id=key.slice(split+1);
-  return {key,kind,id,title:kind==='card'?'Missing card':leaf(id),path:kind==='card'?'':id,icon:kind==='file'?fileIcon(id):kind==='board'?'map':kind==='tag'?'tag':'note',exists:kind==='file'};
+  return {key,kind,id,title:kind==='card'?ui.whiteboard.missingCard:leaf(id),path:kind==='card'?'':id,icon:kind==='file'?fileIcon(id):kind==='board'?'map':kind==='tag'?'tag':'note',exists:kind==='file'};
 }

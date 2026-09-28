@@ -2,6 +2,10 @@
 
 This is the shared interaction contract for Heaven’s Door. It defines the target behavior; the implementation gaps below still need fixes. Apply it to Explorer menus, View tab menus, Tab Group actions, workspace switching, card/whiteboard actions, and future plugin menus.
 
+## Text ownership
+
+Hover wording comes from [`src/text/tooltips.ts`](../../src/text/tooltips.ts); menu labels, dialogs and other application copy come from [`src/text/ui.ts`](../../src/text/ui.ts). See the [copy rules and migration review](../ui-text.md). Settings copy remains deferred. Keep dynamic phrases together in typed formatters and avoid “Click to…” instructions.
+
 ## Terms and scope
 
 - **Context menu:** actions for the item or View that was right-clicked, or invoked with Shift+F10 / the Menu key. Opening it does not activate an inactive View or execute an action.

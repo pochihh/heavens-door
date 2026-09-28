@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 export function InlineName({name:current,suffix='',tooltip,onRename,onStart}:{name:string;suffix?:string;tooltip:string;onRename?:(stem:string)=>Promise<void>;onStart?:()=>void}) {
@@ -16,9 +17,9 @@ export function InlineName({name:current,suffix='',tooltip,onRename,onStart}:{na
     finally{setPending(false);}
   }
   return <div className="card-filename" onPointerDown={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}>
-    {editing?<><div className="card-filename-input"><input ref={input} aria-label="Filename" aria-invalid={!!error} value={name} disabled={pending} onChange={e=>{setName(e.target.value);setError('');}}
+    {editing?<><div className="card-filename-input"><input ref={input} aria-label={ui.files.filename} aria-invalid={!!error} value={name} disabled={pending} onChange={e=>{setName(e.target.value);setError('');}}
       onBlur={()=>void commit()} onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();void commit();}if(e.key==='Escape'){e.preventDefault();finished.current=true;setEditing(false);}}}/><span>{suffix}</span></div>
       {error&&<span className="card-rename-error" role="alert">{error}</span>}</>:
-      <button type="button" disabled={!onRename} aria-label={'Rename '+current+suffix} data-tooltip={tooltip} onClick={()=>{onStart?.();finished.current=false;setName(current);setError('');setEditing(true);}}>{current}{suffix}</button>}
+      <button type="button" disabled={!onRename} aria-label={ui.files.rename(current+suffix)} data-tooltip={tooltip} onClick={()=>{onStart?.();finished.current=false;setName(current);setError('');setEditing(true);}}>{current}{suffix}</button>}
   </div>;
 }

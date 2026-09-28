@@ -39,6 +39,10 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 
 `Workspace.automaticPlacements` adds missing direct-child cards to the folder's matching board. Internal note creation and its placement share one revision-checked recovery transaction and undo entry. Watcher batches update the index before reconciling affected folders; startup reconciles all boards. Only board metadata is amended when an external note is discovered. The folder index avoids rescanning all notes per change. Leading H1 titles and their inline Markdown are cached in the derived card index so collapsed rendering preserves formatting without body requests. Index schema 4 rebuilds this metadata from the original files. The shared `card-title.ts` defines title recognition; the editor reserves an empty H1 without saving its visual placeholder.
 
+## UI copy
+
+`src/text/tooltips.ts` and `src/text/ui.ts` hold app-authored hover text and other UI wording respectively. They are dependency-free catalogs shared where needed by renderer, main and worker. See [UI text ownership and review](ui-text.md); Settings copy is deferred.
+
 ## Renderer map
 
 | File | Responsibility |
@@ -58,7 +62,7 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `session.ts` / `history.ts` | In-flight draft protection, mutation sequencing and grouped undo |
 | `Recovery.tsx` | Recoverable renderer-error screen |
 
-Explorer's whiteboard tree uses the index snapshot. Physical-file mode enumerates only expanded directories using `src/core/files.ts`; it includes dotfiles, internal folders and attachments. Symlinks are listed without being followed. The ordinary-folder “New note” action writes a card without creating a whiteboard. Existing cards and board/tag files open their normal views; **View source** opens read-only text. Text inspection is limited to 2 MiB, images use the local asset protocol, and PDFs/other binaries offer **Reveal file**. Physical filesystem rename/delete/move and a full PDF reader are not part of this explorer slice.
+Explorer's whiteboard tree uses the index snapshot. Physical-file mode enumerates only expanded directories using `src/core/files.ts`; it includes dotfiles, internal folders and attachments. Symlinks are listed without being followed. The ordinary-folder “New card” action writes a card without creating a whiteboard. Existing cards and board/tag files open their normal views; **View source** opens read-only text. Text inspection is limited to 2 MiB, images use the local asset protocol, and PDFs/other binaries offer **Reveal file**. Physical filesystem rename/delete/move and a full PDF reader are not part of this explorer slice.
 
 ## Editing, switching and recovery
 

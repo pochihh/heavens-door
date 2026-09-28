@@ -1,3 +1,4 @@
+import { ui } from './text/ui';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell } from 'electron';
 import { Worker } from 'node:worker_threads';
 import { join, resolve, sep, extname } from 'node:path';
@@ -49,7 +50,7 @@ async function snapshot(d:Desktop) {
 async function open(d:Desktop,folder:string){const host=await getHost(folder);await registry.register(host.root);const value=await host.call<Snapshot>({kind:'snapshot'});d.host=host;return {...value,assetKey:host.key};}
 function trusted(event:Electron.IpcMainInvokeEvent|Electron.IpcMainEvent) {
   const d=[...desktops.values()].find(d=>d.window.webContents===event.sender);
-  if(!d||event.senderFrame!==d.window.webContents.mainFrame)throw new Error('Untrusted sender');return d;
+  if(!d||event.senderFrame!==d.window.webContents.mainFrame)throw new Error(ui.errors.untrustedSender);return d;
 }
 function clearAction(d:Desktop){clearTimeout(d.timer);d.action=null;}
 function finishAction(d:Desktop,action:WindowAction){
@@ -59,9 +60,9 @@ function prepareAction(d:Desktop,action:WindowAction) {
   if(d.window.isDestroyed()||d.action)return;d.action=action;
   d.timer=setTimeout(()=>{
     void dialog.showMessageBox(d.window,{
-      type:'warning',message:action==='reload'?'The editor did not respond to Reload.':'The editor did not respond to Close.',
-      detail:'Saved notes are on disk. Text that has not finished saving may be lost if you continue.',
-      buttons:['Cancel',action==='reload'?'Reload anyway':'Close anyway'],defaultId:0,cancelId:0,
+      type:'warning',message:action==='reload'?ui.desktop.reloadUnresponsive:ui.desktop.closeUnresponsive,
+      detail:ui.desktop.unsavedChangesWarning,
+      buttons:[ui.common.cancel,action==='reload'?ui.desktop.reloadAnyway:ui.desktop.closeAnyway],defaultId:0,cancelId:0,
     }).then(({response})=>{if(d.action!==action)return;if(response===1)finishAction(d,action);else clearAction(d);});
   },4000);
   d.window.webContents.send('window:closing',action);
@@ -69,7 +70,7 @@ function prepareAction(d:Desktop,action:WindowAction) {
 function focused(){const win=BrowserWindow.getFocusedWindow();return win?desktops.get(win.id):undefined;}
 async function createWindow(folder?:string){
   const win=new BrowserWindow({
-    width:1440,height:940,minWidth:760,minHeight:500,backgroundColor:'#f3f3f3',title:"Heaven's Door",
+    width:1440,height:940,minWidth:760,minHeight:500,backgroundColor:'#f3f3f3',title:ui.common.appName,
     titleBarStyle:'hidden',trafficLightPosition:{x:8,y:13},
     ...(process.platform!=='darwin'?{titleBarOverlay:{color:'#f3f3f3',symbolColor:'#555555',height:42}}:{}),
     webPreferences:{preload:join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true},
@@ -79,7 +80,7 @@ async function createWindow(folder?:string){
   win.webContents.on('will-navigate',event=>event.preventDefault());
   win.on('close',event=>{if(!d.closing){event.preventDefault();prepareAction(d,'close');}});
   win.on('closed',()=>{clearAction(d);desktops.delete(win.id);});
-  if(folder)try{await open(d,folder);}catch(error){void dialog.showMessageBox(win,{type:'error',message:'Could not open workspace',detail:String(error)});}
+  if(folder)try{await open(d,folder);}catch(error){void dialog.showMessageBox(win,{type:'error',message:ui.desktop.couldNotOpenWorkspace,detail:String(error)});}
   if(process.env.HEAVENS_DOOR_DEV_URL)await win.loadURL(process.env.HEAVENS_DOOR_DEV_URL);
   else await win.loadFile(join(__dirname,'renderer/index.html'));
 }
@@ -87,27 +88,27 @@ void app.whenReady().then(async()=>{
   registry=new WorkspaceRegistry(join(app.getPath('userData'),'workspaces.json'));
   ipcMain.handle('workspace:list',event=>{trusted(event);return registry.list();});
   ipcMain.handle('workspace:unregister',async(event,root:unknown)=>{
-    const d=trusted(event);if(typeof root!=='string'||root===d.host?.root||!(await registry.list()).some(w=>w.root===root))throw new Error('Cannot remove this workspace from the registry');
+    const d=trusted(event);if(typeof root!=='string'||root===d.host?.root||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.unregisterWorkspace);
     return registry.unregister(root);
   });
   ipcMain.handle('workspace:registered',async(event,root:unknown)=>{
-    const d=trusted(event);if(typeof root!=='string'||!(await registry.list()).some(w=>w.root===root))throw new Error('Workspace is not registered');
+    const d=trusted(event);if(typeof root!=='string'||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.workspaceIsNotRegistered);
     return open(d,root);
   });
   ipcMain.handle('workspace:reveal',async(event,path:unknown)=>{
-    const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error('Invalid workspace file');
+    const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error(ui.errors.invalidWorkspaceFile);
     shell.showItemInFolder(await workspacePath(d.host.root,path));
   });
   protocol.handle('heavens-asset',async request=>{
     try{
-      const url=new URL(request.url),host=assets.get(url.host);if(!host)throw new Error('Unknown workspace');
+      const url=new URL(request.url),host=assets.get(url.host);if(!host)throw new Error(ui.errors.unknownWorkspace);
       const target=await fs.realpath(resolve(host.root,decodeURIComponent(url.pathname).slice(1)));
-      if(!target.startsWith(host.root+sep)||!['.png','.jpg','.jpeg','.gif','.webp','.avif','.svg'].includes(extname(target).toLowerCase()))throw new Error('Unsupported asset');
+      if(!target.startsWith(host.root+sep)||!['.png','.jpg','.jpeg','.gif','.webp','.avif','.svg'].includes(extname(target).toLowerCase()))throw new Error(ui.errors.unsupportedAsset);
       return net.fetch(pathToFileURL(target).href);
-    }catch{return new Response('Asset unavailable',{status:404});}
+    }catch{return new Response(ui.desktop.assetUnavailable,{status:404});}
   });
   ipcMain.handle('workspace:choose',async event=>{
-    const d=trusted(event),result=await dialog.showOpenDialog(d.window,{title:'Open workspace',properties:['openDirectory','createDirectory']});
+    const d=trusted(event),result=await dialog.showOpenDialog(d.window,{title:ui.workspace.open,properties:['openDirectory','createDirectory']});
     return result.canceled?null:open(d,result.filePaths[0]);
   });
   ipcMain.handle('workspace:demo',async event=>{
@@ -123,19 +124,19 @@ void app.whenReady().then(async()=>{
       const info=result.snapshot.cards.find(c=>c.name===samples[i][0])!,card=await d.host!.call<Card>({kind:'card',path:info.path});
       await d.host!.call({kind:'saveCard',path:card.path,body:samples[i][1],expected:card.revision});
     }
-    await d.host!.call({kind:'checkpoint',label:'Sample workspace'});return snapshot(d);
+    await d.host!.call({kind:'checkpoint',label:ui.history.sampleWorkspace});return snapshot(d);
   });
   ipcMain.handle('workspace:request',async(event,request:Request)=>{
-    const d=trusted(event);if(!d.host||!request||request.kind==='open')throw new Error('Unsupported request');
+    const d=trusted(event);if(!d.host||!request||request.kind==='open')throw new Error(ui.errors.unsupportedRequest);
     // Migration is an explicit UI command with a destination review, never an open side effect.
-    if(request.kind==='migrateRoot'&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error('Close the other windows for this workspace before moving its root cards.');
+    if(request.kind==='migrateRoot'&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.migrationOtherWindows);
     const result=await d.host.call(request);
     if(['create','createFolder','saveCard','saveBoard','write','restore','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
     return result;
   });
   ipcMain.handle('workspace:current',event=>snapshot(trusted(event)));
   ipcMain.handle('window:new',async(event,same:unknown)=>{
-    const d=trusted(event);if(typeof same!=='boolean')throw new Error('Invalid window request');await createWindow(same?d.host?.root:undefined);
+    const d=trusted(event);if(typeof same!=='boolean')throw new Error(ui.errors.invalidWindowRequest);await createWindow(same?d.host?.root:undefined);
   });
   ipcMain.on('window:reload',event=>prepareAction(trusted(event),'reload'));
   ipcMain.on('window:ready',(event,action:unknown)=>{
@@ -143,14 +144,14 @@ void app.whenReady().then(async()=>{
   });
   ipcMain.on('window:cancel',(event,action:unknown)=>{const d=trusted(event);if(action===d.action)clearAction(d);});
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform==='darwin'?[{label:"Heaven's Door",submenu:[{role:'about' as const},{role:'quit' as const}]}]:[]),
-    {label:'File',submenu:[
-      {label:'New Window',accelerator:'CmdOrCtrl+Shift+N',click:()=>{void createWindow();}},
-      {label:'New Window for This Workspace',click:()=>{void createWindow(focused()?.host?.root);}},
+    ...(process.platform==='darwin'?[{label:ui.common.appName,submenu:[{role:'about' as const},{role:'quit' as const}]}]:[]),
+    {label:ui.desktop.file,submenu:[
+      {label:ui.desktop.newWindow,accelerator:'CmdOrCtrl+Shift+N',click:()=>{void createWindow();}},
+      {label:ui.workspace.newWindow,click:()=>{void createWindow(focused()?.host?.root);}},
       {type:'separator'},{role:'close'},
     ]},
-    {label:'Edit',submenu:[{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
-    {label:'View',submenu:[{label:'Reload',accelerator:'CmdOrCtrl+R',click:()=>{const d=focused();if(d)prepareAction(d,'reload');}},{type:'separator'},{role:'toggleDevTools'},{role:'togglefullscreen'}]},
+    {label:ui.desktop.edit,submenu:[{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
+    {label:ui.desktop.view,submenu:[{label:ui.common.reload,accelerator:'CmdOrCtrl+R',click:()=>{const d=focused();if(d)prepareAction(d,'reload');}},{type:'separator'},{role:'toggleDevTools'},{role:'togglefullscreen'}]},
     {role:'windowMenu'},
   ]));
   await createWindow(process.env.HEAVENS_DOOR_WORKSPACE);

@@ -1,3 +1,5 @@
+import { ui } from '../text/ui';
+import { tooltips } from '../text/tooltips';
 import type { NavigationMode } from '../layout';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { placementHeight, type Board, type Card, type CardInfo, type Placement, type WhiteboardInput } from '../shared';
@@ -34,7 +36,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
         cache.set(key, rendered);
       }
       if (live) setContent({key,html:rendered});
-    }).catch(() => { if (live) setContent({key,html:'<p>Card unavailable</p>'}); });
+    }).catch(() => { if (live) setContent({key,html:'<p>'+ui.whiteboard.cardUnavailable+'</p>'}); });
     return () => { live = false; };
   }, [card.path, card.revision, key, cache, collapsed]);
   const summary=useMemo(()=>collapsed?titlePreview(card):'',[collapsed,card.title,card.titleMarkdown,card.path]);
@@ -193,7 +195,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   function startCard(e: PointerEvent, id: string) {
     if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor')) return;
     if (connecting && selected.length === 1 && id !== selected[0]) {
-      save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: id }] }, 'Connect cards');
+      save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: id }] }, ui.history.connectCards);
       setConnecting(false); e.stopPropagation(); return;
     }
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
@@ -247,7 +249,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       // The last pointer event may arrive before React renders the last move.
       const next=movedBoard(g,e.clientX,e.clientY);
       if(g.type==='move')next.cards=[...next.cards.filter(p=>!g.ids.includes(p.id)),...next.cards.filter(p=>g.ids.includes(p.id))];
-      save(next, g.type === 'move' ? 'Move cards' : 'Resize card', g.board);
+      save(next, g.type === 'move' ? ui.history.moveCards : ui.history.resizeCard, g.board);
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
@@ -280,22 +282,22 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   }
   function toggleCollapsed(p:Placement) {
     if(!p.collapsed)onFinish?.();
-    save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,height:expandedHeight(p),collapsed:!p.collapsed}:card)},p.collapsed?'Expand card':'Collapse card');
+    save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,height:expandedHeight(p),collapsed:!p.collapsed}:card)},p.collapsed?ui.history.expandCard:ui.history.collapseCard);
   }
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
-    setMenu({anchor,placementId:p.id,label:p.folder?'Whiteboard actions':'Card actions',x,y,actions:p.folder?
-      [{label:'Open whiteboard',icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:'Open in new tab',icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:'Open in another Tab Group',icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
-      [{label:'Auto height',checked:autoHeight(p),checkType:'checkbox',run:()=>{
-        save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?'Use fixed card height':'Use auto card height');
+    setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
+      [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
+      [{label:ui.whiteboard.autoHeight,checked:autoHeight(p),checkType:'checkbox',run:()=>{
+        save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
       }}]});
   }
   function openCanvasMenu(clientX:number,clientY:number) {
     const element=viewport.current!,nav=navigation.current!;nav.flush();
     const rect=element.getBoundingClientRect(),x=(clientX-rect.left-nav.current.x)/nav.current.zoom,y=(clientY-rect.top-nav.current.y)/nav.current.zoom;
     onFinish?.();
-    setMenu({label:'Canvas actions',x:clientX,y:clientY,actions:[
-      {label:'New card',icon:'note',disabled:!board.folder,hint:!board.folder?'The mother whiteboard contains whiteboards only':undefined,run:()=>onCreate(x,y)},
-      {label:'New whiteboard',icon:'map',run:()=>onCreateBoard?.(x,y)},
+    setMenu({label:ui.whiteboard.canvasActions,x:clientX,y:clientY,actions:[
+      {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
+      {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
     ]});
   }
   function fit() {
@@ -329,7 +331,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label="Whiteboard canvas"
+    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
@@ -364,49 +366,49 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
-            {!p.folder&&<div className="card-drag-strip" data-tooltip="Drag card"/>}
+            {!p.folder&&<div className="card-drag-strip" data-tooltip={tooltips.whiteboard.dragCard}/>}
             <div className="card-top-row">
               {!p.folder&&card&&<InlineName name={card.name} suffix=".md" tooltip={card.path} onRename={onRename?stem=>onRename(card.id,stem):undefined} onStart={()=>{setSelected([p.id]);onFinish?.();}}/>}
-              <Tool icon="more" className="card-more" label={p.folder?'Whiteboard actions':'Card actions'} aria-haspopup="menu" aria-expanded={menu?.placementId===p.id}
+              <Tool icon="more" className="card-more" label={p.folder?tooltips.whiteboard.whiteboardActions:tooltips.whiteboard.cardActions} aria-haspopup="menu" aria-expanded={menu?.placementId===p.id}
               onPointerDown={e=>e.stopPropagation()} onClick={e=>{
                 if(menu?.placementId===p.id){setMenu(null);return;}
                 const rect=e.currentTarget.getBoundingClientRect();openMenu(p,e.currentTarget,rect.right,rect.bottom+4);
               }}/>
             </div>
-            {!p.folder && <div className="card-actions"><Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?'Expand card':'Collapse card'} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">Missing card</div>) : <>
-              {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip="Reference to a card in another whiteboard" aria-label="Card reference"><Icon name="external" size={12}/></span>}
+            {!p.folder && <div className="card-actions"><Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
+            {p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+              {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
                   <div className="board-tile-title"><Icon name="map" size={18}/><strong>{p.folder.split(/[\\/]/).at(-1)}</strong></div>
-                  <small>{childBoard ? `${cardCount} card${cardCount===1?'':'s'} · ${nestedCount} whiteboard${nestedCount===1?'':'s'}` : 'Missing whiteboard'}</small>
+                  <small>{childBoard ? ui.whiteboard.contentsCount(cardCount,nestedCount) : ui.whiteboard.missingWhiteboard}</small>
                 </div>
-                <div className="board-tile-contents" aria-label="Whiteboard contents preview">
-                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||'Missing card'}</span></span>)}
+                <div className="board-tile-contents" aria-label={ui.whiteboard.whiteboardContentsPreview}>
+                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
                 <CardEditor path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
                 {cardDetails}
-              </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">Missing card<br/><small>{p.cardId.slice(0, 12)}</small></div>}
-              <button className="resize-handle" data-tooltip={p.folder?'Resize whiteboard':'Resize card'} aria-label={`Resize ${p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? 'card'}`} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
+              </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
+              <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
             </>}
           </article>;
         })}
       </div>
       <div className="selection-box" ref={selectionBox}/>
-      {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? "Create a card in this whiteboard" : "New whiteboard"} onClick={() => onCreate(100, 100)}>{board.folder ? "+ New card" : "+ New whiteboard"}</button></div>}
-      {!!selected.length && !active && <div className="selection-tools"><span>{selected.length} selected</span><button data-tooltip="Connect selected cards" disabled={selected.length > 2} onClick={() => {
-        if (selected.length === 2) save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, 'Connect cards');
+      {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={() => onCreate(100, 100)}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
+      {!!selected.length && !active && <div className="selection-tools"><span>{ui.whiteboard.selectedCount(selected.length)}</span><button data-tooltip={tooltips.whiteboard.connectSelectedCards} disabled={selected.length > 2} onClick={() => {
+        if (selected.length === 2) save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, ui.history.connectCards);
         else setConnecting(!connecting);
-      }}>{connecting ? 'Select another card…' : 'Connect'}</button><button disabled={selected.some(id=>{const p=placements.get(id),c=p&&lookup.get(p.cardId);return !!p?.folder||!!c&&parent(c.path)===portable(board.folder);})} onClick={() => {
-        save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, 'Remove placement'); setSelected([]);
-      }} data-tooltip="Remove a reference; cards belonging to this folder always stay on its whiteboard">Remove reference</button></div>}
+      }}>{connecting ? ui.whiteboard.selectAnotherCard : ui.whiteboard.connect}</button><button disabled={selected.some(id=>{const p=placements.get(id),c=p&&lookup.get(p.cardId);return !!p?.folder||!!c&&parent(c.path)===portable(board.folder);})} onClick={() => {
+        save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, ui.history.removePlacement); setSelected([]);
+      }} data-tooltip={tooltips.whiteboard.removeReference}>{ui.whiteboard.removeReference}</button></div>}
       <div className="canvas-controls">
-        <Tool icon="minus" label="Zoom out" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
-        <button ref={zoomLabel} className="zoom-level" aria-label="Zoom to fit" data-tooltip="Zoom to fit · ⌘1 / Ctrl+1" onClick={fit}>85%</button>
-        <Tool icon="plus" label="Zoom in" onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}/>
-        <button type="button" className="tool navigation-mode" aria-label={'Navigation device: '+({auto:'Auto',mouse:'Mouse',trackpad:'Trackpad'}[inputMode])}
-          data-tooltip={{auto:'Navigation device: Auto · Detect mouse or trackpad. Click to switch to Mouse.',mouse:'Navigation device: Mouse · Wheel zooms. Click to switch to Trackpad.',trackpad:'Navigation device: Trackpad · Scroll pans; pinch zooms. Click to switch to Auto.'}[inputMode]}
+        <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
+        <button ref={zoomLabel} className="zoom-level" aria-label={ui.whiteboard.zoomToFit} data-tooltip={tooltips.whiteboard.zoomToFit} onClick={fit}>85%</button>
+        <Tool icon="plus" label={tooltips.whiteboard.zoomIn} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}/>
+        <button type="button" className="tool navigation-mode" aria-label={tooltips.whiteboard.navigationDevice[inputMode]}
+          data-tooltip={tooltips.whiteboard.navigationDevice[inputMode]}
           onClick={onCycleInput}><Icon name={inputMode==='auto'?'autoInput':inputMode}/></button>
       </div>
     </div>

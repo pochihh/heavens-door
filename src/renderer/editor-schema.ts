@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import { Extension, type Editor } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -23,7 +24,7 @@ const CardTitle=Extension.create({
     props:{decorations(state){
       const first=state.doc.firstChild;
       if(first?.type.name!=='heading'||first.attrs.level!==1)return null;
-      return DecorationSet.create(state.doc,[Decoration.node(0,first.nodeSize,{class:'card-title'+(first.content.size?'':' is-empty'),'aria-label':'Card title'})]);
+      return DecorationSet.create(state.doc,[Decoration.node(0,first.nodeSize,{class:'card-title'+(first.content.size?'':' is-empty'),'aria-label':ui.editor.cardTitle})]);
     }},
   })];},
 });

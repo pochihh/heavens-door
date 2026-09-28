@@ -1,3 +1,4 @@
+import { ui } from '../text/ui';
 import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot } from '../shared';
 import { UndoHistory } from './history';
 
@@ -16,7 +17,7 @@ interface State {
   revision: number;
 }
 export class Session {
-  state: State = {snapshot:null,draft:null,status:'Ready',error:'',checkpoints:[],revision:0};
+  state: State = {snapshot:null,draft:null,status:ui.status.ready,error:'',checkpoints:[],revision:0};
   undoHistory = new UndoHistory();
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -35,7 +36,7 @@ export class Session {
   resume() {
     return this.run(async () => {
       const snapshot=await this.bridge.currentWorkspace();
-      if (snapshot) this.update({snapshot,status:'Saved locally'});
+      if (snapshot) this.update({snapshot,status:ui.status.savedLocally});
     });
   }
   dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={}; }
@@ -73,28 +74,28 @@ export class Session {
   }
   run<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.queue.then(operation);
-    this.queue=next.catch(error => this.update({error:String(error),status:'Needs attention'}));
+    this.queue=next.catch(error => this.update({error:String(error),status:ui.status.needsAttention}));
     return next;
   }
   async open(demo: boolean,registeredRoot?:string) {
     return this.run(async () => {
       await this.flush();
-      this.update({status:'Opening workspace…',error:''});
+      this.update({status:ui.status.openingWorkspace,error:''});
       const snapshot = await (registeredRoot ? this.bridge.openWorkspace(registeredRoot) : demo ? this.bridge.demo() : this.bridge.chooseWorkspace());
       if (snapshot) { this.dispose(); this.undoHistory.clear(); this.update({snapshot,draft:null,checkpoints:[]}); }
-      this.update({status:'Saved locally'});
+      this.update({status:ui.status.savedLocally});
     });
   }
   private accept(result: Mutation,label: string,group=false) {
     this.undoHistory.record(label,result.edits,group,Date.now(),result.move);
-    this.update({snapshot:result.snapshot,status:'Saved locally',error:''});
+    this.update({snapshot:result.snapshot,status:ui.status.savedLocally,error:''});
     clearTimeout(this.checkpointTimer);
-    if (result.snapshot.historyAvailable) this.checkpointTimer=setTimeout(() => { void this.checkpoint('Automatic checkpoint').catch(() => undefined); },5*60*1000);
+    if (result.snapshot.historyAvailable) this.checkpointTimer=setTimeout(() => { void this.checkpoint(ui.history.automaticCheckpoint).catch(() => undefined); },5*60*1000);
   }
   edit(body: string) {
     const draft=this.state.draft;
     if (!draft || body === draft.body) return;
-    this.update({draft:{...draft,body,dirty:true},status:'Editing…'});
+    this.update({draft:{...draft,body,dirty:true},status:ui.status.editing});
     clearTimeout(this.saveTimer);
     this.saveTimer=setTimeout(() => { void this.run(() => this.flush()).catch(() => undefined); },600);
   }
@@ -103,9 +104,9 @@ export class Session {
     clearTimeout(this.saveTimer);
     while (this.state.draft?.dirty) {
       const draft=this.state.draft;
-      this.update({status:'Saving…'});
+      this.update({status:ui.status.saving});
       const result=await this.bridge.request<Mutation>({kind:'saveCard',path:draft.card.path,body:draft.body,expected:draft.card.revision});
-      this.accept(result,`Edit ${draft.card.path}`,true);
+      this.accept(result,ui.history.edit(draft.card.path),true);
       const info=result.snapshot.cards.find(c => c.path === draft.card.path)!;
       const card={...info,body:draft.body};
       const current=this.state.draft!;
@@ -140,7 +141,7 @@ export class Session {
     return this.run(async () => {
       await this.flush();
       const result=await this.bridge.request<Mutation>({kind:'create',folder,stem,x,y,place});
-      this.accept(result,'Create card');
+      this.accept(result,ui.history.createCard);
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});
       this.update({draft:{card,body:card.body,dirty:false}});
@@ -150,9 +151,9 @@ export class Session {
     return this.run(async()=>{
       await this.flush();
       const board=this.state.snapshot?.boards.find(b=>b.folder===folder);
-      if(!board)throw new Error('This whiteboard is no longer in the workspace');
+      if(!board)throw new Error(ui.errors.whiteboardMissing);
       const result=await this.bridge.request<Mutation>({kind:'renameBoard',folder,name,expected:board.revision});
-      this.accept(result,`Rename ${folder}`);
+      this.accept(result,ui.history.rename(folder));
       const info=result.snapshot.cards.find(c=>c.id===this.state.draft?.card.id);
       if(info){
         const card=await this.bridge.request<Card>({kind:'card',path:info.path}),draft=this.state.draft;
@@ -164,9 +165,9 @@ export class Session {
     return this.run(async()=>{
       await this.flush();
       const card=this.state.snapshot?.cards.find(c=>c.id===id);
-      if(!card)throw new Error('This card is no longer in the workspace');
+      if(!card)throw new Error(ui.errors.cardMissing);
       const result=await this.bridge.request<Mutation>({kind:'renameCard',path:card.path,stem,expected:card.revision});
-      this.accept(result,`Rename ${card.path}`);
+      this.accept(result,ui.history.rename(card.path));
       const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===id);
       if(draft?.card.id===id&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
     });
@@ -178,7 +179,7 @@ export class Session {
       // Earlier local saves may have advanced the revision since this gesture began.
       // Only advance it when the starting layout still matches; disk writes retain their hash check.
       if (!base || !current || layout(base) !== layout(current)) {
-        throw new Error(`The whiteboard changed while you were editing ${board.path}. Your move has not overwritten those changes.`);
+        throw new Error(ui.errors.whiteboardChanged(board.path));
       }
       const result=await this.bridge.request<Mutation>({kind:'saveBoard',board,expected:current.revision});
       this.accept(result,label);
@@ -189,12 +190,12 @@ export class Session {
       await this.flush();
       await this.undoHistory.travel(redo,async changes => {
         const result=await this.bridge.request<Mutation>({kind:'write',changes});
-        this.update({snapshot:result.snapshot,status:redo ? 'Redone' : 'Undone',error:''});
+        this.update({snapshot:result.snapshot,status:redo ? ui.status.redone : ui.status.undone,error:''});
       },async move=>{
         const board=this.state.snapshot?.boards.find(b=>b.folder===move.from);
-        if(!board)throw new Error('The whiteboard to rename is missing');
+        if(!board)throw new Error(ui.errors.renameWhiteboardMissing);
         const result=await this.bridge.request<Mutation>({kind:'renameBoard',folder:move.from,name:move.to.split(/[\\/]/).at(-1)!,expected:board.revision});
-        this.update({snapshot:result.snapshot,status:redo?'Redone':'Undone',error:''});
+        this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});
       });
       const info=this.state.snapshot?.cards.find(c=>c.id===this.state.draft?.card.id);
       if (info) {
@@ -203,11 +204,11 @@ export class Session {
       } else this.update({draft:null});
     });
   }
-  checkpoint(label='Saved checkpoint') {
+  checkpoint(label:string=ui.history.savedCheckpoint) {
     return this.run(async () => {
       await this.flush();
       const checkpoints=await this.bridge.request<Checkpoint[]>({kind:'checkpoint',label});
-      this.update({checkpoints,status:'Checkpoint saved',error:''});
+      this.update({checkpoints,status:ui.status.checkpointSaved,error:''});
     });
   }
   history() {
@@ -222,7 +223,7 @@ export class Session {
       const snapshot=await this.bridge.request<Snapshot>({kind:'restore',id});
       const checkpoints=await this.bridge.request<Checkpoint[]>({kind:'history'});
       this.undoHistory.clear();
-      this.update({snapshot,checkpoints,draft:null,status:'Workspace restored · later checkpoints kept',error:''});
+      this.update({snapshot,checkpoints,draft:null,status:ui.status.workspaceRestoredLaterCheckpointsKept,error:''});
     });
   }
   // Keep a conflicted draft recoverable without automatically replacing someone else's file.
@@ -231,7 +232,7 @@ export class Session {
     return this.run(async () => {
       if (!this.state.draft) return;
       const card=await this.bridge.request<Card>({kind:'card',path:this.state.draft.card.path});
-      this.update({draft:{card,body:card.body,dirty:false},status:'Loaded from disk',error:''});
+      this.update({draft:{card,body:card.body,dirty:false},status:ui.status.loadedFromDisk,error:''});
     });
   }
 }

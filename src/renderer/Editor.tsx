@@ -1,3 +1,5 @@
+import { ui } from '../text/ui';
+import { tooltips } from '../text/tooltips';
 import { useEffect, useMemo, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { CardInfo } from '../shared';
@@ -18,7 +20,7 @@ function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props)
   const editor=useEditor({
     extensions:configuredExtensions,
     content:initialContent,contentType:'markdown',editable:!blocked,
-    editorProps:{attributes:{'aria-label':'Card content',spellcheck:'true'}},
+    editorProps:{attributes:{'aria-label':ui.editor.cardContent,spellcheck:'true'}},
     onUpdate:({editor}) => onEdit(cardMarkdown(editor)),
   });
   useEffect(() => {
@@ -32,19 +34,19 @@ function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props)
     const position=focusPoint ? editor.view.posAtCoords({left:focusPoint.x,top:focusPoint.y})?.pos : undefined;
     editor.commands.focus(position ?? (focusPoint ? 'end' : 'start'),{scrollIntoView:false});
   },[editor,autofocus,blocked,focusPoint]);
-  if (blocked) return <div className="editor-body"><p className="notice">This card contains Markdown extensions this first editor cannot preserve yet. It stays readable; edit the original file in your preferred editor.</p><div className="prose" dangerouslySetInnerHTML={{__html:preview(body,path)}} /></div>;
+  if (blocked) return <div className="editor-body"><p className="notice">{ui.editor.unsupportedMarkdown}</p><div className="prose" dangerouslySetInnerHTML={{__html:preview(body,path)}} /></div>;
   if (!editor) return null;
   return <>
-    <div className="editor-tools" aria-label="Formatting">
-      <Tool icon="bold" label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}/>
-      <Tool icon="italic" label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}/>
-      <Tool icon="h1" label="Heading" onClick={() => editor.chain().focus().toggleHeading({level:1}).run()}/>
-      <Tool icon="h2" label="Subheading" onClick={() => editor.chain().focus().toggleHeading({level:2}).run()}/>
-      <Tool icon="list" label="Bullet list" onClick={() => editor.chain().focus().toggleBulletList().run()}/>
-      <Tool icon="tasks" label="Checklist" onClick={() => editor.chain().focus().toggleTaskList().run()}/>
-      <Tool icon="quote" label="Quote" onClick={() => editor.chain().focus().toggleBlockquote().run()}/>
-      <Tool icon="code" label="Code block" onClick={() => editor.chain().focus().toggleCodeBlock().run()}/>
-      <details className="link-picker"><summary data-tooltip="Insert a stable link to another card"><Icon name="link" size={14}/> Link card</summary><div><input aria-label="Find a card to link" placeholder="Find a card…" value={linkQuery} onChange={e => setLinkQuery(e.target.value)}/><select aria-label="Link another card" size={5} value="" onChange={e => {
+    <div className="editor-tools" aria-label={ui.editor.formatting}>
+      <Tool icon="bold" label={tooltips.editor.bold} onClick={() => editor.chain().focus().toggleBold().run()}/>
+      <Tool icon="italic" label={tooltips.editor.italic} onClick={() => editor.chain().focus().toggleItalic().run()}/>
+      <Tool icon="h1" label={tooltips.editor.heading} onClick={() => editor.chain().focus().toggleHeading({level:1}).run()}/>
+      <Tool icon="h2" label={tooltips.editor.subheading} onClick={() => editor.chain().focus().toggleHeading({level:2}).run()}/>
+      <Tool icon="list" label={tooltips.editor.bulletList} onClick={() => editor.chain().focus().toggleBulletList().run()}/>
+      <Tool icon="tasks" label={tooltips.editor.checklist} onClick={() => editor.chain().focus().toggleTaskList().run()}/>
+      <Tool icon="quote" label={tooltips.editor.quote} onClick={() => editor.chain().focus().toggleBlockquote().run()}/>
+      <Tool icon="code" label={tooltips.editor.codeBlock} onClick={() => editor.chain().focus().toggleCodeBlock().run()}/>
+      <details className="link-picker"><summary data-tooltip={tooltips.editor.linkToAnotherCard}><Icon name="link" size={14}/>  {ui.editor.linkCard}</summary><div><input aria-label={ui.editor.findCardLabel} placeholder={ui.editor.findCardPlaceholder} value={linkQuery} onChange={e => setLinkQuery(e.target.value)}/><select aria-label={ui.editor.linkCardLabel} size={5} value="" onChange={e => {
         const card=cards.find(c => c.id === e.target.value);
         if (card) editor.chain().focus().insertContent({type:'text',text:card.name,marks:[{type:'link',attrs:{href:`card:${card.id}`}}]}).run();
         e.target.closest('details')?.removeAttribute('open');

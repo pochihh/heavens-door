@@ -99,7 +99,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await pointer(document,'pointermove',100,180);
     assert.equal(document.querySelectorAll('.drag-phantom').length,1);assert.ok(document.querySelector('.tab-phantom.selected .module-tab-label'));
     assert.equal(tab('files').getAttribute('aria-selected'),'true','next source tab becomes active');
-    assert.equal(writes,0);assert.ok(document.querySelector('[aria-label="Right dock drop target"]'));
+    assert.equal(writes,0);assert.ok(document.querySelector('[aria-label="Right Side Dock drop target"]'));
     await pointer(document,'pointermove',440,50);assert.equal(document.querySelector('.tab-drop-preview'),null,'Side Dock tabs cannot enter Main Dock');
     await pointer(document,'pointerup',440,50);assert.equal(writes,0);assert.equal(tab('whiteboards').getAttribute('aria-selected'),'true');
 
@@ -156,7 +156,7 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await act(async()=>{tab('tags').focus();tab('tags').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));});
     assert.ok(document.querySelector('[role=menu][aria-label="Tab Group actions"]'));
     assert.equal(tab('files').getAttribute('aria-selected'),'true','opening an inactive tab menu does not select it');
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(e=>e.textContent==='Move View to right dock')!.click());
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(e=>e.textContent==='Move View to Right Side Dock')!.click());
     assert.equal(findModule(current,'tags').side,'right','context commands target the clicked tab');
     assert.equal(findModule(current,'files').side,'left');
 
