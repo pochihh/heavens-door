@@ -36,7 +36,7 @@ Paths live behind card content. Invisible wide hit paths make thin curves select
 
 ## Passive mention links
 
-Mention links are straight, muted, center-to-center lines behind cards and manual edges. They do not accept selection or dragging. An explicit edge and a mention link between the same cards may coexist. Visibility and overall appearance are board options in Style View; hiding them changes neither note content nor backlinks.
+Mention links are straight, muted, center-to-center lines behind cards and manual edges. They do not accept selection or dragging. An explicit edge and a mention link between the same cards may coexist. Visibility is a board option in Style View; the theme controls line appearance. Hiding them changes neither note content nor backlinks.
 
 The worker queries its indexed outgoing links once for a displayed board, restricted to cards placed there. The renderer maps card IDs to placements; duplicate mentions in the same source are deduplicated. Notes are not reread during panning or edge drawing. Current mention indexing supports the app's stable `card:` links; plain relative Markdown links and Obsidian wikilinks are not yet resolved into this overlay. Whiteboard membership links do not imply mentions. Manual edges support whiteboard tiles independently of this card-mention index.
 
@@ -44,28 +44,35 @@ The worker queries its indexed outgoing links once for a displayed board, restri
 
 Style is a normal movable/closable Side Dock View, registered in the Right Side Dock by default. Existing saved layouts gain it without rearranging their other Views. The Action Ribbon, selection toolbar and canvas palette action reveal it where it lives. Selecting an object does not automatically open or relocate a dock.
 
-The View follows the active Main Dock whiteboard, including when the same file appears in two Tab Groups. Opening a Card View shows its shared fill color; other document types show an empty state. With no selection it shows canvas color, grid color, mention-link visibility and mention-link stroke controls.
+The View follows the active Main Dock whiteboard, including when the same file appears in two Tab Groups. Opening a Card View shows its shared fill color; other document types show an empty state. With no selection it retains the mention-link visibility toggle; canvas, grid and passive mention-line appearance belong to the theme.
 
 | Selection | Available options |
 | --- | --- |
-| Edges only | Stroke color, style, width; start/end arrowheads; label size; label text for a single edge. |
-| Cards only | Fill; stroke color, style, width; auto height; collapsed state. |
-| Whiteboard tiles only | Fill; stroke color, style, width. |
-| Cards + whiteboard tiles | Fill; stroke color, style, width. |
-| Any selection including edges and cards/tiles | Stroke color, style, width only. |
+| Edges only | Color; stroke style and width; start/end arrowheads; label size; label text for a single edge. |
+| Cards only | Color. |
+| Whiteboard tiles only | Color. |
+| Cards + whiteboard tiles | Color. |
+| Any selection including edges and cards/tiles | Color: applies to card/tile fills and edge strokes together. |
 
 Shared means supported by **every** selected item. When values differ, the control shows **Mixed** rather than choosing one item's value. Assigning a value applies it to the entire selection as one undoable transaction. Theme colors can be restored with the theme swatch. Custom colors are validated hexadecimal values. Stroke style offers none, solid, dashed and dotted. Each endpoint offers none, arrow, filled triangle or outline triangle.
 
-Card fill belongs to the source card; border styling belongs to a placement and edge styling belongs to its whiteboard. Viewing/selecting never writes; committed style changes use the shared save, conflict detection, undo and checkpoint mechanisms. Existing geometry, content editing and navigation behavior remain separate from Style View.
+Card fill belongs to the source card; card and whiteboard tile borders come from the theme. Edge styling belongs to its containing whiteboard. Viewing/selecting never writes; committed style changes use the shared save, conflict detection, undo and checkpoint mechanisms. Existing geometry, content editing and navigation behavior remain separate from Style View.
 
 ## Card color and workspace palette
 
 **Card color** is the card's shared fill, stored in its hidden YAML `card-color` field as a six-digit hex value. All references and miniature card previews use that value, as does Card View. Choosing Theme stores explicit `null`, so it overrides any legacy placement fill. Existing files without this field keep their old per-placement fills until the user chooses a shared color; the app does not guess which old placement should win.
 
-Card borders, geometry, collapse and height mode remain per placement. Whiteboard tile fills remain per placement as well. A mixed card/tile fill change writes the card metadata and relevant board in one revision-checked, undoable transaction. Color saves flush a pending editor draft first and advance its revision without discarding typing that arrives during the save. The Markdown body and unrelated frontmatter stay intact.
+Geometry, collapse and height mode remain per placement. Whiteboard tile fills remain per placement as well. A mixed card/tile/edge color change writes source card metadata and the relevant board in one revision-checked, undoable transaction. Card borders, shadows and rounding are theme-controlled. Auto-height stays in Card actions and collapse keeps its existing corner control. Color saves flush a pending editor draft first and advance its revision without discarding typing that arrives during the save. The Markdown body and unrelated frontmatter stay intact.
 
-Style controls use direct buttons. Stroke width buttons show actual line thickness; stroke-style buttons show solid/dashed/dotted/none samples; arrowhead buttons show the corresponding endpoint; label sizes and boolean options use compact button groups. Active options have a persistent pressed state and keyboard focus. Mixed values have no pressed option and show Mixed. There are no style dropdowns. Custom colors use a native picker plus a hex field and an explicit Apply action.
+Style controls use direct buttons. Stroke width buttons show actual line thickness; stroke-style buttons show solid/dashed/dotted/none samples; arrowhead buttons show the corresponding endpoint; label sizes and the mention-visibility toggle use compact button groups. Detailed stroke controls appear only for edge-only selections; cards and whiteboard tiles expose just Color. Active options have a persistent pressed state and keyboard focus. Mixed values have no pressed option and show Mixed. There are no style dropdowns. Custom colors use a native picker plus a hex field and an explicit Apply action.
 
 The default palette contains eight muted hues: Rose `#c9838a`, Terracotta `#c99579`, Ochre `#c6ad72`, Sage `#91aa8b`, Teal `#80aaa6`, Blue `#8aa5c5`, Lavender `#a699c3`, Slate `#8b929e`, plus Theme. The Edit palette action opens a draft editor in Style View: add, name, recolor, reorder, remove, reset, Save or Cancel. Up to 24 swatches are stored in `.heavens-door/settings.json`. Escape cancels the palette editor.
 
-Palette selections copy their hex value. Editing or deleting a swatch changes **future selections only**, never existing cards, edges or boards. Theme appearance still adapts: opaque CSS `color-mix` blends fill into the card surface (38% color in light themes, 24% in dark), stroke into muted foreground (68%/78%), canvas into the surface (12%/10%), and grid into muted foreground (38%/32%). Shared `--tint-*` tokens control these roles; swatch previews use the same role as their destination. Alpha transparency is not used for card bodies, so edges behind them do not show through.
+Palette selections copy their hex value. Editing or deleting a swatch changes **future selections only**, never existing cards, edges or boards. Theme appearance still adapts: opaque CSS `color-mix` blends fill into the card surface (38% color in light themes, 24% in dark), and stroke into muted foreground (68%/78%). Shared `--tint-*` tokens control these roles; swatch previews use the same role as their destination. Alpha transparency is not used for card bodies, so edges behind them do not show through.
+
+
+## Theme appearance and compatibility
+
+The file owns explicit user color choices and edge styles. The theme owns card/tile borders, shadow and rounding, the canvas, the adaptive dot grid and passive mention-line appearance. Style View does not offer controls for that decoration. Its common Color action changes fills for cards/tiles and stroke color for edges; the source hex is copied unchanged to the relevant files.
+
+Existing placement stroke fields, `canvasColor`, `gridColor` and `mentionStyle` still round-trip for compatibility, but no longer override theme rendering. This change does not migrate or delete those fields, introduce palette references, or adopt the proposed nested `style` schema. See [grid and theme tokens](../design-system.md#whiteboard-grid-and-theme-owned-appearance).

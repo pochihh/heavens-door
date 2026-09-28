@@ -65,7 +65,7 @@ test('Style View provides preview buttons and an editable workspace palette with
   const click=async(label:string)=>act(async()=>{const button=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.textContent===label);assert.ok(button,label);button.click();});
   try{
     await act(async()=>root.render(<StyleView board={board} session={session} onPalette={async p=>{savedPalette=p;}}/>));
-    assert.equal(document.querySelector('select'),null);assert.ok(document.querySelector('[aria-label="4 px"] svg'));
+    assert.equal(document.querySelector('select'),null);assert.equal(document.querySelector('[aria-label="4 px"]'),null,'board decoration belongs to the theme');
     await click('Edit palette');await click('Move color later');await click('Remove this palette color');
     assert.equal(savedPalette,undefined,'editing the palette remains a draft until saved');
     await click('Save');assert.equal(savedPalette![0].id,'rose');assert.equal(savedPalette!.length,DEFAULT_PALETTE.length-1);

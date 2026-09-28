@@ -72,18 +72,29 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
-test('Style View exposes only common options and applies mixed stroke changes to every selected item',async()=>{
+test('Style View colors mixed selections together and reserves detailed strokes for edges',async()=>{
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
   const board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[{id:'a',cardId:'a',x:0,y:0,width:300,height:200},{id:'b',cardId:'b',x:500,y:0,width:300,height:200,folder:'Child'}],edges:[{id:'e',from:'a',to:'b',strokeColor:'#e03131'}]};
-  let saved:Board|undefined;const session={board:async(b:Board)=>{saved=b;},fillCards:async()=>undefined} as Pick<Session,'board'|'fillCards'>;
+  let saved:Board|undefined,fill:{ids:string[];color:string|undefined}|undefined;
+  const session={board:async(b:Board)=>{saved=b;},fillCards:async(ids:string[],color:string|undefined,b?:Board)=>{fill={ids,color};saved=b;}} as Pick<Session,'board'|'fillCards'>;
   const root=createRoot(document.getElementById('root')!);
+  const render=async(cards:string[],edges:string[])=>act(async()=>root.render(<StyleView board={board} selection={{path:board.path,cards,edges}} session={session}/>));
+  const labels=()=>[...document.querySelectorAll('legend')].map(n=>n.textContent);
   try{
-    await act(async()=>root.render(<StyleView board={board} selection={{path:board.path,cards:['a','b'],edges:['e']}} session={session}/>));
-    const labels=[...document.querySelectorAll('legend,.style-choice>span')].map(n=>n.textContent);
-    assert.equal(document.querySelectorAll('select').length,0,'styles use direct buttons');
-    assert.ok(document.querySelector('[aria-label="4 px"] svg'),'thickness buttons preview their weight');
-    assert.ok(labels.includes('Stroke color'));assert.ok(!labels.includes('Fill'));assert.ok(!labels.includes('End arrowhead'));assert.ok(!labels.includes('Auto height'));
+    await render(['a','b'],['e']);
+    assert.equal(document.querySelectorAll('select').length,0);
+    assert.deepEqual(labels(),['Color'],'mixed selections expose only the shared Color action');
+    assert.ok(document.querySelector('small')?.textContent?.includes('Mixed'));
     await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click();});
-    assert.equal(saved?.edges[0].strokeColor,'#a699c3');assert.ok(saved?.cards.every(c=>c.strokeColor==='#a699c3'));
+    assert.deepEqual(fill,{ids:['a'],color:'#a699c3'},'card color targets its source file');
+    assert.equal(saved?.edges[0].strokeColor,'#a699c3');assert.equal(saved?.cards[1].fillColor,'#a699c3');
+    assert.deepEqual(saved?.cards[0],board.cards[0],'card placement decoration is untouched');
+    for(const ids of [['a'],['b'],['a','b']]){await render(ids,[]);assert.deepEqual(labels(),['Color']);}
+    await render([],['e']);
+    assert.ok(document.querySelector('[aria-label="4 px"] svg'),'edge thickness keeps its visual buttons');
+    assert.ok(labels().includes('End arrowhead'));
+    await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="4 px"]')!.click());
+    assert.equal(saved?.edges[0].strokeWidth,4);assert.deepEqual(saved?.cards,board.cards);
+    await render([],[]);assert.deepEqual(labels(),['Show mention links'],'canvas and mention appearance are theme-controlled');
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

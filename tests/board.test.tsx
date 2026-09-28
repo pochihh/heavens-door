@@ -17,11 +17,13 @@ test('board drags persist final coordinates even when pointer events share a ren
   dom.window.HTMLElement.prototype.releasePointerCapture=() => undefined;
   const errors:unknown[]=[]; dom.window.addEventListener('error',event => { errors.push(event.error); event.preventDefault(); });
   const {Whiteboard,isVisible}=await import('../src/renderer/Board');
-  const board:Board={path:'test.whiteboard',folder:'',name:'Test',revision:'revision',cards:[{id:'placement',cardId:'card',x:0,y:0,width:340,height:280}],edges:[]};
+  const board:Board={path:'test.whiteboard',folder:'',name:'Test',revision:'revision',canvasColor:'#ffffff',gridColor:'#ff0000',cards:[{id:'placement',cardId:'card',x:0,y:0,width:340,height:280,strokeColor:'#ff0000',strokeWidth:8,strokeStyle:'dotted'}],edges:[]};
   const saved:Board[]=[];
   const root=createRoot(document.getElementById('root')!);
   await act(async () => root.render(<Whiteboard board={board} cards={[]} onSave={b => { saved.push(b); }} onOpen={() => undefined} onCreate={() => undefined}/>));
-  const grip=document.querySelector('.board-card')!;
+  const grip=document.querySelector<HTMLElement>('.board-card')!;
+  assert.equal(grip.style.borderColor,'');assert.equal(grip.style.borderWidth,'');assert.equal(grip.style.borderStyle,'','card borders come from the theme');
+  assert.equal(document.querySelector('.canvas')!.getAttribute('style'),null,'legacy canvas and grid colors do not override the theme');
   await act(async () => {
     grip.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0,clientX:100,clientY:100}));
     grip.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:185,clientY:142.5}));

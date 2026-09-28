@@ -153,8 +153,9 @@ export class BoardNavigation {
     const width = this.viewport.clientWidth || 1000, height = this.viewport.clientHeight || 800;
     this.world.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) scale(${c.zoom})`;
     // Only the lightweight grid repaints; card positions and edge geometry stay in world coordinates.
-    this.grid.style.backgroundSize = `${24 * c.zoom}px ${24 * c.zoom}px`;
-    this.grid.style.backgroundPosition = `${c.x}px ${c.y}px`;
+    this.grid.style.setProperty('--board-zoom', String(c.zoom));
+    this.grid.style.setProperty('--grid-x', `${c.x}px`);
+    this.grid.style.setProperty('--grid-y', `${c.y}px`);
     this.zoomLabel.textContent = `${Math.round(c.zoom * 100)}%`;
     const ratio = c.zoom / p.zoom;
     if (Math.abs(c.x - p.x * ratio) > width * 0.4 || Math.abs(c.y - p.y * ratio) > height * 0.4 || ratio < 0.8 || ratio > 1.25) this.publishCurrent();

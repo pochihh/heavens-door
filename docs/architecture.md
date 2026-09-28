@@ -59,7 +59,7 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
 | `Board.tsx` / `navigation.ts` | Cached full previews, offscreen culling, selection and board gestures |
 | `Edges.tsx` / `edge-geometry.ts` | Anchor gestures, curved manual edges, labels, endpoint reconnection and passive indexed mention lines |
-| `colors.ts` | Default workspace palette, shared card fill resolution and theme tint roles |
+| `colors.ts` | Default workspace palette, shared card fill resolution and theme tint roles (fills and edge strokes) |
 | `StyleView.tsx` | Selection-aware Side Dock styling, with shared options for mixed selections |
 | `Editor.tsx` / `editor-schema.ts` | Formatted TipTap editing and supported Markdown conversion |
 | `session.ts` / `history.ts` | In-flight draft protection, mutation sequencing and grouped undo |

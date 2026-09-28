@@ -84,4 +84,24 @@ Menus keep action names visible and close on Escape or pointer-down anywhere out
 
 Use **Edge** for editable, manually drawn curves and **Mention link** for passive indexed note references. Anchor dots and endpoint handles share one appearance on cards and whiteboard tiles. Style controls belong to the movable **Style View**, with only common controls for mixed selections. See [edges, mentions and Style View](interactions/edges-and-style.md) for the interaction, terminology and persistence rules.
 
-Style controls use compact, direct button groups with visual samples for stroke thickness, dash patterns and arrowheads. Avoid dropdowns when the choices fit in a short row. Preserve pressed states, Mixed values, hover tooltips and keyboard focus. Color swatches preview the final theme-blended role, rather than the raw saturated color. The workspace palette is editable in Style View; edits affect future selections only. Card fill follows the source card everywhere, while border styling stays on its whiteboard placement. See the [color and palette contract](interactions/edges-and-style.md#card-color-and-workspace-palette).
+Style controls use compact, direct button groups with visual samples for stroke thickness, dash patterns and arrowheads. Avoid dropdowns when the choices fit in a short row. Preserve pressed states, Mixed values, hover tooltips and keyboard focus. Color swatches preview the final theme-blended role, rather than the raw saturated color. The workspace palette is editable in Style View; edits affect future selections only. Card fill follows the source card everywhere; card and whiteboard tile borders come from the theme. Detailed stroke controls belong only to edges. A mixed selection offers one Color action that applies to fills and edge lines together. See the [color and palette contract](interactions/edges-and-style.md#card-color-and-workspace-palette).
+
+
+## Whiteboard grid and theme-owned appearance
+
+The grid is automatic: small minor dots sit 24 canvas units apart, with a major dot every fifth interval (120 units). Both grids share the same world origin and pan/zoom transform. Minor dots fade from fully visible at 80% zoom to hidden at 55%; major dots remain visible throughout the supported zoom range. Dots keep a steady screen-space radius as their spacing scales. Navigation updates three camera CSS variables once per frame; two CSS background layers draw the grid without generating dot elements or rerendering cards.
+
+There are no grid style settings. Theme CSS can override these tokens:
+
+| Tokens | Default / purpose |
+| --- | --- |
+| `--grid-spacing`, `--grid-major-every` | `24px`, `5`; world spacing and major interval |
+| `--grid-minor-radius`, `--grid-major-radius` | `.7px`, `1.1px`; screen-space dot radii |
+| `--grid-minor-color`, `--grid-major-color` | Theme-derived quiet and stronger dots |
+| `--grid-minor-hide-below`, `--grid-minor-show-above` | `.55`, `.8`; zoom fade range, with upper value greater than lower |
+| `--canvas` | Canvas background |
+| `--card-border-width`, `--card-border-style`, `--card-border-color` | `1px`, `solid`, theme border |
+| `--card-radius`, `--card-shadow` | `6px`, subtle shadow; applies to cards and whiteboard tiles |
+| `--mention-color`, `--mention-width`, `--mention-opacity` | Muted theme foreground, `1.5`, `.45`; passive mention links |
+
+`--board-zoom`, `--grid-x` and `--grid-y` are live camera values, not theme settings or saved style fields. Major dots render above minor dots and align at every shared intersection. Selection/focus continues to use the app's accent outline. Existing saved decoration fields are preserved for compatibility but do not override the theme.

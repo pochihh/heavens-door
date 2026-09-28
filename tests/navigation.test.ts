@@ -25,7 +25,7 @@ function setup(t: TestContext) {
   const frame = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(0)); };
   const advance = (ms: number) => { now += ms; t.mock.timers.tick(ms); };
   t.after(() => { nav.dispose(); dom.window.close(); });
-  return { dom, viewport, world, nav, frames, frame, wheel, advance, publications: () => publications };
+  return { dom, viewport, world, grid, nav, frames, frame, wheel, advance, publications: () => publications };
 }
 
 function assertAnchored(before: { x: number; y: number; zoom: number }, after: typeof before) {
@@ -175,4 +175,19 @@ test('Auto tolerates slower wheel starts, reading pauses, and short gaps without
   assert.deepEqual(f.nav.current, { ...pan, y: pan.y - 100 }, 'a brief pause within trackpad input does not switch it to zoom');
   f.advance(300); f.wheel({ deltaY: 100 }); f.frame();
   assert.ok(f.nav.current.zoom < pan.zoom, 'a separate mouse gesture can still override trackpad memory');
+});
+
+
+test('grid camera variables follow the same frame as the world without rewriting theme styles',t=>{
+  const f=setup(t);
+  f.grid.style.setProperty('--grid-spacing','30px');
+  for(const zoom of [.2,.55,.7,.8,3]){
+    f.nav.set({x:-137,y:81,zoom});f.frame();
+    assert.equal(f.grid.style.getPropertyValue('--board-zoom'),String(zoom));
+    assert.equal(f.grid.style.getPropertyValue('--grid-x'),'-137px');
+    assert.equal(f.grid.style.getPropertyValue('--grid-y'),'81px');
+    assert.equal(f.world.style.transform,`translate3d(-137px, 81px, 0) scale(${zoom})`);
+    assert.equal(f.grid.style.getPropertyValue('--grid-spacing'),'30px','themes own grid appearance');
+    assert.equal(f.grid.style.backgroundSize,'','CSS derives both aligned grid spacings');
+  }
 });

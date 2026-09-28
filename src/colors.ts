@@ -4,9 +4,9 @@ export const DEFAULT_PALETTE:PaletteColor[] = Object.entries({rose:'#c9838a',ter
 export const isHexColor=(value:unknown):value is string=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value);
 // A saved Theme choice (null) overrides legacy per-placement fills; absent metadata preserves them.
 export const cardFill=(card:CardInfo|undefined,placement?:Placement)=>card?.fillColor!==undefined?card.fillColor??undefined:placement?.fillColor;
-export type ColorRole='fill'|'stroke'|'canvas'|'grid';
+export type ColorRole='fill'|'stroke';
 export function tintColor(color:string|undefined,role:ColorRole='fill') {
   if(!isHexColor(color))return undefined;
-  const base=role==='fill'?'--card':role==='canvas'?'--surface':'--muted';
+  const base=role==='fill'?'--card':'--muted';
   return `color-mix(in srgb, ${color} var(--tint-${role}), var(${base}))`;
 }

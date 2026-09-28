@@ -195,7 +195,7 @@ export class Session {
       const current=board&&snapshot.boards.find(b=>b.path===board.path);
       if(board&&(!base||!current||layout(base)!==layout(current)))throw new Error(ui.errors.whiteboardChanged(board.path));
       const result=await this.bridge.request<Mutation>({kind:'setFill',cards,color:color??null,board:board&&current?{value:board,expected:current.revision}:undefined});
-      this.accept(result,ui.history.colorCards);
+      this.accept(result,ui.history.colorSelection);
       const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
       if(draft&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
     });

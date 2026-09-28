@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Board, CardInfo, Edge, PaletteColor, Placement, Stroke } from '../shared';
+import type { Board, CardInfo, Edge, PaletteColor, Stroke } from '../shared';
 import { DEFAULT_PALETTE, cardFill, isHexColor, tintColor, type ColorRole } from '../colors';
 import type { Session } from './session';
 import { Icon, Tool } from './Icons';
@@ -10,7 +10,7 @@ const common=<T,>(values:T[])=>values.every(value=>value===values[0])?values[0]:
 function Color({label,value,role='fill',palette,onChange}:{label:string;value:string|undefined;role?:ColorRole;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
   const [custom,setCustom]=useState(value||'#8b929e'),[editing,setEditing]=useState(false);
   useEffect(()=>{setCustom(value||'#8b929e');setEditing(false);},[value]);
-  return <fieldset className="style-color"><legend>{label}</legend><div className="style-swatches">
+  return <fieldset className="style-color" aria-label={label}><legend>{label}</legend><div className="style-swatches">
     <button className="color-swatch theme" aria-pressed={value===''} aria-label={ui.style.theme} data-tooltip={tooltips.style.theme} onClick={()=>onChange(undefined)}><span/></button>
     {palette.map(color=><button key={color.id} className="color-swatch" aria-pressed={value?.toLowerCase()===color.color.toLowerCase()} aria-label={color.name} data-tooltip={color.name} onClick={()=>onChange(color.color)}><span style={{background:tintColor(color.color,role)}}/></button>)}
     <Tool icon="plus" className={editing?'selected':''} label={tooltips.style.custom} aria-expanded={editing} onClick={()=>setEditing(!editing)}/>
@@ -60,40 +60,33 @@ function PaletteEditor({palette,onSave,onClose}:{palette:PaletteColor[];onSave:(
 export function StyleView({board,card,cardInfos=[],selection,session,palette=DEFAULT_PALETTE,onPalette}:{board?:Board;card?:CardInfo;cardInfos?:CardInfo[];selection?:BoardSelection;session:Pick<Session,'board'|'fillCards'>;palette?:PaletteColor[];onPalette?:(palette:PaletteColor[])=>Promise<void>}) {
   const [editingPalette,setEditingPalette]=useState(false);
   const cards=board?.cards.filter(p=>selection?.cards.includes(p.id))??[],edges=board?.edges.filter(e=>selection?.edges.includes(e.id))??[];
-  const count=card?1:cards.length+edges.length,items:(Placement|Edge)[]=[...cards,...edges];
-  const apply=(patch:Partial<Placement&Edge>)=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)?{...p,...patch}:p),edges:board.edges.map(e=>edges.includes(e)?{...e,...patch}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
+  const count=card?1:cards.length+edges.length;
+  const apply=(patch:Partial<Edge>)=>{if(board)void session.board({...board,edges:board.edges.map(e=>edges.includes(e)?{...e,...patch}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
   const boardStyle=(patch:Partial<Board>)=>{if(board)void session.board({...board,...patch},ui.history.styleBoard,board).catch(()=>undefined);};
   const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void,role:ColorRole='fill')=><Color label={label} value={value} palette={palette} role={role} onChange={onChange}/>;
-  const stroke=(values:Stroke[],change:(patch:Stroke)=>void,defaultWidth:number)=><>
-    {color(ui.style.strokeColor,common(values.map(p=>p.strokeColor??'')),strokeColor=>change({strokeColor}),'stroke')}
+  const stroke=(values:Stroke[],change:(patch:Stroke)=>void)=><>
     <Choice label={ui.style.strokeStyle} value={common(values.map(p=>p.strokeStyle??'solid'))} choices={(['none','solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
-    <Choice label={ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??('from' in p?2:defaultWidth)))} choices={[.5,1,1.5,2,4,8].map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
+    <Choice label={ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={[.5,1,1.5,2,4,8].map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
   </>;
   const arrows=['none','arrow','triangle','triangle-outline'] as const;
   const fill=(fillColor:string|undefined)=>{
     const ids=card?[card.id]:cards.filter(p=>!p.folder).map(p=>p.cardId);
-    const updated=board&&cards.some(p=>p.folder)?{...board,cards:board.cards.map(p=>p.folder&&cards.includes(p)?{...p,fillColor}:p)}:undefined;
+    const updated=board&&(cards.some(p=>p.folder)||edges.length)?{...board,cards:board.cards.map(p=>p.folder&&cards.includes(p)?{...p,fillColor}:p),edges:board.edges.map(e=>edges.includes(e)?{...e,strokeColor:fillColor}:e)}:undefined;
     void session.fillCards(ids,fillColor,updated,board).catch(()=>undefined);
   };
   return <div className="style-view">
     {!board&&!card?<p className="empty-label">{ui.style.empty}</p>:<>
     <div className="style-selection">{count?ui.style.selected(count):board!.name}</div>
-    {card?<>{color(ui.style.cardFill,cardFill(card)??'',fill)}<small>{ui.style.cardFillHelp}</small></>:!count&&board?<>
-      {color(ui.style.canvas,board.canvasColor??'',canvasColor=>boardStyle({canvasColor}),'canvas')}
-      {color(ui.style.grid,board.gridColor??'',gridColor=>boardStyle({gridColor}),'grid')}
+    {card?<>{color(ui.style.color,cardFill(card)??'',fill)}<small>{ui.style.cardFillHelp}</small></>:!count&&board?<>
+      <p className="empty-label">{ui.style.selectItems}</p>
       <Choice label={ui.style.showMentions} value={board.showMentions!==false} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>boardStyle({showMentions:v==='true'})}/>
-      <fieldset><legend>{ui.style.mentionLinks}</legend>{stroke([board.mentionStyle??{}],patch=>boardStyle({mentionStyle:{...board.mentionStyle,...patch}}),1.5)}</fieldset>
     </>:<>
-      {!!cards.length&&!edges.length&&color(cards.every(p=>!p.folder)?ui.style.cardFill:ui.style.fill,common(cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
-      {stroke(items,apply,edges.length&&!cards.length?2:1)}
+      {color(ui.style.color,common([...cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??''),...edges.map(e=>e.strokeColor??'')]),fill,cards.length?'fill':'stroke')}
       {!!edges.length&&!cards.length&&<>
+        {stroke(edges,apply)}
         {(['fromArrowhead','toArrowhead'] as const).map((key,index)=><Choice key={key} label={index?ui.style.targetArrow:ui.style.sourceArrow} value={common(edges.map(e=>e[key]??'none'))} choices={arrows.map(v=>[v,v==='triangle-outline'?ui.style.outline:ui.style[v]])} onChange={value=>apply({[key]:value})} sample={arrow=><LineSample arrow={arrow} end={index?'end':'start'}/>}/>)}
         <Choice label={ui.style.labelSize} value={common(edges.map(e=>e.labelSize??14))} choices={[12,14,18,24].map((n,i)=>[n,ui.style.labelSizes[i]])} tip={v=>tooltips.style.size(Number(v))} onChange={v=>apply({labelSize:Number(v)})}/>
         {edges.length===1&&<label className="style-label"><span>{ui.style.label}</span><input key={edges[0].id+':'+(edges[0].label??'')} aria-label={ui.style.label} maxLength={2000} defaultValue={edges[0].label??''} onBlur={e=>{if(e.target.value!==(edges[0].label??''))apply({label:e.target.value});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>}
-      </>}
-      {!!cards.length&&!edges.length&&cards.every(p=>!p.folder)&&<>
-        <Choice label={ui.style.autoHeight} value={common(cards.map(p=>p.autoHeight!==false))} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>apply({autoHeight:v==='true'})}/>
-        <Choice label={ui.style.collapsed} value={common(cards.map(p=>!!p.collapsed))} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>apply({collapsed:v==='true'})}/>
       </>}
     </>}
     </>}
