@@ -86,6 +86,11 @@ async function dispatch(request: Request) {
       return workspace.saveBoard(request.board,request.expected);
     case 'read': string(request.path); return workspace.read(request.path);
     case 'card': string(request.path); return workspace.card(request.path);
+    case 'prepareDeletion':
+      string(request.path);string(request.expected);
+      if(!Array.isArray(request.placements)||!Array.isArray(request.edges)||request.placements.length>10000||request.edges.length>50000)throw new Error(ui.errors.invalidTransaction);
+      request.placements.forEach(string);request.edges.forEach(string);
+      return workspace.prepareDeletion(request.path,request.placements,request.edges,request.expected);
     case 'write':
       if (!Array.isArray(request.changes) || request.changes.length > 10000) throw new Error(ui.errors.invalidTransaction);
       for (const change of request.changes) {

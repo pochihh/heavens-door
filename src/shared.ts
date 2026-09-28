@@ -24,6 +24,7 @@ export interface TagResult { card: CardInfo; properties: Record<string,unknown> 
 export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
 export interface BoardMove { from:string; to:string }
+export interface Deletion {changes:Write[]; nonEmpty:string[]}
 export interface Mutation { snapshot: Snapshot; edits: Edit[]; move?:BoardMove }
 export interface Write { path: string; content: string | null; expected: string | null }
 export type Request =
@@ -48,6 +49,7 @@ export type Request =
   | { kind: 'restore'; id: string }
   | { kind: 'read'; path: string }
   | { kind: 'card'; path: string }
+  | { kind: 'prepareDeletion'; path:string; placements:string[]; edges:string[]; expected:string }
   | { kind: 'write'; changes: Write[] };
 export type WindowAction = 'close' | 'reload';
 export interface Bridge {

@@ -10,7 +10,9 @@ import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
 import { COLLAPSED_CARD_HEIGHT, placementHeight, edgeStyle } from '../shared';
-import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle } from '../shared';
+import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion } from '../shared';
+
+const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
 
 function validateStem(stem:string) {
     if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error(ui.errors.invalidFilename);
@@ -64,7 +66,7 @@ export class Workspace {
   close() { this.db.close(); }
   assertReady(){if(this.renamePending)throw new Error(ui.errors.interruptedRename);}
   private async path(path: string) {
-    if (!path || isAbsolute(path) || path.includes('\0') || path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.'))) throw new Error(ui.errors.invalidWorkspacePath);
+    if (!path || isAbsolute(path) || path.includes('\0') || (!isTrash(path)&&path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.')))) throw new Error(ui.errors.invalidWorkspacePath);
     const target = resolve(this.root,path);
     if (!target.startsWith(this.root + sep)) throw new Error(ui.errors.pathLeavesWorkspace);
     let current = this.root;
@@ -78,6 +80,26 @@ export class Workspace {
   async read(path: string) { return fs.readFile(await this.path(path),'utf8'); }
   async card(path: string) { return readCard(path,await this.read(path)); }
   async asset(path: string) { return this.path(path); }
+  async prepareDeletion(path:string,placements:string[],edges:string[],expected:string):Promise<Deletion> {
+    this.assertReady();
+    const board=readBoard(path,await this.read(path));
+    if(board.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+    const selected=board.cards.filter(p=>!p.folder&&placements.includes(p.id));
+    const ids=new Set(selected.map(p=>p.cardId));
+    const changes:Write[]=[],nonEmpty:string[]=[];
+    for(const card of this.snapshot().cards.filter(c=>ids.has(c.id))){
+      const raw=await this.read(card.path),{front,body}=splitNote(raw);
+      if(readCard(card.path,raw).id!==card.id)throw new Error(ui.errors.externalEdit(card.path));
+      // The empty title placeholder is never stored; a blank H1 is editor scaffolding.
+      if(body.replace(/^\s*#(?:[ \t]+#*)?\s*$/,'').trim()||Object.keys(front.toJSON()??{}).some(key=>!['card-id','card-color'].includes(key)))nonEmpty.push(card.path);
+      changes.push({path:'.heavens-door/trash/'+randomUUID()+'.md',content:raw,expected:null},
+        {path:card.path,content:null,expected:revision(raw)});
+    }
+    const removed=new Set(board.cards.filter(p=>!p.folder&&ids.has(p.cardId)).map(p=>p.id));
+    const next={...board,cards:board.cards.filter(p=>!removed.has(p.id)),edges:board.edges.filter(e=>!edges.includes(e.id)&&!removed.has(e.from)&&!removed.has(e.to))};
+    if(removed.size||next.edges.length!==board.edges.length)changes.push({path,content:writeBoard(next),expected});
+    return {changes,nonEmpty};
+  }
   private async raw(path: string): Promise<string | null> { try { return await this.read(path); } catch(e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } }
   private async atomic(path: string, content: string | null) {
     const target = await this.path(path);
@@ -113,6 +135,7 @@ export class Workspace {
       }
       journal.push({ path: change.path, before, after: change.content });
     }
+    for(const change of changes)if(isTrash(change.path)&&change.content!==null)await fs.mkdir(dirname(await this.path(change.path)),{recursive:true});
     const journalFile = join(this.cache,'transaction.json');
     const handle = await fs.open(journalFile,'wx');
     try { await handle.writeFile(JSON.stringify(journal)); await handle.sync(); } finally { await handle.close(); }
@@ -158,6 +181,7 @@ export class Workspace {
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
   }
   async refresh(path: string,reconcile=true) {
+    if(isTrash(path))return;
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
     this.boards.delete(path); this.tags.delete(path);

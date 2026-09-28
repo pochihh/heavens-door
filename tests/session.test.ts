@@ -204,3 +204,62 @@ test('renaming flushes drafts, retains edits arriving during rename and follows 
   await session.undo();assert.equal(session.state.draft?.card.path,'Ideas/renamed.md');
   await session.undo(true);assert.equal(session.state.draft?.card.path,'Thoughts/renamed.md');
 });
+
+test('card deletion confirms content, preserves trash and references, and restores the entire selection with undo',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-delete-')),root=join(folder,'notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));
+  await w.createFolder('','Ideas');await w.createFolder('','Other');
+  await w.create('Ideas','empty',0,0);await w.create('Ideas','written',500,0);
+  const empty=await w.card('Ideas/empty.md'),written=await w.card('Ideas/written.md');
+  await w.saveCard(empty.path,'# \n\n',empty.revision);
+  let board=w.snapshot().boards.find(b=>b.folder==='Ideas')!;
+  board=(await w.saveBoard({...board,edges:[{id:'e',from:board.cards[0].id,to:board.cards[1].id}]},board.revision)).snapshot.boards.find(b=>b.folder==='Ideas')!;
+  const other=w.snapshot().boards.find(b=>b.folder==='Other')!;
+  await w.saveBoard({...other,cards:[{...board.cards[0],id:'reference'}]},other.revision);
+  const otherRaw=await w.read(other.path);
+  const mother=w.snapshot().boards.find(b=>!b.folder)!;
+  assert.deepEqual((await w.prepareDeletion(mother.path,mother.cards.map(p=>p.id),[],mother.revision)).changes,[],'card deletion never deletes whiteboard folders');
+  const bridge={request:async r=>{
+    if(r.kind==='card')return w.card(r.path);
+    if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected);
+    if(r.kind==='prepareDeletion')return w.prepareDeletion(r.path,r.placements,r.edges,r.expected);
+    if(r.kind==='write')return w.write(r.changes);
+    if(r.kind==='snapshot')return w.snapshot();
+    throw new Error('Unexpected request '+r.kind);
+  }} as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});
+  t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  const current=()=>session.state.snapshot!.boards.find(b=>b.path===board.path)!;
+  const emptyBytes=await w.read(empty.path),boardBytes=await w.read(board.path);
+  assert.equal(await session.deleteSelection(current(),[board.cards[0].id],[],()=>assert.fail('blank heading needs no confirmation')),true);
+  await assert.rejects(w.read(empty.path),/ENOENT/);
+  const trash=session.undoHistory.past.at(-1)!.edits.find(e=>e.path.startsWith('.heavens-door/trash/'))!.path;
+  assert.equal(await fs.readFile(join(root,trash),'utf8'),emptyBytes);
+  assert.equal(current().cards.length,1);assert.equal(current().edges.length,0);
+  assert.equal(await w.read(other.path),otherRaw,'other boards retain missing references');
+  await w.scan();assert.equal(w.snapshot().cards.length,1,'trash is excluded from indexing after restart/rescan');
+  await session.undo();assert.equal(await w.read(empty.path),emptyBytes);assert.equal(await w.read(board.path),boardBytes);
+  await assert.rejects(fs.readFile(join(root,trash)),/ENOENT/);
+  await session.undo(true);await session.undo();
+  await session.select(written.path);session.edit('# My title\n\nUnsaved content');
+  let confirmations=0;
+  const cancel=(names:string[])=>{confirmations++;assert.deepEqual(names,[empty.path,written.path]);return false;};
+  assert.equal(await session.deleteSelection(current(),current().cards.map(p=>p.id),['e'],cancel),false);
+  assert.equal(confirmations,1);assert.equal(current().cards.length,2);assert.equal(current().edges.length,1);
+  assert.match((await w.card(written.path)).body,/Unsaved content/,'draft flushes before confirmation');
+  const before=await w.read(written.path),step=session.undoHistory.past.length;
+  assert.equal(await session.deleteSelection(current(),current().cards.map(p=>p.id),['e'],()=>true),true);
+  assert.equal(current().cards.length,0);assert.equal(session.undoHistory.past.length,step+1);
+  await session.undo();assert.equal(await w.read(written.path),before);assert.equal(current().cards.length,2);assert.equal(current().edges.length,1);
+  const stale=await w.prepareDeletion(current().path,[current().cards[1].id],[],current().revision);
+  const card=await w.card(written.path);await w.saveCard(card.path,'# External update',card.revision);
+  await assert.rejects(w.write(stale.changes),/External changes/);
+  assert.equal((await w.card(written.path)).body,'# External update');
+  assert.equal(await w.read(board.path),boardBytes,'failed deletion does not partially remove placements');
+  for(const body of ['# Title','![image](asset.png)','[Link](https://example.com)','---\nstatus: todo\n---\n']){
+    const raw=body.startsWith('---')?body:'---\ncard-id: content\n---\n'+body;
+    const now=await w.card(written.path);await w.write([{path:written.path,content:raw,expected:now.revision}]);
+    const b=w.snapshot().boards.find(b=>b.path===board.path)!,p=b.cards.find(p=>p.cardId===(w.snapshot().cards.find(c=>c.path===written.path)!.id))!;
+    assert.deepEqual((await w.prepareDeletion(b.path,[p.id],[],b.revision)).nonEmpty,[written.path]);
+  }
+});

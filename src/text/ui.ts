@@ -43,7 +43,7 @@ export const ui = {
     moveCards: "Move cards into Notes",
   },
   style: {
-    empty:'Open a card or whiteboard to edit styles.', selected:(n:number)=>`${n} selected`, mixed:'Mixed',
+    empty:'Open a card or whiteboard to edit styles.', selected:(n:number)=>`${n} selected`,
     color:'Color',selectItems:'Select cards, whiteboards or edges to color them.',strokeWidth:'Stroke width',strokeStyle:'Stroke style',
     solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
     arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',
@@ -65,7 +65,6 @@ export const ui = {
     contentsCount: (cards: number, boards: number) => `${cards} card${cards === 1 ? "" : "s"} · ${boards} whiteboard${boards === 1 ? "" : "s"}`,
     resize: (name: string) => `Resize ${name}`,
     card: "card",
-    selectedCount: (count: number) => `${count} selected`,
     whiteboardActions: "Whiteboard actions",
     cardActions: "Card actions",
     autoHeight: "Auto height",
@@ -100,6 +99,8 @@ export const ui = {
     loading: "Loading…",
   },
   card: {
+    delete: "Delete card",
+    confirmDelete: (names:string[]) => `Delete ${names.length===1?`“${names[0]}”`:`${names.length} cards`}?\n\nCard files and their content will move to workspace trash. Other whiteboards will show missing references. You can undo this action.`,
     linkedFrom: (count: number) => `Linked from · ${count}`,
     count: (count: number) => `${count} card${count === 1 ? "" : "s"}`,
     placeCardOnWhiteboard: "Place card on whiteboard",
@@ -165,6 +166,7 @@ export const ui = {
     placeCardReference: "Place card reference",
     automaticCheckpoint: "Automatic checkpoint",
     createCard: "Create card",
+    deleteSelection: "Delete selection",
     savedCheckpoint: "Saved checkpoint",
     unavailable: "History is unavailable for this existing Git repository.",
     current: " · Current",

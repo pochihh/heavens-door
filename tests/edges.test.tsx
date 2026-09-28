@@ -80,7 +80,7 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
-test('Style View colors mixed selections together and reserves detailed strokes for edges',async()=>{
+test('Style View separates fills from strokes and shows mixed values without labels',async()=>{
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
   let board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[{id:'a',cardId:'a',x:0,y:0,width:300,height:200},{id:'b',cardId:'b',x:500,y:0,width:300,height:200,folder:'Child'}],edges:[{id:'e',from:'a',to:'b',strokeColor:'#e03131'}]};
   let saved:Board|undefined,fill:{ids:string[];color:string|undefined}|undefined;
@@ -91,15 +91,20 @@ test('Style View colors mixed selections together and reserves detailed strokes 
   try{
     await render(['a','b'],['e']);
     assert.equal(document.querySelectorAll('select').length,0);
-    assert.deepEqual(labels(),['Color'],'mixed selections expose only the shared Color action');
+    assert.deepEqual(labels(),[],'card fills and edge strokes are not a common property');
+    assert.equal(document.querySelector('.color-swatch'),null);
+    assert.equal(fill,undefined);
+    await render(['a','b'],[]);
     assert.equal(document.querySelector<HTMLElement>('[aria-label="Rose"] span')!.style.background,'rgb(201, 131, 138)','swatches show the palette color without the dark card tint');
-    assert.ok(document.querySelector('small')?.textContent?.includes('Mixed'));
+    assert.ok(!document.body.textContent?.includes('Mixed'));
     await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click();});
     assert.deepEqual(fill,{ids:['a'],color:'#a699c3'},'card color targets its source file');
-    assert.equal(saved?.edges[0].strokeColor,'#a699c3');assert.equal(saved?.cards[1].fillColor,'#a699c3');
+    assert.equal(saved!.edges[0].strokeColor,'#e03131','fill changes never recolor edges');assert.equal(saved!.cards[1].fillColor,'#a699c3');
     assert.deepEqual(saved?.cards[0],board.cards[0],'card placement decoration is untouched');
     for(const ids of [['a'],['b'],['a','b']]){await render(ids,[]);assert.deepEqual(labels(),['Color']);}
     await render([],['e']);
+    await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
+    assert.equal(saved!.edges[0].strokeColor,'#91aa8b');assert.deepEqual(saved!.cards,board.cards);
     assert.ok(document.querySelector('[aria-label="4 px"] svg'),'edge thickness keeps its visual buttons');
     assert.ok(labels().includes('Arrows'));
     assert.equal(document.querySelector('[aria-label="Stroke style"] [aria-label="None"]'),null);
@@ -110,8 +115,11 @@ test('Style View colors mixed selections together and reserves detailed strokes 
     await toggle('End arrow');assert.equal(board.edges[0].toArrowhead,'arrow');assert.equal(board.edges[0].fromArrowhead,'arrow','both ends can be enabled');
     await toggle('Start arrow');assert.equal(board.edges[0].fromArrowhead,'none');assert.equal(board.edges[0].toArrowhead,'arrow');
     await toggle('End arrow');assert.equal(board.edges[0].toArrowhead,'none','both ends can be disabled');
-    board={...board,edges:[board.edges[0],{...board.edges[0],id:'e2',fromArrowhead:'triangle'}]};await render([],['e','e2']);
+    board={...board,edges:[board.edges[0],{...board.edges[0],id:'e2',fromArrowhead:'triangle',strokeColor:'#ffffff',strokeWidth:8}]};await render([],['e','e2']);
     assert.equal(document.querySelector('[aria-label="Start arrow"]')!.getAttribute('aria-pressed'),'mixed');
+    assert.ok(!document.body.textContent?.includes('Mixed'));
+    assert.equal(document.querySelectorAll('.style-color [aria-pressed=true]').length,0);
+    assert.equal(document.querySelectorAll('[aria-label="Stroke width"] [aria-pressed=true]').length,0);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Start arrow"]')!.click());
     assert.ok(board.edges.every(e=>e.fromArrowhead==='arrow'),'a mixed toggle enables that end on every selected edge');
     await render([],[]);assert.deepEqual(labels(),['Show mention links'],'canvas and mention appearance are theme-controlled');

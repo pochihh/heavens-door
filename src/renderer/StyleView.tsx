@@ -14,7 +14,7 @@ function Color({label,value,palette,onChange}:{label:string;value:string|undefin
     <button className="color-swatch theme" aria-pressed={value===''} aria-label={ui.style.theme} data-tooltip={tooltips.style.theme} onClick={()=>onChange(undefined)}><span/></button>
     {palette.map(color=><button key={color.id} className="color-swatch" aria-pressed={value?.toLowerCase()===color.color.toLowerCase()} aria-label={color.name} data-tooltip={color.name} onClick={()=>onChange(color.color)}><span style={{background:color.color}}/></button>)}
     <Tool icon="plus" className={editing?'selected':''} label={tooltips.style.custom} aria-expanded={editing} onClick={()=>setEditing(!editing)}/>
-  </div>{value===undefined&&<small>{ui.style.mixed}</small>}
+  </div>
     {editing&&<div className="custom-color" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setEditing(false);}if(e.key==='Enter'&&isHexColor(custom)){e.preventDefault();onChange(custom);setEditing(false);}}}>
       <input type="color" aria-label={ui.style.custom} value={isHexColor(custom)?custom:'#8b929e'} onChange={e=>setCustom(e.target.value)}/>
       <input aria-label={ui.style.colorValue} value={custom} maxLength={7} aria-invalid={!isHexColor(custom)} onChange={e=>setCustom(e.target.value)} spellCheck={false}/>
@@ -25,7 +25,7 @@ function Color({label,value,palette,onChange}:{label:string;value:string|undefin
 function Choice({label,value,choices,onChange,sample,tip}:{label:string;value:string|number|boolean|undefined;choices:[string|number|boolean,string][];onChange:(value:string)=>void;sample?:(value:string)=>ReactNode;tip?:(value:string)=>string}) {
   return <fieldset className="style-choice"><legend>{label}</legend><div className="style-buttons" role="group" aria-label={label}>
     {choices.map(([v,name])=><button key={String(v)} type="button" aria-label={name} aria-pressed={value!==undefined&&String(value)===String(v)} data-tooltip={tip?.(String(v))??name} onClick={()=>onChange(String(v))}>{sample?sample(String(v)):name}</button>)}
-  </div>{value===undefined&&<small>{ui.style.mixed}</small>}</fieldset>;
+  </div></fieldset>;
 }
 function LineSample({width=2,style='solid',arrow=false,end='end'}:{width?:number;style?:string;arrow?:boolean;end?:'start'|'end'}) {
   return <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true"><g transform={end==='start'?'translate(28 0) scale(-1 1)':undefined}>
@@ -68,7 +68,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   </>;
   const fill=(fillColor:string|undefined)=>{
     const ids=card?[card.id]:cards.filter(p=>!p.folder).map(p=>p.cardId);
-    const updated=board&&(cards.some(p=>p.folder)||edges.length)?{...board,cards:board.cards.map(p=>p.folder&&cards.includes(p)?{...p,fillColor}:p),edges:board.edges.map(e=>edges.includes(e)?{...e,strokeColor:fillColor}:e)}:undefined;
+    const updated=board&&cards.some(p=>p.folder)?{...board,cards:board.cards.map(p=>p.folder&&cards.includes(p)?{...p,fillColor}:p)}:undefined;
     void session.fillCards(ids,fillColor,updated,board).catch(()=>undefined);
   };
   return <div className="style-view">
@@ -78,8 +78,9 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
       <p className="empty-label">{ui.style.selectItems}</p>
       <Choice label={ui.style.showMentions} value={board.showMentions!==false} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>boardStyle({showMentions:v==='true'})}/>
     </>:<>
-      {color(ui.style.color,common([...cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??''),...edges.map(e=>e.strokeColor??'')]),fill)}
+      {!edges.length&&color(ui.style.color,common(cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
       {!!edges.length&&!cards.length&&<>
+        {color(ui.style.color,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}
         {stroke(edges,apply)}
         <fieldset className="style-choice"><legend>{ui.style.arrows}</legend><div className="style-buttons" role="group" aria-label={ui.style.arrows}>
           {(['fromArrowhead','toArrowhead'] as const).map((key,index)=>{

@@ -56,6 +56,7 @@ interface Props {
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
   enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,mode?:NavigationMode)=>void; onReference?: (id:string)=>void;
+  onDelete?:(board:Board,placements:string[],edges:string[])=>Promise<boolean>;
   onRename?:(id:string,stem:string)=>Promise<void>;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
   onOpen: (path: string) => void; onCreate: (x: number, y: number) => void; onCreateBoard?:(x:number,y:number)=>void;
@@ -71,7 +72,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
+export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -82,6 +83,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
   const rightPress = useRef(false);
   const gesture = useRef<Gesture | null>(null);
   const pendingSave = useRef<Board | null>(null);
+  const deleting=useRef(false);
   const dragFrame = useRef<number | null>(null);
   const dragPoint = useRef({ x: 0, y: 0 });
   const cache = useRef(new Map<string, string>());
@@ -112,8 +114,8 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
   }, [lookup, onOpen, onReference]);
   const selectionCallback=useRef(onSelection);selectionCallback.current=onSelection;
   useEffect(()=>{if(enabled)selectionCallback.current?.({path:board.path,cards:selected,edges:selectedEdges});},[enabled,board.path,selected,selectedEdges]);
-  const latest = useRef({ deleteEdges, board: current, onFinish, move, end, enabled, onCamera, heightOf });
-  latest.current = { deleteEdges, board: current, onFinish, move, end, enabled, onCamera, heightOf };
+  const latest = useRef({ deleteSelection, board: current, onFinish, move, end, enabled, onCamera, heightOf });
+  latest.current = { deleteSelection, board: current, onFinish, move, end, enabled, onCamera, heightOf };
 
   useLayoutEffect(() => {
     const element = viewport.current!;
@@ -125,7 +127,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
     });
     observer.observe(element);
     const wheel = (event: WheelEvent) => {
-      if ((event.target as HTMLElement).closest('.canvas-controls,.selection-tools,.editor-tools,.card-details')) return;
+      if ((event.target as HTMLElement).closest('.canvas-controls,.editor-tools,.card-details')) return;
       if (gesture.current) { event.preventDefault(); return; }
       nav.wheel(event);
     };
@@ -133,7 +135,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
       if (event.isComposing || !latest.current.enabled) return;
       if (event.key === 'Escape') { cancel(); setSelected([]); setSelectedEdges([]); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
       if (editable(event.target)) return;
-      if ((event.key==='Delete'||event.key==='Backspace')&&element.contains(event.target as Node)){event.preventDefault();latest.current.deleteEdges();return;}
+      if ((event.key==='Delete'||event.key==='Backspace')&&element.contains(event.target as Node)){event.preventDefault();latest.current.deleteSelection();return;}
       if (event.code === 'Space' && !(event.target instanceof HTMLElement && event.target.closest('button'))) {
         spaceDown.current = true; element.dataset.space = 'true'; event.preventDefault();
       }
@@ -191,7 +193,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
     const target = e.target as HTMLElement;
     rightPress.current=e.button===2;
     if (target.closest('.edge-layer,.edge-handles')) return;
-    if (target.closest('.canvas-controls,.selection-tools,.canvas-empty button,.card-editor') || editable(target)) return;
+    if (target.closest('.canvas-controls,.canvas-empty button,.card-editor') || editable(target)) return;
     const card = target.closest<HTMLElement>('.board-card');
     if (e.button === 1 || (e.button === 0 && spaceDown.current) || (e.button === 2 && !card)) {
       begin(e, 'pan'); return;
@@ -298,9 +300,20 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
     setSelectedEdges(previous=>!add?ids:toggle?previous.includes(ids[0])?previous.filter(id=>!ids.includes(id)):[...previous,...ids]:[...new Set([...previous,...ids])]);
     viewport.current?.focus({preventScroll:true});
   }
-  function deleteEdges(){
-    if(!selectedEdges.length)return;
-    save({...current,edges:current.edges.filter(e=>!selectedEdges.includes(e.id))},ui.history.deleteEdges);setSelectedEdges([]);
+  async function deleteSelection(placements=selected,edges=selectedEdges){
+    if(deleting.current||gesture.current)return;
+    if(onDelete){
+      deleting.current=true;
+      try{if(await onDelete(current,placements,edges)){setSelected([]);setSelectedEdges([]);}}
+      catch{ /* Session reports save errors without losing the selection. */ }
+      finally{deleting.current=false;}
+    }else if(edges.length){
+      save({...current,edges:current.edges.filter(e=>!edges.includes(e.id))},ui.history.deleteEdges);setSelectedEdges([]);
+    }
+  }
+  function removeReference(p:Placement){
+    save({...current,cards:current.cards.filter(c=>c.id!==p.id),edges:current.edges.filter(e=>e.from!==p.id&&e.to!==p.id)},ui.history.removePlacement);
+    setSelected(ids=>ids.filter(id=>id!==p.id));
   }
   function toggleCollapsed(p:Placement) {
     if(!p.collapsed)onFinish?.();
@@ -311,7 +324,8 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
       [{label:ui.whiteboard.autoHeight,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
-      }}]});
+      }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,run:()=>removeReference(p)}]:[]),
+      ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'close' as const,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
   }
   function openCanvasMenu(clientX:number,clientY:number) {
     const element=viewport.current!,nav=navigation.current!;nav.flush();
@@ -357,7 +371,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
-        if(!rightPress.current&&!(e.target as HTMLElement).closest('.board-card,.edge-layer,.edge-handles,button,input,.selection-tools'))openCanvasMenu(e.clientX,e.clientY);
+        if(!rightPress.current&&!(e.target as HTMLElement).closest('.board-card,.edge-layer,.edge-handles,button,input'))openCanvasMenu(e.clientX,e.clientY);
       }} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}}}
       onDoubleClick={e => {
         if (e.target === viewport.current) {
@@ -415,11 +429,6 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
       </div>
       <div className="selection-box" ref={selectionBox}/>
       {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={() => onCreate(100, 100)}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
-      {!!(selected.length+selectedEdges.length) && !active && <div className="selection-tools"><span>{ui.whiteboard.selectedCount(selected.length+selectedEdges.length)}</span><Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
-      {!!selectedEdges.length&&<button data-tooltip={tooltips.edges.delete} onClick={deleteEdges}>{ui.edges.delete}</button>}
-      {!!selected.length&&<button disabled={selected.some(id=>{const p=placements.get(id),c=p&&lookup.get(p.cardId);return !!p?.folder||!!c&&parent(c.path)===portable(board.folder);})} onClick={() => {
-        save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, ui.history.removePlacement); setSelected([]);
-      }} data-tooltip={tooltips.whiteboard.removeReference}>{ui.whiteboard.removeReference}</button>}</div>}
       <div className="canvas-controls">
         <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
         <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>

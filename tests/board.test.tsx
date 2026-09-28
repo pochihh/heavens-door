@@ -354,3 +354,32 @@ test('canvas menu captures board coordinates, preserves right-drag panning and r
     await act(async()=>document.body.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null,'outside click dismisses canvas menu');
   }finally{await act(async()=>root.unmount());}
 });
+
+test('card menu and keyboard share deletion without intercepting text editing',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,Node:dom.window.Node,innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+  const {Whiteboard}=await import('../src/renderer/Board');
+  const card={id:'c',name:'a',path:'Ideas/a.md',revision:'r',legacy:false,body:''};
+  Object.assign(dom.window,{door:{request:async()=>card}});
+  const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[{id:'p',cardId:'c',x:0,y:0,width:340,height:280}],edges:[]};
+  const calls:{placements:string[];edges:string[]}[]=[],root=createRoot(document.getElementById('root')!);
+  try{
+    await act(async()=>root.render(<Whiteboard board={board} cards={[card]} onSave={()=>undefined} onOpen={()=>undefined} onCreate={()=>undefined} onDelete={async(b,placements,edges)=>{assert.equal(b,board);calls.push({placements,edges});return false;}}/>));
+    const menu=document.querySelector<HTMLButtonElement>('[aria-label="Card actions"]')!;
+    await act(async()=>menu.click());
+    const deletion=[...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(b=>b.textContent==='Delete card');assert.ok(deletion);
+    await act(async()=>deletion.click());assert.deepEqual(calls,[{placements:['p'],edges:[]}]);
+    const cardElement=document.querySelector<HTMLElement>('[data-placement="p"]')!;
+    await act(async()=>{
+      cardElement.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0,clientX:100,clientY:100}));
+      cardElement.dispatchEvent(new dom.window.MouseEvent('pointerup',{bubbles:true,button:0,clientX:100,clientY:100}));
+    });
+    assert.equal(document.querySelector('.selection-tools'),null);
+    await act(async()=>document.querySelector('.canvas')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Delete',bubbles:true})));
+    assert.deepEqual(calls[1],calls[0],'keyboard and menu target the same card');
+    const input=document.createElement('input');cardElement.append(input);
+    await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Backspace',bubbles:true})));
+    assert.equal(calls.length,2,'typing never deletes a card');input.remove();
+  }finally{await act(async()=>root.unmount());}
+});

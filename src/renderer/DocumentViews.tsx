@@ -75,6 +75,7 @@ export function BoardView({onSelection,onStyle,board,snapshot,session,active,mem
     }}
     onOpen={path=>{onActivate();void session.select(path).catch(()=>undefined);}}
     onReference={id=>onOpen('card:'+id)} onRename={(id,stem)=>session.renameCard(id,stem)}
+    onDelete={(base,placements,edges)=>session.deleteSelection(base,placements,edges,names=>window.confirm(ui.card.confirmDelete(names)))}
     onCreate={onCreate} onCreateBoard={onCreateBoard}
     draft={active?session.state.draft:null} onEdit={body=>session.edit(body)}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;

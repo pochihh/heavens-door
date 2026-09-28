@@ -8,7 +8,7 @@ export const tooltips = {
   edges: {
     anchor:'Drag to another anchor, or click two anchors to create an edge',
     reconnect:'Drag to reconnect this endpoint',select:'Select edge',editLabel:'Edit edge label',
-    showStyle:'Style the selection',delete:'Delete the selected edges',
+    showStyle:'Style the selection',
   },
   style:{sourceArrow:'Arrow at the start of the edge',targetArrow:'Arrow at the end of the edge',theme:'Use the theme color',custom:'Choose a custom color',showMentions:'Show links mentioned in card content; source notes stay unchanged',
     editPalette:'Customize this workspace’s color palette',addColor:'Add a palette color',removeColor:'Remove this palette color',moveUp:'Move color earlier',moveDown:'Move color later',resetPalette:'Restore the default palette',savePalette:'Save palette for future selections',cancelPalette:'Discard palette changes',applyColor:'Apply custom color',width:(n:number)=>`Stroke width: ${n} px`,size:(n:number)=>`Label size: ${n} px`},
@@ -27,7 +27,6 @@ export const tooltips = {
     cardReference: "Reference to a card in another whiteboard",
     resizeWhiteboard: "Resize whiteboard",
     resizeCard: "Resize card",
-    removeReference: "Remove a reference; cards belonging to this folder always stay on its whiteboard",
     zoomOut: "Zoom out",
     zoomToFit: "Zoom to fit · ⌘1 / Ctrl+1",
     zoomIn: "Zoom in",
