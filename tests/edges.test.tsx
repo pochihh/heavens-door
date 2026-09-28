@@ -23,13 +23,13 @@ test('edges and styles round-trip independently of indexed mentions, including u
   const board=w.snapshot().boards.find(b=>b.folder==='Ideas')!;
   assert.deepEqual(w.boardMentions(board.path).map(r=>({...r})),[{from:a.id,to:b.id}]);
   const edge:Edge={id:'edge',from:board.cards[0].id,to:board.cards[1].id,fromSide:'right',toSide:'left',fromArrowhead:'triangle-outline',toArrowhead:'arrow',label:'Related',labelSize:18,strokeColor:'#7950f2',strokeWidth:4,strokeStyle:'dashed'};
-  const styled:Board={...board,showMentions:false,mentionStyle:{strokeColor:'#e03131',strokeStyle:'dotted'},canvasColor:'#18181b',edges:[edge],cards:board.cards.map(p=>({...p,fillColor:'#153e75',strokeStyle:'dotted',strokeWidth:2}))};
-  const decoded=readBoard(board.path,writeBoard(styled));assert.deepEqual(decoded.edges,[edge]);assert.equal(decoded.cards[0].fillColor,'#153e75');assert.equal(decoded.showMentions,false);
+  const styled:Board={...board,showMentions:false,mentionStyle:{strokeColor:'#e03131',strokeStyle:'dotted'},canvasColor:'#18181b',edges:[edge,{...edge,id:'parallel',from:edge.to,to:edge.from,label:'Another relationship',strokeStyle:'dotted'}],cards:board.cards.map(p=>({...p,fillColor:'#153e75',strokeStyle:'dotted',strokeWidth:2}))};
+  const decoded=readBoard(board.path,writeBoard(styled));assert.deepEqual(decoded.edges,styled.edges,'parallel and reversed edges retain independent IDs, labels and styles');assert.equal(decoded.cards[0].fillColor,'#153e75');assert.equal(decoded.showMentions,false);
   const before=await w.read(a.path),undo=new UndoHistory();const mutation=await w.saveBoard(styled,board.revision);undo.record('Style',mutation.edits);
   assert.equal(await w.read(a.path),before,'visual edges never write mentions into notes');
   assert.equal(w.boardMentions(board.path).length,1,'visibility and edges do not change indexed mentions');
   await undo.travel(false,changes=>w.write(changes));assert.equal(w.snapshot().boards.find(b=>b.path===board.path)!.edges.length,0);
-  await undo.travel(true,changes=>w.write(changes));assert.equal(w.snapshot().boards.find(b=>b.path===board.path)!.edges[0].label,'Related');
+  await undo.travel(true,changes=>w.write(changes));assert.deepEqual(w.snapshot().boards.find(b=>b.path===board.path)!.edges,styled.edges,'undo/redo restores both relationships independently');
   assert.throws(()=>writeBoard({...styled,edges:[{...edge,strokeColor:'url(https://example.com)'}]}),/Invalid whiteboard style/);
   assert.throws(()=>writeBoard({...styled,edges:[{...edge,strokeWidth:NaN}]}),/Invalid whiteboard style/);
   const old=defaultDocks();old.right.groups[0].tabs=['agent','history'];old.right.groups[0].active='history';
@@ -76,7 +76,24 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
     assert.equal(document.querySelector('.edge-handles')!.classList.contains('connecting'),false);assert.equal(writes,3);
     await press(document.querySelector('.edge-hit')!,420,140);
     await act(async()=>document.querySelector('.canvas')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Delete',bubbles:true})));
-    assert.equal(current.edges.length,1);assert.deepEqual(errors,[]);
+    assert.equal(current.edges.length,1);
+    const original=current.edges[0];
+    await press(document.querySelector('[data-placement="p1"]')!,600,100);
+    await press(anchor('p1','right'),840,140);await press(anchor('p2','top'),1170,0);
+    assert.equal(current.edges.length,2,'a repeated pair and identical anchors create a distinct edge');
+    assert.deepEqual(current.edges[0],original,'creating another relationship leaves its sibling unchanged');
+    await press(document.querySelector('[data-placement="p2"]')!,1100,100);
+    await press(anchor('p2','top'),1170,0);await press(anchor('p1','right'),840,140);
+    assert.equal(current.edges.length,3,'reversed connections also remain distinct');
+    assert.equal(new Set(current.edges.map(e=>e.id)).size,3);
+    const reversed=current.edges[2].id;
+    for(const [x,to] of [[340,'p0'],[840,'p1']] as const){
+      await act(async()=>{pointer(document.querySelector('[aria-label="End endpoint"]')!,'pointerdown',x===340?840:340,140);pointer(document,'pointermove',x,140);pointer(document,'pointerup',x,140);});
+      assert.equal(current.edges.length,3);assert.equal(current.edges.find(e=>e.id===reversed)!.to,to,'reconnection allows a pair that already has other edges');
+    }
+    await act(async()=>document.querySelector('.canvas')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Delete',bubbles:true})));
+    assert.equal(current.edges.length,2);assert.ok(current.edges.every(e=>e.id!==reversed),'deleting one edge preserves its siblings');
+    assert.deepEqual(errors,[]);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 

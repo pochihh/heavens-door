@@ -43,9 +43,8 @@ export function Edges(props:Props) {
     const g=pending.current,target=exact??targetAt(x,y);if(!g||!target||target.card.id===g.from){clear();return;}
     const {board,onSave,onSelect}=latest.current;
     const next:Edge=g.edge?{...g.edge,[g.endpoint!]:target.card.id,[g.endpoint!+'Side']:target.side}:{id:crypto.randomUUID(),from:g.from,to:target.card.id,fromSide:g.side,toSide:target.side,fromArrowhead:'none',toArrowhead:'arrow',...latest.current.edgeDefaults};
-    const duplicate=board.edges.find(e=>e.id!==next.id&&((e.from===next.from&&e.to===next.to)||(e.from===next.to&&e.to===next.from)));
-    if(!duplicate){onSave({...board,edges:g.edge?board.edges.map(e=>e.id===next.id?next:e):[...board.edges,next]},g.edge?ui.history.reconnectEdge:ui.history.createEdge);onSelect([next.id],false);}
-    else onSelect([duplicate.id],false);
+    onSave({...board,edges:g.edge?board.edges.map(e=>e.id===next.id?next:e):[...board.edges,next]},g.edge?ui.history.reconnectEdge:ui.history.createEdge);
+    onSelect([next.id],false);
     clear();
   }
   function keyboardStart(card:Placement,side:AnchorSide,at:Point,edge?:Edge,endpoint?:'from'|'to'){
