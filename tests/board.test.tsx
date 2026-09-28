@@ -319,7 +319,7 @@ test('a tall auto-height card is measured before culling when the camera starts 
   try{
     await act(async()=>root.render(<Whiteboard board={board} cards={[card]} onOpen={()=>undefined} onCreate={()=>undefined} onSave={()=>assert.fail('measurement must not save')}/>));
     assert.equal(document.querySelectorAll('.card-preview').length,1,'visible tail renders even when saved fallback height is offscreen');
-    assert.equal(document.querySelector('line')?.getAttribute('y1'),'-1250','connections use measured content height');
+    assert.match(document.querySelector('.edge-stroke')!.getAttribute('d')!,/^M 340 -1250 /,'edges use measured content height');
   }finally{await act(async()=>root.unmount());}
 });
 

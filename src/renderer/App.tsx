@@ -3,6 +3,7 @@ import { tooltips } from '../text/tooltips';
 import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { remapKey } from '../path-remap';
+import { StyleView, type BoardSelection } from './StyleView';
 import { Breadcrumbs } from './Breadcrumbs';
 import { Session } from './session';
 import type { Mutation, Preferences, Snapshot } from '../shared';
@@ -51,6 +52,7 @@ function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:n
 }
 function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const state=session.state,prefs=snapshot.preferences??defaults;
+  const [boardSelection,setBoardSelection]=useState<BoardSelection>();
   const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
   const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
@@ -227,7 +229,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="document-content">
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
           !info.exists?<p className="notice">{ui.errors.fileMissing}</p>:
-          board?<BoardView key={p.active} board={board} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
+          board?<BoardView key={p.active} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag?<TagView key={p.active} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={p.active} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView key={p.active} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>open(key,p.id)} onViewChange={rememberViews}/>}
       </div>
@@ -243,6 +245,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </div>;
   }
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
+    if(module==='style'){const board=snapshot.boards.find(b=>'board:'+b.folder===active.active);return <StyleView board={board} selection={boardSelection?.path===board?.path?boardSelection:undefined} session={session}/>;}
     if(module==='history')return <><div className="module-toolbar"><div className="toolbar-spacer"/><Tool icon="plus" label={tooltips.history.saveCheckpoint} disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
     if(module==='agent')return <div className="agent-empty">{ui.agent.disconnected}</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;

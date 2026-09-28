@@ -1,9 +1,13 @@
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
 export interface Card { id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
-export interface Placement { id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
-export interface Edge { id: string; from: string; to: string }
-export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; inbox?:{x:number;y:number} }
+export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
+export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
+export interface Stroke { strokeColor?:string; strokeWidth?:number; strokeStyle?:'solid'|'dashed'|'dotted'|'none' }
+export interface Placement extends Stroke { fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
+export interface Edge extends Stroke { id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:number }
+export interface Mention { from:string; to:string }
+export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; showMentions?:boolean; mentionStyle?:Stroke; canvasColor?:string; gridColor?:string; inbox?:{x:number;y:number} }
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
@@ -20,6 +24,7 @@ export interface Write { path: string; content: string | null; expected: string 
 export type Request =
   | { kind: 'open'; root: string; cache: string }
   | { kind: 'snapshot' }
+  | { kind: 'boardMentions'; path:string }
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
   | { kind: 'preferences'; patch: Partial<Preferences> }

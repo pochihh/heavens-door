@@ -461,6 +461,13 @@ export class Workspace {
   async saveBoard(board: Board, expected: string) {
     return this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);
   }
+  boardMentions(path:string) {
+    const board=this.boards.get(path);if(!board)return [];
+    const ids=[...new Set(board.cards.filter(p=>!p.folder).map(p=>p.cardId))];
+    return this.db.prepare(`SELECT DISTINCT c.id AS "from", l.target AS "to"
+      FROM json_each(?) selected JOIN cards c ON c.id=selected.value JOIN links l ON l.source=c.path
+      WHERE l.target IN (SELECT value FROM json_each(?)) AND c.id<>l.target`).all(JSON.stringify(ids),JSON.stringify(ids));
+  }
   query(text: string) {
     if (text.startsWith('backlinks:')) return this.db.prepare('SELECT DISTINCT source AS path FROM links WHERE target=?').all(text.slice(10));
     const terms = text.trim().split(/\s+/).filter(Boolean).map(t => `"${t.replaceAll('"','""')}"*`).join(' AND ');

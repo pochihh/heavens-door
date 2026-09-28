@@ -5,6 +5,12 @@ export const tooltips = {
     close: (name: string) => `Close ${name}`,
     view: (name: string) => `${name} · Drag to move; right-click for layout options`,
   },
+  edges: {
+    anchor:'Drag to another anchor, or click two anchors to create an edge',
+    reconnect:'Drag to reconnect this endpoint',select:'Select edge',editLabel:'Edit edge label',
+    showStyle:'Style the selection',delete:'Delete the selected edges',
+  },
+  style:{theme:'Use the theme color',custom:'Choose a custom color',showMentions:'Show links mentioned in card content; source notes stay unchanged'},
   whiteboard: {
     navigationDevice: {
       auto: 'Navigation device: Auto',
@@ -20,7 +26,6 @@ export const tooltips = {
     cardReference: "Reference to a card in another whiteboard",
     resizeWhiteboard: "Resize whiteboard",
     resizeCard: "Resize card",
-    connectSelectedCards: "Connect selected cards",
     removeReference: "Remove a reference; cards belonging to this folder always stay on its whiteboard",
     zoomOut: "Zoom out",
     zoomToFit: "Zoom to fit · ⌘1 / Ctrl+1",

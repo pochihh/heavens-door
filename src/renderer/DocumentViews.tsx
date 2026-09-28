@@ -7,6 +7,8 @@ import type { Session } from './session';
 import { CardEditor, type EditorFocus } from './Editor';
 import { preview } from './markdown';
 import { Whiteboard } from './Board';
+import type { BoardSelection } from './StyleView';
+import type { Mention } from '../shared';
 import type { ViewMemory } from '../layout';
 export type { ViewMemory } from '../layout';
 import { Icon } from './Icons';
@@ -54,12 +56,17 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     </details>
   </section>;
 }
-export function BoardView({board,snapshot,session,active,memory,onActivate,onOpen,onNavigate,onCreate,onCreateBoard,onMigrate,onViewChange,onCycleInput}:{
-  board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onNavigate:(key:string,mode?:NavigationMode)=>void;onCreate:(x:number,y:number)=>void;onCreateBoard:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;onCycleInput:()=>void;
+export function BoardView({onSelection,onStyle,board,snapshot,session,active,memory,onActivate,onOpen,onNavigate,onCreate,onCreateBoard,onMigrate,onViewChange,onCycleInput}:{
+  onSelection:(selection:BoardSelection)=>void;onStyle:()=>void;board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onNavigate:(key:string,mode?:NavigationMode)=>void;onCreate:(x:number,y:number)=>void;onCreateBoard:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;onCycleInput:()=>void;
 }) {
+  const [mentions,setMentions]=useState<Mention[]>([]);
+  useEffect(()=>{let live=true;if(board.showMentions===false)return;
+    void session.bridge.request<Mention[]>({kind:'boardMentions',path:board.path}).then(rows=>{if(live)setMentions(rows);}).catch(error=>{if(live)session.update({error:String(error)});});
+    return()=>{live=false;};
+  },[session,snapshot.cards,board.path,board.showMentions,board.cards.length]);
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
-  return <Whiteboard board={shown} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
+  return <Whiteboard board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
     boards={snapshot.boards} onOpenFolder={(folder,mode)=>onNavigate('board:'+folder,mode)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error(ui.errors.migrateRootFirst));}

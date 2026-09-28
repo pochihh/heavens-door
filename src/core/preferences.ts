@@ -15,7 +15,7 @@ export function validatePreferences(value: unknown): Preferences {
   if(p.explorerMode!==undefined&&!['whiteboards','files'].includes(p.explorerMode))throw new Error('Invalid explorer mode');
   if(p.whiteboardInput!==undefined&&!['auto','mouse','trackpad'].includes(p.whiteboardInput))throw new Error('Invalid whiteboard input mode');
   if(p.newSplitDirection!==undefined&&!['row','column'].includes(p.newSplitDirection))throw new Error('Invalid navigation settings');
-  if(p.docks!==undefined)validateDocks(p.docks);
+  if(p.docks!==undefined)p.docks=validateDocks(p.docks);
   if(p.documents!==undefined)validateDocuments(p.documents);
   if(p.navigation!==undefined){
     if(!p.navigation||typeof p.navigation!=='object'||Array.isArray(p.navigation))throw new Error('Invalid module navigation');

@@ -3,9 +3,9 @@ import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot }
 import { UndoHistory } from './history';
 
 function layout(board: Board) {
-  return JSON.stringify([board.name,board.inbox,
-    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false,p.autoHeight??true]),
-    board.edges.map(e => [e.id,e.from,e.to])]);
+  return JSON.stringify([board.name,board.inbox,board.showMentions,board.mentionStyle,board.canvasColor,board.gridColor,
+    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false,p.autoHeight??true,p.fillColor,p.strokeColor,p.strokeWidth,p.strokeStyle]),
+    board.edges]);
 }
 
 interface State {

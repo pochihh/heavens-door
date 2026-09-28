@@ -60,6 +60,7 @@ async function dispatch(request: Request) {
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
     case 'inspectFile': string(request.path);return inspectFile(workspace.root,request.path);
     case 'snapshot': return workspace.snapshot();
+    case 'boardMentions': string(request.path); return workspace.boardMentions(request.path);
     case 'create':
       string(request.folder); string(request.stem);
       if(request.place!==undefined&&typeof request.place!=='boolean')throw new Error(ui.errors.invalidPlacementFlag);

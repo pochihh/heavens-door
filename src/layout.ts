@@ -67,7 +67,7 @@ export function restoreLayout(raw:string|null):Layout {
   return pane('board:');
 }
 
-export const MODULE_IDS=['whiteboards','files','bookmarks','tags','search','agent','history'] as const;
+export const MODULE_IDS=['whiteboards','files','bookmarks','tags','search','agent','history','style'] as const;
 export type ModuleId=typeof MODULE_IDS[number];
 export type DockSide='left'|'right';
 export interface PanelGroup {id:string;tabs:ModuleId[];active:ModuleId;weight:number}
@@ -77,7 +77,7 @@ export interface ViewMemory {camera?:{x:number;y:number;zoom:number};scroll?:num
 export interface DocumentsLayout {tree:Layout;active:string;views:Record<string,ViewMemory>;formatting:string[]}
 export interface NavigationMemory {expanded?:string[];search?:string;scroll?:number}
 export function defaultDocks():Docks {
-  return {version:1,left:{collapsed:false,width:232,groups:[{id:'navigation',tabs:['whiteboards','files','tags','search'],active:'whiteboards',weight:62},{id:'saved',tabs:['bookmarks'],active:'bookmarks',weight:38}]},right:{collapsed:true,width:280,groups:[{id:'tools',tabs:['agent','history'],active:'agent',weight:1}]}};
+  return {version:1,left:{collapsed:false,width:232,groups:[{id:'navigation',tabs:['whiteboards','files','tags','search'],active:'whiteboards',weight:62},{id:'saved',tabs:['bookmarks'],active:'bookmarks',weight:38}]},right:{collapsed:true,width:280,groups:[{id:'tools',tabs:['style','agent','history'],active:'style',weight:1}]}};
 }
 export function validateDocks(value:unknown):Docks {
   if(!value||typeof value!=='object'||(value as Docks).version!==1)throw new Error(ui.errors.invalidDockLayout);
@@ -97,6 +97,12 @@ export function validateDocks(value:unknown):Docks {
       if(!MODULE_IDS.includes(module as ModuleId)||modules.has(module)||!place||!['left','right'].includes(place.side)||typeof place.group!=='string'||!place.group||place.group.length>100||!Number.isInteger(place.index)||place.index<0||place.index>=MODULE_IDS.length||!Number.isFinite(place.weight)||place.weight<=0||place.weight>10000)throw new Error(ui.errors.invalidClosedView);
       modules.add(module);
     }
+  }
+  if(modules.size===MODULE_IDS.length-1&&!modules.has('style')){
+    const next=structuredClone(docks);
+    if(next.right.groups.length)next.right.groups[0].tabs.push('style');
+    else next.closed={...next.closed,style:{side:'right',group:'styles',index:0,weight:1}};
+    return next;
   }
   if(modules.size!==MODULE_IDS.length)throw new Error(ui.errors.missingWorkspaceView);
   return docks;

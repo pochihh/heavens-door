@@ -79,3 +79,7 @@ Use `<Tool icon="…" label={tooltips.common.newCard} />` for icon buttons. For 
 The target behavior is a tooltip after 450ms of genuine pointer hover only. Clicking, right-clicking, menu opening, keyboard focus, and programmatic focus must not show one. Opening a menu clears existing and pending tooltips; fully visible menu labels are not repeated in tooltips. Tips anchor to their owner and stay outside actionable menu rows. Accessible names and essential descriptions remain available without hover. See [Menus and tooltips](interactions/menus-and-tooltips.md) for positioning, suppression, dismissal, and the current implementation gaps.
 
 Menus keep action names visible and close on Escape or pointer-down anywhere outside. Dropdowns and context menus share the same interaction contract; form popovers retain normal input behavior. Outside-click dismissal must not steal focus from the clicked control. Icon-only controls need an accessible name. Hover actions remain keyboard reachable. Motion honors reduced-motion preferences. Shared interaction code and these docs must change together when behavior changes.
+
+## Edges and selection styles
+
+Use **Edge** for editable, manually drawn curves and **Mention link** for passive indexed note references. Anchor dots and endpoint handles share one appearance on cards and whiteboard tiles. Style controls belong to the movable **Style View**, with only common controls for mixed selections. See [edges, mentions and Style View](interactions/edges-and-style.md) for the interaction, terminology and persistence rules.

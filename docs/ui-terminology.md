@@ -36,7 +36,7 @@ A plugin can provide Views and actions. **Plugin** describes an extension; **Vie
 
 | View | Contents | Current location |
 | --- | --- | --- |
-| Whiteboard View | A whiteboard canvas with cards, references, connections and sub-whiteboards. | Main Dock |
+| Whiteboard View | A whiteboard canvas with cards, references, edges, mention links and whiteboard tiles. | Main Dock |
 | Card View | A card's formatted content and editor. | Main Dock |
 | Tag View | Cards selected through a tag, presented as a table or Kanban. | Main Dock |
 | File Preview | Read-only inspection of a physical file or image. | Main Dock |
@@ -47,10 +47,11 @@ A plugin can provide Views and actions. **Plugin** describes an extension; **Vie
 | Search | Workspace card search. | Either Side Dock |
 | Agent Console | The reserved agent surface; agent integration is currently disconnected. | Either Side Dock |
 | History | Persistent Workspace Git checkpoints and restore actions. | Either Side Dock |
+| Style View | Appearance controls for the active whiteboard selection, or board options with no selection. | Either Side Dock |
 
 **Whiteboard View** displays a board; **Whiteboard Explorer** navigates boards. **Card View** displays one card; **File Explorer** navigates files. A card edited directly on a whiteboard stays inside Whiteboard View. Side Dock tabs show the active View's icon and name, joined to its content; inactive tabs show icons only. Main Dock tabs keep their document-tab appearance. The shorter navigation labels above are also Views; the word “View” need not appear on every tab. Graph View is not implemented in this preview.
 
-The initial Left Side Dock has Whiteboard Explorer, File Explorer, Tags and Search in its upper Tab Group, with Starred & Recent below. The initial Right Side Dock contains Agent Console and History and starts collapsed. View-revealing actions activate the chosen View and expand its current dock without relocating it.
+The initial Left Side Dock has Whiteboard Explorer, File Explorer, Tags and Search in its upper Tab Group, with Starred & Recent below. The initial Right Side Dock contains Style, Agent Console and History and starts collapsed. View-revealing actions activate the chosen View and expand its current dock without relocating it.
 
 ## Arranging Views
 
@@ -86,3 +87,5 @@ These mappings explain the current code while product wording is adopted. They d
 | `ModuleId`, `modules`, `module-tabs` | View identities, Views and Side Dock tabs |
 | `PanelGroup` / Panel group | Tab Group in a Side Dock |
 | `Pane`, `note-pane` / Document pane | Tab Group in the Main Dock |
+
+For **Edge**, **Anchor**, **Endpoint**, **Mention**, **Mention link**, **Backlink** and **Reference**, see [whiteboard relationship vocabulary](interactions/edges-and-style.md#vocabulary).

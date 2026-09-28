@@ -58,6 +58,8 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `Breadcrumbs.tsx` / `InlineName.tsx` | Workspace-relative navigation and shared inline filename/name editing |
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
 | `Board.tsx` / `navigation.ts` | Cached full previews, offscreen culling, selection and board gestures |
+| `Edges.tsx` / `edge-geometry.ts` | Anchor gestures, curved manual edges, labels, endpoint reconnection and passive indexed mention lines |
+| `StyleView.tsx` | Selection-aware Side Dock styling, with shared options for mixed selections |
 | `Editor.tsx` / `editor-schema.ts` | Formatted TipTap editing and supported Markdown conversion |
 | `session.ts` / `history.ts` | In-flight draft protection, mutation sequencing and grouped undo |
 | `Recovery.tsx` | Recoverable renderer-error screen |

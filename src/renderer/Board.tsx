@@ -1,5 +1,9 @@
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
+import { Edges } from './Edges';
+import { edgeGeometry } from './edge-geometry';
+import type { BoardSelection } from './StyleView';
+import type { Mention } from '../shared';
 import type { NavigationMode } from '../layout';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { placementHeight, type Board, type Card, type CardInfo, type Placement, type WhiteboardInput } from '../shared';
@@ -47,6 +51,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
 interface Props {
+  mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
   enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,mode?:NavigationMode)=>void; onReference?: (id:string)=>void;
   onRename?:(id:string,stem:string)=>Promise<void>;
@@ -56,7 +61,7 @@ interface Props {
 }
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
-  board: Board; camera: Camera; rect: DOMRect; button:number; additive: boolean; initialSelection: string[];
+  board: Board; camera: Camera; rect: DOMRect; button:number; additive: boolean; initialSelection: string[]; initialEdges:string[];
   moved: boolean; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
@@ -64,7 +69,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
+export const Whiteboard = memo(function Whiteboard({ mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -91,7 +96,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
   const [dragged, setDragged] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [connecting, setConnecting] = useState(false);
+  const [selectedEdges,setSelectedEdges]=useState<string[]>([]);
   const [editingPlacement, setEditingPlacement] = useState('');
   const [focusPoint, setFocusPoint] = useState<EditorFocus>();
   const current = working ?? board;
@@ -103,8 +108,10 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   const openReference = useCallback((id: string) => {
     const target = lookup.get(id); if (target) { if(onReference) onReference(id); else onOpen(target.path); }
   }, [lookup, onOpen, onReference]);
-  const latest = useRef({ board: current, onFinish, move, end, enabled, onCamera, heightOf });
-  latest.current = { board: current, onFinish, move, end, enabled, onCamera, heightOf };
+  const selectionCallback=useRef(onSelection);selectionCallback.current=onSelection;
+  useEffect(()=>{if(enabled)selectionCallback.current?.({path:board.path,cards:selected,edges:selectedEdges});},[enabled,board.path,selected,selectedEdges]);
+  const latest = useRef({ deleteEdges, board: current, onFinish, move, end, enabled, onCamera, heightOf });
+  latest.current = { deleteEdges, board: current, onFinish, move, end, enabled, onCamera, heightOf };
 
   useLayoutEffect(() => {
     const element = viewport.current!;
@@ -122,8 +129,9 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     };
     const keydown = (event: KeyboardEvent) => {
       if (event.isComposing || !latest.current.enabled) return;
-      if (event.key === 'Escape') { cancel(); setSelected([]); setConnecting(false); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
+      if (event.key === 'Escape') { cancel(); setSelected([]); setSelectedEdges([]); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
       if (editable(event.target)) return;
+      if ((event.key==='Delete'||event.key==='Backspace')&&element.contains(event.target as Node)){event.preventDefault();latest.current.deleteEdges();return;}
       if (event.code === 'Space' && !(event.target instanceof HTMLElement && event.target.closest('button'))) {
         spaceDown.current = true; element.dataset.space = 'true'; event.preventDefault();
       }
@@ -170,7 +178,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
     gesture.current = { type, ids, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: pendingSave.current ?? current,
       camera: { ...nav.current }, rect: element.getBoundingClientRect(), button:e.button,
-      additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected, moved:false,
+      additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected, initialEdges:selectedEdges, moved:false,
       resizeHeight:type==='resize'?heightOf(current.cards.find(p=>p.id===ids[0])!):undefined };
     // Keep card clicks on the card; viewport capture would turn double-clicks into card creation.
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -180,12 +188,13 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   function capture(e: PointerEvent) {
     const target = e.target as HTMLElement;
     rightPress.current=e.button===2;
+    if (target.closest('.edge-layer,.edge-handles')) return;
     if (target.closest('.canvas-controls,.selection-tools,.canvas-empty button,.card-editor') || editable(target)) return;
     const card = target.closest<HTMLElement>('.board-card');
     if (e.button === 1 || (e.button === 0 && spaceDown.current) || (e.button === 2 && !card)) {
       begin(e, 'pan'); return;
     }
-    if (!card && e.button === 0) { onFinish?.(); setConnecting(false); begin(e, 'select'); }
+    if (!card && e.button === 0) { onFinish?.(); begin(e, 'select'); }
     if (card && e.button === 2) {
       onFinish?.();
       e.preventDefault(); e.stopPropagation();
@@ -194,15 +203,12 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
   }
   function startCard(e: PointerEvent, id: string) {
     if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor')) return;
-    if (connecting && selected.length === 1 && id !== selected[0]) {
-      save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: id }] }, ui.history.connectCards);
-      setConnecting(false); e.stopPropagation(); return;
-    }
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       onFinish?.();
       setSelected(previous => e.shiftKey ? [...new Set([...previous, id])] : previous.includes(id) ? previous.filter(p => p !== id) : [...previous, id]);
       e.preventDefault(); e.stopPropagation(); return;
     }
+    if(!selected.includes(id))setSelectedEdges([]);
     const body=(e.target as HTMLElement).closest<HTMLElement>('.card-preview');
     onFinish?.();
     const ids = selected.includes(id) ? selected : [id];
@@ -218,6 +224,11 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     const ids = g.board.cards.filter(p => p.x <= a + width / g.camera.zoom && p.x + p.width >= a && p.y <= b + height / g.camera.zoom && p.y + heightOf(p) >= b).map(p => p.id);
     const next = g.additive ? [...new Set([...g.initialSelection, ...ids])] : ids;
     setSelected(previous => previous.length === next.length && previous.every((id, i) => id === next[i]) ? previous : next);
+    const edges=g.board.edges.filter(edge=>{
+      const from=placements.get(edge.from),to=placements.get(edge.to);if(!from||!to)return false;
+      return edgeGeometry(edge,from,to,heightOf).samples.some(p=>p.x>=a&&p.x<=a+width/g.camera.zoom&&p.y>=b&&p.y<=b+height/g.camera.zoom);
+    }).map(e=>e.id);
+    setSelectedEdges(g.additive?[...new Set([...g.initialEdges,...edges])]:edges);
   }
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
@@ -244,7 +255,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     if (g.type === 'pan') {
       navigation.current!.set({ ...g.camera, x: g.camera.x + e.clientX - g.x, y: g.camera.y + e.clientY - g.y });
     } else if (g.type === 'select') {
-      if (moved) selectRegion(g, e.clientX, e.clientY); else if (!g.additive) setSelected([]);
+      if (moved) selectRegion(g, e.clientX, e.clientY); else if (!g.additive) {setSelected([]);setSelectedEdges([]);}
     } else if (moved) {
       // The last pointer event may arrive before React renders the last move.
       const next=movedBoard(g,e.clientX,e.clientY);
@@ -279,6 +290,15 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       if (!gesture.current) setWorking(null);
     };
     void Promise.resolve(onSave(next, label, base)).then(settled, settled);
+  }
+  function selectEdges(ids:string[],add:boolean,toggle=false){
+    if(!add)setSelected([]);
+    setSelectedEdges(previous=>!add?ids:toggle?previous.includes(ids[0])?previous.filter(id=>!ids.includes(id)):[...previous,...ids]:[...new Set([...previous,...ids])]);
+    viewport.current?.focus({preventScroll:true});
+  }
+  function deleteEdges(){
+    if(!selectedEdges.length)return;
+    save({...current,edges:current.edges.filter(e=>!selectedEdges.includes(e.id))},ui.history.deleteEdges);setSelectedEdges([]);
   }
   function toggleCollapsed(p:Placement) {
     if(!p.collapsed)onFinish?.();
@@ -331,11 +351,11 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
+    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas} style={{...(current.canvasColor?{'--canvas':current.canvasColor}:{}),...(current.gridColor?{'--dot':current.gridColor}:{})} as React.CSSProperties}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
-        if(!rightPress.current&&!(e.target as HTMLElement).closest('.board-card,button,input,.selection-tools'))openCanvasMenu(e.clientX,e.clientY);
+        if(!rightPress.current&&!(e.target as HTMLElement).closest('.board-card,.edge-layer,.edge-handles,button,input,.selection-tools'))openCanvasMenu(e.clientX,e.clientY);
       }} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}}}
       onDoubleClick={e => {
         if (e.target === viewport.current) {
@@ -345,12 +365,8 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       }}>
       <div className="canvas-grid" ref={grid}/>
       <div className="board-world" ref={world}>
-        <svg className="connections" aria-hidden="true">
-          {current.edges.map(edge => {
-            const a = placements.get(edge.from), b = placements.get(edge.to);
-            return a && b ? <line key={edge.id} x1={a.x + a.width / 2} y1={a.y + heightOf(a) / 2} x2={b.x + b.width / 2} y2={b.y + heightOf(b) / 2}/> : null;
-          })}
-        </svg>
+        <Edges board={current} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
+          selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={save} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
         {visible.map(p => {
           const savedCard = lookup.get(p.cardId);
           const card=savedCard&&draft?.card.id===savedCard.id?{...savedCard,titleMarkdown:draftTitle}:savedCard, folder = card?parent(card.path):undefined;
@@ -360,7 +376,7 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height }}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:p.fillColor, borderColor:selected.includes(p.id)?undefined:p.strokeColor, borderWidth:p.strokeWidth, borderStyle:p.strokeStyle==='none'?'none':p.strokeStyle }}
             onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
@@ -397,13 +413,13 @@ export const Whiteboard = memo(function Whiteboard({ board, cards, onSave, onOpe
       </div>
       <div className="selection-box" ref={selectionBox}/>
       {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={() => onCreate(100, 100)}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
-      {!!selected.length && !active && <div className="selection-tools"><span>{ui.whiteboard.selectedCount(selected.length)}</span><button data-tooltip={tooltips.whiteboard.connectSelectedCards} disabled={selected.length > 2} onClick={() => {
-        if (selected.length === 2) save({ ...current, edges: [...current.edges, { id: crypto.randomUUID(), from: selected[0], to: selected[1] }] }, ui.history.connectCards);
-        else setConnecting(!connecting);
-      }}>{connecting ? ui.whiteboard.selectAnotherCard : ui.whiteboard.connect}</button><button disabled={selected.some(id=>{const p=placements.get(id),c=p&&lookup.get(p.cardId);return !!p?.folder||!!c&&parent(c.path)===portable(board.folder);})} onClick={() => {
+      {!!(selected.length+selectedEdges.length) && !active && <div className="selection-tools"><span>{ui.whiteboard.selectedCount(selected.length+selectedEdges.length)}</span><Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
+      {!!selectedEdges.length&&<button data-tooltip={tooltips.edges.delete} onClick={deleteEdges}>{ui.edges.delete}</button>}
+      {!!selected.length&&<button disabled={selected.some(id=>{const p=placements.get(id),c=p&&lookup.get(p.cardId);return !!p?.folder||!!c&&parent(c.path)===portable(board.folder);})} onClick={() => {
         save({ ...current, cards: current.cards.filter(p => !selected.includes(p.id)), edges: current.edges.filter(e => !selected.includes(e.from) && !selected.includes(e.to)) }, ui.history.removePlacement); setSelected([]);
-      }} data-tooltip={tooltips.whiteboard.removeReference}>{ui.whiteboard.removeReference}</button></div>}
+      }} data-tooltip={tooltips.whiteboard.removeReference}>{ui.whiteboard.removeReference}</button>}</div>}
       <div className="canvas-controls">
+        <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
         <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
         <button ref={zoomLabel} className="zoom-level" aria-label={ui.whiteboard.zoomToFit} data-tooltip={tooltips.whiteboard.zoomToFit} onClick={fit}>85%</button>
         <Tool icon="plus" label={tooltips.whiteboard.zoomIn} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 1.1)}/>
