@@ -12,6 +12,14 @@ The **Main Dock** is the central region containing Whiteboard View, Card View an
 
 Light and dark palettes are CSS variables. A workspace's theme can follow the system. Tabs are unique within one Main Dock Tab Group; the same document can be open in different Tab Groups. Each group keeps its own view position while editing the same underlying file. The mother whiteboard uses the workspace folder name and contains sub-whiteboards. Existing root cards remain accessible for explicit migration.
 
+## Scrollbars
+
+Scrollbars show only the draggable thumb; the track stays transparent, without a separate background or border. Apply this to both axes throughout the app: Explorers, Starred and Recent, cards/editors, History, tag views, menus, dialogs and embedded widgets.
+
+Use the shared native CSS rules in `styles.css`: thin scrollbars with `scrollbar-color: var(--scrollbar-thumb) transparent`. The thumb token blends the theme's muted color at 65% opacity so it works on light and dark surfaces. Scrollbar color inherits into embedded widgets, including the emoji picker. Existing hidden Tab Strip and Action Ribbon scrollbars remain hidden.
+
+Keep native scrolling, thumb dragging, keyboard navigation and system visibility behavior. Do not add custom scrollbar elements, track decorations, scroll listeners or hover-triggered width changes. Forced-colors mode uses system scrollbar colors for accessibility. New scrollable Views inherit this convention instead of defining their own track fills.
+
 ## Docks and navigation
 
 Use the names in [UI terminology](ui-terminology.md). The Left and Right Side Docks have the same layout and controls: vertically resizable Tab Groups, a tab strip for each group and a tab context menu for close/move/split/merge commands. Right-click an individual tab to act on that View; right-click unused Tab Strip space to act on the active View. Shift+F10 or the Menu key opens the focused tab’s menu. There is no persistent **…** button. View controls sit inside the active group's content. The Action Ribbon contains actions for revealing the current Side Dock Views and opening Workspace settings. A View action reveals it in its assigned group and expands that dock. The window toolbar collapses either dock independently. **Close View Tab** closes the selected tab without deleting content; the Action Ribbon reopens a closed Side Dock View in its remembered group, recreating that group if needed. Closing the last tab removes its Side Dock group; closing the last group collapses that dock. Closed placements persist with the Workspace layout. Main Dock tab context menus also provide **Close View Tab**, using the same save behavior as their existing close button.
