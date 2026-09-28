@@ -91,7 +91,7 @@ export function Edges(props:Props) {
   const geometries=board.edges.flatMap(edge=>{const a=placements.get(edge.from),b=placements.get(edge.to);return a&&b?[{edge,...edgeGeometry(edge,a,b,heightOf)}]:[];});
   const select=(event:React.MouseEvent|React.PointerEvent,edge:Edge)=>{event.preventDefault();event.stopPropagation();onFinish();onSelect([edge.id],event.shiftKey||event.metaKey||event.ctrlKey,event.metaKey||event.ctrlKey);};
   const editLabel=(edge:Edge)=>{onSelect([edge.id],false);setLabel({id:edge.id,text:edge.label??''});};
-  const saveLabel=()=>{if(label){onSave({...board,edges:board.edges.map(e=>e.id===label.id?{...e,label:label.text}:e)},ui.history.editEdgeLabel);setLabel(null);}};
+  const saveLabel=()=>{if(label){if(board.edges.some(e=>e.id===label.id&&(e.label??'')!==label.text))onSave({...board,edges:board.edges.map(e=>e.id===label.id?{...e,label:label.text}:e)},ui.history.editEdgeLabel);setLabel(null);}};
   const byCard=new Map<string,Placement[]>();for(const p of board.cards){const list=byCard.get(p.cardId)??[];list.push(p);byCard.set(p.cardId,list);}
   const marker=(arrow:Arrowhead|undefined)=>!arrow||arrow==='none'?undefined:`url(#${markerId}-${arrow})`;
   const camera=props.camera(),transform=`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`;
@@ -103,8 +103,12 @@ export function Edges(props:Props) {
         <path className="edge-hit" d={path} tabIndex={0} role="button" aria-label={edge.label||ui.edges.edge} data-tooltip={tooltips.edges.select} onPointerDown={e=>select(e,edge)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onFinish();onSelect([edge.id],e.shiftKey||e.metaKey||e.ctrlKey,e.metaKey||e.ctrlKey);}}} onDoubleClick={()=>editLabel(edge)} onContextMenu={e=>{e.preventDefault();e.stopPropagation();onSelect([edge.id],false);setMenu({label:ui.edges.actions,x:e.clientX,y:e.clientY,actions:[{label:ui.edges.editLabel,icon:'edit',run:()=>editLabel(edge)},{label:ui.edges.showStyle,icon:'art',run:onStyle},{label:ui.edges.delete,icon:'close',run:()=>{onSave({...board,edges:board.edges.filter(item=>item.id!==edge.id)},ui.history.deleteEdges);onSelect([],false);}}]});}}/>
         {selected&&<path className="edge-selection" d={path} strokeWidth={width+5}/>}
         <path className="edge-stroke" d={path} stroke={color} strokeWidth={width} strokeDasharray={strokeDash(edge.strokeStyle,width)} strokeLinecap={edge.strokeStyle==='dotted'?'round':'butt'} markerStart={marker(edge.fromArrowhead)} markerEnd={marker(edge.toArrowhead)}/>
-        {(edge.label||selected)&&<foreignObject x={midpoint.x-100} y={midpoint.y-18} width="200" height="72" className="edge-label-wrap">{label?.id===edge.id?<input autoFocus className="edge-label-input" aria-label={ui.edges.editLabel} maxLength={2000} value={label.text} onChange={e=>setLabel({...label,text:e.target.value})} onBlur={saveLabel} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();saveLabel();}if(e.key==='Escape'){e.stopPropagation();setLabel(null);}}}/>:
-          <button className="edge-label" style={{fontSize:edge.labelSize??14}} data-tooltip={tooltips.edges.editLabel} onPointerDown={e=>select(e,edge)} onClick={()=>editLabel(edge)}>{edge.label||'+'}</button>}</foreignObject>}
+        {(edge.label||selected||label?.id===edge.id)&&<foreignObject x={midpoint.x-100} y={midpoint.y-18} width="200" height="72" className="edge-label-wrap" style={{fontSize:edge.labelSize??14}}>
+          {label?.id===edge.id?<div className="edge-label">
+            <span className="edge-label-text" aria-hidden="true">{label.text||'\u200b'}</span>
+            <textarea autoFocus rows={1} className="edge-label-input" aria-label={ui.edges.editLabel} maxLength={2000} value={label.text} onChange={e=>setLabel({...label,text:e.target.value})} onBlur={saveLabel} onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();saveLabel();}if(e.key==='Escape'){e.preventDefault();setLabel(null);}}}/>
+          </div>:<button className="edge-label" data-tooltip={tooltips.edges.editLabel} onPointerDown={e=>select(e,edge)} onClick={()=>editLabel(edge)}><span className="edge-label-text">{edge.label||'+'}</span></button>}
+        </foreignObject>}
       </g>;})}
       <path ref={preview} className="edge-preview"/>
     </g></svg>

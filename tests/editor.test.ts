@@ -52,3 +52,23 @@ test('reserved H1 starts empty, persists only typed text, and preserves heading-
     const html=preview('', 'empty.md');assert.match(html,/h1 class="card-title is-empty"/);assert.doesNotMatch(html,/A new card/);
   }finally{editor.destroy();}
 });
+
+test('preview and editor share compact list spacing and checkbox structure',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><div class="prose" id="preview"></div><div class="prose" id="edit"></div></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  const {readFile}=await import('node:fs/promises'),{extensions}=await import('../src/renderer/editor-schema'),{preview}=await import('../src/renderer/markdown');
+  const style=document.createElement('style');style.textContent=await readFile(new URL('../src/renderer/styles.css',import.meta.url),'utf8');document.head.append(style);
+  const body='# Lists\n\n- First\n- Second\n  - Nested\n\n1. One\n2. Two\n\n- [x] Done\n  - [ ] Nested task\n- [ ] Pending\n';
+  document.getElementById('preview')!.innerHTML=preview(body,'list.md');
+  const editor=new Editor({element:document.getElementById('edit')!,extensions:extensions('list.md'),content:body,contentType:'markdown'});
+  try{
+    for(const p of document.querySelectorAll('#edit li>p'))assert.equal(getComputedStyle(p).marginBottom,'0px','editor-only paragraph wrappers cannot expand list items');
+    for(const id of ['preview','edit']){
+      const tasks=[...document.querySelectorAll(`#${id} li[data-checked]`)];
+      assert.deepEqual(tasks.map(t=>t.getAttribute('data-checked')),['true','false','false']);
+      assert.deepEqual(tasks.map(t=>t.querySelector(':scope>div>p')?.textContent),['Done','Nested task','Pending']);
+      assert.ok(tasks.every(t=>t.querySelector(':scope>label>input[type=checkbox]')),'task text and checkbox use the same layout in both modes');
+    }
+  }finally{editor.destroy();}
+});
