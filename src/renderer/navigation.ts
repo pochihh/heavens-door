@@ -56,6 +56,7 @@ export class BoardNavigation {
   private samples: WheelEvent[] = [];
   private sampleTimer: ReturnType<typeof setTimeout> | undefined;
   private win: Window;
+  private edgeCameras:NodeListOf<SVGElement>;
   constructor(
     private viewport: HTMLElement,
     private world: HTMLElement,
@@ -64,6 +65,7 @@ export class BoardNavigation {
     private publish: (camera: Camera) => void,
   ) {
     this.win = viewport.ownerDocument.defaultView!;
+    this.edgeCameras = viewport.querySelectorAll<SVGElement>('.edge-camera');
     this.paint();
   }
   setInputMode(mode: WhiteboardInput) {
@@ -152,7 +154,13 @@ export class BoardNavigation {
     const c = this.current, p = this.published;
     const width = this.viewport.clientWidth || 1000, height = this.viewport.clientHeight || 800;
     this.world.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) scale(${c.zoom})`;
-    // Only the lightweight grid repaints; card positions and edge geometry stay in world coordinates.
+    // Native SVG transforms repaint vectors at the current scale; never magnify a
+    // cached low-resolution edge texture with the compositor-scaled card world.
+    for(const group of this.edgeCameras) {
+      group.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${c.zoom})`);
+      group.style.setProperty('--edge-zoom', String(c.zoom));
+    }
+    // Geometry stays in world coordinates; the grid and SVG share this camera frame.
     this.grid.style.setProperty('--board-zoom', String(c.zoom));
     this.grid.style.setProperty('--grid-x', `${c.x}px`);
     this.grid.style.setProperty('--grid-y', `${c.y}px`);

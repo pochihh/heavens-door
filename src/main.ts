@@ -131,7 +131,7 @@ void app.whenReady().then(async()=>{
     // Migration is an explicit UI command with a destination review, never an open side effect.
     if(request.kind==='migrateRoot'&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.migrationOtherWindows);
     const result=await d.host.call(request);
-    if(['create','createFolder','saveCard','saveBoard','write','restore','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
+    if(['create','createFolder','saveCard','saveBoard','setFill','write','restore','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
     return result;
   });
   ipcMain.handle('workspace:current',event=>snapshot(trusted(event)));

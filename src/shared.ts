@@ -6,6 +6,10 @@ export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
 export interface Stroke { strokeColor?:string; strokeWidth?:number; strokeStyle?:'solid'|'dashed'|'dotted'|'none' }
 export interface Placement extends Stroke { fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
 export interface Edge extends Stroke { id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:number }
+export type EdgeStyle = Pick<Edge,'strokeColor'|'strokeWidth'|'strokeStyle'|'fromArrowhead'|'toArrowhead'|'labelSize'>;
+export function edgeStyle(edge:EdgeStyle):EdgeStyle {
+  return {strokeColor:edge.strokeColor,strokeWidth:edge.strokeWidth??2,strokeStyle:edge.strokeStyle==='none'?'solid':edge.strokeStyle??'solid',fromArrowhead:edge.fromArrowhead??'none',toArrowhead:edge.toArrowhead??'none',labelSize:edge.labelSize??14};
+}
 export interface Mention { from:string; to:string }
 export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; showMentions?:boolean; mentionStyle?:Stroke; canvasColor?:string; gridColor?:string; inbox?:{x:number;y:number} }
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
@@ -17,7 +21,7 @@ export interface PaletteColor {id:string;name:string;color:string}
 export interface Preferences { palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export interface TagInfo { path: string; name: string; tag: string; revision: string }
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
-export interface Snapshot { pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
+export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
 export interface BoardMove { from:string; to:string }
 export interface Mutation { snapshot: Snapshot; edits: Edit[]; move?:BoardMove }

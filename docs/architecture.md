@@ -58,7 +58,7 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `Breadcrumbs.tsx` / `InlineName.tsx` | Workspace-relative navigation and shared inline filename/name editing |
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
 | `Board.tsx` / `navigation.ts` | Cached full previews, offscreen culling, selection and board gestures |
-| `Edges.tsx` / `edge-geometry.ts` | Anchor gestures, curved manual edges, labels, endpoint reconnection and passive indexed mention lines |
+| `Edges.tsx` / `edge-geometry.ts` | Anchor gestures, viewport SVG edges and labels, endpoint reconnection and passive indexed mention lines |
 | `colors.ts` | Default workspace palette, shared card fill resolution and theme tint roles (fills and edge strokes) |
 | `StyleView.tsx` | Selection-aware Side Dock styling, with shared options for mixed selections |
 | `Editor.tsx` / `editor-schema.ts` | Formatted TipTap editing and supported Markdown conversion |
@@ -84,3 +84,5 @@ Git history is separate from session undo. Checkpoints include non-ignored works
 Run `npm run check` for lint, types, tests and the production build. Run `npm run benchmark` for the disposable 10,000-card indexing/search benchmark. `npm run dev` starts Electron and Vite; restart it after main/worker changes. Renderer reload alone does not replace those processes.
 
 Keep a new feature in the existing owner above. Add a shared helper only for an actual shared behavior. Changes to list dragging must update its interaction specification and regression test together. Check desktop interactions in a disposable workspace; never auto-migrate a user's files on open. Windows and Ubuntu are targets, but native UI verification so far has been on macOS.
+
+The workspace SQLite `ui_cache` also keeps the last edited edge style. It is expendable local UI state, separate from the file-backed document styles. Style defaults update only after a successful explicit style mutation.

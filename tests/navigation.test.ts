@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { BoardNavigation, normalizedWheelDelta, zoomAt } from '../src/renderer/navigation';
 
 function setup(t: TestContext) {
-  const dom = new JSDOM('<div id="viewport"><div id="grid"></div><div id="world"><article class="board-card"><div class="card-preview" style="overflow-x:auto;overflow-y:auto"><p>Note</p></div></article></div><button>85%</button></div>');
+  const dom = new JSDOM('<div id="viewport"><div id="grid"></div><svg><g class="edge-camera"><path d="M 0 0 L 100 100"/></g></svg><svg><g class="edge-camera"/></svg><div id="world"><article class="board-card"><div class="card-preview" style="overflow-x:auto;overflow-y:auto"><p>Note</p></div></article></div><button>85%</button></div>');
   Object.assign(globalThis, { HTMLElement: dom.window.HTMLElement });
   const viewport = dom.window.document.getElementById('viewport')!;
   const world = dom.window.document.getElementById('world')!;
@@ -183,6 +183,7 @@ test('grid camera variables follow the same frame as the world without rewriting
   f.grid.style.setProperty('--grid-spacing','30px');
   for(const zoom of [.2,.55,.7,.8,3]){
     f.nav.set({x:-137,y:81,zoom});f.frame();
+    for(const group of f.viewport.querySelectorAll('.edge-camera'))assert.equal(group.getAttribute('transform'),`translate(-137 81) scale(${zoom})`,'every vector layer follows the same camera frame');
     assert.equal(f.grid.style.getPropertyValue('--board-zoom'),String(zoom));
     assert.equal(f.grid.style.getPropertyValue('--grid-x'),'-137px');
     assert.equal(f.grid.style.getPropertyValue('--grid-y'),'81px');

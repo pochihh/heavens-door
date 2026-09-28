@@ -8,9 +8,9 @@ import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
-import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote } from './format';
-import { COLLAPSED_CARD_HEIGHT, placementHeight } from '../shared';
-import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult } from '../shared';
+import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
+import { COLLAPSED_CARD_HEIGHT, placementHeight, edgeStyle } from '../shared';
+import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle } from '../shared';
 
 function validateStem(stem:string) {
     if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error(ui.errors.invalidFilename);
@@ -22,6 +22,7 @@ export class Workspace {
   private folders = new Set<string>(['']);
   private tags = new Map<string,TagInfo>();
   private preferences = defaultPreferences();
+  private lastEdgeStyle:EdgeStyle|undefined;
   private boards = new Map<string, Board>();
   private issues = new Map<string, string>();
   private scanning = false;
@@ -41,7 +42,12 @@ export class Workspace {
       CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path UNINDEXED,name,body);
       CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT);
       CREATE INDEX IF NOT EXISTS backlinks ON links(target);
-      CREATE INDEX IF NOT EXISTS outgoing_links ON links(source);`);
+      CREATE INDEX IF NOT EXISTS outgoing_links ON links(source);
+      CREATE TABLE IF NOT EXISTS ui_cache(key TEXT PRIMARY KEY,value TEXT);`);
+    try {
+      const row=this.db.prepare("SELECT value FROM ui_cache WHERE key='edge-style'").get();
+      if(row){const style=JSON.parse(String(row.value));validateEdgeStyle(style);this.lastEdgeStyle=edgeStyle(style);}
+    } catch { /* A damaged optional UI cache falls back to the default edge style. */ }
   }
   static async open(root: string, cache: string) {
     const actual = await fs.realpath(root);
@@ -188,7 +194,7 @@ export class Workspace {
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
     const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(({colorType,fillColor,...c}) => ({...c,legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(({colorType,fillColor,...c}) => ({...c,legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -461,7 +467,7 @@ export class Workspace {
   }
   async setFill(cards:{path:string;expected:string}[],color:string|null,board?:{value:Board;expected:string}) {
     if(color!==null&&!isHexColor(color))throw new Error(ui.errors.invalidCardColor);
-    const changes:Write[]=[];
+    const before=board&&this.boards.get(board.value.path),changes:Write[]=[];
     for(const {path,expected} of cards){
       const raw=await this.read(path),card=readCard(path,raw);
       if(card.revision!==expected)throw new Error(ui.errors.externalEdit(path));
@@ -470,10 +476,25 @@ export class Workspace {
       changes.push({path,expected,content:`---\n${front.toString()}---\n${body}`});
     }
     if(board)changes.push({path:board.value.path,expected:board.expected,content:writeBoard(board.value)});
-    return changes.length?this.write(changes):{snapshot:this.snapshot(),edits:[]};
+    const result=changes.length?await this.write(changes):{snapshot:this.snapshot(),edits:[]};
+    if(board)this.rememberEdgeStyle(board.value,before);
+    result.snapshot.lastEdgeStyle=this.lastEdgeStyle;
+    return result;
+  }
+  private rememberEdgeStyle(board:Board,before:Board|undefined) {
+    const previous=new Map(before?.edges.map(e=>[e.id,e]));
+    // For a multi-edit, the last changed edge in board order supplies the full style.
+    const edited=board.edges.findLast(e=>previous.has(e.id)&&JSON.stringify(edgeStyle(e))!==JSON.stringify(edgeStyle(previous.get(e.id)!)));
+    if(!edited)return;
+    this.lastEdgeStyle=edgeStyle(edited);
+    try { this.db.prepare("INSERT OR REPLACE INTO ui_cache(key,value) VALUES('edge-style',?)").run(JSON.stringify(this.lastEdgeStyle)); }
+    catch { /* Cache failure must not turn a successful document save into an error. */ }
   }
   async saveBoard(board: Board, expected: string) {
-    return this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);
+    const before=this.boards.get(board.path);
+    const result=await this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);
+    this.rememberEdgeStyle(board,before);result.snapshot.lastEdgeStyle=this.lastEdgeStyle;
+    return result;
   }
   boardMentions(path:string) {
     const board=this.boards.get(path);if(!board)return [];

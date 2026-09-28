@@ -16,7 +16,7 @@
 
 Cards and whiteboard tiles are equal edge endpoints. This does not turn a whiteboard into a Markdown card. Edges attach to placement IDs; changing a note's filename does not change the edge. Two placements of one card remain distinct endpoints.
 
-The previous app saved its straight lines in `edges`; those remain manual edges and now use curved rendering. They are not silently converted to mentions. Old edges without arrowhead fields stay without arrows; new edges have an arrow at the destination by default. Arrowheads are independent styling at each end, not a semantic direction written into the source note.
+The previous app saved its straight lines in `edges`; those remain manual edges and now use curved rendering. They are not silently converted to mentions. Old edges without arrowhead fields stay without arrows; new edges initially have an arrow at the destination. After a style edit, new edges inherit the workspace’s last edited complete edge style. Arrowheads are independent styling at each end, not a semantic direction written into the source note.
 
 ## Drawing and selecting
 
@@ -32,7 +32,7 @@ The interaction reference is `obsidian-whiteboard`'s **Edges and Note Links** UX
 - Selected edges show endpoint handles and a center label affordance. Click the label affordance or double-click the path to edit the label. Enter or blur saves; Escape cancels the label edit.
 - Right-click an edge for **Edit edge label**, **Show Style View**, and **Delete edge**. Delete/Backspace on the canvas deletes selected edges only. It never deletes a mentioned card or removes a mention from Markdown.
 
-Paths live behind card content. Invisible wide hit paths make thin curves selectable. Pointer preview updates are batched to one animation frame, and the completed gesture creates one board edit/undo step. Moving, resizing, collapsing and auto-height measurement update endpoints using the displayed geometry.
+Paths live behind card content in viewport-sized SVGs outside the compositor-scaled card layer. Native SVG group transforms follow the same camera frame as cards, keeping curves, markers and labels sharp throughout zoom without rebuilding their path geometry. The handle layer stays above cards and below canvas controls; anchor hit areas stay a constant screen size. Invisible wide hit paths make thin curves selectable. Pointer preview updates are batched to one animation frame, and the completed gesture creates one board edit/undo step. Moving, resizing, collapsing and auto-height measurement update endpoints using the displayed geometry.
 
 ## Passive mention links
 
@@ -48,13 +48,13 @@ The View follows the active Main Dock whiteboard, including when the same file a
 
 | Selection | Available options |
 | --- | --- |
-| Edges only | Color; stroke style and width; start/end arrowheads; label size; label text for a single edge. |
+| Edges only | Color; stroke style and width; two independent start/end arrow buttons; label size; label text for a single edge. |
 | Cards only | Color. |
 | Whiteboard tiles only | Color. |
 | Cards + whiteboard tiles | Color. |
 | Any selection including edges and cards/tiles | Color: applies to card/tile fills and edge strokes together. |
 
-Shared means supported by **every** selected item. When values differ, the control shows **Mixed** rather than choosing one item's value. Assigning a value applies it to the entire selection as one undoable transaction. Theme colors can be restored with the theme swatch. Custom colors are validated hexadecimal values. Stroke style offers none, solid, dashed and dotted. Each endpoint offers none, arrow, filled triangle or outline triangle.
+Shared means supported by **every** selected item. When values differ, the control shows **Mixed** rather than choosing one item's value. Assigning a value applies it to the entire selection as one undoable transaction. Theme colors can be restored with the theme swatch. Custom colors are validated hexadecimal values. Stroke style offers solid, dashed and dotted. Arrows has two independent pressed buttons: Start arrow and End arrow. They allow neither, either or both ends; a mixed button enables that end for the entire selection. New enabled arrows use the simple open arrow shape. Legacy triangle shapes remain readable and render until that endpoint is toggled. Legacy `none` strokes render as solid and are not offered in the controls.
 
 Card fill belongs to the source card; card and whiteboard tile borders come from the theme. Edge styling belongs to its containing whiteboard. Viewing/selecting never writes; committed style changes use the shared save, conflict detection, undo and checkpoint mechanisms. Existing geometry, content editing and navigation behavior remain separate from Style View.
 
@@ -64,11 +64,11 @@ Card fill belongs to the source card; card and whiteboard tile borders come from
 
 Geometry, collapse and height mode remain per placement. Whiteboard tile fills remain per placement as well. A mixed card/tile/edge color change writes source card metadata and the relevant board in one revision-checked, undoable transaction. Card borders, shadows and rounding are theme-controlled. Auto-height stays in Card actions and collapse keeps its existing corner control. Color saves flush a pending editor draft first and advance its revision without discarding typing that arrives during the save. The Markdown body and unrelated frontmatter stay intact.
 
-Style controls use direct buttons. Stroke width buttons show actual line thickness; stroke-style buttons show solid/dashed/dotted/none samples; arrowhead buttons show the corresponding endpoint; label sizes and the mention-visibility toggle use compact button groups. Detailed stroke controls appear only for edge-only selections; cards and whiteboard tiles expose just Color. Active options have a persistent pressed state and keyboard focus. Mixed values have no pressed option and show Mixed. There are no style dropdowns. Custom colors use a native picker plus a hex field and an explicit Apply action.
+Style controls use direct buttons. Stroke width buttons show actual line thickness; stroke-style buttons show solid/dashed/dotted samples; arrow buttons show the corresponding direction; label sizes and the mention-visibility toggle use compact button groups. Detailed stroke controls appear only for edge-only selections; cards and whiteboard tiles expose just Color. Active options have a persistent pressed state and keyboard focus. Mixed values have no pressed option and show Mixed. There are no style dropdowns. Custom colors use a native picker plus a hex field and an explicit Apply action.
 
 The default palette contains eight muted hues: Rose `#c9838a`, Terracotta `#c99579`, Ochre `#c6ad72`, Sage `#91aa8b`, Teal `#80aaa6`, Blue `#8aa5c5`, Lavender `#a699c3`, Slate `#8b929e`, plus Theme. The Edit palette action opens a draft editor in Style View: add, name, recolor, reorder, remove, reset, Save or Cancel. Up to 24 swatches are stored in `.heavens-door/settings.json`. Escape cancels the palette editor.
 
-Palette selections copy their hex value. Editing or deleting a swatch changes **future selections only**, never existing cards, edges or boards. Theme appearance still adapts: opaque CSS `color-mix` blends fill into the card surface (38% color in light themes, 24% in dark), and stroke into muted foreground (68%/78%). Shared `--tint-*` tokens control these roles; swatch previews use the same role as their destination. Alpha transparency is not used for card bodies, so edges behind them do not show through.
+Palette selections copy their hex value. Editing or deleting a swatch changes **future selections only**, never existing cards, edges or boards. Theme appearance still adapts: opaque CSS `color-mix` blends fill into the card surface (38% color in light themes, 24% in dark), and stroke into muted foreground (68%/78%). Shared `--tint-*` tokens control these roles; swatches show the literal palette color at full opacity for clear recognition in either theme. Soft blending applies only to the resulting card/tile fill or edge stroke. Alpha transparency is not used for card bodies, so edges behind them do not show through.
 
 
 ## Theme appearance and compatibility
@@ -76,3 +76,10 @@ Palette selections copy their hex value. Editing or deleting a swatch changes **
 The file owns explicit user color choices and edge styles. The theme owns card/tile borders, shadow and rounding, the canvas, the adaptive dot grid and passive mention-line appearance. Style View does not offer controls for that decoration. Its common Color action changes fills for cards/tiles and stroke color for edges; the source hex is copied unchanged to the relevant files.
 
 Existing placement stroke fields, `canvasColor`, `gridColor` and `mentionStyle` still round-trip for compatibility, but no longer override theme rendering. This change does not migrate or delete those fields, introduce palette references, or adopt the proposed nested `style` schema. See [grid and theme tokens](../design-system.md#whiteboard-grid-and-theme-owned-appearance).
+
+
+## Remembered edge style
+
+The workspace’s existing SQLite cache stores the last successfully edited edge’s complete style: literal hex color (or Theme), thickness, line pattern, both arrowheads and label size. New edges copy these values into their normal `.whiteboard` record. Label text, IDs, endpoint targets and anchor sides are never copied. This cache is local convenience state, survives app restart, is shared by windows using that workspace, and can be discarded without affecting document styles. It is not written to notes, workspace settings or Git history.
+
+Only a successful edge style change updates the cache, including a mixed-selection Color action. Selection, opening a board, moving/reconnecting an edge, changing label text, undo/history navigation and external edits do not change it. For a multi-edge style change, the last changed edge in board order supplies the complete style; we do not invent a combination of mixed values. With no cache, a new edge is solid, 2 units wide, Theme colored, with a destination arrow and 14-unit label text.

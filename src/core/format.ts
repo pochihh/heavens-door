@@ -5,7 +5,7 @@ import { basename, dirname } from 'node:path';
 import { parseDocument, isMap } from 'yaml';
 import type { Token } from 'marked';
 import { leadingTitle } from '../card-title';
-import type { Board, Card, Placement, Stroke } from '../shared';
+import type { Board, Card, Placement, Stroke, EdgeStyle } from '../shared';
 
 export const revision = (text: string) => createHash('sha256').update(text).digest('hex');
 export function splitNote(raw: string) {
@@ -52,6 +52,10 @@ const validColor=(value:unknown)=>value===undefined||isHexColor(value);
 function validateStroke(value:Stroke) {
   if(!value||typeof value!=='object'||!validColor(value.strokeColor)||value.strokeWidth!==undefined&&(!Number.isFinite(value.strokeWidth)||value.strokeWidth<.5||value.strokeWidth>8)||value.strokeStyle!==undefined&&!['solid','dashed','dotted','none'].includes(value.strokeStyle))throw new Error(ui.errors.invalidBoardStyle);
 }
+export function validateEdgeStyle(value:EdgeStyle) {
+  validateStroke(value);
+  if([value.fromArrowhead,value.toArrowhead].some(arrow=>arrow!==undefined&&!['none','arrow','triangle','triangle-outline'].includes(arrow))||value.labelSize!==undefined&&![12,14,18,24].includes(value.labelSize))throw new Error(ui.errors.invalidBoardStyle);
+}
 export function validateBoard(board: Board) {
   if(board.showMentions!==undefined&&typeof board.showMentions!=='boolean'||!validColor(board.canvasColor)||!validColor(board.gridColor))throw new Error(ui.errors.invalidBoardStyle);
   if(board.mentionStyle!==undefined)validateStroke(board.mentionStyle);
@@ -69,8 +73,8 @@ export function validateBoard(board: Board) {
   const edges = new Set<string>();
   for (const e of board.edges) {
     if (!e.id || edges.has(e.id) || !ids.has(e.from) || !ids.has(e.to)) throw new Error(ui.errors.invalidBoardConnection);
-    validateStroke(e);
-    if([e.fromSide,e.toSide].some(side=>side!==undefined&&!['top','right','bottom','left'].includes(side))||[e.fromArrowhead,e.toArrowhead].some(arrow=>arrow!==undefined&&!['none','arrow','triangle','triangle-outline'].includes(arrow))||e.label!==undefined&&(typeof e.label!=='string'||e.label.length>2000)||e.labelSize!==undefined&&![12,14,18,24].includes(e.labelSize))throw new Error(ui.errors.invalidBoardStyle);
+    validateEdgeStyle(e);
+    if([e.fromSide,e.toSide].some(side=>side!==undefined&&!['top','right','bottom','left'].includes(side))||e.label!==undefined&&(typeof e.label!=='string'||e.label.length>2000))throw new Error(ui.errors.invalidBoardStyle);
     edges.add(e.id);
   }
 }

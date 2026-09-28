@@ -7,7 +7,7 @@ import type { BoardSelection } from './StyleView';
 import type { Mention } from '../shared';
 import type { NavigationMode } from '../layout';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { placementHeight, type Board, type Card, type CardInfo, type Placement, type WhiteboardInput } from '../shared';
+import { placementHeight, type Board, type Card, type CardInfo, type EdgeStyle, type Placement, type WhiteboardInput } from '../shared';
 import { leadingTitle } from '../card-title';
 import { parent, portable } from './documents';
 import { preview, titlePreview } from './markdown';
@@ -52,6 +52,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
 interface Props {
+  edgeDefaults?:EdgeStyle;
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
   enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,mode?:NavigationMode)=>void; onReference?: (id:string)=>void;
@@ -70,7 +71,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
+export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -365,9 +366,9 @@ export const Whiteboard = memo(function Whiteboard({ mentions=[], onSelection, o
         }
       }}>
       <div className="canvas-grid" ref={grid}/>
-      <div className="board-world" ref={world}>
-        <Edges board={current} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
+        <Edges edgeDefaults={edgeDefaults} board={current} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
           selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={save} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
+      <div className="board-world" ref={world}>
         {visible.map(p => {
           const savedCard = lookup.get(p.cardId);
           const card=savedCard&&draft?.card.id===savedCard.id?{...savedCard,titleMarkdown:draftTitle}:savedCard, folder = card?parent(card.path):undefined;

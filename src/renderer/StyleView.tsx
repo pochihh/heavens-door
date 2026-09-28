@@ -1,18 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Board, CardInfo, Edge, PaletteColor, Stroke } from '../shared';
-import { DEFAULT_PALETTE, cardFill, isHexColor, tintColor, type ColorRole } from '../colors';
+import { DEFAULT_PALETTE, cardFill, isHexColor } from '../colors';
 import type { Session } from './session';
 import { Icon, Tool } from './Icons';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 export interface BoardSelection {path:string;cards:string[];edges:string[]}
 const common=<T,>(values:T[])=>values.every(value=>value===values[0])?values[0]:undefined;
-function Color({label,value,role='fill',palette,onChange}:{label:string;value:string|undefined;role?:ColorRole;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
+function Color({label,value,palette,onChange}:{label:string;value:string|undefined;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
   const [custom,setCustom]=useState(value||'#8b929e'),[editing,setEditing]=useState(false);
   useEffect(()=>{setCustom(value||'#8b929e');setEditing(false);},[value]);
   return <fieldset className="style-color" aria-label={label}><legend>{label}</legend><div className="style-swatches">
     <button className="color-swatch theme" aria-pressed={value===''} aria-label={ui.style.theme} data-tooltip={tooltips.style.theme} onClick={()=>onChange(undefined)}><span/></button>
-    {palette.map(color=><button key={color.id} className="color-swatch" aria-pressed={value?.toLowerCase()===color.color.toLowerCase()} aria-label={color.name} data-tooltip={color.name} onClick={()=>onChange(color.color)}><span style={{background:tintColor(color.color,role)}}/></button>)}
+    {palette.map(color=><button key={color.id} className="color-swatch" aria-pressed={value?.toLowerCase()===color.color.toLowerCase()} aria-label={color.name} data-tooltip={color.name} onClick={()=>onChange(color.color)}><span style={{background:color.color}}/></button>)}
     <Tool icon="plus" className={editing?'selected':''} label={tooltips.style.custom} aria-expanded={editing} onClick={()=>setEditing(!editing)}/>
   </div>{value===undefined&&<small>{ui.style.mixed}</small>}
     {editing&&<div className="custom-color" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setEditing(false);}if(e.key==='Enter'&&isHexColor(custom)){e.preventDefault();onChange(custom);setEditing(false);}}}>
@@ -27,13 +27,11 @@ function Choice({label,value,choices,onChange,sample,tip}:{label:string;value:st
     {choices.map(([v,name])=><button key={String(v)} type="button" aria-label={name} aria-pressed={value!==undefined&&String(value)===String(v)} data-tooltip={tip?.(String(v))??name} onClick={()=>onChange(String(v))}>{sample?sample(String(v)):name}</button>)}
   </div>{value===undefined&&<small>{ui.style.mixed}</small>}</fieldset>;
 }
-function LineSample({width=2,style='solid',arrow,end='end'}:{width?:number;style?:string;arrow?:string;end?:'start'|'end'}) {
-  return <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true">
-    {style==='none'?<path d="M 6 5 L 22 15 M 6 15 L 22 5" fill="none" stroke="currentColor"/>:<g transform={end==='start'?'translate(28 0) scale(-1 1)':undefined}>
-      <path d={`M 3 10 H ${arrow&&arrow!=='none'?23:25}`} stroke="currentColor" strokeWidth={width} strokeDasharray={style==='dashed'?'5 3':style==='dotted'?'0 4':undefined} strokeLinecap={style==='dotted'?'round':'butt'}/>
-      {arrow&&arrow!=='none'&&<path d={'M 17 5 L 24 10 L 17 15'+(arrow==='arrow'?'':' Z')} fill={arrow==='triangle'?'currentColor':arrow==='triangle-outline'?'var(--surface)':'none'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>}
-    </g>}
-  </svg>;
+function LineSample({width=2,style='solid',arrow=false,end='end'}:{width?:number;style?:string;arrow?:boolean;end?:'start'|'end'}) {
+  return <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true"><g transform={end==='start'?'translate(28 0) scale(-1 1)':undefined}>
+    <path d={`M 3 10 H ${arrow?23:25}`} stroke="currentColor" strokeWidth={width} strokeDasharray={style==='dashed'?'5 3':style==='dotted'?'0 4':undefined} strokeLinecap={style==='dotted'?'round':'butt'}/>
+    {arrow&&<path d="M 17 5 L 24 10 L 17 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>}
+  </g></svg>;
 }
 function PaletteEditor({palette,onSave,onClose}:{palette:PaletteColor[];onSave:(palette:PaletteColor[])=>Promise<void>;onClose:()=>void}) {
   const [draft,setDraft]=useState(()=>palette.map(c=>({...c}))),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -63,12 +61,11 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   const count=card?1:cards.length+edges.length;
   const apply=(patch:Partial<Edge>)=>{if(board)void session.board({...board,edges:board.edges.map(e=>edges.includes(e)?{...e,...patch}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
   const boardStyle=(patch:Partial<Board>)=>{if(board)void session.board({...board,...patch},ui.history.styleBoard,board).catch(()=>undefined);};
-  const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void,role:ColorRole='fill')=><Color label={label} value={value} palette={palette} role={role} onChange={onChange}/>;
+  const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void)=><Color label={label} value={value} palette={palette} onChange={onChange}/>;
   const stroke=(values:Stroke[],change:(patch:Stroke)=>void)=><>
-    <Choice label={ui.style.strokeStyle} value={common(values.map(p=>p.strokeStyle??'solid'))} choices={(['none','solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
+    <Choice label={ui.style.strokeStyle} value={common(values.map(p=>p.strokeStyle==='none'?'solid':p.strokeStyle??'solid'))} choices={(['solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
     <Choice label={ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={[.5,1,1.5,2,4,8].map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
   </>;
-  const arrows=['none','arrow','triangle','triangle-outline'] as const;
   const fill=(fillColor:string|undefined)=>{
     const ids=card?[card.id]:cards.filter(p=>!p.folder).map(p=>p.cardId);
     const updated=board&&(cards.some(p=>p.folder)||edges.length)?{...board,cards:board.cards.map(p=>p.folder&&cards.includes(p)?{...p,fillColor}:p),edges:board.edges.map(e=>edges.includes(e)?{...e,strokeColor:fillColor}:e)}:undefined;
@@ -81,10 +78,15 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
       <p className="empty-label">{ui.style.selectItems}</p>
       <Choice label={ui.style.showMentions} value={board.showMentions!==false} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>boardStyle({showMentions:v==='true'})}/>
     </>:<>
-      {color(ui.style.color,common([...cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??''),...edges.map(e=>e.strokeColor??'')]),fill,cards.length?'fill':'stroke')}
+      {color(ui.style.color,common([...cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??''),...edges.map(e=>e.strokeColor??'')]),fill)}
       {!!edges.length&&!cards.length&&<>
         {stroke(edges,apply)}
-        {(['fromArrowhead','toArrowhead'] as const).map((key,index)=><Choice key={key} label={index?ui.style.targetArrow:ui.style.sourceArrow} value={common(edges.map(e=>e[key]??'none'))} choices={arrows.map(v=>[v,v==='triangle-outline'?ui.style.outline:ui.style[v]])} onChange={value=>apply({[key]:value})} sample={arrow=><LineSample arrow={arrow} end={index?'end':'start'}/>}/>)}
+        <fieldset className="style-choice"><legend>{ui.style.arrows}</legend><div className="style-buttons" role="group" aria-label={ui.style.arrows}>
+          {(['fromArrowhead','toArrowhead'] as const).map((key,index)=>{
+            const enabled=common(edges.map(e=>!!e[key]&&e[key]!=='none'));
+            return <button key={key} type="button" aria-label={index?ui.style.targetArrow:ui.style.sourceArrow} aria-pressed={enabled??'mixed'} data-tooltip={index?tooltips.style.targetArrow:tooltips.style.sourceArrow} onClick={()=>apply({[key]:enabled?'none':'arrow'})}><LineSample arrow end={index?'end':'start'}/></button>;
+          })}
+        </div></fieldset>
         <Choice label={ui.style.labelSize} value={common(edges.map(e=>e.labelSize??14))} choices={[12,14,18,24].map((n,i)=>[n,ui.style.labelSizes[i]])} tip={v=>tooltips.style.size(Number(v))} onChange={v=>apply({labelSize:Number(v)})}/>
         {edges.length===1&&<label className="style-label"><span>{ui.style.label}</span><input key={edges[0].id+':'+(edges[0].label??'')} aria-label={ui.style.label} maxLength={2000} defaultValue={edges[0].label??''} onBlur={e=>{if(e.target.value!==(edges[0].label??''))apply({label:e.target.value});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>}
       </>}

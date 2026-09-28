@@ -45,8 +45,8 @@ export const ui = {
   style: {
     empty:'Open a card or whiteboard to edit styles.', selected:(n:number)=>`${n} selected`, mixed:'Mixed',
     color:'Color',selectItems:'Select cards, whiteboards or edges to color them.',strokeWidth:'Stroke width',strokeStyle:'Stroke style',
-    solid:'Solid',dashed:'Dashed',dotted:'Dotted',none:'None',theme:'Theme',custom:'Custom color',
-    sourceArrow:'Start arrowhead',targetArrow:'End arrowhead',arrow:'Arrow',triangle:'Triangle',outline:'Outline triangle',
+    solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
+    arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',
     label:'Label',labelSize:'Label size',labelSizes:['S','M','L','XL'],showMentions:'Show mention links',
     palette:'Workspace palette',editPalette:'Edit palette',addColor:'Add color',resetPalette:'Reset palette',
     colorName:'Color name',colorValue:'Hex color',newColor:'New color',invalidColor:'Each color needs a name and a six-digit hex value, such as #8aa5c5.',

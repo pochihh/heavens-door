@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Board, Edge } from '../src/shared';
+import { edgeStyle, type Board, type Edge } from '../src/shared';
 import { readBoard, writeBoard } from '../src/core/format';
 import { Workspace } from '../src/core/workspace';
 import { UndoHistory } from '../src/renderer/history';
@@ -44,7 +44,7 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
   const {Whiteboard}=await import('../src/renderer/Board');
   let current:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[0,1,2].map(i=>({id:`p${i}`,cardId:`c${i}`,x:i*500,y:0,width:340,height:280,...(i===2?{folder:'Ideas/Child'}:{})})),edges:[]};
   let writes=0;const root=createRoot(document.getElementById('root')!);
-  function Harness(){const [board,setBoard]=useState(current);return <Whiteboard board={board} cards={[]} initialCamera={{x:0,y:0,zoom:1}} onSave={b=>{current=b;writes++;setBoard(b);}} onOpen={()=>assert.fail('connecting must not edit content')} onCreate={()=>assert.fail('connecting must not create cards')}/>;}
+  function Harness(){const [board,setBoard]=useState(current);return <Whiteboard edgeDefaults={{strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed',fromArrowhead:'arrow',toArrowhead:'arrow',labelSize:18}} board={board} cards={[]} initialCamera={{x:0,y:0,zoom:1}} onSave={b=>{current=b;writes++;setBoard(b);}} onOpen={()=>assert.fail('connecting must not edit content')} onCreate={()=>assert.fail('connecting must not create cards')}/>;}
   const pointer=(target:EventTarget,type:string,x:number,y:number,button=0)=>{const event=new dom.window.MouseEvent(type,{bubbles:true,button,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:1});target.dispatchEvent(event);};
   const press=async(target:EventTarget,x:number,y:number)=>act(async()=>{pointer(target,'pointerdown',x,y);pointer(document,'pointerup',x,y);});
   const anchor=(id:string,side:string)=>document.querySelector(`[data-anchor-card="${id}"][data-anchor-side="${side}"]`)!;
@@ -54,7 +54,15 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
     await press(anchor('p0','right'),340,140);assert.equal(writes,0);
     assert.equal(document.querySelectorAll('.edge-anchor').length,12,'destinations reveal anchors');
     await press(anchor('p1','left'),500,140);assert.equal(current.edges.length,1);assert.equal(current.edges[0].fromSide,'right');assert.equal(current.edges[0].toSide,'left');
+    assert.deepEqual(edgeStyle(current.edges[0]),{strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed',fromArrowhead:'arrow',toArrowhead:'arrow',labelSize:18},'new edges copy the complete cached style');
+    assert.equal(current.edges[0].label,undefined);
     assert.match(document.querySelector('.edge-stroke')!.getAttribute('d')!,/ C /);
+    assert.equal(document.querySelector('.edge-layer')!.closest('.board-world'),null,'vectors must not be raster-scaled with the card layer');
+    const stroke=document.querySelector('.edge-stroke')!,path=stroke.getAttribute('d');
+    await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click();await new Promise(r=>setTimeout(r,25));});
+    assert.equal(document.querySelector('.edge-stroke'),stroke,'zoom retains the same path node');assert.equal(stroke.getAttribute('d'),path,'zoom leaves world geometry unchanged');
+    assert.match(document.querySelector('.edge-camera')!.getAttribute('transform')!,/scale\(1.1\)/);
+    await act(async()=>{document.querySelector('.canvas')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'0',ctrlKey:true,bubbles:true}));await new Promise(r=>setTimeout(r,25));});
     await act(async()=>{pointer(document.querySelector('[aria-label="End endpoint"]')!,'pointerdown',500,140);pointer(document,'pointermove',1000,140);pointer(document,'pointerup',1000,140);});
     assert.equal(current.edges[0].to,'p2','endpoint can reconnect to a whiteboard tile');
     await press(document.querySelector('[data-placement="p1"]')!,600,100);
@@ -74,9 +82,9 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
 
 test('Style View colors mixed selections together and reserves detailed strokes for edges',async()=>{
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
-  const board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[{id:'a',cardId:'a',x:0,y:0,width:300,height:200},{id:'b',cardId:'b',x:500,y:0,width:300,height:200,folder:'Child'}],edges:[{id:'e',from:'a',to:'b',strokeColor:'#e03131'}]};
+  let board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[{id:'a',cardId:'a',x:0,y:0,width:300,height:200},{id:'b',cardId:'b',x:500,y:0,width:300,height:200,folder:'Child'}],edges:[{id:'e',from:'a',to:'b',strokeColor:'#e03131'}]};
   let saved:Board|undefined,fill:{ids:string[];color:string|undefined}|undefined;
-  const session={board:async(b:Board)=>{saved=b;},fillCards:async(ids:string[],color:string|undefined,b?:Board)=>{fill={ids,color};saved=b;}} as Pick<Session,'board'|'fillCards'>;
+  const session={board:async(b:Board)=>{saved=b;board=b;},fillCards:async(ids:string[],color:string|undefined,b?:Board)=>{fill={ids,color};saved=b;}} as Pick<Session,'board'|'fillCards'>;
   const root=createRoot(document.getElementById('root')!);
   const render=async(cards:string[],edges:string[])=>act(async()=>root.render(<StyleView board={board} selection={{path:board.path,cards,edges}} session={session}/>));
   const labels=()=>[...document.querySelectorAll('legend')].map(n=>n.textContent);
@@ -84,6 +92,7 @@ test('Style View colors mixed selections together and reserves detailed strokes 
     await render(['a','b'],['e']);
     assert.equal(document.querySelectorAll('select').length,0);
     assert.deepEqual(labels(),['Color'],'mixed selections expose only the shared Color action');
+    assert.equal(document.querySelector<HTMLElement>('[aria-label="Rose"] span')!.style.background,'rgb(201, 131, 138)','swatches show the palette color without the dark card tint');
     assert.ok(document.querySelector('small')?.textContent?.includes('Mixed'));
     await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click();});
     assert.deepEqual(fill,{ids:['a'],color:'#a699c3'},'card color targets its source file');
@@ -92,9 +101,42 @@ test('Style View colors mixed selections together and reserves detailed strokes 
     for(const ids of [['a'],['b'],['a','b']]){await render(ids,[]);assert.deepEqual(labels(),['Color']);}
     await render([],['e']);
     assert.ok(document.querySelector('[aria-label="4 px"] svg'),'edge thickness keeps its visual buttons');
-    assert.ok(labels().includes('End arrowhead'));
+    assert.ok(labels().includes('Arrows'));
+    assert.equal(document.querySelector('[aria-label="Stroke style"] [aria-label="None"]'),null);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="4 px"]')!.click());
     assert.equal(saved?.edges[0].strokeWidth,4);assert.deepEqual(saved?.cards,board.cards);
+    const toggle=async(name:string)=>{await act(async()=>document.querySelector<HTMLButtonElement>(`[aria-label="${name}"]`)!.click());await render([],['e']);};
+    await toggle('Start arrow');assert.equal(board.edges[0].fromArrowhead,'arrow');
+    await toggle('End arrow');assert.equal(board.edges[0].toArrowhead,'arrow');assert.equal(board.edges[0].fromArrowhead,'arrow','both ends can be enabled');
+    await toggle('Start arrow');assert.equal(board.edges[0].fromArrowhead,'none');assert.equal(board.edges[0].toArrowhead,'arrow');
+    await toggle('End arrow');assert.equal(board.edges[0].toArrowhead,'none','both ends can be disabled');
+    board={...board,edges:[board.edges[0],{...board.edges[0],id:'e2',fromArrowhead:'triangle'}]};await render([],['e','e2']);
+    assert.equal(document.querySelector('[aria-label="Start arrow"]')!.getAttribute('aria-pressed'),'mixed');
+    await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Start arrow"]')!.click());
+    assert.ok(board.edges.every(e=>e.fromArrowhead==='arrow'),'a mixed toggle enables that end on every selected edge');
     await render([],[]);assert.deepEqual(labels(),['Show mention links'],'canvas and mention appearance are theme-controlled');
   }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+
+test('last edited edge style is cached per workspace, survives restart, and ignores moves, labels and failed saves',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-edge-defaults-')),root=join(dir,'notes'),cache=join(dir,'cache');await fs.mkdir(root);
+  let w=await Workspace.open(root,cache);t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createFolder('','Ideas');await w.create('Ideas','a',0,0);await w.create('Ideas','b',500,0);
+  let board=w.snapshot().boards.find(b=>b.folder==='Ideas')!;
+  board=(await w.saveBoard({...board,edges:[{id:'e',from:board.cards[0].id,to:board.cards[1].id,toArrowhead:'arrow'}]},board.revision)).snapshot.boards.find(b=>b.folder==='Ideas')!;
+  const styled={...board,edges:[{...board.edges[0],strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed' as const,fromArrowhead:'arrow' as const,toArrowhead:'arrow' as const,labelSize:18,label:'Do not copy me'}]};
+  const result=await w.saveBoard(styled,board.revision),expected=edgeStyle(styled.edges[0]);
+  assert.deepEqual(result.snapshot.lastEdgeStyle,expected);assert.ok(!('label' in expected));assert.ok(!('from' in expected));
+  board=result.snapshot.boards.find(b=>b.folder==='Ideas')!;
+  await assert.rejects(w.saveBoard({...board,edges:[{...board.edges[0],strokeWidth:8}]},'stale'));
+  assert.deepEqual(w.snapshot().lastEdgeStyle,expected,'failed saves cannot change defaults');
+  board=(await w.saveBoard({...board,cards:board.cards.map(p=>({...p,x:p.x+10})),edges:[{...board.edges[0],label:'New label',toSide:'top'}]},board.revision)).snapshot.boards.find(b=>b.folder==='Ideas')!;
+  assert.deepEqual(w.snapshot().lastEdgeStyle,expected,'geometry and label text do not change defaults');
+  const colored=await w.setFill([],null,{value:{...board,edges:[{...board.edges[0],strokeColor:undefined}]},expected:board.revision});
+  assert.equal(colored.snapshot.lastEdgeStyle?.strokeColor,undefined,'Theme also replaces the cached color');
+  assert.equal(colored.snapshot.lastEdgeStyle?.strokeWidth,4,'a color edit remembers the complete resulting style');
+  w.close();w=await Workspace.open(root,cache);assert.deepEqual(w.snapshot().lastEdgeStyle,{...expected,strokeColor:undefined});
+  const otherRoot=join(dir,'other');await fs.mkdir(otherRoot);const other=await Workspace.open(otherRoot,join(dir,'other-cache'));
+  try{assert.equal(other.snapshot().lastEdgeStyle,undefined,'workspaces do not share defaults');}finally{other.close();}
 });
