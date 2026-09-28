@@ -43,7 +43,8 @@ export const ui = {
     moveCards: "Move cards into Notes",
   },
   style: {
-    empty:'Open a card or whiteboard to edit styles.', selected:(n:number)=>`${n} selected`,
+    empty:'Open a card or whiteboard to edit styles.', selected:(kind:string,n:number)=>`${kind} · ${n} selected`,
+    cards:'Cards',whiteboards:'Whiteboards',cardsAndWhiteboards:'Cards & whiteboards',edges:'Edges',
     color:'Color',selectItems:'Select cards, whiteboards or edges to color them.',strokeWidth:'Stroke width',strokeStyle:'Stroke style',
     solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
     arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',

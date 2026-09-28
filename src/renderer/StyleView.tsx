@@ -59,6 +59,8 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   const [editingPalette,setEditingPalette]=useState(false);
   const cards=board?.cards.filter(p=>selection?.cards.includes(p.id))??[],edges=board?.edges.filter(e=>selection?.edges.includes(e.id))??[];
   const count=card?1:cards.length+edges.length;
+  const fillTitle=ui.style.selected(card||cards.every(p=>!p.folder)?ui.style.cards:cards.every(p=>p.folder)?ui.style.whiteboards:ui.style.cardsAndWhiteboards,card?1:cards.length);
+  const edgeTitle=ui.style.selected(ui.style.edges,edges.length);
   const apply=(patch:Partial<Edge>)=>{if(board)void session.board({...board,edges:board.edges.map(e=>edges.includes(e)?{...e,...patch}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
   const boardStyle=(patch:Partial<Board>)=>{if(board)void session.board({...board,...patch},ui.history.styleBoard,board).catch(()=>undefined);};
   const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void)=><Color label={label} value={value} palette={palette} onChange={onChange}/>;
@@ -73,13 +75,18 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   };
   return <div className="style-view">
     {!board&&!card?<p className="empty-label">{ui.style.empty}</p>:<>
-    <div className="style-selection">{count?ui.style.selected(count):board!.name}</div>
-    {card?<>{color(ui.style.color,cardFill(card)??'',fill)}<small>{ui.style.cardFillHelp}</small></>:!count&&board?<>
+    {!count&&board&&<>
+      <div className="style-selection">{board.name}</div>
       <p className="empty-label">{ui.style.selectItems}</p>
       <Choice label={ui.style.showMentions} value={board.showMentions!==false} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>boardStyle({showMentions:v==='true'})}/>
-    </>:<>
-      {!edges.length&&color(ui.style.color,common(cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
-      {!!edges.length&&!cards.length&&<>
+    </>}
+    {(card||!!cards.length)&&<section className="style-group" aria-label={fillTitle}>
+      <h3 className="style-selection">{fillTitle}</h3>
+      {color(ui.style.color,card?cardFill(card)??'':common(cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
+      {card&&<small>{ui.style.cardFillHelp}</small>}
+    </section>}
+    {!!edges.length&&<section className="style-group" aria-label={edgeTitle}>
+      <h3 className="style-selection">{edgeTitle}</h3>
         {color(ui.style.color,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}
         {stroke(edges,apply)}
         <fieldset className="style-choice"><legend>{ui.style.arrows}</legend><div className="style-buttons" role="group" aria-label={ui.style.arrows}>
@@ -90,8 +97,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
         </div></fieldset>
         <Choice label={ui.style.labelSize} value={common(edges.map(e=>e.labelSize??14))} choices={[12,14,18,24].map((n,i)=>[n,ui.style.labelSizes[i]])} tip={v=>tooltips.style.size(Number(v))} onChange={v=>apply({labelSize:Number(v)})}/>
         {edges.length===1&&<label className="style-label"><span>{ui.style.label}</span><input key={edges[0].id+':'+(edges[0].label??'')} aria-label={ui.style.label} maxLength={2000} defaultValue={edges[0].label??''} onBlur={e=>{if(e.target.value!==(edges[0].label??''))apply({label:e.target.value});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>}
-      </>}
-    </>}
+    </section>}
     </>}
     {onPalette&&(editingPalette?<PaletteEditor palette={palette} onSave={onPalette} onClose={()=>setEditingPalette(false)}/>:<button className="palette-edit" data-tooltip={tooltips.style.editPalette} onClick={()=>setEditingPalette(true)}><Icon name="art"/>{ui.style.editPalette}</button>)}
   </div>;

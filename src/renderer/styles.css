@@ -212,6 +212,7 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .edge-label-wrap{overflow:visible;text-align:center;pointer-events:none}.edge-label,.edge-label-input{pointer-events:auto;background:var(--canvas);max-width:196px;margin:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:3px 6px;line-height:1.3;border-radius:4px}.edge-label-input{width:196px}
 /* Palette colors are opaque tints over theme surfaces, never transparent card bodies. */
 .style-view{overflow:auto;padding:14px;display:flex;flex-direction:column;gap:16px;font-size:12px}.style-selection{color:var(--muted)}
+.style-group{display:flex;flex-direction:column;gap:16px}.style-group+.style-group{border-top:1px solid var(--border);padding-top:16px}.style-group>.style-selection{margin:0;font-size:inherit;font-weight:600}
 .style-view fieldset{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column;gap:10px}.style-view legend{margin-bottom:7px;color:var(--muted)}
 .style-buttons,.style-swatches{display:flex;flex-wrap:wrap;gap:4px}.style-buttons>button{min-width:28px;height:28px;padding:3px 6px;color:var(--muted);display:flex;align-items:center;justify-content:center}.style-buttons>button:has(svg){padding:3px}
 .style-buttons>button[aria-pressed=mixed]{box-shadow:inset 0 -2px var(--accent)}
