@@ -128,7 +128,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
     await toggle('Open arrow');assert.equal(board.edges[0].fromArrowhead,'arrow');assert.equal(board.edges[0].toArrowhead,'arrow');
     await toggle('Start arrow');await toggle('End arrow');
     board={...board,edges:[board.edges[0],{...board.edges[0],id:'e2',fromArrowhead:'triangle',strokeColor:'#ffffff',strokeWidth:8}]};await render([],['e','e2']);
-    assert.equal(document.querySelector('[aria-label="Start arrow"]')!.getAttribute('aria-pressed'),'mixed');
+    assert.equal(document.querySelectorAll('[aria-label="Arrows"] [aria-pressed=true]').length,0,'mixed directions leave both buttons unpressed');
     assert.ok(!document.body.textContent?.includes('Mixed'));
     assert.equal(document.querySelectorAll('.style-color [aria-pressed=true]').length,0);
     assert.equal(document.querySelectorAll('[aria-label="Stroke width"] [aria-pressed=true]').length,0);
@@ -138,6 +138,17 @@ test('Style View groups mixed selections by type and scopes each section to its 
     await render([],['e','e2']);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Outlined triangle"]')!.click());
     assert.ok(board.edges.every(e=>e.fromArrowhead==='triangle-outline'&&e.toArrowhead==='none'),'shape changes apply to enabled ends only across a selection');
+    board={...board,edges:[board.edges[0],{...board.edges[1],toArrowhead:'triangle'}]};await render([],['e','e2']);
+    assert.equal(document.querySelectorAll('[aria-label="Arrows"] [aria-pressed=true]').length,0,'even a shared start arrow is unpressed when complete directions differ');
+    await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="End arrow"]')!.click());
+    assert.ok(board.edges.every(e=>e.fromArrowhead==='none'&&e.toArrowhead!=='none'),'choosing end from mixed directions replaces the complete direction for every selected edge');
+    assert.deepEqual(board.edges.map(e=>e.toArrowhead),['triangle-outline','triangle'],'direction changes preserve each edge’s arrowhead style');
+    assert.equal(board.edges[1].strokeWidth,8);
+    await render([],['e','e2']);
+    assert.equal(document.querySelector('[aria-label="Start arrow"]')!.getAttribute('aria-pressed'),'false');
+    assert.equal(document.querySelector('[aria-label="End arrow"]')!.getAttribute('aria-pressed'),'true');
+    await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Start arrow"]')!.click());
+    assert.ok(board.edges.every(e=>e.fromArrowhead!=='none'&&e.toArrowhead!=='none'),'after resolving mixed directions the two toggles remain independent');
     board={...board,cards:board.cards.map(p=>({...p,folder:undefined})),edges:[...board.edges,{...board.edges[0],id:'e3'}]};
     await render(['a','b'],['e','e2','e3']);
     assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards · 2 selected','Edges · 3 selected']);

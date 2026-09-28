@@ -65,6 +65,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   const fillTitle=ui.style.selected(card||cards.every(p=>!p.folder)?ui.style.cards:cards.every(p=>p.folder)?ui.style.whiteboards:ui.style.cardsAndWhiteboards,card?1:cards.length);
   const edgeTitle=ui.style.selected(ui.style.edges,edges.length);
   const apply=(patch:Partial<Edge>|((edge:Edge)=>Partial<Edge>))=>{if(board)void session.board({...board,edges:board.edges.map(e=>edges.includes(e)?{...e,...(typeof patch==='function'?patch(e):patch)}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
+  const arrowDirections=common(edges.map(e=>(hasArrow(e.fromArrowhead)?1:0)|(hasArrow(e.toArrowhead)?2:0)));
   const arrowheads=edges.flatMap(e=>[e.fromArrowhead,e.toArrowhead].filter(hasArrow));
   const boardStyle=(patch:Partial<Board>)=>{if(board)void session.board({...board,...patch},ui.history.styleBoard,board).catch(()=>undefined);};
   const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void)=><Color label={label} value={value} palette={palette} onChange={onChange}/>;
@@ -94,8 +95,8 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
         {color(ui.style.color,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}
         <fieldset className="style-choice"><legend>{ui.style.arrows}</legend><div className="style-buttons" role="group" aria-label={ui.style.arrows}>
           {(['fromArrowhead','toArrowhead'] as const).map((key,index)=>{
-            const enabled=common(edges.map(e=>hasArrow(e[key]))),other=index?'fromArrowhead':'toArrowhead',shape=common(edges.map(e=>e[key]));
-            return <button key={key} type="button" aria-label={index?ui.style.targetArrow:ui.style.sourceArrow} aria-pressed={enabled??'mixed'} data-tooltip={index?tooltips.style.targetArrow:tooltips.style.sourceArrow} onClick={()=>apply(e=>({[key]:enabled?'none':hasArrow(e[key])?e[key]:hasArrow(e[other])?e[other]:'arrow'}))}><LineSample arrow={hasArrow(shape)?shape:'arrow'} end={index?'end':'start'}/></button>;
+            const enabled=arrowDirections!==undefined&&!!(arrowDirections&(1<<index)),other=index?'fromArrowhead':'toArrowhead',shape=common(edges.map(e=>e[key]));
+            return <button key={key} type="button" aria-label={index?ui.style.targetArrow:ui.style.sourceArrow} aria-pressed={enabled} data-tooltip={index?tooltips.style.targetArrow:tooltips.style.sourceArrow} onClick={()=>apply(e=>({[key]:enabled?'none':hasArrow(e[key])?e[key]:hasArrow(e[other])?e[other]:'arrow',...(arrowDirections===undefined?{[other]:'none'}:{})}))}><LineSample arrow={hasArrow(shape)?shape:'arrow'} end={index?'end':'start'}/></button>;
           })}
         </div></fieldset>
         <Choice label={ui.style.arrowheadStyle} value={common(arrowheads)} disabled={!arrowheads.length} choices={ARROWHEAD_STYLES.map(v=>[v,ui.style.arrowheads[v]])} tip={v=>tooltips.style.arrowheads[v as typeof ARROWHEAD_STYLES[number]]} onChange={value=>apply(e=>({...(hasArrow(e.fromArrowhead)?{fromArrowhead:value as Arrowhead}:{}),...(hasArrow(e.toArrowhead)?{toArrowhead:value as Arrowhead}:{})}))} sample={v=><LineSample arrow={v as Arrowhead}/>}/>
