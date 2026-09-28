@@ -48,6 +48,7 @@ export const ui = {
     color:'Color',selectItems:'Select cards, whiteboards or edges to color them.',strokeWidth:'Stroke width',strokeStyle:'Stroke style',
     solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
     arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',
+    arrowheadStyle:'Arrowhead style',arrowheads:{arrow:'Open arrow',triangle:'Filled triangle','triangle-outline':'Outlined triangle'},
     label:'Label',labelSize:'Label size',labelSizes:['S','M','L','XL'],showMentions:'Show mention links',
     palette:'Workspace palette',editPalette:'Edit palette',addColor:'Add color',resetPalette:'Reset palette',
     colorName:'Color name',colorValue:'Hex color',newColor:'New color',invalidColor:'Each color needs a name and a six-digit hex value, such as #8aa5c5.',
