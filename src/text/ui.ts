@@ -1,6 +1,20 @@
 // App-authored UI copy. Settings copy, user content, and native/dependency-owned labels are excluded.
 // Plain strings and typed formatters only; no rendering or application state.
 export const ui = {
+  settings: {
+    title:'Settings',workspace:'Workspace',performance:'Performance',hardwareAcceleration:'Hardware acceleration',
+    deviceScope:'Applies to all windows and workspaces on this computer.',
+    accelerationHelp:'Uses the graphics processor when available. Turn off to troubleshoot graphics problems.',
+    restartRequired:'Restart required. Quit and reopen the app to apply this change; Reload does not apply it.',
+    loading:'Loading settings…',invalidSettings:'Invalid application settings.',invalidAcceleration:'Hardware acceleration must be on or off.',
+    loadFailed:(reason:string)=>`Application settings could not be read. Hardware acceleration defaults to On. ${reason}`,
+  },
+  developer: {
+    title:'Developer',graphics:'Graphics diagnostics',refresh:'Refresh diagnostics',loading:'Loading diagnostics…',
+    hardwareAcceleration:'Hardware acceleration in this session',unavailable:'Not available yet',
+    pending:'Graphics information is not ready. Refresh to try again.',electron:'Electron',chromium:'Chromium',
+    feature:(name:string)=>name.replaceAll('_',' '),
+  },
   layout: {
     pixels: (value: number) => `${value} pixels`,
     sideDock: { left: 'Left Side Dock', right: 'Right Side Dock' },

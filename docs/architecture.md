@@ -86,3 +86,11 @@ Run `npm run check` for lint, types, tests and the production build. Run `npm ru
 Keep a new feature in the existing owner above. Add a shared helper only for an actual shared behavior. Changes to list dragging must update its interaction specification and regression test together. Check desktop interactions in a disposable workspace; never auto-migrate a user's files on open. Windows and Ubuntu are targets, but native UI verification so far has been on macOS.
 
 The workspace SQLite `ui_cache` also keeps the last edited edge style. It is expendable local UI state, separate from the file-backed document styles. Style defaults update only after a successful explicit style mutation.
+
+## Device graphics preferences
+
+`src/app-settings.ts` reads the small app-owned `app-settings.json` synchronously before Electron becomes ready. The default is hardware acceleration enabled; a saved false calls `app.disableHardwareAcceleration()` before creating any windows. Missing files use the default; invalid/unreadable files preserve their bytes and surface a warning in Settings. Writes validate a boolean and atomically replace the preference file. A failed save does not change the in-memory value.
+
+Main-process IPC validates the sender and owns the shared device preference. Open Settings panels receive a change notification across windows. Restart-required compares the saved preference with the startup preference, not actual GPU availability. Applying it requires a full quit/reopen; renderer Reload only reloads UI. This is app-wide device state outside workspace documents/settings, sync and history.
+
+Developer graphics diagnostics use Electron’s runtime acceleration and GPU feature APIs only after `gpu-info-update`; before that, unavailable is reported explicitly. Diagnostics are read on demand and never add per-frame polling. New settings/diagnostic copy uses the central UI and tooltip catalogs; existing workspace Settings copy remains deferred.

@@ -1,6 +1,10 @@
 // Tooltip copy. User-provided names and paths may be displayed directly; keep surrounding wording here.
 // Plain strings and typed formatters only; no rendering or application state.
 export const tooltips = {
+  settings: {
+    open:'Settings',hardwareAcceleration:'Use hardware acceleration after restarting the app',
+    developer:'Developer tools and diagnostics',refreshGraphics:'Read the current graphics status',
+  },
   tabs: {
     close: (name: string) => `Close ${name}`,
     view: (name: string) => `${name} · Drag to move; right-click for layout options`,

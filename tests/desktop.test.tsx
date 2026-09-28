@@ -17,7 +17,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
   let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[{id:'ideas',cardId:'',folder:'Ideas',x:20,y:20,width:340,height:280}],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];
-  window.door={unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
+  window.door={appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
       case 'listFiles':return request.path===''?[{name:'Ideas',path:'Ideas',kind:'folder'},{name:'assets',path:'assets',kind:'folder'}]:request.path==='assets'?[{name:'photo.jpg',path:'assets/photo.jpg',kind:'file'}]:[{name:'A.md',path:'Ideas/A.md',kind:'file'}];
@@ -53,6 +53,11 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   };
   try {
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
+    await click('[aria-label="Settings"]');
+    assert.ok(document.querySelector('[role=dialog][aria-label="Settings"] [aria-label="Workspace"]'));
+    assert.ok(document.querySelector('[aria-label="Performance"] input[type=checkbox]'));
+    assert.equal(document.querySelector('details')?.open,false,'Developer diagnostics start closed');
+    await click('[aria-label="Close dialog"]');
     await click('[aria-label="Navigation device: Auto"]');
     assert.equal(snapshot.preferences?.whiteboardInput,'mouse');
     assert.ok(document.querySelector('.navigation-mode .lucide-mouse'));

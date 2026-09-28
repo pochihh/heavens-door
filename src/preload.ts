@@ -3,6 +3,10 @@ import type { Bridge, Snapshot, WindowAction } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
+  appSettings:()=>ipcRenderer.invoke('app:settings'),
+  setHardwareAcceleration:enabled=>ipcRenderer.invoke('app:hardware-acceleration',enabled),
+  onAppSettingsChange:callback=>{const listener=()=>callback();ipcRenderer.on('app:settings-change',listener);return()=>ipcRenderer.removeListener('app:settings-change',listener);},
+  graphicsDiagnostics:()=>ipcRenderer.invoke('app:graphics-diagnostics'),
   listWorkspaces:()=>ipcRenderer.invoke('workspace:list'),
   unregisterWorkspace:root=>ipcRenderer.invoke('workspace:unregister',root),
   openWorkspace:root=>adopt(ipcRenderer.invoke('workspace:registered',root)) as Promise<Snapshot>,

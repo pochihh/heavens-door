@@ -5,11 +5,18 @@ import { join, resolve, sep, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+import {readAppSettings,writeHardwareAcceleration} from './app-settings';
 import {WorkspaceRegistry} from './core/registry';
 import {workspacePath} from './core/files';
-import type { Request, Snapshot, Mutation, Card, WindowAction } from './shared';
+import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, GraphicsDiagnostics } from './shared';
 
 app.setName("Heaven's Door");
+const appSettingsFile=join(app.getPath('userData'),'app-settings.json');
+const initialAppSettings=readAppSettings(appSettingsFile);
+let hardwareAcceleration=initialAppSettings.hardwareAcceleration,settingsWarning=initialAppSettings.warning,gpuReady=false;
+if(!initialAppSettings.hardwareAcceleration)app.disableHardwareAcceleration();
+app.on('gpu-info-update',()=>{gpuReady=true;});
+const appSettings=():AppSettings=>({hardwareAcceleration,restartRequired:hardwareAcceleration!==initialAppSettings.hardwareAcceleration,warning:settingsWarning});
 protocol.registerSchemesAsPrivileged([{scheme:'heavens-asset',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 interface Host { root:string; key:string; worker:Worker; call<T>(request:Request):Promise<T> }
 interface Desktop { window:BrowserWindow; host?:Host; closing:boolean; action:WindowAction|null; timer?:ReturnType<typeof setTimeout> }
@@ -86,6 +93,17 @@ async function createWindow(folder?:string){
 }
 void app.whenReady().then(async()=>{
   registry=new WorkspaceRegistry(join(app.getPath('userData'),'workspaces.json'));
+  ipcMain.handle('app:settings',event=>{trusted(event);return appSettings();});
+  ipcMain.handle('app:hardware-acceleration',(event,enabled:unknown)=>{
+    trusted(event);
+    hardwareAcceleration=writeHardwareAcceleration(appSettingsFile,enabled);settingsWarning=undefined;
+    for(const d of desktops.values())if(!d.window.isDestroyed())d.window.webContents.send('app:settings-change');
+    return appSettings();
+  });
+  ipcMain.handle('app:graphics-diagnostics',(event):GraphicsDiagnostics=>{
+    trusted(event);
+    return {hardwareAcceleration:gpuReady?app.isHardwareAccelerationEnabled():null,features:gpuReady?{...app.getGPUFeatureStatus()}:null,electron:process.versions.electron,chromium:process.versions.chrome};
+  });
   ipcMain.handle('workspace:list',event=>{trusted(event);return registry.list();});
   ipcMain.handle('workspace:unregister',async(event,root:unknown)=>{
     const d=trusted(event);if(typeof root!=='string'||root===d.host?.root||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.unregisterWorkspace);

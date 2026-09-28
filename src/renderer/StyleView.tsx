@@ -83,7 +83,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
     {!count&&board&&<>
       <div className="style-selection">{board.name}</div>
       <p className="empty-label">{ui.style.selectItems}</p>
-      <Choice label={ui.style.showMentions} value={board.showMentions!==false} choices={[[true,ui.common.on],[false,ui.common.off]]} onChange={v=>boardStyle({showMentions:v==='true'})}/>
+      <label className="settings-toggle"><span>{ui.style.showMentions}</span><input type="checkbox" role="switch" checked={board.showMentions!==false} onChange={e=>boardStyle({showMentions:e.target.checked})}/></label>
     </>}
     {(card||!!cards.length)&&<section className="style-group" aria-label={fillTitle}>
       <h3 className="style-selection">{fillTitle}</h3>

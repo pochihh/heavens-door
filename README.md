@@ -63,8 +63,8 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 - Use the top-right search button to search card names and contents. `backlinks:<card-id>` also works. The file list displays actual filenames.
 - ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z undo or redo card and board changes in one chronological session history. Typing close together is grouped.
 - ⌘S / Ctrl+S saves a workspace Git checkpoint. The app also checkpoints after five idle minutes. Select a checkpoint in **History** to restore the whole workspace. Later checkpoints remain reachable; new edits continue on a new branch.
-- Every card reserves a leading H1 in the app. Empty titles show the gray **A new card** prompt; click and type to replace it directly. The prompt is never saved into Markdown. **Workspace settings → Empty card title** customizes it. Cards without a leading H1 retain their existing body until you edit.
-- Change the default `untitled` filename base in **Workspace settings**. Headings and filenames are independent.
+- Every card reserves a leading H1 in the app. Empty titles show the gray **A new card** prompt; click and type to replace it directly. The prompt is never saved into Markdown. **Settings → Workspace → Empty card title** customizes it. Cards without a leading H1 retain their existing body until you edit.
+- Change the default `untitled` filename base in **Settings → Workspace**. Headings and filenames are independent.
 - Explorer, Starred and Recent open files in the active Main Dock Tab Group. Reopening a file selects its existing tab. Use the group dropdown (**Tab Group actions**) to split right or down; the same file may be open in several Tab Groups, with independent scroll/zoom positions and shared edits. Drag tabs between groups. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent Main Dock Tab Groups.
 - **File → New window** opens another workspace; **New window for this workspace** shares the current one. Workspace windows share one index/write queue; conflicting concurrent drafts remain recoverable. Appearance, default filenames, starred/recent entries and icons are stored in that workspace's `.heavens-door/settings.json`. Change an icon from the document breadcrumb. Root migration requires other windows for that workspace to be closed.
 
@@ -72,7 +72,7 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 
 The **Main Dock** holds Whiteboard View, Card View and other content views in tabs and splits. **Left Side Dock** and **Right Side Dock** hold supporting Views. A **Workspace** is the local folder together with its settings and saved interface layout. See the [terminology guide](docs/ui-terminology.md) for definitions.
 
-The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Workspace settings → Reset side docks** restores defaults.
+The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Settings → Workspace → Reset side docks** restores defaults.
 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
@@ -119,3 +119,11 @@ npm run benchmark   # temporary 10,000-card vault; removed afterward
 This first slice targets macOS, Windows and Ubuntu through Electron; desktop interaction has been exercised on macOS. It is not yet a packaged or signed release. Existing `.tag` files open read-only table and Kanban views of cards whose frontmatter `tags` includes that tag. Property editing and Kanban writeback, rich history graphs/cherry-picking, AI integrations, reading workflows, sync, and the community plugin/theme API are not implemented in this preview.
 
 Navigation code adapted from the user’s MIT-licensed Obsidian whiteboard plugin is attributed in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+
+### Performance and Developer settings
+
+Open the Action Ribbon’s **Settings** button. **Performance → Hardware acceleration** is On by default and applies to all windows and workspaces on this computer. Turn it off to troubleshoot graphics/driver issues. After changing it, fully quit and reopen the app; **View → Reload** cannot apply graphics startup changes. Returning the switch to its startup value cancels the restart notice.
+
+This device preference is stored in `app-settings.json` in Electron’s application user-data directory, outside every workspace and its Git history. Workspace appearance and layout remain in `.heavens-door/settings.json`.
+
+Expand **Developer → Graphics diagnostics** to inspect hardware acceleration in the running session, Chromium/Electron versions and graphics feature status. Diagnostics load only when opened or explicitly refreshed, with no background polling. A pending preference can differ from the running status until restart; On requests acceleration but the graphics driver may still fall back to software.

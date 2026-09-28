@@ -3,6 +3,7 @@ import { tooltips } from '../text/tooltips';
 import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { remapKey } from '../path-remap';
+import {PerformanceSettings} from './PerformanceSettings';
 import { StyleView, type BoardSelection } from './StyleView';
 import { Breadcrumbs } from './Breadcrumbs';
 import { Session } from './session';
@@ -85,7 +86,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     const key=(event:KeyboardEvent)=>{
       if(event.key==='Escape'){event.preventDefault();setModal(null);}
       if(event.key==='Tab'){
-        const controls=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,[tabindex="0"]')],first=controls[0],last=controls.at(-1);
+        const controls=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(el=>!el.closest('details:not([open])')||el.tagName==='SUMMARY'),first=controls[0],last=controls.at(-1);
         if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
       }
@@ -267,7 +268,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
       <nav className="activity-bar" aria-label={ui.layout.actionRibbon}>
         {MODULE_IDS.map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
-        <div className="toolbar-spacer"/><Tool icon="settings" label="Workspace settings" onClick={()=>setModal('settings')}/>
+        <div className="toolbar-spacer"/><Tool icon="settings" label={tooltips.settings.open} onClick={()=>setModal('settings')}/>
       </nav>
       <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
       {left&&<Divider value={docks.left.width} label={ui.layout.resizeLeftSideDock} onChange={value=>changeDocks({...docks,left:{...docks.left,width:Math.max(180,Math.min(520,value))}})}/>}
@@ -283,16 +284,16 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </footer>
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{if(confirm(ui.recovery.confirmDiscard))attempt(session.reloadDraft());}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}
-    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?'Workspace settings':modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>
-      <div className="panel-title"><strong>{modal==='workspaces'?ui.workspace.manage:modal==='settings'?'Workspace settings':modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}</strong><Tool icon="close" label={tooltips.common.closeDialog} onClick={()=>setModal(null)}/></div>
-      {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<div className="settings-body">
+    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>
+      <div className="panel-title"><strong>{modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}</strong><Tool icon="close" label={tooltips.common.closeDialog} onClick={()=>setModal(null)}/></div>
+      {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<div className="settings-body"><section className="settings-section" aria-label={ui.settings.workspace}><h3>{ui.settings.workspace}</h3>
         <label>Appearance<select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>changePrefs(()=>({theme:e.target.value as Preferences['theme']}))}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         <label>New card filename<input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>changePrefs(()=>({stem:e.target.value||'untitled'}))}/></label>
         <label>Empty card title<input aria-label="Empty card title placeholder" maxLength={120} defaultValue={prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER} onBlur={e=>changePrefs(()=>({titlePlaceholder:e.target.value.trim()||DEFAULT_TITLE_PLACEHOLDER}))}/></label>
         <label>New split direction<select aria-label="New split direction" value={prefs.newSplitDirection??'row'} onChange={e=>changePrefs(()=>({newSplitDirection:e.target.value as Preferences['newSplitDirection']}))}><option value="row">Right</option><option value="column">Below</option></select></label>
         <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
-        <small>Settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
-        {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}
+        <small>Workspace settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
+        {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}</section><PerformanceSettings/>
       </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>{ui.whiteboard.folderName}<input autoFocus aria-label={ui.whiteboard.whiteboardFolderName} value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" data-tooltip={tooltips.whiteboard.createWhiteboard} disabled={!folderName.trim()}>{ui.history.createWhiteboard}</button></form>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>
         <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?ui.icons.selectedIcon:ui.icons.defaultIcon}</span></div>

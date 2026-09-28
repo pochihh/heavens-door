@@ -51,8 +51,14 @@ export type Request =
   | { kind: 'card'; path: string }
   | { kind: 'prepareDeletion'; path:string; placements:string[]; edges:string[]; expected:string }
   | { kind: 'write'; changes: Write[] };
+export interface AppSettings {hardwareAcceleration:boolean;restartRequired:boolean;warning?:string}
+export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features:Record<string,string>|null;electron:string;chromium:string}
 export type WindowAction = 'close' | 'reload';
 export interface Bridge {
+  appSettings():Promise<AppSettings>;
+  setHardwareAcceleration(enabled:boolean):Promise<AppSettings>;
+  onAppSettingsChange(callback:()=>void):()=>void;
+  graphicsDiagnostics():Promise<GraphicsDiagnostics>;
   listWorkspaces():Promise<RegisteredWorkspace[]>;
   unregisterWorkspace(root:string):Promise<RegisteredWorkspace[]>;
   openWorkspace(root:string):Promise<Snapshot>;
