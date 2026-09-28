@@ -1,3 +1,4 @@
+import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
 import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname } from 'node:path';
@@ -22,8 +23,10 @@ export function readCard(path: string, raw: string): Card {
   const { front, body } = splitNote(raw);
   const id = front.get('card-id');
   if (id !== undefined && (typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id))) throw new Error(ui.errors.invalidCardId);
+  const fillColor=front.has('card-color')?front.get('card-color')??null:undefined;
+  if(fillColor!==undefined&&fillColor!==null&&!isHexColor(fillColor))throw new Error(ui.errors.invalidCardColor);
   const heading=leadingTitle(body);
-  return { id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
+  return { ...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
 }
 export function editCard(raw: string, card: Card, body: string) {
   const { front, header } = splitNote(raw);
@@ -45,7 +48,7 @@ export function readBoard(path: string, raw: string): Board {
   validateBoard(board);
   return board;
 }
-const validColor=(value:unknown)=>value===undefined||typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value);
+const validColor=(value:unknown)=>value===undefined||isHexColor(value);
 function validateStroke(value:Stroke) {
   if(!value||typeof value!=='object'||!validColor(value.strokeColor)||value.strokeWidth!==undefined&&(!Number.isFinite(value.strokeWidth)||value.strokeWidth<.5||value.strokeWidth>8)||value.strokeStyle!==undefined&&!['solid','dashed','dotted','none'].includes(value.strokeStyle))throw new Error(ui.errors.invalidBoardStyle);
 }

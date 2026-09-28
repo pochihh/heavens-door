@@ -1,5 +1,5 @@
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
-export interface Card { id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
+export interface Card { fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
@@ -13,7 +13,8 @@ export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlin
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
 export interface RegisteredWorkspace {root:string;name:string}
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
-export interface Preferences { whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface PaletteColor {id:string;name:string;color:string}
+export interface Preferences { palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export interface TagInfo { path: string; name: string; tag: string; revision: string }
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
@@ -35,6 +36,7 @@ export type Request =
   | { kind: 'renameBoard'; folder:string; name:string; expected:string }
   | { kind: 'renameCard'; path:string; stem:string; expected:string }
   | { kind: 'saveCard'; path: string; body: string; expected: string }
+  | { kind: 'setFill'; cards:{path:string;expected:string}[]; color:string|null; board?:{value:Board;expected:string} }
   | { kind: 'saveBoard'; board: Board; expected: string }
   | { kind: 'query'; text: string }
   | { kind: 'checkpoint'; label: string }

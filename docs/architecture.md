@@ -25,10 +25,10 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 
 | Data | Owner and location |
 | --- | --- |
-| Card content and stable identity | `.md`, YAML `card-id`; `src/core/format.ts` |
+| Card content, stable identity and shared fill | `.md`, YAML `card-id` and optional `card-color`; `src/core/format.ts` |
 | Placement identity, geometry, height mode, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
 | Tag definitions | `.tag`, indexed by `Workspace` |
-| Theme, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
+| Theme, color palette, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
 | Search, backlinks and file revisions | Rebuildable SQLite index under Electron user data |
 | Persistent checkpoints and branches | The workspace's app-managed `.git`; `src/core/history.ts` |
 | Registered workspace paths | `workspaces.json` under Electron user data; `src/core/registry.ts` |
@@ -59,6 +59,7 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `DocumentViews.tsx` | Card, board, tag and read-only physical-file views |
 | `Board.tsx` / `navigation.ts` | Cached full previews, offscreen culling, selection and board gestures |
 | `Edges.tsx` / `edge-geometry.ts` | Anchor gestures, curved manual edges, labels, endpoint reconnection and passive indexed mention lines |
+| `colors.ts` | Default workspace palette, shared card fill resolution and theme tint roles |
 | `StyleView.tsx` | Selection-aware Side Dock styling, with shared options for mixed selections |
 | `Editor.tsx` / `editor-schema.ts` | Formatted TipTap editing and supported Markdown conversion |
 | `session.ts` / `history.ts` | In-flight draft protection, mutation sequencing and grouped undo |

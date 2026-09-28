@@ -47,7 +47,7 @@ A plugin can provide Views and actions. **Plugin** describes an extension; **Vie
 | Search | Workspace card search. | Either Side Dock |
 | Agent Console | The reserved agent surface; agent integration is currently disconnected. | Either Side Dock |
 | History | Persistent Workspace Git checkpoints and restore actions. | Either Side Dock |
-| Style View | Appearance controls for the active whiteboard selection, or board options with no selection. | Either Side Dock |
+| Style View | Appearance controls for the active whiteboard selection, board options with no selection, or shared color in Card View. | Either Side Dock |
 
 **Whiteboard View** displays a board; **Whiteboard Explorer** navigates boards. **Card View** displays one card; **File Explorer** navigates files. A card edited directly on a whiteboard stays inside Whiteboard View. Side Dock tabs show the active View's icon and name, joined to its content; inactive tabs show icons only. Main Dock tabs keep their document-tab appearance. The shorter navigation labels above are also Views; the word “View” need not appear on every tab. Graph View is not implemented in this preview.
 

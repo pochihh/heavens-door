@@ -83,3 +83,5 @@ Menus keep action names visible and close on Escape or pointer-down anywhere out
 ## Edges and selection styles
 
 Use **Edge** for editable, manually drawn curves and **Mention link** for passive indexed note references. Anchor dots and endpoint handles share one appearance on cards and whiteboard tiles. Style controls belong to the movable **Style View**, with only common controls for mixed selections. See [edges, mentions and Style View](interactions/edges-and-style.md) for the interaction, terminology and persistence rules.
+
+Style controls use compact, direct button groups with visual samples for stroke thickness, dash patterns and arrowheads. Avoid dropdowns when the choices fit in a short row. Preserve pressed states, Mixed values, hover tooltips and keyboard focus. Color swatches preview the final theme-blended role, rather than the raw saturated color. The workspace palette is editable in Style View; edits affect future selections only. Card fill follows the source card everywhere, while border styling stays on its whiteboard placement. See the [color and palette contract](interactions/edges-and-style.md#card-color-and-workspace-palette).

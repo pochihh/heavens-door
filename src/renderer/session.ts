@@ -185,6 +185,21 @@ export class Session {
       this.accept(result,label);
     });
   }
+  fillCards(ids:string[],color:string|undefined,board?:Board,base?:Board) {
+    return this.run(async()=>{
+      await this.flush();
+      const snapshot=this.state.snapshot!,cards=[...new Set(ids)].map(id=>{
+        const card=snapshot.cards.find(c=>c.id===id);if(!card)throw new Error(ui.errors.cardMissing);
+        return {path:card.path,expected:card.revision};
+      });
+      const current=board&&snapshot.boards.find(b=>b.path===board.path);
+      if(board&&(!base||!current||layout(base)!==layout(current)))throw new Error(ui.errors.whiteboardChanged(board.path));
+      const result=await this.bridge.request<Mutation>({kind:'setFill',cards,color:color??null,board:board&&current?{value:board,expected:current.revision}:undefined});
+      this.accept(result,ui.history.colorCards);
+      const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
+      if(draft&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
+    });
+  }
   undo(redo=false) {
     return this.run(async () => {
       await this.flush();

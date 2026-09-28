@@ -75,13 +75,15 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
 test('Style View exposes only common options and applies mixed stroke changes to every selected item',async()=>{
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
   const board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[{id:'a',cardId:'a',x:0,y:0,width:300,height:200},{id:'b',cardId:'b',x:500,y:0,width:300,height:200,folder:'Child'}],edges:[{id:'e',from:'a',to:'b',strokeColor:'#e03131'}]};
-  let saved:Board|undefined;const session={board:async(b:Board)=>{saved=b;}} as Pick<Session,'board'>;
+  let saved:Board|undefined;const session={board:async(b:Board)=>{saved=b;},fillCards:async()=>undefined} as Pick<Session,'board'|'fillCards'>;
   const root=createRoot(document.getElementById('root')!);
   try{
     await act(async()=>root.render(<StyleView board={board} selection={{path:board.path,cards:['a','b'],edges:['e']}} session={session}/>));
     const labels=[...document.querySelectorAll('legend,.style-choice>span')].map(n=>n.textContent);
+    assert.equal(document.querySelectorAll('select').length,0,'styles use direct buttons');
+    assert.ok(document.querySelector('[aria-label="4 px"] svg'),'thickness buttons preview their weight');
     assert.ok(labels.includes('Stroke color'));assert.ok(!labels.includes('Fill'));assert.ok(!labels.includes('End arrowhead'));assert.ok(!labels.includes('Auto height'));
-    await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="#7950f2"]')!.click();});
-    assert.equal(saved?.edges[0].strokeColor,'#7950f2');assert.ok(saved?.cards.every(c=>c.strokeColor==='#7950f2'));
+    await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click();});
+    assert.equal(saved?.edges[0].strokeColor,'#a699c3');assert.ok(saved?.cards.every(c=>c.strokeColor==='#a699c3'));
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

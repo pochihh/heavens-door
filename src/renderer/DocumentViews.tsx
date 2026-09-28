@@ -1,3 +1,4 @@
+import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import type { NavigationMode } from '../layout';
@@ -37,7 +38,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     void session.bridge.request<{path:string}[]>({kind:'query',text:'backlinks:'+info.id}).then(rows=>{if(live)setBacklinks(rows);}).catch(error=>{if(live)session.update({error:String(error)});});
     return()=>{live=false;};
   },[info?.id,snapshot,session]);
-  return <section className={'document-editor '+(formatting?'show-formatting':'')} ref={container} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
+  return <section className={'document-editor '+(formatting?'show-formatting':'')} ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
     onPointerDown={e=>{
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
       setFocus({x:e.clientX,y:e.clientY,scrollTop:memory.scroll??0});onActivate();
@@ -85,7 +86,7 @@ export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:T
     void session.bridge.request<TagResult[]>({kind:'tagCards',tag:tag.tag}).then(result=>{if(live)setRows(result);}).catch(error=>{if(live)session.update({error:String(error)});});
     return()=>{live=false;};
   },[tag.tag,snapshot,session]);
-  const fields=[...new Set(rows.flatMap(r=>Object.keys(r.properties)))].filter(k=>!['card-id','tags'].includes(k)).slice(0,8);
+  const fields=[...new Set(rows.flatMap(r=>Object.keys(r.properties)))].filter(k=>!['card-id','card-color','tags'].includes(k)).slice(0,8);
   const text=(value:unknown)=>value==null?'':typeof value==='object'?JSON.stringify(value):String(value);
   const groups=[...new Set(rows.map(row=>text(row.properties[group])||ui.tags.noProperty(group)))];
   return <section className="tag-view">

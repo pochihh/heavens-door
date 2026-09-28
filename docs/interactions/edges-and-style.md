@@ -44,7 +44,7 @@ The worker queries its indexed outgoing links once for a displayed board, restri
 
 Style is a normal movable/closable Side Dock View, registered in the Right Side Dock by default. Existing saved layouts gain it without rearranging their other Views. The Action Ribbon, selection toolbar and canvas palette action reveal it where it lives. Selecting an object does not automatically open or relocate a dock.
 
-The View follows the active Main Dock whiteboard, including when the same file appears in two Tab Groups. Switching to another document shows an empty state. With no selection it shows canvas color, grid color, mention-link visibility and mention-link stroke controls.
+The View follows the active Main Dock whiteboard, including when the same file appears in two Tab Groups. Opening a Card View shows its shared fill color; other document types show an empty state. With no selection it shows canvas color, grid color, mention-link visibility and mention-link stroke controls.
 
 | Selection | Available options |
 | --- | --- |
@@ -54,6 +54,18 @@ The View follows the active Main Dock whiteboard, including when the same file a
 | Cards + whiteboard tiles | Fill; stroke color, style, width. |
 | Any selection including edges and cards/tiles | Stroke color, style, width only. |
 
-Shared means supported by **every** selected item. When values differ, the control shows **Mixed** rather than choosing one item's value. Assigning a value applies it to the entire selection as one undoable board edit. Theme colors can be restored with the theme swatch. Custom colors are validated hexadecimal values. Stroke style offers none, solid, dashed and dotted. Each endpoint offers none, arrow, filled triangle or outline triangle.
+Shared means supported by **every** selected item. When values differ, the control shows **Mixed** rather than choosing one item's value. Assigning a value applies it to the entire selection as one undoable transaction. Theme colors can be restored with the theme swatch. Custom colors are validated hexadecimal values. Stroke style offers none, solid, dashed and dotted. Each endpoint offers none, arrow, filled triangle or outline triangle.
 
-Styles belong to the placement or edge in its whiteboard, not to the source card's frontmatter. Viewing/selecting never writes; committed style changes use the shared save, conflict detection, undo and checkpoint mechanisms. Existing geometry, content editing and navigation behavior remain separate from Style View.
+Card fill belongs to the source card; border styling belongs to a placement and edge styling belongs to its whiteboard. Viewing/selecting never writes; committed style changes use the shared save, conflict detection, undo and checkpoint mechanisms. Existing geometry, content editing and navigation behavior remain separate from Style View.
+
+## Card color and workspace palette
+
+**Card color** is the card's shared fill, stored in its hidden YAML `card-color` field as a six-digit hex value. All references and miniature card previews use that value, as does Card View. Choosing Theme stores explicit `null`, so it overrides any legacy placement fill. Existing files without this field keep their old per-placement fills until the user chooses a shared color; the app does not guess which old placement should win.
+
+Card borders, geometry, collapse and height mode remain per placement. Whiteboard tile fills remain per placement as well. A mixed card/tile fill change writes the card metadata and relevant board in one revision-checked, undoable transaction. Color saves flush a pending editor draft first and advance its revision without discarding typing that arrives during the save. The Markdown body and unrelated frontmatter stay intact.
+
+Style controls use direct buttons. Stroke width buttons show actual line thickness; stroke-style buttons show solid/dashed/dotted/none samples; arrowhead buttons show the corresponding endpoint; label sizes and boolean options use compact button groups. Active options have a persistent pressed state and keyboard focus. Mixed values have no pressed option and show Mixed. There are no style dropdowns. Custom colors use a native picker plus a hex field and an explicit Apply action.
+
+The default palette contains eight muted hues: Rose `#c9838a`, Terracotta `#c99579`, Ochre `#c6ad72`, Sage `#91aa8b`, Teal `#80aaa6`, Blue `#8aa5c5`, Lavender `#a699c3`, Slate `#8b929e`, plus Theme. The Edit palette action opens a draft editor in Style View: add, name, recolor, reorder, remove, reset, Save or Cancel. Up to 24 swatches are stored in `.heavens-door/settings.json`. Escape cancels the palette editor.
+
+Palette selections copy their hex value. Editing or deleting a swatch changes **future selections only**, never existing cards, edges or boards. Theme appearance still adapts: opaque CSS `color-mix` blends fill into the card surface (38% color in light themes, 24% in dark), stroke into muted foreground (68%/78%), canvas into the surface (12%/10%), and grid into muted foreground (38%/32%). Shared `--tint-*` tokens control these roles; swatch previews use the same role as their destination. Alpha transparency is not used for card bodies, so edges behind them do not show through.

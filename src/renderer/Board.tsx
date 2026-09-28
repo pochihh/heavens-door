@@ -1,3 +1,4 @@
+import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import { Edges } from './Edges';
@@ -351,7 +352,7 @@ export const Whiteboard = memo(function Whiteboard({ mentions=[], onSelection, o
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas} style={{...(current.canvasColor?{'--canvas':current.canvasColor}:{}),...(current.gridColor?{'--dot':current.gridColor}:{})} as React.CSSProperties}
+    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas} style={{...(current.canvasColor?{'--canvas':tintColor(current.canvasColor,'canvas')}:{}),...(current.gridColor?{'--dot':tintColor(current.gridColor,'grid')}:{})} as React.CSSProperties}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
@@ -376,7 +377,7 @@ export const Whiteboard = memo(function Whiteboard({ mentions=[], onSelection, o
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:p.fillColor, borderColor:selected.includes(p.id)?undefined:p.strokeColor, borderWidth:p.strokeWidth, borderStyle:p.strokeStyle==='none'?'none':p.strokeStyle }}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:tintColor(p.folder?p.fillColor:cardFill(savedCard,p)), borderColor:selected.includes(p.id)?undefined:tintColor(p.strokeColor,'stroke'), borderWidth:p.strokeWidth, borderStyle:p.strokeStyle==='none'?'none':p.strokeStyle }}
             onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
@@ -400,7 +401,7 @@ export const Whiteboard = memo(function Whiteboard({ mentions=[], onSelection, o
                   <small>{childBoard ? ui.whiteboard.contentsCount(cardCount,nestedCount) : ui.whiteboard.missingWhiteboard}</small>
                 </div>
                 <div className="board-tile-contents" aria-label={ui.whiteboard.whiteboardContentsPreview}>
-                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
+                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id} style={{background:tintColor(child.folder?child.fillColor:cardFill(lookup.get(child.cardId),child))}}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
                 <CardEditor path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>

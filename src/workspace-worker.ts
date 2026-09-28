@@ -74,6 +74,11 @@ async function dispatch(request: Request) {
     case 'saveCard':
       string(request.path); string(request.body); string(request.expected);
       return workspace.saveCard(request.path,request.body,request.expected);
+    case 'setFill':
+      if(!Array.isArray(request.cards)||request.cards.length>10000)throw new Error(ui.errors.invalidTransaction);
+      for(const card of request.cards){string(card.path);string(card.expected);if(!card.path.endsWith('.md'))throw new Error(ui.errors.invalidWorkspacePath);}
+      if(request.board){string(request.board.expected);string(request.board.value?.path);}
+      return workspace.setFill(request.cards,request.color,request.board);
     case 'saveBoard':
       string(request.expected);
       if (!request.board || !Array.isArray(request.board.cards) || !Array.isArray(request.board.edges)) throw new Error(ui.errors.invalidBoard);

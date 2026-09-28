@@ -245,7 +245,12 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </div>;
   }
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
-    if(module==='style'){const board=snapshot.boards.find(b=>'board:'+b.folder===active.active);return <StyleView board={board} selection={boardSelection?.path===board?.path?boardSelection:undefined} session={session}/>;}
+    if(module==='style'){
+      const board=snapshot.boards.find(b=>'board:'+b.folder===active.active),card=snapshot.cards.find(c=>'card:'+c.id===active.active);
+      return <StyleView board={board} card={card} cardInfos={snapshot.cards} palette={prefs.palette} selection={boardSelection?.path===board?.path?boardSelection:undefined} session={session} onPalette={palette=>session.run(async()=>{
+        await session.flushPreferences();const snapshot=await window.door.request<Snapshot>({kind:'preferences',patch:{palette}});session.update({snapshot});
+      })}/>;
+    }
     if(module==='history')return <><div className="module-toolbar"><div className="toolbar-spacer"/><Tool icon="plus" label={tooltips.history.saveCheckpoint} disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
     if(module==='agent')return <div className="agent-empty">{ui.agent.disconnected}</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;

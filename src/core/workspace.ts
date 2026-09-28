@@ -1,3 +1,4 @@
+import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
 import { promises as fs } from 'node:fs';
 import { join, resolve, relative, basename, dirname, sep, extname, isAbsolute } from 'node:path';
@@ -185,9 +186,9 @@ export class Workspace {
   snapshot(): Snapshot {
     // ponytail: full metadata snapshots; switch to deltas if IPC dominates large-vault saves.
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
-    const cards = this.db.prepare('SELECT path,id,name,title,titleMarkdown,revision,legacy FROM cards ORDER BY path').all() as unknown as CardInfo[];
+    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(c => ({...c,legacy:!!c.legacy})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(({colorType,fillColor,...c}) => ({...c,legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -457,6 +458,19 @@ export class Workspace {
     const raw = await this.read(path), card = readCard(path,raw);
     if (card.revision !== expected) throw new Error(ui.errors.draftConflict(path));
     return this.write([{path,content:editCard(raw,card,body),expected}]);
+  }
+  async setFill(cards:{path:string;expected:string}[],color:string|null,board?:{value:Board;expected:string}) {
+    if(color!==null&&!isHexColor(color))throw new Error(ui.errors.invalidCardColor);
+    const changes:Write[]=[];
+    for(const {path,expected} of cards){
+      const raw=await this.read(path),card=readCard(path,raw);
+      if(card.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+      if(card.fillColor===color)continue;
+      const {front,body}=splitNote(raw);front.set('card-id',card.id);front.set('card-color',color);
+      changes.push({path,expected,content:`---\n${front.toString()}---\n${body}`});
+    }
+    if(board)changes.push({path:board.value.path,expected:board.expected,content:writeBoard(board.value)});
+    return changes.length?this.write(changes):{snapshot:this.snapshot(),edits:[]};
   }
   async saveBoard(board: Board, expected: string) {
     return this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);
