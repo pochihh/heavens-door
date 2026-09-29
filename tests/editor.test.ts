@@ -73,19 +73,27 @@ test('preview and editor share compact list spacing and checkbox structure',asyn
   }finally{editor.destroy();}
 });
 
-test('empty and title-only previews reserve the editor body line without changing collapsed titles',async()=>{
+test('previews preserve editor blank paragraphs and trailing body lines without changing collapsed titles',async()=>{
   const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
   const {extensions}=await import('../src/renderer/editor-schema'),{withCardTitle}=await import('../src/card-title'),{preview,titlePreview}=await import('../src/renderer/markdown');
-  for(const body of ['', '\n\n', '# ', '# Title only', '# Title only\n\n', '# Title only\n\n\n\n', '# Title only\r\n\r\n', '# A long title that wraps across several lines inside the card']){
+  for(const body of ['', '\n\n', '# ', '# Title only', '# Title only\n\n', '# Title only\n\n\n\n', '# Title only\r\n\r\n', '# A long title that wraps across several lines inside the card',
+    '# Test\\_0929\n\n- sdfsdf\n- sdfsdf\n- sdfsdf\n\n',
+    '# List\n\n- One\n- Two', '# Tasks\n\n- [ ] Task',
+    '# Code\n\n```js\nconst x=1;\n```', '# Quote\n\n> Text',
+    '# Table\n\n| A |\n| --- |\n| B |', '# Heading\n\n## Last section',
+    '# Text\n\nParagraph', '# Text\n\nParagraph\n\n',
+    '# Text\n\nFirst\n\n\n\nLast\n\n\n\n']){
     const editor=new Editor({extensions:extensions('empty.md'),content:withCardTitle(body),contentType:'markdown'});
     try{
       editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize-1);
       const shown=document.createElement('div');shown.innerHTML=preview(body,'empty.md');
-      assert.deepEqual([...shown.children].map(el=>el.tagName),[...editor.view.dom.children].map(el=>el.tagName),'preview must reserve the same title and body line as editing');
-      assert.ok(shown.querySelector('h1+p>br'),'the empty preview paragraph occupies a real text line');
-      assert.equal(shown.textContent?.trim(),editor.view.dom.textContent?.trim());
+      assert.deepEqual([...shown.children].map(el=>el.tagName),[...editor.view.dom.children].map(el=>el.classList.contains('tableWrapper')?'TABLE':el.tagName),'preview must reserve the same blocks as editing: '+JSON.stringify(body));
+      const emptyParagraphs=(parent:Element)=>[...parent.children].filter(el=>el.tagName==='P'&&!el.textContent?.trim());
+      assert.equal(emptyParagraphs(shown).length,emptyParagraphs(editor.view.dom).length,'preserve every blank body line');
+      assert.ok(emptyParagraphs(shown).every(p=>p.querySelector('br')),'empty preview paragraphs occupy real text lines');
+      assert.equal(shown.querySelector('h1')?.textContent,editor.view.dom.querySelector('h1')?.textContent);
       shown.innerHTML=titlePreview({id:'empty',path:'empty.md',name:'empty',revision:'r',legacy:false,title:'Title only'});
       assert.equal(shown.querySelector('p'),null,'collapsed cards still show only the title');
     }finally{editor.destroy();}

@@ -1,5 +1,6 @@
 import { ui } from '../text/ui';
-import { marked } from 'marked';
+import { marked, type Token } from 'marked';
+import { extractAbsorbedBlankLines } from '@tiptap/markdown';
 import DOMPurify from 'dompurify';
 import type { CardInfo } from '../shared';
 import { withCardTitle } from '../card-title';
@@ -17,23 +18,33 @@ export function unsupported(body: string) {
   marked.walkTokens(marked.lexer(body),token => { if (token.type === 'html') html=true; });
   return html || /\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(body);
 }
-export function preview(body: string,path: string) {return renderPreview(marked.parse(body,{async:false}),path,body);}
+export function preview(body: string,path: string) {
+  // Match the editor's Markdown whitespace without mounting an editor for each preview.
+  const tokens=extractAbsorbedBlankLines(marked.lexer(withCardTitle(body))) as Token[];
+  const first=tokens.findIndex(token=>token.type!=='space'),last=tokens.findLastIndex(token=>token.type!=='space');
+  const rendered=tokens.map((token,index)=>{
+    if(token.type!=='space')return token;
+    const separators=(token.raw.match(/\n\n/g)??[]).length;
+    const lines=Math.max(0,separators-(index>first&&index<last?1:0));
+    return {type:'html',raw:'',text:'<p><br></p>'.repeat(lines),block:true} as Token;
+  });
+  return renderPreview(marked.parser(rendered),path,true);
+}
 export function titlePreview(card:CardInfo) {
   const heading=document.createElement('h1');
   if(card.titleMarkdown!==undefined)heading.innerHTML=marked.parseInline(card.titleMarkdown,{async:false});
   else heading.textContent=card.title??'';
   return renderPreview(heading.outerHTML,card.path);
 }
-function renderPreview(html:string,path:string,body?:string) {
+function renderPreview(html:string,path:string,full=false) {
   const clean=DOMPurify.sanitize(html,{ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
   let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
-  // The editor keeps an empty body line below a lone title. Reserve the same line in preview.
-  // Collapsed title previews deliberately omit it.
-  if(body!==undefined&&!title.nextElementSibling){
-    const lines=Math.max(1,(withCardTitle(body).replaceAll('\r\n','\n').match(/\n\n/g)??[]).length);
-    for(let i=0;i<lines;i++){const paragraph=document.createElement('p');paragraph.append(document.createElement('br'));template.content.append(paragraph);}
+  // Tiptap keeps a final editable paragraph after non-paragraph blocks (lists, headings, etc.).
+  // Reserve it in full previews too; collapsed cards still show only their title.
+  if(full&&template.content.lastElementChild?.tagName!=='P'){
+    const paragraph=document.createElement('p');paragraph.append(document.createElement('br'));template.content.append(paragraph);
   }
   title.classList.add('card-title');
   if(!title.textContent?.trim()&&!title.querySelector('img')){title.classList.add('is-empty');title.setAttribute('aria-label',ui.editor.cardTitle);}
