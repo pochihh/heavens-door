@@ -15,7 +15,7 @@ export interface Board { path: string; folder: string; name: string; revision: s
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
-export interface RegisteredWorkspace {root:string;name:string}
+export interface RegisteredWorkspace {root:string;name:string;status:'available'|'missing'|'unavailable'|'not-folder';lastUpdated:number|null}
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface Preferences { palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
@@ -59,7 +59,7 @@ export interface Bridge {
   setHardwareAcceleration(enabled:boolean):Promise<AppSettings>;
   onAppSettingsChange(callback:()=>void):()=>void;
   graphicsDiagnostics():Promise<GraphicsDiagnostics>;
-  listWorkspaces():Promise<RegisteredWorkspace[]>;
+  listWorkspaces(refresh?:boolean):Promise<RegisteredWorkspace[]>;
   unregisterWorkspace(root:string):Promise<RegisteredWorkspace[]>;
   openWorkspace(root:string):Promise<Snapshot>;
   revealFile(path:string):Promise<void>;

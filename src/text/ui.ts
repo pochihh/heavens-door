@@ -148,6 +148,9 @@ export const ui = {
   workspace: {
     switchWorkspace: (name: string) => `Switch workspace · ${name}`,
     workspaceMenu: "Workspace menu",
+    status:{available:'Available',missing:'Folder not found',unavailable:'Cannot access','not-folder':'Not a folder'},
+    lastUpdated:'Last updated',unknownUpdate:'Unknown',loading:'Checking workspaces…',
+    cannotOpen:(name:string,status:string)=>`${name}: ${status}. Choose an available workspace or locate its folder.`,
     openOrAddWorkspace: "Open or add workspace…",
     registrationHelp: "Removing a registration keeps every file on disk. Layout and appearance are stored inside each workspace.",
     open: "Open workspace",

@@ -104,14 +104,16 @@ void app.whenReady().then(async()=>{
     trusted(event);
     return {hardwareAcceleration:gpuReady?app.isHardwareAccelerationEnabled():null,features:gpuReady?{...app.getGPUFeatureStatus()}:null,electron:process.versions.electron,chromium:process.versions.chrome};
   });
-  ipcMain.handle('workspace:list',event=>{trusted(event);return registry.list();});
+  ipcMain.handle('workspace:list',(event,refresh:unknown)=>{trusted(event);if(refresh!==undefined&&typeof refresh!=='boolean')throw new Error(ui.errors.invalidWorkspaceRegistry);return registry.list(refresh===true);});
   ipcMain.handle('workspace:unregister',async(event,root:unknown)=>{
     const d=trusted(event);if(typeof root!=='string'||root===d.host?.root||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.unregisterWorkspace);
     return registry.unregister(root);
   });
   ipcMain.handle('workspace:registered',async(event,root:unknown)=>{
-    const d=trusted(event);if(typeof root!=='string'||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.workspaceIsNotRegistered);
-    return open(d,root);
+    const d=trusted(event),workspace=typeof root==='string'?(await registry.list()).find(w=>w.root===root):undefined;
+    if(!workspace)throw new Error(ui.errors.workspaceIsNotRegistered);
+    if(workspace.status!=='available')throw new Error(ui.workspace.cannotOpen(workspace.name,ui.workspace.status[workspace.status]));
+    return open(d,workspace.root);
   });
   ipcMain.handle('workspace:reveal',async(event,path:unknown)=>{
     const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error(ui.errors.invalidWorkspaceFile);
@@ -130,8 +132,9 @@ void app.whenReady().then(async()=>{
     return result.canceled?null:open(d,result.filePaths[0]);
   });
   ipcMain.handle('workspace:demo',async event=>{
-    const d=trusted(event),parent=await fs.mkdtemp(join(app.getPath('temp'),'heavens-door-demo-')),root=join(parent,'Workspace');
-    await fs.mkdir(root);await open(d,root);await d.host!.call({kind:'createFolder',parent:'',name:'Ideas'});
+    const d=trusted(event),parent=join(app.getPath('documents'),"Heaven's Door",'Sample workspaces');
+    await fs.mkdir(parent,{recursive:true});
+    const root=await fs.mkdtemp(join(parent,'Sample workspace '));await open(d,root);await d.host!.call({kind:'createFolder',parent:'',name:'Ideas'});
     const samples=[
       ['Welcome','# Welcome\n\nA card is a Markdown file. Edit here or arrange it on the whiteboard.\n\n- [ ] Write an idea\n- [ ] Connect two cards\n- [ ] Save a checkpoint\n'],
       ['Connections','# Connections\n\nCards can appear on more than one whiteboard. Each reference edits the same file.\n'],

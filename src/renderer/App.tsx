@@ -26,6 +26,7 @@ const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
 const defaults:Preferences={theme:'system',stem:'untitled',starred:[],recent:[],icons:{}};
 export function App() {
   const state=useSyncExternalStore(session.subscribe,session.getState);
+  const [manage,setManage]=useState(false);
   useEffect(()=>{
     const remove=window.door.onChange(()=>{if(session.state.snapshot)attempt(session.refresh());});
     const keyboard=(event:KeyboardEvent)=>{
@@ -40,6 +41,8 @@ export function App() {
     <div className={'app welcome-shell platform-'+window.door.platform}><div className="welcome-drag"/><div className="welcome">
       <button className="primary" data-tooltip={tooltips.workspace.open} onClick={()=>attempt(session.open(false))}>{ui.workspace.open}</button>
       <button data-tooltip={tooltips.workspace.sampleWorkspace} onClick={()=>attempt(session.open(true))}>{ui.workspace.trySample}</button>
+      <button data-tooltip={tooltips.workspace.manage} aria-expanded={manage} onClick={()=>setManage(value=>!value)}>{ui.workspace.manage}</button>
+      {manage&&<section className="workspace-start-manager" aria-label={ui.workspace.manage}><WorkspaceManager snapshot={null} session={session}/></section>}
       {state.error&&<p role="alert">{state.error}</p>}
     </div></div>}</>;
 }

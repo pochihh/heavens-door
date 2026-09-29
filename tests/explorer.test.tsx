@@ -39,6 +39,31 @@ test('Explorer identifies real whiteboards, lists physical assets and confines i
   await fs.writeFile(registryFile,'corrupt');await assert.rejects(()=>registry.register(root));assert.equal(await fs.readFile(registryFile,'utf8'),'corrupt','invalid registry is not overwritten');
 });
 
+test('workspace availability retains missing registrations and remembers nested update times',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-registry-')),root=join(dir,'Workspace'),file=join(dir,'workspaces.json'),missing=join(dir,'Missing');
+  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  await fs.mkdir(join(root,'Notes'),{recursive:true});await fs.mkdir(join(root,'.git'));
+  await fs.writeFile(join(root,'Notes','card.md'),'A note');await fs.writeFile(join(root,'.git','index'),'internal');
+  const old=1000000000000,updated=old+100000;
+  for(const path of [root,join(root,'Notes'),join(root,'Notes','card.md')])await fs.utimes(path,old/1000,old/1000);
+  await fs.utimes(join(root,'Notes','card.md'),updated/1000,updated/1000);
+  const notFolder=join(dir,'file');await fs.writeFile(notFolder,'not a folder');
+  await fs.writeFile(file,JSON.stringify([root,missing,notFolder]));
+  const registry=new WorkspaceRegistry(file);
+  assert.deepEqual((await registry.list()).map(w=>[w.status,w.lastUpdated]),[['available',null],['missing',null],['not-folder',null]]);
+  const checked=await registry.list(true);
+  assert.equal(checked[0].lastUpdated,updated,'nested file timestamp is used; newer Git internals are ignored');
+  assert.equal(checked[1].lastUpdated,null,'no fabricated timestamp for missing legacy entries');
+  assert.equal(JSON.parse(await fs.readFile(file,'utf8'))[0].lastUpdated,updated,'timestamp survives application restart');
+  await fs.rename(root,root+' moved');
+  const reopened=new WorkspaceRegistry(file);
+  assert.deepEqual((await reopened.list(true))[0],{root,name:'Workspace',status:'missing',lastUpdated:updated});
+  await fs.rename(root+' moved',root);await fs.utimes(join(root,'Notes','card.md'),(updated+1000)/1000,(updated+1000)/1000);
+  assert.equal((await reopened.list())[0].lastUpdated,updated,'quick switching does not recursively scan files');
+  assert.equal((await reopened.list(true))[0].lastUpdated,updated+1000);
+  await fs.mkdir(missing);assert.equal((await reopened.list())[1].status,'available','refresh discovers folders that become available again');
+});
+
 test('bookmark drags use one axis-locked phantom and placeholder, reorder, unstar, and cancel without persistence',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});

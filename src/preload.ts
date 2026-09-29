@@ -7,7 +7,7 @@ const bridge:Bridge={
   setHardwareAcceleration:enabled=>ipcRenderer.invoke('app:hardware-acceleration',enabled),
   onAppSettingsChange:callback=>{const listener=()=>callback();ipcRenderer.on('app:settings-change',listener);return()=>ipcRenderer.removeListener('app:settings-change',listener);},
   graphicsDiagnostics:()=>ipcRenderer.invoke('app:graphics-diagnostics'),
-  listWorkspaces:()=>ipcRenderer.invoke('workspace:list'),
+  listWorkspaces:refresh=>ipcRenderer.invoke('workspace:list',refresh),
   unregisterWorkspace:root=>ipcRenderer.invoke('workspace:unregister',root),
   openWorkspace:root=>adopt(ipcRenderer.invoke('workspace:registered',root)) as Promise<Snapshot>,
   revealFile:path=>ipcRenderer.invoke('workspace:reveal',path),

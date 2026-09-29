@@ -14,7 +14,7 @@ npm start
 
 For development, `npm run dev` starts Vite and Electron. Renderer edits reload automatically; restart the command after changing the main process or workspace worker.
 
-Choose **Try a sample workspace** to explore without opening your own notes. **Open workspace** opens a real folder; the app writes edits directly to it. The sample workspace is temporary.
+Choose **Try a sample workspace** to explore without opening your own notes. **Open workspace** opens a real folder; the app writes edits directly to it. Sample workspaces are saved under `Documents/Heaven's Door/Sample workspaces` and remain available after restarting the computer.
 
 ## Rebuild and reopen after code changes
 
@@ -77,7 +77,7 @@ The **Action Ribbon** on the far left contains actions. Its View actions reveal 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
 
-The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider; removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate Views; File explorer includes attachments and hidden files. Folder rows show **+** on hover for **New whiteboard** or **New card**. **…** and right-click use the same menu.
+The bottom-left workspace switcher lists registered workspaces with the current one checked. Selecting another opens it in the same window after saving pending edits. **Manage workspaces** sits below a divider and is also available on the welcome screen. It lists each folder’s availability and last-updated time; missing folders stay listed but cannot be opened. Refresh checks the folders again. The timestamp is the latest file/folder modification, excluding Git internals, and is retained when a folder becomes unavailable (**Unknown** if never recorded). Removing a registration keeps its files. **Whiteboard explorer** and **File explorer** are separate Views; File explorer includes attachments and hidden files. Folder rows show **+** on hover for **New whiteboard** or **New card**. **…** and right-click use the same menu.
 
 Drag a file from Explorer or Recent into Starred to bookmark it. Drag within Starred to reorder; drag out to remove the bookmark without touching the file. Escape cancels. Alt+Up/Down and the context menu offer keyboard reordering. Recent remains chronological. Both lists share one scroller; an empty Starred header is still a drop target.
 

@@ -70,7 +70,10 @@ export const tooltips = {
     addWorkspace: "Register and open an existing folder, or create a new workspace folder",
     newWindow: "Open another window for this workspace",
     open: "Open an existing notes folder or create a workspace",
-    sampleWorkspace: "Create a temporary workspace with example cards",
+    sampleWorkspace: "Create a sample workspace in Documents",
+    manage:'Review workspace locations, availability and last update times',
+    refreshWorkspaces:'Refresh workspace availability and update times',
+    workspaceUpdated:'Latest file or folder modification, including workspace settings. Git internals are excluded. For unavailable folders, the last known time is retained.',
     search: "Search workspace cards",
   },
   layout: {
