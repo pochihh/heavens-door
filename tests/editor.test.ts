@@ -73,21 +73,21 @@ test('preview and editor share compact list spacing and checkbox structure',asyn
   }finally{editor.destroy();}
 });
 
-test('activating an empty or title-only card adds no body line; Enter still creates one',async()=>{
+test('empty and title-only previews reserve the editor body line without changing collapsed titles',async()=>{
   const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
-  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema'),{withCardTitle}=await import('../src/card-title');
-  for(const body of ['', '# Title only', '# A long title that wraps across several lines inside the card']){
-    let edits=0;
-    const editor=new Editor({extensions:extensions('empty.md'),content:withCardTitle(body),contentType:'markdown',onUpdate:()=>{edits++;}});
+  const {extensions}=await import('../src/renderer/editor-schema'),{withCardTitle}=await import('../src/card-title'),{preview,titlePreview}=await import('../src/renderer/markdown');
+  for(const body of ['', '\n\n', '# ', '# Title only', '# Title only\n\n', '# Title only\n\n\n\n', '# Title only\r\n\r\n', '# A long title that wraps across several lines inside the card']){
+    const editor=new Editor({extensions:extensions('empty.md'),content:withCardTitle(body),contentType:'markdown'});
     try{
       editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize-1);
-      assert.equal(editor.state.doc.childCount,1,'selection must not append a paragraph that expands auto height');
-      assert.equal(cardMarkdown(editor),body);assert.equal(edits,0,'activation is not a content edit');
-      editor.commands.splitBlock();
-      assert.equal(editor.state.doc.childCount,2,'an intentional new body line remains available');
-      assert.equal(editor.state.doc.lastChild!.type.name,'paragraph');
+      const shown=document.createElement('div');shown.innerHTML=preview(body,'empty.md');
+      assert.deepEqual([...shown.children].map(el=>el.tagName),[...editor.view.dom.children].map(el=>el.tagName),'preview must reserve the same title and body line as editing');
+      assert.ok(shown.querySelector('h1+p>br'),'the empty preview paragraph occupies a real text line');
+      assert.equal(shown.textContent?.trim(),editor.view.dom.textContent?.trim());
+      shown.innerHTML=titlePreview({id:'empty',path:'empty.md',name:'empty',revision:'r',legacy:false,title:'Title only'});
+      assert.equal(shown.querySelector('p'),null,'collapsed cards still show only the title');
     }finally{editor.destroy();}
   }
 });

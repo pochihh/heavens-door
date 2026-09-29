@@ -35,8 +35,7 @@ export function cardMarkdown(editor:Editor){
 }
 
 export function extensions(path: string) {
-  // Headings are editable already; focusing one must not append a body line.
-  return [CardTitle,StarterKit.configure({undoRedo:false,trailingNode:{notAfter:['heading']},link:{openOnClick:false,protocols:['card']}}),Markdown,TaskList,TaskItem.configure({nested:true}),TableKit,Image.extend({
+  return [CardTitle,StarterKit.configure({undoRedo:false,link:{openOnClick:false,protocols:['card']}}),Markdown,TaskList,TaskItem.configure({nested:true}),TableKit,Image.extend({
     addNodeView() { return ({node}) => {
       const dom=document.createElement('img');
       const source=assetPath(path,String(node.attrs.src));
