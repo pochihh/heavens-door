@@ -72,3 +72,22 @@ test('preview and editor share compact list spacing and checkbox structure',asyn
     }
   }finally{editor.destroy();}
 });
+
+test('activating an empty or title-only card adds no body line; Enter still creates one',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema'),{withCardTitle}=await import('../src/card-title');
+  for(const body of ['', '# Title only', '# A long title that wraps across several lines inside the card']){
+    let edits=0;
+    const editor=new Editor({extensions:extensions('empty.md'),content:withCardTitle(body),contentType:'markdown',onUpdate:()=>{edits++;}});
+    try{
+      editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize-1);
+      assert.equal(editor.state.doc.childCount,1,'selection must not append a paragraph that expands auto height');
+      assert.equal(cardMarkdown(editor),body);assert.equal(edits,0,'activation is not a content edit');
+      editor.commands.splitBlock();
+      assert.equal(editor.state.doc.childCount,2,'an intentional new body line remains available');
+      assert.equal(editor.state.doc.lastChild!.type.name,'paragraph');
+    }finally{editor.destroy();}
+  }
+});

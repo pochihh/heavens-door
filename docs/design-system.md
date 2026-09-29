@@ -62,7 +62,7 @@ Double-clicking a whiteboard tile also navigates in the same tab. Its menu offer
 
 ## Editing in place
 
-Selecting, focusing, editing, saving, deselecting and selecting again must preserve the same text geometry: font family, size, weight, line height, wrapping, padding and position. Editing may add a caret or a focus outline that does not affect layout. Only an actual content change may resize an auto-height card or its text. Do not animate or enlarge content merely because editing starts.
+Selecting, focusing, editing, saving, deselecting and selecting again must preserve the same text geometry: font family, size, weight, line height, wrapping, padding and position. Editing may add a caret or a focus outline that does not affect layout. Only an actual content change may resize an auto-height card or its text. Empty and title-only cards must not gain an automatic body paragraph when editing starts; pressing Enter explicitly adds the next line. Do not animate or enlarge content merely because editing starts.
 
 Card preview and editor share prose spacing, including compact list paragraphs and matching checkbox/text layout. Nested lists keep the same indentation and item positions. Edge label drafts render on the curve as they are typed, using the saved label size and the same width, wrapping and anchor as the display state. Enter or blur commits once; Escape restores the saved label. Opening and closing an unchanged label makes no history entry.
 
