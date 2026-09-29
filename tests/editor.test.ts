@@ -39,6 +39,7 @@ test('reserved H1 starts empty, persists only typed text, and preserves heading-
   try{
     assert.equal(editor.state.doc.firstChild?.type.name,'heading');assert.equal(editor.state.doc.firstChild?.attrs.level,1);
     assert.equal(cardMarkdown(editor),'');assert.equal(edits,0,'merely opening creates no saved edit');
+    assert.equal(editor.state.doc.childCount,2,'new empty cards retain the initial title and body line');
     assert.ok(editor.view.dom.querySelector('h1.card-title.is-empty'));assert.equal(editor.view.dom.textContent,'','placeholder is never editable text');
     editor.commands.setTextSelection(1);editor.commands.insertContent('A real title');
     assert.equal(cardMarkdown(editor).trimEnd(),'# A real title');assert.equal(editor.view.dom.querySelector('.is-empty'),null);
@@ -73,7 +74,7 @@ test('preview and editor share compact list spacing and checkbox structure',asyn
   }finally{editor.destroy();}
 });
 
-test('previews preserve editor blank paragraphs and trailing body lines without changing collapsed titles',async()=>{
+test('previews preserve actual blank paragraphs without inventing trailing body lines',async()=>{
   const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
@@ -98,4 +99,59 @@ test('previews preserve editor blank paragraphs and trailing body lines without 
       assert.equal(shown.querySelector('p'),null,'collapsed cards still show only the title');
     }finally{editor.destroy();}
   }
+});
+
+test('deleting the final blank line survives focus, saving and reopening',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema'),{withCardTitle}=await import('../src/card-title'),{preview}=await import('../src/renderer/markdown');
+  const {readCard,editCard}=await import('../src/core/format');
+  const {GapCursor}=await import('@tiptap/pm/gapcursor');
+  const press=(editor:Editor,key:string)=>editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+  for(const body of ['# Test\\_0929\n\n- sdfsdf\n- sdfsdf\n- sdfsdf','# Title only']){
+    const raw='---\ncard-id: regression\n---\n'+body+'\n\n';
+    const editor=new Editor({extensions:extensions('card.md'),content:withCardTitle(readCard('card.md',raw).body),contentType:'markdown'});
+    try{
+      assert.equal(editor.state.doc.lastChild?.type.name,'paragraph');
+      editor.commands.setTextSelection(editor.state.doc.content.size-1);
+      press(editor,'Backspace');
+      assert.notEqual(editor.state.doc.lastChild?.type.name,'paragraph','Backspace must remove the line rather than recreate it');
+      editor.commands.setTextSelection(1);
+      assert.equal(cardMarkdown(editor),body,'moving the caret must not add content');
+      const saved=editCard(raw,readCard('card.md',raw),cardMarkdown(editor));
+      const reopened=new Editor({extensions:extensions('card.md'),content:withCardTitle(readCard('card.md',saved).body),contentType:'markdown'});
+      try{
+        reopened.commands.setTextSelection(reopened.state.doc.content.size-1);
+        assert.equal(cardMarkdown(reopened),body,'reopening must keep the deletion');
+        const shown=document.createElement('div');shown.innerHTML=preview(readCard('card.md',saved).body,'card.md');
+        assert.notEqual(shown.lastElementChild?.tagName,'P','preview cannot invent the deleted paragraph');
+        press(reopened,'Enter');
+        if(body.includes('- sdfsdf'))press(reopened,'Enter');
+        reopened.commands.insertContent('Continued');
+        assert.equal(reopened.state.doc.lastChild?.type.name,'paragraph');
+        assert.equal(reopened.state.doc.lastChild?.textContent,'Continued','normal Enter still creates editable body content');
+      }finally{reopened.destroy();}
+    }finally{editor.destroy();}
+  }
+  for(const block of ['```js\nconst x=1;\n```','![Image](image.png)','| A |\n| --- |\n| B |']){
+    const editor=new Editor({extensions:extensions('card.md'),content:'# Title\n\n'+block,contentType:'markdown'});
+    try{
+      if(editor.state.doc.lastChild?.type.name==='codeBlock'){
+        editor.commands.setTextSelection(editor.state.doc.content.size-1);
+        editor.commands.exitCode();
+      }else if(editor.state.doc.lastChild?.type.name==='table'){
+        editor.view.dispatch(editor.state.tr.setSelection(new GapCursor(editor.state.doc.resolve(editor.state.doc.content.size))));
+        press(editor,'Enter');
+      }else{
+        editor.commands.setNodeSelection(editor.state.doc.firstChild!.nodeSize);
+        press(editor,'Enter');
+      }
+      editor.commands.insertContent('After the block');
+      assert.equal(editor.state.doc.lastChild?.type.name,'paragraph');
+      assert.equal(editor.state.doc.lastChild?.textContent,'After the block','users can still type after non-text blocks');
+    }finally{editor.destroy();}
+  }
+
 });

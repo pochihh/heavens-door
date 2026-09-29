@@ -28,7 +28,7 @@ export function preview(body: string,path: string) {
     const lines=Math.max(0,separators-(index>first&&index<last?1:0));
     return {type:'html',raw:'',text:'<p><br></p>'.repeat(lines),block:true} as Token;
   });
-  return renderPreview(marked.parser(rendered),path,true);
+  return renderPreview(marked.parser(rendered),path);
 }
 export function titlePreview(card:CardInfo) {
   const heading=document.createElement('h1');
@@ -36,16 +36,11 @@ export function titlePreview(card:CardInfo) {
   else heading.textContent=card.title??'';
   return renderPreview(heading.outerHTML,card.path);
 }
-function renderPreview(html:string,path:string,full=false) {
+function renderPreview(html:string,path:string) {
   const clean=DOMPurify.sanitize(html,{ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
   let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
-  // Tiptap keeps a final editable paragraph after non-paragraph blocks (lists, headings, etc.).
-  // Reserve it in full previews too; collapsed cards still show only their title.
-  if(full&&template.content.lastElementChild?.tagName!=='P'){
-    const paragraph=document.createElement('p');paragraph.append(document.createElement('br'));template.content.append(paragraph);
-  }
   title.classList.add('card-title');
   if(!title.textContent?.trim()&&!title.querySelector('img')){title.classList.add('is-empty');title.setAttribute('aria-label',ui.editor.cardTitle);}
   // Match the editor's task structure so checkbox and text geometry do not shift on focus.
