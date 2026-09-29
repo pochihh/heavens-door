@@ -170,7 +170,11 @@ test('Style View groups mixed selections by type and scopes each section to its 
     await render(['a','b'],['e','e2','e3']);
     assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards · 2 selected','Edges · 3 selected']);
     assert.equal(document.querySelector('[aria-label="Label"]'),null,'multiple edges have no single label editor');
-    await render([],[]);assert.deepEqual(labels(),['Show mention links'],'canvas and mention appearance are theme-controlled');
+    await render([],[]);assert.deepEqual(labels(),[],'canvas and mention appearance are theme-controlled');
+    const mentionSwitch=document.querySelector<HTMLInputElement>('input[role=switch]')!;
+    assert.equal(mentionSwitch.labels?.[0].textContent,'Show mention links');assert.equal(mentionSwitch.checked,true);
+    await act(async()=>mentionSwitch.click());assert.equal(board.showMentions,false);
+    await render([],[]);assert.equal(document.querySelector<HTMLInputElement>('input[role=switch]')!.checked,false);
     assert.equal(groups().length,0);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
