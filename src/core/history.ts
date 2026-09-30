@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { existsSync, promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import type { Checkpoint, CheckpointChange } from '../shared';
 const run = promisify(execFile);
 const interfaceFile='.heavens-door/settings.json';
@@ -11,7 +12,31 @@ const identity=['-c','user.name=Heaven’s Door','-c','user.email=local@heavens-
 
 export class History {
   available = false;
-  constructor(private root: string) {}
+  constructor(private root: string,private cache:DatabaseSync) {
+    cache.exec('CREATE TABLE IF NOT EXISTS history_colors(id TEXT PRIMARY KEY,color INTEGER NOT NULL,child TEXT)');
+  }
+  private colors(items:Checkpoint[]) {
+    const get=this.cache.prepare('SELECT color,child FROM history_colors WHERE id=?');
+    const put=this.cache.prepare('INSERT INTO history_colors VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET child=excluded.child');
+    let next=Number(this.cache.prepare("SELECT value FROM ui_cache WHERE key='history-color-next'").get()?.value??0);
+    if(!Number.isSafeInteger(next)||next<0)next=0;
+    this.cache.exec('BEGIN');
+    try {
+      for(const item of [...items].reverse()) {
+        const known=get.get(item.id);
+        const parent=item.parents[0],ancestor=parent?get.get(parent):undefined;
+        let color=known?Number(known.color):ancestor&&(!ancestor.child||ancestor.child===item.id)?Number(ancestor.color):next++%10;
+        if(!known&&ancestor&&ancestor.child&&ancestor.child!==item.id&&color===ancestor.color)color=next++%10;
+        item.color=color;if(!known)put.run(item.id,color,null);
+        // Reserve an unseen parent too: loading older history must not recolor
+        // a branch already on screen. These UI identities survive Git checkout.
+        if(parent&&(!ancestor||!ancestor.child))put.run(parent,ancestor?.color??color,item.id);
+      }
+      this.cache.prepare("INSERT OR REPLACE INTO ui_cache VALUES('history-color-next',?)").run(String(next));
+      this.cache.exec('COMMIT');
+    } catch(error){this.cache.exec('ROLLBACK');throw error;}
+    return items;
+  }
   private async git(args:string[],env:NodeJS.ProcessEnv={}) {
     return (await run('git',args,{cwd:this.root,maxBuffer:32*1024*1024,env:{...process.env,GIT_TERMINAL_PROMPT:'0',...env}})).stdout;
   }
@@ -66,10 +91,10 @@ export class History {
     let head = '';
     try { head = await this.value(['rev-parse','HEAD']); } catch { return []; }
     const lines = await this.value(['log','--all','--date-order',`-${limit}`,'--format=%H%x09%P%x09%ct%x09%s']);
-    return lines.split('\n').filter(Boolean).map(line => {
+    return this.colors(lines.split('\n').filter(Boolean).map(line => {
       const [id, parents, time, ...label] = line.split('\t');
       return { id, parents: parents.split(' ').filter(Boolean), time: Number(time)*1000, label: label.join('\t'), active: id === head };
-    });
+    }));
   }
   private async known(id:string) {
     if(!/^[a-f0-9]{40,64}$/.test(id)||!(await this.value(['branch','--contains',id])).length)throw new Error(ui.errors.unknownCheckpoint);

@@ -36,7 +36,7 @@ The plugin reference committed some cancel events. This app intentionally cancel
 
 `createDragPhantom`, `animateReorder` and `crossed` are shared by bookmark and tab gestures. They own the copied appearance, 150 ms neighbor displacement and directional thresholds. Bookmark persistence remains in `useBookmarkDrag`; tab placement remains in `useTabDrag` and existing layout operations. Keep file operations, content edits and board-card geometry out of these gestures. Do not introduce native browser drag ghosts for these consumers.
 
-For a future property editor, preserve keyboard editing and start dragging only on the property label/grip. Editable controls must never accidentally begin a reorder. Update this specification and its runnable regression whenever the gesture changes.
+For property editing, preserve keyboard editing and start dragging only on the property label/grip. Editable controls must never accidentally begin a reorder. Update this specification and its runnable regression whenever the gesture changes.
 
 ## Tabs in all docks
 
@@ -60,3 +60,7 @@ To create a vertical split, move within 20px above or below the middle of an exi
 During the drag, the source group keeps its size even when empty. After a successful transfer away, an empty Side Dock source group disappears; Main Dock empty Tab Groups remain. Dropping back into a sole-tab source restores it without a saved change.
 
 Dragging operates within one app window and does not create floating windows. Left/Right, Home and End select Side Dock tabs; group menus provide non-drag alternatives. Tab Group splitters preview adjacent weights while held, persist on release, and restore starting proportions on pointer cancellation. Arrow keys resize them too. Layout changes remain independent of content undo.
+
+## Tag property rows
+
+`TagProperties` reuses `useBookmarkDrag` in reorder-only mode: property labels start the vertical drag, values remain editable, and leaving the list cancels rather than removing the property. A type icon changes to the grip on label hover. The shared phantom retains the hovered appearance and follows only Y; no destination tint or duplicate row. Alt+Up/Down performs the same reorder. Persist YAML key order on this card, never change the tag schema from a card’s property list. Missing fields become explicit null values on an intentional reorder.

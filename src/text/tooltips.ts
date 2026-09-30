@@ -125,6 +125,9 @@ export const tooltips = {
     placeReference: "Add a reference to this card on another whiteboard",
   },
   tags: {
+    dateRange:'Set an end date',dateTime:'Include a time; shown in this device’s time zone',statusGroups:'Options grouped by progress; one per line',actions:'Tag actions',reorder:'Drag to reorder · Alt+↑ / Alt+↓',
+    inherit:'Comma-separated tag names. Inherited properties keep their original namespace.',
+    add:'Add a tag to this card',properties:'Expand or collapse properties',definition:'Edit property definitions',newTag:'Create a tag definition',remove:'Remove this tag and its property values',removeField:'Remove the definition; existing card values are kept',move:'Move to another column',save:'Save property definitions',list:'Show tagged cards as a list',
     table: "Show tagged cards as a table",
     kanban: "Group cards by a property",
     groupProperty: "Property used for Kanban columns",

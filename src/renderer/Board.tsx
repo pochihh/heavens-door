@@ -15,6 +15,7 @@ import { BoardNavigation, type Camera } from './navigation';
 import { Icon, Tool } from './Icons';
 import { InlineName } from './InlineName';
 import { ActionMenu, type MenuState } from './Overlays';
+import {TitleContent} from './TitleContent';
 import { CardEditor, type EditorFocus } from './Editor';
 import type { ReactNode } from 'react';
 
@@ -22,8 +23,8 @@ export function isVisible(p: Placement, camera: Camera, width: number, height: n
   return (p.x + p.width) * camera.zoom + camera.x > -margin && p.x * camera.zoom + camera.x < width + margin &&
     (p.y + footprint) * camera.zoom + camera.y > -margin && p.y * camera.zoom + camera.y < height + margin;
 }
-const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=false }: {
-  card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, string>; onReady:()=>void;
+const Preview = memo(function Preview({ afterTitle,card, onOpen, cache, onReady, collapsed=false }: {
+  afterTitle?:ReactNode;card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, string>; onReady:()=>void;
 }) {
   const key = `${card.path}:${card.revision}`;
   const [content,setContent]=useState({key,html:cache.get(key)??''});
@@ -46,13 +47,13 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }, [card.path, card.revision, key, cache, collapsed]);
   const summary=useMemo(()=>collapsed?titlePreview(card):'',[collapsed,card.title,card.titleMarkdown,card.path]);
   useLayoutEffect(()=>{if(ready||collapsed)onReady();},[html,ready,collapsed,onReady]);
-  return <div data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
+  return <TitleContent afterTitle={collapsed?undefined:afterTitle} data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href');
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
-  }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
+  }} html={collapsed?summary:html||preview('',card.path)} />;
 });
 interface Props {
-  reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,beside?:boolean)=>void;
+  renderTags?:(card:CardInfo)=>React.ReactNode;addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,beside?:boolean)=>void;
   edgeDefaults?:EdgeStyle;
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
@@ -73,7 +74,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
+export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -133,7 +134,7 @@ export const Whiteboard = memo(function Whiteboard({ reveal,onRevealed,onOpenCar
       nav.wheel(event);
     };
     const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing || !latest.current.enabled || document.querySelector('dialog[open]')) return;
+      if (event.isComposing || !latest.current.enabled || document.querySelector('dialog[open],[popover][data-open="true"]')) return;
       if (event.key === 'Escape') { cancel(); setSelected([]); setSelectedEdges([]); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
       if (editable(event.target)) return;
       if ((event.key==='Delete'||event.key==='Backspace')&&element.contains(event.target as Node)){event.preventDefault();latest.current.deleteSelection();return;}
@@ -336,7 +337,7 @@ export const Whiteboard = memo(function Whiteboard({ reveal,onRevealed,onOpenCar
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
-      [...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.search.openCard,icon:'note' as const,run:()=>onOpenCard(p.cardId)},{label:ui.search.openBeside,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,true)}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
+      [...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,run:()=>setMenu({anchor,placementId:p.id,label:ui.tags.add,x,y,actions:addTagActions(lookup.get(p.cardId)!)})}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.search.openCard,icon:'note' as const,run:()=>onOpenCard(p.cardId)},{label:ui.search.openBeside,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,true)}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
       }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,run:()=>removeReference(p)}]:[]),
       ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
@@ -433,9 +434,9 @@ export const Whiteboard = memo(function Whiteboard({ reveal,onRevealed,onOpenCar
                   {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id} style={{background:tintColor(child.folder?child.fillColor:cardFill(lookup.get(child.cardId),child))}}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
-                <CardEditor path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
+                <CardEditor afterTitle={card?.tags?.length?renderTags?.(card):undefined} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
                 {cardDetails}
-              </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
+              </div> : card ? <Preview afterTitle={card.tags?.length?renderTags?.(card):undefined} card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
               <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
             </>}
           </article>;

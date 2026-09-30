@@ -56,7 +56,13 @@ async function dispatch(request: Request) {
     case 'preferences': return workspace.setPreferences(request.patch);
     case 'createFolder': string(request.parent); string(request.name); return workspace.createFolder(request.parent,request.name,request.position);
     case 'migrateRoot': return workspace.migrateRoot();
-    case 'tagCards': string(request.tag); return workspace.tagCards(request.tag);
+    case 'tagCards': string(request.tag); return workspace.tagCards(request.tag,request.text,request.offset);
+    case 'createTag': string(request.tag);return workspace.createTag(request.tag);
+    case 'saveTag': string(request.path);string(request.expected);return workspace.saveTag(request.path,request.expected,request.fields,request.inherits);
+    case 'cardProperties': string(request.path);return workspace.cardProperties(request.path);
+    case 'setCardTag': string(request.path);string(request.expected);string(request.tag);return workspace.setCardTag(request.path,request.expected,request.tag,request.add);
+    case 'reorderTagProperties': string(request.path);string(request.expected);string(request.tag);return workspace.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
+    case 'setTagProperty': string(request.path);string(request.expected);string(request.tag);string(request.key);return workspace.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
     case 'inspectFile': string(request.path);return inspectFile(workspace.root,request.path);
     case 'snapshot': return workspace.snapshot();

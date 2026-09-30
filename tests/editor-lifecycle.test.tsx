@@ -17,10 +17,16 @@ test('opening and switching formatted cards never writes content or uses a destr
   const root=createRoot(document.getElementById('root')!,{onUncaughtError:error => errors.push(error)});
   try {
     for (const path of ['first.md','second.md','first.md','second.md']) {
-      await act(async () => root.render(<CardEditor path={path} body={`# ${path}\n\nOriginal text.\n`} cards={[]} onEdit={body => edits.push(body)}/>));
+      await act(async () => root.render(<CardEditor path={path} body={`# ${path}\n\nOriginal text.\n`} afterTitle={<button>project</button>} cards={[]} onEdit={body => edits.push(body)}/>));
       assert.deepEqual(errors,[],'switching cards must not crash React');
+      assert.equal(document.querySelector('.tiptap h1')?.nextElementSibling?.className,'card-metadata ProseMirror-widget');
+      assert.equal(document.querySelector('.card-metadata')?.textContent,'project');
       assert.ok(document.querySelector('[contenteditable="true"]')?.textContent?.includes(path));
     }
+    await act(async()=>root.render(<CardEditor path="second.md" body="# second.md\n\nOriginal text.\n" cards={[]} onEdit={body=>edits.push(body)}/>));
+    assert.equal(document.querySelector('.card-metadata'),null);
+    await act(async()=>root.render(<CardEditor path="second.md" body="# second.md\n\nOriginal text.\n" afterTitle={<button>project</button>} cards={[]} onEdit={body=>edits.push(body)}/>));
+    assert.equal(document.querySelector('.card-metadata')?.textContent,'project');
     assert.deepEqual(edits,[],'opening a card must not normalize or autosave its Markdown');
   } finally {await act(async () => root.unmount());}
 });

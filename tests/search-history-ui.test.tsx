@@ -81,8 +81,13 @@ test('history graph keeps ancestry lanes straight, joins shared parents and cont
   const graph=historyGraph(items);
   assert.equal(graph.positions.get('d'),graph.positions.get('b'));assert.notEqual(graph.positions.get('c'),graph.positions.get('b'));
   assert.equal(graph.lines.find(l=>l.id==='d:b')?.d,'M10 42 V226');
-  assert.equal(graph.lines.find(l=>l.id==='c:b')?.d,'M26 134 V144 L10 162');
+  assert.equal(graph.lines.find(l=>l.id==='c:b')?.d,'M26 134 V198 L10 216 V226');
   assert.equal(graph.lines.find(l=>l.id==='b:a')?.d,'M10 226 V318');
+  const siblings=historyGraph([item('tip',['c']),item('d',['b']),item('c',['b']),item('e',['b']),item('b',['a']),item('a',[])]);
+  assert.equal(new Set(['c','d','e'].map(id=>siblings.positions.get(id))).size,3,'long joins reserve their lane until the shared parent; unrelated branches cannot overlap');
   const merge=historyGraph([item('m',['d','c']),...items]);assert.notEqual(merge.positions.get('d'),merge.positions.get('c'));assert.equal(merge.lines.length,5);
   assert.match(historyGraph([item('d',['b'])]).lines[0].d,/V92$/);
+  const colored=items.map((c,i)=>({...c,color:i+4}));
+  assert.equal(historyGraph(colored).lines[1].color,5);
+  assert.deepEqual(historyGraph(colored.map(c=>({...c,active:c.id==='c'}))).lines,historyGraph(colored).lines);
 });

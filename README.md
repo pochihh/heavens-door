@@ -87,6 +87,7 @@ Physical-file mode opens indexed notes/boards/tags normally, images as previews,
 
 ## Developer documentation
 
+- [Tags, property storage and editable views](docs/tags.md)
 - [Codebase architecture](docs/architecture.md)
 - [UI terminology and workspace layout](docs/ui-terminology.md)
 - [Design system](docs/design-system.md)

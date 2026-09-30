@@ -58,6 +58,11 @@ test('history preserves interface, trash and alternate futures; applies only a d
   const a=(await w.history.list()).find(c=>c.label==='A')!;
   await write('one.md','# Branch C');await w.history.checkpoint('C');const c=(await w.history.list()).find(c=>c.label==='C')!;
   await w.history.restore(a.id);await w.scan();await write('two.md','# Branch D');await w.history.checkpoint('D');const d=(await w.history.list()).find(c=>c.label==='D')!;
+  assert.notEqual(c.color,d.color);
+  const colors=new Map((await w.history.list()).map(c=>[c.id,c.color]));
+  await w.history.restore(c.id);await w.scan();
+  assert.deepEqual(new Map((await w.history.list()).map(c=>[c.id,c.color])),colors);
+  assert.equal((await w.history.list(1))[0].color,colors.get((await w.history.list(1))[0].id));
   await w.setPreferences({theme:'dark',starred:['card:missing']});
   const preferences=await fs.readFile(join(f.root,'.heavens-door/settings.json'),'utf8'),count=(await w.history.list()).length;
   await w.history.checkpoint('Settings are not content');assert.equal((await w.history.list()).length,count);
@@ -76,6 +81,7 @@ test('history preserves interface, trash and alternate futures; applies only a d
   await w.history.checkpoint('Before deletion');const deletion=await w.prepareDeletion(board.path,[board.cards[0].id],[],board.revision);await w.write(deletion.changes);await w.history.checkpoint('Deleted card');
   assert.ok(git(f.root,['ls-files']).includes('.heavens-door/trash/'));
   w.close();w=await Workspace.open(f.root,f.cache);assert.ok((await w.history.list()).some(h=>h.id===applied));
+  for(const checkpoint of await w.history.list())if(colors.has(checkpoint.id))assert.equal(checkpoint.color,colors.get(checkpoint.id));
   assert.equal(w.snapshot().preferences?.theme,'dark');
 });
 

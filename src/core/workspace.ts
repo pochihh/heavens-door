@@ -1,3 +1,6 @@
+import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties} from './tags';
+import {validTag,tagsFrom} from '../tags';
+import type {TagField,TagValue} from '../shared';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
 import { promises as fs } from 'node:fs';
@@ -35,7 +38,6 @@ export class Workspace {
   // ponytail: retain rename notifications until worker exit; add window acknowledgements if this grows large.
   private pathMoves:{from:string;to:string}[]=[];
   constructor(readonly root: string, readonly cache: string) {
-    this.history = new History(root);
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
     if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 5) {
       this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=5;');
@@ -50,6 +52,7 @@ export class Workspace {
       CREATE INDEX IF NOT EXISTS backlinks ON links(target);
       CREATE INDEX IF NOT EXISTS outgoing_links ON links(source);
       CREATE TABLE IF NOT EXISTS ui_cache(key TEXT PRIMARY KEY,value TEXT);`);
+    this.history = new History(root,this.db);
     for(const card of this.db.prepare('SELECT path,name,title,body FROM cards').all())this.search.update(card as unknown as import('../shared').Card);
     try {
       const row=this.db.prepare("SELECT value FROM ui_cache WHERE key='edge-style'").get();
@@ -132,11 +135,11 @@ export class Workspace {
     changes=this.automaticPlacements(changes);
     const journal = [];
     for (const change of changes) {
-      if (!['.md','.whiteboard'].includes(extname(change.path)) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
+      if (!['.md','.whiteboard','.tag'].includes(extname(change.path)) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
       const before = await this.raw(change.path);
       if ((before === null ? null : revision(before)) !== change.expected) throw new Error(ui.errors.externalEdit(change.path));
       if (change.content !== null) {
-        if (change.path.endsWith('.md')) readCard(change.path,change.content); else readBoard(change.path,change.content);
+        if(change.path.endsWith('.tag'))readTag(change.path,change.content);else if (change.path.endsWith('.md')) readCard(change.path,change.content); else readBoard(change.path,change.content);
       }
       journal.push({ path: change.path, before, after: change.content });
     }
@@ -197,8 +200,7 @@ export class Workspace {
       let folder=dirname(path);
       while (folder !== '.') { this.folders.add(folder); folder=dirname(folder); }
       if (path.endsWith('.tag')) {
-        const {front}=splitNote(raw), name=basename(path,'.tag');
-        this.tags.set(path,{path,name,tag:String(front.get('tag') ?? name),revision:revision(raw)});
+        this.tags.set(path,readTag(path,raw));
         return;
       }
       if (path.endsWith('.whiteboard')) { this.boards.set(path,readBoard(path,raw)); return; }
@@ -211,6 +213,7 @@ export class Workspace {
         this.removeIndex(path);
         this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'');
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
+        for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'&&/^card:[\w-]{1,128}$/.test(value))this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,value.slice(5));
         this.search.update(card);
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
@@ -223,9 +226,9 @@ export class Workspace {
   snapshot(): Snapshot {
     // ponytail: full metadata snapshots; switch to deltas if IPC dominates large-vault saves.
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
-    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null})[];
+    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(({colorType,fillColor,...c}) => ({...c,legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(({colorType,fillColor,tagData,...c}) => ({...c,tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -308,16 +311,36 @@ export class Workspace {
     }
     return this.write(changes);
   }
-  tagCards(tag: string): TagResult[] {
-    // Properties come from the incremental index, not another filesystem scan.
-    const rows=this.db.prepare('SELECT path,id,name,revision,legacy,frontmatter FROM cards').all();
-    return rows.flatMap(row => {
-      const properties=JSON.parse(String(row.frontmatter)) as Record<string,unknown>;
-      const tags=Array.isArray(properties.tags) ? properties.tags : typeof properties.tags === 'string' ? [properties.tags] : [];
-      return tags.some(t => t === tag || String(t).startsWith(tag+'/')) ? [{
-        card:{path:String(row.path),id:String(row.id),name:String(row.name),revision:String(row.revision),legacy:!!row.legacy},properties,
-      }] : [];
-    });
+  tagCards(tag:string,text='',offset=0):TagResult[] {
+    return this.queryCards({tag,tagChildren:true,text,limit:200,offset,sort:'name'}).map(({properties,...card})=>({card,properties}));
+  }
+  cardProperties(path:string) {
+    const row=this.db.prepare('SELECT revision,frontmatter FROM cards WHERE path=?').get(path);
+    if(!row)throw new Error(ui.errors.fileMissing);
+    return {revision:String(row.revision),properties:JSON.parse(String(row.frontmatter))};
+  }
+  async createTag(tag:string) {
+    if(!validTag(tag))throw new Error(ui.tags.invalidTag);
+    tag.split('/').forEach(validateStem);
+    if([...this.tags.values()].some(t=>t.tag===tag))throw new Error(ui.tags.duplicate(tag));
+    const path='tags/'+tag+'.tag';await fs.mkdir(dirname(await this.path(path)),{recursive:true});
+    return this.write([{path,content:`---\ntag: ${JSON.stringify(tag)}\nfields: []\ninherits: []\n---\n`,expected:null}]);
+  }
+  async saveTag(path:string,expected:string,fields:TagField[],inherits:string[]) {
+    if(!path.endsWith('.tag'))throw new Error(ui.tags.invalidTag);
+    return this.write([{path,content:editTag(await this.read(path),fields,inherits),expected}]);
+  }
+  async setCardTag(path:string,expected:string,tag:string,add:boolean) {
+    if(!path.endsWith('.md')||typeof add!=='boolean')throw new Error(ui.tags.invalidTag);
+    return this.write([{path,content:editCardTag(await this.read(path),path,[...this.tags.values()],tag,add),expected}]);
+  }
+  async reorderTagProperties(path:string,expected:string,tag:string,keys:string[]){
+    if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
+    return this.write([{path,content:reorderTagProperties(await this.read(path),path,[...this.tags.values()],tag,keys),expected}]);
+  }
+  async setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {
+    if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
+    return this.write([{path,content:editTagProperty(await this.read(path),path,[...this.tags.values()],tag,key,value),expected}]);
   }
   async migrateRoot() {
     const cards=this.snapshot().cards.filter(c => dirname(c.path) === '.');
@@ -543,14 +566,15 @@ export class Workspace {
     const {text='',folder,tag,backlinksTo,properties=[],sort,direction='asc',limit=100,offset=0}=query;
     if(typeof text!=='string'||text.length>2048||[folder,tag,backlinksTo].some(v=>v!==undefined&&(typeof v!=='string'||v.length>2048))||
       !Array.isArray(properties)||properties.length>20||!Number.isInteger(limit)||limit<1||limit>500||!Number.isInteger(offset)||offset<0||offset>100000||
-      sort!==undefined&&!['name','title','path'].includes(sort)||!['asc','desc'].includes(direction)||query.recursive!==undefined&&typeof query.recursive!=='boolean')throw new Error(ui.errors.invalidQuery);
+      sort!==undefined&&!['name','title','path'].includes(sort)||!['asc','desc'].includes(direction)||query.recursive!==undefined&&typeof query.recursive!=='boolean'||query.tagChildren!==undefined&&typeof query.tagChildren!=='boolean')throw new Error(ui.errors.invalidQuery);
     const where:string[]=[],args:(string|number|null)[]=[];
     if(folder!==undefined){const path=folder.replaceAll('\\','/').replace(/\/$/,'');
       if(query.recursive){where.push("(c.folder=? OR substr(c.folder,1,length(?))=?)");const prefix=path?path+'/':'';args.push(path,prefix,prefix);}
       else {where.push('c.folder=?');args.push(path);}
     }
     if(backlinksTo!==undefined){where.push('c.path IN (SELECT source FROM links WHERE target=?)');args.push(backlinksTo);}
-    const filters=[...properties,...(tag!==undefined?[{field:'tags',op:'contains' as const,value:tag}]:[])];
+    if(tag!==undefined&&query.tagChildren){where.push("c.path IN (SELECT p.path FROM properties p,json_each(p.value) v WHERE p.field='tags' AND v.type='text' AND (v.value=? OR substr(v.value,1,length(?))=?))");args.push(tag,tag+'/',tag+'/');}
+    const filters=[...properties,...(tag!==undefined&&!query.tagChildren?[{field:'tags',op:'contains' as const,value:tag}]:[])];
     for(const filter of filters){
       if(!filter||typeof filter.field!=='string'||filter.field.length>256||!['eq','contains','exists','gt','gte','lt','lte'].includes(filter.op)||
         filter.op!=='exists'&&(filter.value===undefined||!['string','number','boolean'].includes(typeof filter.value)&&filter.value!==null)||

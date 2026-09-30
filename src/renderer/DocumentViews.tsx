@@ -3,8 +3,9 @@ import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import type { NavigationMode } from '../layout';
 import { useEffect, useRef, useState } from 'react';
-import type { Board, Card, FileInspection, Snapshot, TagInfo, TagResult } from '../shared';
+import type { Board, Card, FileInspection, Snapshot } from '../shared';
 import type { Session } from './session';
+import type {MenuAction} from './Overlays';
 import { CardEditor, type EditorFocus } from './Editor';
 import { preview } from './markdown';
 import { Whiteboard } from './Board';
@@ -12,7 +13,9 @@ import type { BoardSelection } from './StyleView';
 import type { Mention } from '../shared';
 import type { ViewMemory } from '../layout';
 export type { ViewMemory } from '../layout';
-import { Icon } from './Icons';
+import {TitleContent} from './TitleContent';
+import {CardTags} from './TagView';
+export {TagView} from './TagView';
 import { useConfirmation } from './Confirmation';
 
 export function NoteView({path,session,snapshot,active,memory,formatting,onActivate,onOpen,onViewChange}:{
@@ -39,6 +42,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     void session.bridge.request<{path:string}[]>({kind:'query',text:'backlinks:'+info.id}).then(rows=>{if(live)setBacklinks(rows);}).catch(error=>{if(live)session.update({error:String(error)});});
     return()=>{live=false;};
   },[info?.id,snapshot,session]);
+  const tags=info?<CardTags card={info} snapshot={snapshot} session={session} onOpen={onOpen}/>:undefined;
   return <section className={'document-editor '+(formatting?'show-formatting':'')} ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
     onPointerDown={e=>{
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
@@ -48,8 +52,8 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
       const link=(e.target as HTMLElement).closest('a'),href=link?.getAttribute('href');
       if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
     }}>
-    {editing?<CardEditor path={path} body={body} cards={snapshot.cards} onEdit={body=>session.edit(body)} autofocus focusPoint={focus}/>:
-      <div className="prose editor-body document-preview" dangerouslySetInnerHTML={{__html:preview(body,path)}}/>}
+    {editing?<CardEditor afterTitle={tags} path={path} body={body} cards={snapshot.cards} onEdit={body=>session.edit(body)} autofocus focusPoint={focus}/>:
+      <TitleContent className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
       {info&&!info.legacy&&<select aria-label={ui.card.placeCardOnWhiteboard} data-tooltip={tooltips.card.placeReference} value="" onChange={e=>{
@@ -69,7 +73,7 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
   },[session,snapshot.cards,board.path,board.showMentions,board.cards.length]);
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
-  return <Whiteboard reveal={reveal} onRevealed={onRevealed} onOpenCard={(id,beside)=>onNavigate('card:'+id,beside?'other':'new')} edgeDefaults={snapshot.lastEdgeStyle} board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
+  return <Whiteboard renderTags={card=><CardTags card={card} snapshot={snapshot} session={session} onOpen={onOpen} allowAdd={false}/>} addTagActions={(card):MenuAction[]=>(snapshot.tags??[]).filter(t=>!card.tags?.includes(t.tag)).map<MenuAction>(t=>({label:t.tag,icon:'tag' as const,run:()=>{void session.setCardTag(card.path,card.revision,t.tag,true).catch(()=>undefined);}})).concat((snapshot.tags??[]).every(t=>card.tags?.includes(t.tag))?[{label:ui.tags.unavailable,disabled:true,icon:'tag' as const,run:()=>{}}]:[])} reveal={reveal} onRevealed={onRevealed} onOpenCard={(id,beside)=>onNavigate('card:'+id,beside?'other':'new')} edgeDefaults={snapshot.lastEdgeStyle} board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
     boards={snapshot.boards} onOpenFolder={(folder,mode)=>onNavigate('board:'+folder,mode)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error(ui.errors.migrateRootFirst));}
@@ -81,28 +85,6 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
     onCreate={onCreate} onCreateBoard={onCreateBoard}
     draft={active?session.state.draft:null} onEdit={body=>session.edit(body)}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;
-}
-export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;memory:ViewMemory;onViewChange:()=>void}) {
-  const [rows,setRows]=useState<TagResult[]>([]),[view,setView]=useState<'table'|'kanban'>(memory.tagView??'table'),[group,setGroup]=useState(memory.tagGroup??'status');
-  useEffect(()=>{
-    let live=true;
-    void session.bridge.request<TagResult[]>({kind:'tagCards',tag:tag.tag}).then(result=>{if(live)setRows(result);}).catch(error=>{if(live)session.update({error:String(error)});});
-    return()=>{live=false;};
-  },[tag.tag,snapshot,session]);
-  const fields=[...new Set(rows.flatMap(r=>Object.keys(r.properties)))].filter(k=>!['card-id','card-color','tags'].includes(k)).slice(0,8);
-  const text=(value:unknown)=>value==null?'':typeof value==='object'?JSON.stringify(value):String(value);
-  const groups=[...new Set(rows.map(row=>text(row.properties[group])||ui.tags.noProperty(group)))];
-  return <section className="tag-view">
-    <div className="tag-view-toolbar">
-      <button data-tooltip={tooltips.tags.table} className={view==='table'?'selected':''} onClick={()=>{setView('table');memory.tagView='table';onViewChange();}}><Icon name="table"/>  {ui.tags.table}</button>
-      <button data-tooltip={tooltips.tags.kanban} className={view==='kanban'?'selected':''} onClick={()=>{setView('kanban');memory.tagView='kanban';onViewChange();}}><Icon name="kanban"/>  {ui.tags.kanban}</button>
-      {view==='kanban'&&<select aria-label={ui.tags.groupCardsByProperty} data-tooltip={tooltips.tags.groupProperty} value={group} onChange={e=>{setGroup(e.target.value);memory.tagGroup=e.target.value;onViewChange();}}>{[...new Set(['status',...fields])].map(f=><option key={f}>{f}</option>)}</select>}
-      <span className="muted">{ui.card.count(rows.length)}</span>
-    </div>
-    {view==='table'?<div className="tag-results"><table><thead><tr><th>{ui.tags.card}</th>{fields.map(f=><th key={f}>{f}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.card.id}><td><button data-tooltip={tooltips.files.open(row.card.path)} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button></td>{fields.map(f=><td key={f}>{text(row.properties[f])}</td>)}</tr>)}</tbody></table></div>:
-      <div className="kanban">{groups.map(name=><section key={name}><h3>{name}<span>{rows.filter(r=>(text(r.properties[group])||ui.tags.noProperty(group))===name).length}</span></h3>{rows.filter(r=>(text(r.properties[group])||ui.tags.noProperty(group))===name).map(row=><button key={row.card.id} data-tooltip={tooltips.files.open(row.card.path)} onClick={()=>onOpen('card:'+row.card.id)}><Icon name="note"/>{row.card.name}</button>)}</section>)}</div>}
-    {!rows.length&&<p className="empty-label">{ui.tags.empty(tag.tag)}</p>}
-  </section>;
 }
 export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapshot:Snapshot;memory:ViewMemory;onViewChange:()=>void}) {
   const [file,setFile]=useState<FileInspection|null>(null),[error,setError]=useState('');

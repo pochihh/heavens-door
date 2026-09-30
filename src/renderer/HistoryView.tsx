@@ -14,10 +14,12 @@ export function diverged(source:Checkpoint,target:Checkpoint,items:Checkpoint[])
 }
 const ROW=92, STEP=16, INSET=10, CENTER=42;
 export function historyGraph(items:Checkpoint[]) {
-  const lanes:(string|undefined)[]=[],positions=new Map<string,number>(),lines:{id:string;d:string;lane:number}[]=[];
+  const lanes:(string|undefined)[]=[],positions=new Map<string,number>(),lines:{id:string;d:string;color:number}[]=[];
   const rows=new Map(items.map((item,i)=>[item.id,i]));let widest=1;
-  const free=()=>{const index=lanes.indexOf(undefined);return index<0?lanes.length:index;};
+  const occupiedUntil:number[]=[];let currentRow=0;
+  const free=()=>{let lane=0;while(lanes[lane]!==undefined||(occupiedUntil[lane]??-1)>=currentRow)lane++;return lane;};
   for(const [row,item] of items.entries()){
+    currentRow=row;
     let lane=lanes.indexOf(item.id);if(lane<0)lane=free();
     positions.set(item.id,lane);lanes[lane]=undefined;widest=Math.max(widest,lane+1);
     for(const [i,parent] of item.parents.entries()){
@@ -26,16 +28,17 @@ export function historyGraph(items:Checkpoint[]) {
       if(!joins){destination=i===0?lane:free();lanes[destination]=parent;}
       widest=Math.max(widest,destination+1);
       const x=INSET+lane*STEP,px=INSET+destination*STEP,y=row*ROW+CENTER,py=next===undefined?items.length*ROW:next*ROW+CENTER;
-      // Join an already reserved ancestry lane just below this row. Drawing a
-      // second long diagonal would overlap unrelated commits/branches below it.
-      const bend=x===px?'':` V${y+10} L${px} ${y+28}`;
-      lines.push({id:item.id+':'+parent,lane:joins?lane:destination,d:`M${x} ${y}${bend}${joins&&x!==px?'':` V${py}`}`});
+      // Keep each branch vertical until the parent row; the short diagonal
+      // ends at the actual parent, not halfway through an unrelated checkpoint.
+      if(x!==px)occupiedUntil[lane]=Math.max(occupiedUntil[lane]??-1,next??items.length);
+      const bend=x===px?'':` V${py-28} L${px} ${py-10}`;
+      lines.push({id:item.id+':'+parent,color:item.color??lane,d:`M${x} ${y}${bend} V${py}`});
     }
   }
   return {positions,lines,width:widest*STEP+12,height:items.length*ROW};
 }
 export const historyLanes=(items:Checkpoint[])=>historyGraph(items).positions;
-const laneColor=(lane:number)=>`var(--history-lane-${lane%6})`;
+const laneColor=(lane:number)=>`var(--history-lane-${lane%10})`;
 export function HistoryPanel({session}:{session:Session}) {
   const confirm=useConfirmation();
   const {checkpoints:items,snapshot}=session.state;
@@ -78,10 +81,10 @@ export function HistoryPanel({session}:{session:Session}) {
     {!snapshot?.historyAvailable&&<p className="notice">{ui.history.unavailable}</p>}
     <div className="history-list"><div className="history-graph" style={{paddingLeft:graph.width}}>
       <svg className="history-lines" width={graph.width} height={graph.height} aria-hidden="true">
-        {graph.lines.map(line=><path key={line.id} d={line.d} style={{stroke:laneColor(line.lane)}}/>)}
+        {graph.lines.map(line=><path key={line.id} d={line.d} style={{stroke:laneColor(line.color)}}/>)}
         {items.map((item,i)=>{const lane=graph.positions.get(item.id)!,x=INSET+lane*STEP,y=i*ROW+CENTER;return <g key={item.id}>
-          {item.active&&<circle cx={x} cy={y} r={7} className="current-ring"/>}
-          <circle cx={x} cy={y} r={4} style={{fill:laneColor(lane)}}/>
+          {item.active&&<circle cx={x} cy={y} r={7} className="current-ring" style={{stroke:laneColor(item.color??lane)}}/>}
+          <circle cx={x} cy={y} r={4} style={{fill:laneColor(item.color??lane)}}/>
         </g>;})}
       </svg>
       {items.map(item=><button key={item.id} data-checkpoint={item.id} className={'checkpoint '+(item.active?'active ':'')+(selected===item.id?'selected':'')} aria-pressed={selected===item.id} data-tooltip={tooltips.history.checkpoint(item.label,item.active)} onClick={()=>setSelected(item.id)} onDoubleClick={()=>go(item)} onPointerDown={e=>drag(e,item)} onContextMenu={e=>{e.preventDefault();context(item,e.clientX,e.clientY);}} onKeyDown={e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();context(item,r.left,r.bottom);}}}>

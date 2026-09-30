@@ -1,5 +1,5 @@
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
-export interface Card { fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
+export interface Card { tags?:string[]; fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
@@ -14,20 +14,28 @@ export interface Mention { from:string; to:string }
 export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; showMentions?:boolean; mentionStyle?:Stroke; canvasColor?:string; gridColor?:string; inbox?:{x:number;y:number} }
 export type PropertyValue = string | number | boolean | null;
 export interface CardQuery {
-  text?:string; folder?:string; recursive?:boolean; tag?:string; backlinksTo?:string;
+  text?:string; folder?:string; recursive?:boolean; tag?:string; tagChildren?:boolean; backlinksTo?:string;
   properties?:{field:string;op:'eq'|'contains'|'exists'|'gt'|'gte'|'lt'|'lte';value?:PropertyValue}[];
   sort?:'name'|'title'|'path'; direction?:'asc'|'desc'; limit?:number; offset?:number;
 }
 export interface CardResult extends CardInfo { properties:Record<string,unknown>; snippet:string; score:number; terms:string[]; previewImage?:string; highlights?:{name:[number,number][];path:[number,number][];snippet:[number,number][]} }
 export interface CheckpointChange {path:string;added:number|null;removed:number|null}
-export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
+export interface Checkpoint { color?:number; id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
 export interface RegisteredWorkspace {root:string;name:string;status:'available'|'missing'|'unavailable'|'not-folder';lastUpdated:number|null}
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface Preferences { palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
-export interface TagInfo { path: string; name: string; tag: string; revision: string }
+export const TAG_FIELD_TYPES=['text','number','date','boolean','select','status','multi-select','link','url','email','phone'] as const;
+export type TagFieldType=typeof TAG_FIELD_TYPES[number];
+export const STATUS_GROUPS=['todo','inProgress','done'] as const;
+export type TagDateRange={start:string;end:string};
+export type TagValue=string|number|boolean|string[]|TagDateRange|null;
+export interface TagField {key:string;type:TagFieldType;label?:string;description?:string;options?:string[];statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
+export interface TagInfo { path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];overrides:(Partial<TagField>&{key:string})[] }
+export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
+export interface CardProperties {revision:string;properties:Record<string,unknown>}
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
@@ -44,7 +52,13 @@ export type Request =
   | { kind: 'preferences'; patch: Partial<Preferences> }
   | { kind: 'createFolder'; parent: string; name: string; position?:{x:number;y:number} }
   | { kind: 'migrateRoot' }
-  | { kind: 'tagCards'; tag: string }
+  | { kind:'tagCards';tag:string;text?:string;offset?:number }
+  | { kind:'createTag';tag:string }
+  | { kind:'saveTag';path:string;expected:string;fields:TagField[];inherits:string[] }
+  | { kind:'cardProperties';path:string }
+  | { kind:'setCardTag';path:string;expected:string;tag:string;add:boolean }
+  | { kind:'reorderTagProperties';path:string;expected:string;tag:string;keys:string[] }
+  | { kind:'setTagProperty';path:string;expected:string;tag:string;key:string;value:TagValue }
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
   | { kind: 'renameBoard'; folder:string; name:string; expected:string }
   | { kind: 'renameCard'; path:string; stem:string; expected:string }

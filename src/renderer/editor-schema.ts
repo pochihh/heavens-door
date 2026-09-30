@@ -34,6 +34,7 @@ export function cardMarkdown(editor:Editor){
   return editor.markdown!.serialize(doc);
 }
 
+export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
 export function extensions(path: string) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
   return [CardTitle,StarterKit.configure({undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card']}}),Markdown,TaskList,TaskItem.configure({nested:true}),TableKit,Image.extend({

@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {promises as fs} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {Workspace} from '../src/core/workspace';
+import {revision} from '../src/core/format';
+import {resolveTag,validateFields,validateTagValue,fieldOptions} from '../src/tags';
+import {UndoHistory} from '../src/renderer/history';
+
+test('tags preserve Markdown, apply typed defaults, query descendants and remove only unshared values with undo',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-tags-')),root=join(dir,'notes'),cache=join(dir,'cache');await fs.mkdir(root);let w=await Workspace.open(root,cache);
+  t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createFolder('','Notes');await w.create('Notes','A',20,20);await w.create('Notes','B',400,20);
+  await w.createTag('project');let tag=w.snapshot().tags!.find(t=>t.tag==='project')!;
+  await w.saveTag(tag.path,tag.revision,[{key:'status',type:'select',options:['Todo','Done'],default:'Todo'},{key:'priority',type:'number',default:2},{key:'related',type:'link'}],[]);
+  await w.createTag('project/research');tag=w.snapshot().tags!.find(t=>t.tag==='project/research')!;
+  await w.saveTag(tag.path,tag.revision,[{key:'method',type:'text',default:'Read'}],['project']);
+  await w.createTag('task');tag=w.snapshot().tags!.find(t=>t.tag==='task')!;await w.saveTag(tag.path,tag.revision,[],['project']);
+  const path='Notes/A.md',raw=(await w.read(path)).replace('---\ncard-id:','---\n# Keep comment\ncustom: keep\nproject/status: Done\ncard-id:')+'# A\n\nKeep **Markdown** unchanged.\n';
+  await w.write([{path,content:raw,expected:(await w.card(path)).revision}]);
+  await w.setCardTag(path,revision(raw),'project/research',true);
+  let props=w.cardProperties(path);assert.equal(props.properties['project/status'],'Done');assert.equal(props.properties['project/priority'],2);assert.equal(props.properties['project/research/method'],'Read');assert.equal(props.properties.custom,'keep');assert.match(await w.read(path),/# Keep comment/);assert.match(await w.read(path),/# A\n\nKeep \*\*Markdown\*\* unchanged\.\n$/);
+  assert.equal(w.tagCards('project').length,1);assert.equal(w.tagCards('project/research').length,1);assert.equal(w.tagCards('pro').length,0);assert.equal(w.tagCards("' OR 1=1 --").length,0);
+  assert.equal(w.queryCards({tag:'project'}).length,0);assert.equal(w.queryCards({tag:'project',tagChildren:true}).length,1);
+  await assert.rejects(()=>w.setTagProperty(path,props.revision,'project','project/priority','two'),/Invalid value/);
+  await assert.rejects(()=>w.setTagProperty(path,props.revision,'project','card-id','bad'),/Unknown property/);
+  await w.setTagProperty(path,props.revision,'project','project/priority',3);
+  await assert.rejects(()=>w.setTagProperty(path,props.revision,'project','project/priority',4),/External changes/);
+  props=w.cardProperties(path);const target=(await w.card('Notes/B.md')).id;await w.setTagProperty(path,props.revision,'project','project/related','card:'+target);assert.equal(w.query('backlinks:'+target).length,1);
+  await w.setCardTag(path,(await w.card(path)).revision,'task',true);
+  const original=await w.read(path);await w.reorderTagProperties(path,(await w.card(path)).revision,'project/research',['project/research/method','project/related','project/priority','project/status']);
+  assert.ok((await w.read(path)).indexOf('project/related:')<(await w.read(path)).indexOf('project/status:'));assert.equal(w.cardProperties(path).properties['project/status'],'Done');assert.match(await w.read(path),/# Keep comment/);assert.equal((await w.read(path)).split('---')[2],original.split('---')[2]);
+  const undo=new UndoHistory(),removed=await w.setCardTag(path,(await w.card(path)).revision,'project/research',false);undo.record('Remove tag',removed.edits);
+  props=w.cardProperties(path);assert.equal(props.properties['project/research/method'],undefined);assert.equal(props.properties['project/priority'],3);assert.equal(props.properties.custom,'keep');assert.deepEqual(props.properties.tags,['task']);
+  await undo.travel(false,changes=>w.write(changes));assert.equal(w.cardProperties(path).properties['project/research/method'],'Read');
+  await undo.travel(true,changes=>w.write(changes));await w.setCardTag(path,(await w.card(path)).revision,'task',false);assert.equal(w.cardProperties(path).properties['project/status'],undefined);assert.equal(w.query('backlinks:'+target).length,0);
+  await w.history.checkpoint('Tags');assert.ok((await w.history.changes((await w.history.list())[0].id)).some(c=>c.path.endsWith('.tag')));
+  w.close();w=await Workspace.open(root,cache);assert.equal(resolveTag(w.snapshot().tags!,'project/research').fields[0].propertyKey,'project/status');
+  const external='---\ntag: external\nfields:\n  - key: date\n    type: date\n---\n';await fs.writeFile(join(root,'external.tag'),external);await w.refresh('external.tag');assert.ok(w.snapshot().tags!.some(t=>t.tag==='external'));
+  tag=w.snapshot().tags!.find(t=>t.tag==='task')!;await w.saveTag(tag.path,tag.revision,[],['task']);assert.match(resolveTag(w.snapshot().tags!,'task').warnings.join(' '),/cycle/);
+  await assert.rejects(()=>w.createTag('../escape'),/valid tag/);
+});
+
+
+test('Status groups and date ranges remain readable values, with validation and indexed round trips',async t=>{
+  const status={key:'status',type:'status' as const,statusGroups:{todo:['Todo','Backlog'],inProgress:['Doing','Review'],done:['Done']},default:'Todo'};
+  const date={key:'schedule',type:'date' as const};
+  assert.deepEqual(fieldOptions(status),['Todo','Backlog','Doing','Review','Done']);validateFields([status,date]);
+  assert.throws(()=>validateFields([{...status,statusGroups:{...status.statusGroups,done:['Todo']}}]),/Check property/);
+  assert.throws(()=>validateFields([{...status,statusGroups:{todo:['Todo'],done:['Done']}}]),/Check property/);
+  validateTagValue(status,'Review');assert.throws(()=>validateTagValue(status,'Unknown'),/Invalid value/);
+  for(const value of ['2026-02-30','2026-09-30T25:00Z','2026-09-30T12:00',{start:'2026-09-30',end:'2026-09-29'},{start:'2026-09-30',end:'2026-09-30T12:00Z'},{start:'2026-09-30',end:'2026-10-01',extra:1}])assert.throws(()=>validateTagValue(date,value),/Invalid value/);
+  validateTagValue(date,'2024-02-29');validateTagValue(date,{start:'2026-09-30T09:00:00-07:00',end:'2026-09-30T17:00:00Z'});
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-tag-dates-')),root=join(dir,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(dir,'cache'));t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.createTag('task');const tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[status,date],[]);
+  const path='Notes/A.md';await w.setCardTag(path,(await w.card(path)).revision,'task',true);
+  const range={start:'2026-09-30',end:'2026-10-03'};const result=await w.setTagProperty(path,(await w.card(path)).revision,'task','task/schedule',range);
+  assert.deepEqual(w.tagCards('task')[0].properties['task/schedule'],range);assert.match(await w.read(path),/task\/schedule:\n {2}start: 2026-09-30\n {2}end: 2026-10-03/);
+  const undo=new UndoHistory();undo.record('Set dates',result.edits);await undo.travel(false,changes=>w.write(changes));assert.equal(w.cardProperties(path).properties['task/schedule'],undefined);await undo.travel(true,changes=>w.write(changes));assert.deepEqual(w.cardProperties(path).properties['task/schedule'],range);
+  await w.setTagProperty(path,(await w.card(path)).revision,'task','task/status','Review');assert.equal(w.queryCards({properties:[{field:'task/status',op:'eq',value:'Review'}]}).length,1);
+});

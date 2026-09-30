@@ -1,5 +1,5 @@
 import { ui } from '../text/ui';
-import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot, Deletion } from '../shared';
+import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot, Deletion, TagField, TagValue } from '../shared';
 import { UndoHistory } from './history';
 
 function layout(board: Board) {
@@ -18,6 +18,7 @@ interface State {
 }
 export class Session {
   state: State = {snapshot:null,draft:null,status:ui.status.ready,error:'',checkpoints:[],revision:0};
+  tagExpansion=new Map<string,string[]>();
   undoHistory = new UndoHistory();
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -146,6 +147,25 @@ export class Session {
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});
       this.update({draft:{card,body:card.body,dirty:false}});
+    });
+  }
+  createTag(tag:string) {
+    return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'createTag',tag});this.accept(result,ui.tags.newTag);return result.snapshot.tags!.find(t=>t.tag===tag)!;});
+  }
+  saveTag(path:string,expected:string,fields:TagField[],inherits:string[]) {
+    return this.run(async()=>{await this.flush();this.accept(await this.bridge.request<Mutation>({kind:'saveTag',path,expected,fields,inherits}),ui.tags.save);});
+  }
+  setCardTag(path:string,expected:string,tag:string,add:boolean) {return this.tagEdit(path,expected,next=>({kind:'setCardTag',path,expected:next,tag,add}),add?ui.tags.add:ui.tags.remove);}
+  reorderTagProperties(path:string,expected:string,tag:string,keys:string[]){return this.tagEdit(path,expected,next=>({kind:'reorderTagProperties',path,expected:next,tag,keys}),ui.tags.reorder);}
+  setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {return this.tagEdit(path,expected,next=>({kind:'setTagProperty',path,expected:next,tag,key,value}),ui.tags.properties);}
+  private tagEdit(path:string,expected:string,request:(next:string)=>Extract<import('../shared').Request,{kind:'setCardTag'|'setTagProperty'|'reorderTagProperties'}>,label:string) {
+    return this.run(async()=>{
+      if(this.state.snapshot?.cards.find(c=>c.path===path)?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+      await this.flush();
+      const next=this.state.snapshot!.cards.find(c=>c.path===path)!.revision;
+      const result=await this.bridge.request<Mutation>(request(next));this.accept(result,label);
+      const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.path===path);
+      if(draft?.card.path===path&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
     });
   }
   renameBoard(folder:string,name:string) {

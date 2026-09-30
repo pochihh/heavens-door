@@ -142,4 +142,11 @@ Use `--positive` for additions and `--negative` for removals/destructive actions
 
 Whiteboard explorer omits `.md` rows; File explorer shows actual files. Cards remain on the whiteboard. Direct child notes missing from the saved layout enter its persistent side column, collapsed, at a shared x-coordinate and successive y-positions. Do not rearrange already placed cards.
 
-History uses the Git branch icon. Checkpoint cards align with commit dots in straight ancestry lanes; short bends connect branch/merge paths instead of long curves. Six theme-controlled lane colors identify visual ancestry tracks (not named Git branches); reused lanes can reuse colors. Hashes remain neutral. The current checkpoint has an extra ring, and +/- line counts retain separate positive/negative colors. A parent beyond the loaded history continues to the bottom edge rather than appearing as a root.
+History uses the Git branch icon. Checkpoint cards align with commit dots in straight ancestry lanes; short bends join at the parent row. Ten theme-controlled colors rotate between branches. Commit color identities are stored in the rebuildable local SQLite cache and follow their ancestry, independently of lane position or the active checkpoint; switching branches, loading earlier history and reopening the app preserve assigned colors. A rebuilt cache may assign a fresh palette order. Hashes remain neutral. The current checkpoint has an extra ring, and +/- line counts retain separate positive/negative colors. A parent beyond the loaded history continues to the bottom edge rather than appearing as a root.
+
+
+## Tags
+
+Tags appear below the H1; chips expand their fields inline. Property labels reorder with the shared vertical phantom and placeholder; field values use the same typography and geometry while editing. Card previews and editors show the same metadata block; it never enters Markdown. Kanban uses quiet column headers, compact cards titled from H1 with filename fallback, and at most two property summaries. Tag removal uses the shared warning and one undoable action. Table/List/Kanban are presentations of existing cards; Kanban uses the shared drag phantom and an equivalent More-menu move action. Boolean values use the shared switch. See [Tags](tags.md).
+
+Status options appear under three progress groups. Date properties offer native date/time inputs and shared End date / Include time switches; changing focus does not change their geometry.

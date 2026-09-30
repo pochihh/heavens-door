@@ -1,0 +1,70 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';
+import {act,useSyncExternalStore} from 'react';
+import {promises as fs} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {Workspace} from '../src/core/workspace';
+import {Session} from '../src/renderer/session';
+import {TagView,CardTags} from '../src/renderer/TagView';
+import {ConfirmationProvider} from '../src/renderer/Confirmation';
+import type {Bridge} from '../src/shared';
+
+test('tag tables, Kanban moves and confirmed tag removal edit the same files and share undo',async()=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-tag-ui-')),path=join(dir,'notes');await fs.mkdir(path);const w=await Workspace.open(path,join(dir,'cache'));
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.createTag('project');let tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[{key:'status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Review'],done:['Done']},default:'Todo'},{key:'priority',type:'number',default:1},{key:'schedule',type:'date',default:'2026-09-30'}],[]);await w.setCardTag('Notes/A.md',(await w.card('Notes/A.md')).revision,'project',true);
+  const dom=new JSDOM('<div id="root"></div>',{url:'https://test.local',pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,Node:dom.window.Node,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:true})});
+  dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};dom.window.HTMLElement.prototype.hidePopover=function(){this.removeAttribute('data-open');};
+  dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
+  const session=new Session({request:async request=>{
+    switch(request.kind){
+      case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
+      case 'cardProperties':return w.cardProperties(request.path);
+      case 'reorderTagProperties':return w.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
+      case 'setTagProperty':return w.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
+      case 'setCardTag':return w.setCardTag(request.path,request.expected,request.tag,request.add);
+      case 'write':return w.write(request.changes);
+      case 'preferences':return w.setPreferences(request.patch);
+      default:throw new Error(request.kind);
+    }
+  }} as Bridge);session.update({snapshot:w.snapshot()});
+  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);
+  function App(){const state=useSyncExternalStore(session.subscribe,session.getState);tag=state.snapshot!.tags![0];return <ConfirmationProvider><CardTags card={state.snapshot!.cards[0]} snapshot={state.snapshot!} session={session} onOpen={()=>undefined}/><TagView tag={tag} snapshot={state.snapshot!} session={session} onOpen={()=>undefined} memory={{}} onViewChange={()=>undefined}/></ConfirmationProvider>;}
+  const settle=async()=>{await act(async()=>session.run(async()=>undefined));for(let i=0;i<120;i++){await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25));});if(!document.querySelector('.tag-results[aria-busy=true]'))return;}assert.fail('Tag view did not finish loading');};
+  try{
+    await act(async()=>root.render(<App/>));await settle();
+    const select=document.querySelector<HTMLSelectElement>('.tag-results select')!;assert.equal(select.value,'Todo');assert.equal(select.querySelectorAll('optgroup').length,3);
+    const dateSwitch=(name:string)=>[...document.querySelectorAll<HTMLInputElement>('.tag-results .tag-date-options input')].find(input=>input.closest('label')!.textContent===name)!;
+    await act(async()=>dateSwitch('End date').click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties['project/schedule'],{start:'2026-09-30',end:'2026-09-30'});
+    await act(async()=>dateSwitch('Include time').click());await settle();const schedule=w.cardProperties('Notes/A.md').properties['project/schedule'] as {start:string;end:string};assert.match(schedule.start,/T.*Z$/);assert.equal(schedule.start,schedule.end);assert.equal(document.querySelectorAll('.tag-results input[type="datetime-local"]').length,2);
+    await act(async()=>dateSwitch('Include time').click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties['project/schedule'],{start:'2026-09-30',end:'2026-09-30'});
+    await act(async()=>{select.value='Done';select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});await settle();
+    assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
+    await act(async()=>session.undo(false));await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Todo');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-view-toolbar button')].find(b=>b.textContent==='Kanban')!.click());
+    assert.ok(document.querySelector('[data-tag-column="Todo"] .kanban-card'));assert.ok(document.querySelector('[data-tag-column="Done"]'));
+    await act(async()=>document.querySelector<HTMLButtonElement>('.kanban-card .tool')!.click());
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]')].find(b=>b.textContent==='Done')!.click());await settle();assert.ok(document.querySelector('[data-tag-column="Done"] .kanban-card'));
+    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-chip')!.click());await settle();
+    const labels=()=>[...document.querySelectorAll<HTMLButtonElement>('.property-label')];
+    await act(async()=>labels()[1].dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowUp',altKey:true,bubbles:true})));await settle();
+    assert.equal(labels()[0].textContent,'priority');assert.ok((await w.read('Notes/A.md')).indexOf('project/priority:')<(await w.read('Notes/A.md')).indexOf('project/status:'));
+    await act(async()=>session.undo(false));await settle();assert.equal(labels()[0].textContent,'status');
+    const propertyList=document.querySelector<HTMLElement>('.tag-properties')!,cardTags=document.querySelector<HTMLElement>('.card-tags')!;
+    const rect=(top:number,height:number)=>({left:20,top,width:320,height,right:340,bottom:top+height,x:20,y:top,toJSON(){}});
+    propertyList.getBoundingClientRect=()=>rect(100,80);cardTags.getBoundingClientRect=()=>rect(80,160);
+    for(const row of propertyList.querySelectorAll<HTMLElement>('.tag-property-row'))row.getBoundingClientRect=()=>rect(100+[...propertyList.children].filter(c=>(c as HTMLElement).style.display!=='none').indexOf(row)*38,34);
+    const pointer=(target:Element|Document,type:string,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:30,clientY:y}));
+    const unchanged=await w.read('Notes/A.md');
+    await act(async()=>{pointer(labels()[0],'pointerdown',110);pointer(document,'pointermove',160);});
+    assert.equal(document.querySelectorAll('.drag-phantom').length,1);assert.equal(document.querySelectorAll('.sort-placeholder').length,1);assert.equal(document.body.dataset.bookmarkDrop,undefined);
+    await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.drag-phantom'),null);assert.equal(await w.read('Notes/A.md'),unchanged);
+    await act(async()=>{pointer(labels()[0],'pointerdown',110);pointer(document,'pointermove',160);pointer(document,'pointerup',160);});await settle();assert.equal(labels()[0].textContent,'priority');
+    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-fields-heading .tool')!.click());
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Remove tag')!.click());assert.ok(document.querySelector('dialog[open]'));assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
+    await act(async()=>document.querySelector<HTMLButtonElement>('.confirmation-actions button:last-child')!.click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,[]);assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],undefined);
+    await act(async()=>session.undo(false));await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
+  }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();w.close();await fs.rm(dir,{recursive:true,force:true});}
+});

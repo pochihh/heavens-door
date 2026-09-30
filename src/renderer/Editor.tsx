@@ -1,28 +1,32 @@
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
+import {createPortal} from 'react-dom';
+import {TitleContent,titleSlot} from './TitleContent';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { CardInfo } from '../shared';
 import { unsupported, preview } from './markdown';
 import { Icon, Tool } from './Icons';
 import { withCardTitle } from '../card-title';
-import { cardMarkdown, extensions } from './editor-schema';
+import { cardMarkdown, extensions, titleMetadata } from './editor-schema';
 
 export interface EditorFocus { x: number; y: number; scrollTop: number }
-interface Props { path:string; body:string; cards:CardInfo[]; onEdit:(body:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus }
+interface Props { afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus }
 // Changing files remounts the editor: effects must never touch a destroyed instance.
 export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
-function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props) {
+function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPoint}:Props) {
   const blocked=unsupported(body);
   const [initialContent]=useState(()=>withCardTitle(body));
   const [linkQuery,setLinkQuery]=useState('');
-  const configuredExtensions=useMemo(() => extensions(path),[path]);
+  const [slot]=useState(titleSlot),hasMetadata=!!afterTitle,metadataVisible=useRef(hasMetadata);metadataVisible.current=hasMetadata;
+  const configuredExtensions=useMemo(() => [...extensions(path),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
   const editor=useEditor({
     extensions:configuredExtensions,
     content:initialContent,contentType:'markdown',editable:!blocked,
     editorProps:{attributes:{'aria-label':ui.editor.cardContent,spellcheck:'true'}},
     onUpdate:({editor}) => onEdit(cardMarkdown(editor)),
   });
+  useLayoutEffect(()=>{if(editor&&!editor.isDestroyed)editor.view.updateState(editor.state);},[editor,hasMetadata]);
   useEffect(() => {
     if (editor && !editor.isDestroyed && cardMarkdown(editor) !== body) editor.commands.setContent(withCardTitle(body),{contentType:'markdown',emitUpdate:false});
   },[editor,body]);
@@ -34,7 +38,7 @@ function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props)
     const position=focusPoint ? editor.view.posAtCoords({left:focusPoint.x,top:focusPoint.y})?.pos : undefined;
     editor.commands.focus(position ?? (focusPoint ? 'end' : 'start'),{scrollIntoView:false});
   },[editor,autofocus,blocked,focusPoint]);
-  if (blocked) return <div className="editor-body"><p className="notice">{ui.editor.unsupportedMarkdown}</p><div className="prose" dangerouslySetInnerHTML={{__html:preview(body,path)}} /></div>;
+  if (blocked) return <div className="editor-body"><p className="notice">{ui.editor.unsupportedMarkdown}</p><TitleContent className="prose" html={preview(body,path)} afterTitle={afterTitle}/></div>;
   if (!editor) return null;
   return <>
     <div className="editor-tools" aria-label={ui.editor.formatting}>
@@ -53,5 +57,6 @@ function EditableCard({path,body,cards,onEdit,autofocus=false,focusPoint}:Props)
       }}>{cards.filter(c => c.path !== path && !c.legacy && c.name.toLowerCase().includes(linkQuery.toLowerCase())).slice(0,50).map(c => <option key={c.path} value={c.id}>{c.name}</option>)}</select></div></details>
     </div>
     <EditorContent editor={editor} className="prose editor-body" />
+    {afterTitle&&createPortal(afterTitle,slot)}
   </>;
 }

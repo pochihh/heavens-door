@@ -1,3 +1,4 @@
+import {tagsFrom} from '../tags';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
 import { createHash, randomUUID } from 'node:crypto';
@@ -26,7 +27,7 @@ export function readCard(path: string, raw: string): Card {
   const fillColor=front.has('card-color')?front.get('card-color')??null:undefined;
   if(fillColor!==undefined&&fillColor!==null&&!isHexColor(fillColor))throw new Error(ui.errors.invalidCardColor);
   const heading=leadingTitle(body);
-  return { ...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
+  return { tags:tagsFrom(front.toJSON()?.tags),...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
 }
 export function editCard(raw: string, card: Card, body: string) {
   const { front, header } = splitNote(raw);
