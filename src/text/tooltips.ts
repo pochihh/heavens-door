@@ -61,7 +61,8 @@ export const tooltips = {
     reveal: "Show the original file in your system file manager",
   },
   history: {
-    checkpoint: (label: string, active: boolean) => active ? `Current checkpoint: ${label}` : `Restore workspace to ${label}`,
+    loadMore:"Show earlier checkpoints",
+    checkpoint: (label: string, active: boolean) => active ? `Current checkpoint: ${label}` : `Select ${label} · Double-click to go to this checkpoint`,
     saveCheckpoint: "Save workspace checkpoint · ⌘S / Ctrl+S",
   },
   workspace: {
@@ -74,7 +75,7 @@ export const tooltips = {
     manage:'Review workspace locations, availability and last update times',
     refreshWorkspaces:'Refresh workspace availability and update times',
     workspaceUpdated:'Latest file or folder modification, including workspace settings. Git internals are excluded. For unavailable folders, the last known time is retained.',
-    search: "Search workspace cards",
+    search: "Search workspace cards · ⌘K / Ctrl+K",
   },
   layout: {
     tabGroupActions: "Tab Group actions",

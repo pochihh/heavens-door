@@ -4,7 +4,7 @@ An early desktop workspace for local Markdown cards and whiteboards.
 
 ## Run
 
-Install Node.js 24.21+ and Git, then:
+Install Node.js 24.21+ and Git 2.38+ (for applying checkpoint changes), then:
 
 ```sh
 npm ci
@@ -60,9 +60,9 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 - Use the floating upper-right chevron to collapse a card; the collapsed title row has an expand chevron. Collapsed cards retain the same leading H1, typography and chevron position. Long titles keep their wrapping. Notes created in Explorer or by another app appear collapsed in a persistent column to the right of existing content. Cards created on the canvas open at the chosen position.
 - **View → Reload** (`Cmd/Ctrl+R`) saves pending edits and reopens the current workspace. Rendering errors show a recovery screen; Quit/Reload offer a native prompt if the renderer stops responding. Unsaved conflicts block normal reload so the draft can be copied or reconciled. Reload resets session undo; saved Git checkpoints remain.
 - Show formatting controls with **Aa**, then use **Link card** to insert a stable link. Backlinks appear below the editor. That panel also places a reference on another whiteboard.
-- Use the top-right search button to search card names and contents. `backlinks:<card-id>` also works. The file list displays actual filenames.
+- Open Search with the top-right button or **⌘K / Ctrl+K**. Search filenames, titles and content with English typo tolerance and Traditional/Simplified Chinese matching. Results keep the original text. Arrow keys select results; Enter opens one; ⌘Enter / Ctrl+Enter opens it beside the current Tab Group. Search is also a Side Dock View. `backlinks:<card-id>` lists incoming mentions.
 - ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z undo or redo card and board changes in one chronological session history. Typing close together is grouped.
-- ⌘S / Ctrl+S saves a workspace Git checkpoint. The app also checkpoints after five idle minutes. Select a checkpoint in **History** to restore the whole workspace. Later checkpoints remain reachable; new edits continue on a new branch.
+- ⌘S / Ctrl+S saves a workspace Git checkpoint. The app also checkpoints after five idle minutes. Single-click a checkpoint card in **History** to inspect its changed files. Double-click or use **Go to checkpoint** in its context menu to navigate after confirmation. Current work is saved first; tabs, layout and later checkpoints remain. Drag a checkpoint onto a diverged branch checkpoint to apply its changes as a new child; the original stays recoverable. Conflicts stop without changing live notes. Close other windows for this workspace before history navigation. See [Search and History](docs/search-and-history.md).
 - Every card reserves a leading H1 in the app. Empty titles show the gray **A new card** prompt; click and type to replace it directly. The prompt is never saved into Markdown. **Settings → Workspace → Empty card title** customizes it. Cards without a leading H1 retain their existing body until you edit.
 - Change the default `untitled` filename base in **Settings → Workspace**. Headings and filenames are independent.
 - Explorer, Starred and Recent open files in the active Main Dock Tab Group. Reopening a file selects its existing tab. Use the group dropdown (**Tab Group actions**) to split right or down; the same file may be open in several Tab Groups, with independent scroll/zoom positions and shared edits. Drag tabs between groups. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent Main Dock Tab Groups.

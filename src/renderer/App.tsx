@@ -9,6 +9,8 @@ import { Breadcrumbs } from './Breadcrumbs';
 import { Session } from './session';
 import type { Mutation, Preferences, Snapshot } from '../shared';
 import { DocumentIcon, Icon, Tool } from './Icons';
+import { HistoryPanel } from './HistoryView';
+import { SearchDialog, SearchView } from './SearchView';
 import { Explorer } from './Explorer';
 import { SideDock, modules, MODULE_IDS } from './Docks';
 import { WorkspaceMenu,WorkspaceManager } from './WorkspaceMenu';
@@ -18,7 +20,7 @@ import {useTabDrag} from './tab-drag';
 import { documentInfo, parent } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
-import { BoardView, FileView, HistoryPanel, NoteView, TagView, type ViewMemory } from './DocumentViews';
+import { BoardView, FileView, NoteView, TagView, type ViewMemory } from './DocumentViews';
 import { MAX_PANES, MAX_TABS, updatePane, navigateTab, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
@@ -57,6 +59,8 @@ function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:n
 function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const state=session.state,prefs=snapshot.preferences??defaults;
   const [boardSelection,setBoardSelection]=useState<BoardSelection>();
+  const [searchOpen,setSearchOpen]=useState(false);
+  useEffect(()=>{const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
   const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
@@ -256,15 +260,16 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       })}/>;
     }
     if(module==='history')return <><div className="module-toolbar"><div className="toolbar-spacer"/><Tool icon="plus" label={tooltips.history.saveCheckpoint} disabled={!snapshot.historyAvailable} onClick={()=>attempt(session.checkpoint())}/></div><HistoryPanel session={session}/></>;
+    if(module==='search')return <SearchView session={session} snapshot={snapshot} onOpen={open} onSplit={openBeside}/>;
     if(module==='agent')return <div className="agent-empty">{ui.agent.disconnected}</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
   }
-  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status===ui.status.openingWorkspace} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
+  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status===ui.status.openingWorkspace||state.status===ui.status.changingHistory} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
       <Tool icon="left" label={left?tooltips.layout.collapseLeftSideDock:tooltips.layout.expandLeftSideDock} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
       <div className="window-drag-space"/>
-      <Tool icon="search" label={tooltips.workspace.search} onClick={()=>changeDocks(revealModule(docks,'search'))}/>
+      <Tool icon="search" label={tooltips.workspace.search} onClick={()=>setSearchOpen(true)}/>
       <Tool icon="right" label={right?tooltips.layout.collapseRightSideDock:tooltips.layout.expandRightSideDock} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
       <div className="windows-controls-space"/>
     </header>
@@ -285,6 +290,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <span data-tooltip={tooltips.status.syncOff}><Icon name="sync" size={13}/>{ui.status.syncOff}</span>
       <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>
     </footer>
+    {searchOpen&&<SearchDialog session={session} snapshot={snapshot} onOpen={open} onSplit={openBeside} onClose={()=>setSearchOpen(false)}/>}
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{if(confirm(ui.recovery.confirmDiscard))attempt(session.reloadDraft());}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}
     {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className="settings" role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='folder'?ui.common.newWhiteboard:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>

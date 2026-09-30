@@ -240,16 +240,17 @@ export class Session {
       this.update({checkpoints,status:ui.status.checkpointSaved,error:''});
     });
   }
-  history() {
+  history(limit=200) {
     return this.run(async () => {
-      const checkpoints=await this.bridge.request<Checkpoint[]>({kind:'history'});
+      const checkpoints=await this.bridge.request<Checkpoint[]>({kind:'history',limit});
       this.update({checkpoints});
     });
   }
-  restore(id: string) {
+  restore(id: string,source?:string) {
     return this.run(async () => {
       await this.flush();
-      const snapshot=await this.bridge.request<Snapshot>({kind:'restore',id});
+      this.update({status:ui.status.changingHistory});
+      const snapshot=await this.bridge.request<Snapshot>(source?{kind:'applyCheckpoint',source,target:id}:{kind:'restore',id});
       const checkpoints=await this.bridge.request<Checkpoint[]>({kind:'history'});
       this.undoHistory.clear();
       this.update({snapshot,checkpoints,draft:null,status:ui.status.workspaceRestoredLaterCheckpointsKept,error:''});

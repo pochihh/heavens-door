@@ -8,7 +8,7 @@ import { ActionMenu, type MenuAction, type MenuState } from './Overlays';
 import { documentInfo, documentIndex, fileIcon, parent, portable } from './documents';
 import { insertBookmark, useBookmarkDrag } from './sortable';
 
-export type ExplorerModule='whiteboards'|'files'|'bookmarks'|'tags'|'search';
+export type ExplorerModule='whiteboards'|'files'|'bookmarks'|'tags';
 type Entry={path:string;key?:string;folder?:string;name:string;symlink?:boolean};
 export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,onOpen,onSplit,onFolder,onCard,onIcon,onPrefs}:{
   snapshot:Snapshot;prefs:Preferences;activeKey:string;module:ExplorerModule;starredTarget:RefObject<HTMLDivElement|null>;session:Session;
@@ -17,7 +17,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   const expanded=useMemo(()=>new Set(prefs.navigation?.[module]?.expanded??['']),[prefs.navigation,module]);
   const setExpanded=(change:(current:Set<string>)=>Set<string>)=>onPrefs(p=>({navigation:{...p.navigation,[module]:{...p.navigation?.[module],expanded:[...change(new Set(p.navigation?.[module]?.expanded??['']))]}}}));
   const [files,setFiles]=useState<Record<string,FileEntry[]>>({});
-  const [menu,setMenu]=useState<MenuState|null>(null),[search,setSearch]=useState(prefs.navigation?.search?.search??''),[results,setResults]=useState<string[]>([]);
+  const [menu,setMenu]=useState<MenuState|null>(null);
   const starred=starredTarget,scroller=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(scroller.current)scroller.current.scrollTop=prefs.navigation?.[module]?.scroll??0;},[module]);
   const closeMenu=useCallback(()=>setMenu(null),[]);
@@ -38,12 +38,6 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     // Only expanded directories are read. A collapsed asset tree has no enumeration cost.
     void refresh();return()=>{fileLoad.current++;};
   },[module,snapshot,refresh]);
-  useEffect(()=>{
-    let live=true;
-    if(module!=='search'||!search.trim()){setResults([]);return;}
-    const timer=setTimeout(()=>{void window.door.request<{path:string}[]>({kind:'query',text:search}).then(rows=>{if(live)setResults(rows.map(r=>r.path));}).catch(report);},120);
-    return()=>{live=false;clearTimeout(timer);};
-  },[module,search,snapshot,report]);
   const tree=useMemo(()=>{
     const groups=new Map(snapshot.boards.map(b=>[portable(b.folder),{folders:[] as string[],keys:[] as string[]} ]));
     for(const board of snapshot.boards)if(board.folder){let ancestor=parent(board.folder);while(ancestor&&!groups.has(ancestor))ancestor=parent(ancestor);groups.get(ancestor)?.folders.push(board.folder);}
@@ -122,15 +116,12 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   }
   const rememberScroll=(scroll:number)=>session.schedulePreferences({navigation:{[module]:{scroll}}},snapshot.root);
   return <div className="explorer-module" data-module={module}>
-    {module==='search'&&<div className="module-toolbar">
-      <label className="search"><Icon name="search" size={14}/><input aria-label={ui.explorer.searchCards} data-tooltip={tooltips.explorer.search} placeholder={ui.layout.search} value={search} onChange={e=>{setSearch(e.target.value);session.schedulePreferences({navigation:{search:{search:e.target.value}}},snapshot.root);}}/>{search&&<Tool icon="close" label={tooltips.explorer.clearSearch} onClick={()=>{setSearch('');onPrefs(p=>({navigation:{...p.navigation,search:{...p.navigation?.search,search:''}}}));}}/>}</label>
-    </div>}
     {module==='bookmarks'?<div className="nav-bottom" ref={scroller} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)}>
       <section className="starred" data-bookmark-target><div className="section-title" data-tooltip={tooltips.explorer.starred}><Icon name="star" size={13}/><strong>{ui.explorer.starred}</strong></div><div className="saved-files" ref={starred} aria-label={ui.explorer.starredFiles}>{prefs.starred.map(key=>row(entryFor(key),0,'starred'))}</div></section>
       <section className="recent"><div className="section-title" data-tooltip={tooltips.explorer.recent}><Icon name="clock" size={13}/><strong>{ui.explorer.recent}</strong></div><div className="saved-files">{prefs.recent.map(key=>row(entryFor(key),0,'recent'))}</div></section>
     </div>:<div className="file-tree" ref={scroller} role="navigation" tabIndex={0} aria-label={module==='files'?ui.explorer.workspaceFiles:module==='whiteboards'?ui.explorer.workspaceWhiteboards:module==='tags'?ui.explorer.workspaceTags:ui.explorer.searchResults} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)} onContextMenu={e=>{if(!(e.target as Element).closest('.tree-row')){e.preventDefault();show(viewActions(),e,true);}}}
       onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10'))){e.preventDefault();show(viewActions(),e);}}}>
-      {module==='tags'?snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path))):module==='search'?results.map(path=>{const key=documentIndex(snapshot).paths.get(portable(path));return key?row(entryFor(key)):null;}):module==='whiteboards'?boardBranch(''):fileBranch({path:'',folder:'',name:snapshot.name})}
+      {module==='tags'?snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path))):module==='whiteboards'?boardBranch(''):fileBranch({path:'',folder:'',name:snapshot.name})}
     </div>}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
   </div>;

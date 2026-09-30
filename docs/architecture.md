@@ -29,7 +29,7 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 | Placement identity, geometry, height mode, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
 | Tag definitions | `.tag`, indexed by `Workspace` |
 | Theme, color palette, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
-| Search, backlinks and file revisions | Rebuildable SQLite index under Electron user data |
+| Search, backlinks, properties and file revisions | Rebuildable SQLite index under Electron user data; worker-owned MiniSearch text index |
 | Persistent checkpoints and branches | The workspace's app-managed `.git`; `src/core/history.ts` |
 | Registered workspace paths | `workspaces.json` under Electron user data; `src/core/registry.ts` |
 
@@ -37,7 +37,7 @@ The Markdown files are authoritative. Indexing compares content hashes and reuse
 
 Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must match exactly and the file must parse successfully. On open, a missing `<workspace-name>.whiteboard` is created at the root; an invalid existing file is preserved and reported. The mother view contains only sub-whiteboards. Ordinary folders such as `assets/` do not become boards just because they exist. A board beneath ordinary folders appears under its nearest whiteboard ancestor. Board placements and card identities remain separate. The full membership and collapse contract is in [whiteboards.md](whiteboards.md).
 
-`Workspace.automaticPlacements` adds missing direct-child cards to the folder's matching board. Internal note creation and its placement share one revision-checked recovery transaction and undo entry. Watcher batches update the index before reconciling affected folders; startup reconciles all boards. Only board metadata is amended when an external note is discovered. The folder index avoids rescanning all notes per change. Leading H1 titles and their inline Markdown are cached in the derived card index so collapsed rendering preserves formatting without body requests. Index schema 4 rebuilds this metadata from the original files. The shared `card-title.ts` defines title recognition; the editor reserves an empty H1 without saving its visual placeholder.
+`Workspace.automaticPlacements` adds missing direct-child cards to the folder's matching board. Internal note creation and its placement share one revision-checked recovery transaction and undo entry. Watcher batches update the index before reconciling affected folders; startup reconciles all boards. Only board metadata is amended when an external note is discovered. The folder index avoids rescanning all notes per change. Leading H1 titles and their inline Markdown are cached in the derived card index so collapsed rendering preserves formatting without body requests. Index schema 5 rebuilds this metadata from the original files. The shared `card-title.ts` defines title recognition; the editor reserves an empty H1 without saving its visual placeholder.
 
 ## UI copy
 
@@ -50,7 +50,9 @@ Only `Folder/Folder.whiteboard` identifies a whiteboard: both basenames must mat
 | `App.tsx` / `src/layout.ts` | Desktop shell; shared validated Main Dock/Side Dock layout data and operations |
 | `Docks.tsx` | Equal Side Docks, View tabs, Tab Groups, resizing and View tab dragging |
 | `WorkspaceMenu.tsx` | Bottom-left workspace switcher and workspace manager |
-| `Explorer.tsx` | Whiteboard/file explorer, tags, search and saved-list Views with shared context actions |
+| `Explorer.tsx` | Whiteboard/file explorer, tags and saved-list Views with shared context actions |
+| `SearchView.tsx` | Shared keyboard search results in the Side Dock and search dialog |
+| `HistoryView.tsx` | Checkpoint cards, ancestry lines, change inspection and drag-to-apply |
 | `documents.ts` | Snapshot-scoped identity/path maps; avoids a full card search for every row |
 | `Icons.tsx` / `IconPicker.tsx` | Named Lucide imports and lazy, locally bundled Emoji Mart picker |
 | `Overlays.tsx` | Delegated hover-only tooltip and keyboard-accessible action menu |
@@ -77,7 +79,7 @@ A `Session` serializes app commands. UI preference patches are debounced for 250
 
 Switching workspaces first flushes the current draft. While opening, the workspace UI is inert. Main attaches the new worker only after it has opened successfully, and the renderer clears session undo only after receiving the new snapshot. An unavailable workspace leaves the previous workspace selected. Registered paths are canonicalized, deduplicated and written atomically. Registration is local to the desktop application; appearance and navigation preferences belong to each workspace.
 
-Git history is separate from session undo. Checkpoints include non-ignored workspace files; automatic checkpoints currently run after five idle minutes. Restore first preserves current work, then creates a branch at the selected checkpoint. Existing unmanaged repositories are not adopted. Staged changes or an unfinished terminal Git operation pause app history. The current history list is capped at 200 checkpoints; pruning is disabled.
+Git history is separate from session undo. Checkpoints include non-ignored workspace files; automatic checkpoints currently run after five idle minutes. Restore first preserves current work, then creates a branch at the selected checkpoint. Existing unmanaged repositories are not adopted. Staged changes or an unfinished terminal Git operation pause app history. History loads 200 checkpoints initially, with earlier checkpoints available up to 5,000; pruning is disabled. Interface settings are excluded from new commits and preserved across old checkouts through a recovery journal. Trash originals remain tracked. Applying a diverged checkpoint uses Git’s three-way tree merge and creates a new single-parent commit; conflicts never enter live files. History switches are blocked when another window shares the workspace until a cross-window draft-flush barrier exists. See [Search and History](search-and-history.md).
 
 ## Working on the code
 

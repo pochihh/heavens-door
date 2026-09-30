@@ -121,3 +121,9 @@ There are no grid style settings. Theme CSS can override these tokens:
 | `--mention-color`, `--mention-width`, `--mention-opacity` | Muted theme foreground, `1.5`, `.45`; passive mention links |
 
 `--board-zoom`, `--grid-x` and `--grid-y` are live camera values, not theme settings or saved style fields. Major dots render above minor dots and align at every shared intersection. Selection/focus continues to use the app's accent outline. Existing saved decoration fields are preserved for compatibility but do not override the theme.
+
+## Search and History Views
+
+Search uses one results component in the Side Dock and keyboard dialog. Show title, relative path and an original-text excerpt. Arrow keys change the highlighted result; Enter opens it. IME composition must not activate results. Escape/outside click dismiss the dialog and restore focus. A newer query invalidates older responses.
+
+History checkpoints are compact cards with ancestry lines. Current checkpoint and selected card have distinct borders/backgrounds. Single-click inspects; double-click/context menu confirms before navigation. Use the shared pointer phantom for dragging a checkpoint to another branch: preserve the original node because application copies its delta. Highlight only an eligible destination; Escape cancels. The warning names both checkpoints. Keep tabs/layout during content navigation. See [Search and History](search-and-history.md).

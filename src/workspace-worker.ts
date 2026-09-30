@@ -100,8 +100,14 @@ async function dispatch(request: Request) {
       }
       return workspace.write(request.changes);
     case 'query': string(request.text); return workspace.query(request.text);
+    case 'queryCards': return workspace.queryCards(request.query);
     case 'checkpoint': string(request.label); await workspace.history.checkpoint(request.label); return workspace.history.list();
-    case 'history': return workspace.history.list();
+    case 'history': return workspace.history.list(request.limit);
+    case 'checkpointChanges': string(request.id); return workspace.history.changes(request.id);
+    case 'applyCheckpoint':
+      string(request.source);string(request.target);
+      await workspace.history.apply(request.source,request.target);
+      return workspace.scan();
     case 'restore':
       string(request.id);
       await workspace.history.restore(request.id);

@@ -8,9 +8,10 @@ import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
+import { CardSearch, searchExcerpt } from './search';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
 import { COLLAPSED_CARD_HEIGHT, placementHeight, edgeStyle } from '../shared';
-import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion } from '../shared';
+import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
 
 const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
 
@@ -21,6 +22,7 @@ function validateStem(stem:string) {
 export class Workspace {
   readonly history: History;
   private db: DatabaseSync;
+  private search=new CardSearch();
   private folders = new Set<string>(['']);
   private tags = new Map<string,TagInfo>();
   private preferences = defaultPreferences();
@@ -34,18 +36,20 @@ export class Workspace {
   constructor(readonly root: string, readonly cache: string) {
     this.history = new History(root);
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 4) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; PRAGMA user_version=4;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 5) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=5;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT);
       CREATE INDEX IF NOT EXISTS cards_folder ON cards(folder);
       CREATE INDEX IF NOT EXISTS card_identity ON cards(id);
-      CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path UNINDEXED,name,body);
+      CREATE TABLE IF NOT EXISTS properties(path TEXT,field TEXT,value TEXT,PRIMARY KEY(path,field));
+      CREATE INDEX IF NOT EXISTS property_value ON properties(field,value,path);
       CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT);
       CREATE INDEX IF NOT EXISTS backlinks ON links(target);
       CREATE INDEX IF NOT EXISTS outgoing_links ON links(source);
       CREATE TABLE IF NOT EXISTS ui_cache(key TEXT PRIMARY KEY,value TEXT);`);
+    for(const card of this.db.prepare('SELECT path,name,title,body FROM cards').all())this.search.update(card as unknown as import('../shared').Card);
     try {
       const row=this.db.prepare("SELECT value FROM ui_cache WHERE key='edge-style'").get();
       if(row){const style=JSON.parse(String(row.value));validateEdgeStyle(style);this.lastEdgeStyle=edgeStyle(style);}
@@ -176,7 +180,8 @@ export class Workspace {
     return this.snapshot();
   }
   private removeIndex(path: string) {
-    this.db.prepare('DELETE FROM search WHERE rowid=(SELECT rowid FROM cards WHERE path=?)').run(path);
+    this.search.remove(path);
+    this.db.prepare('DELETE FROM properties WHERE path=?').run(path);
     this.db.prepare('DELETE FROM cards WHERE path=?').run(path);
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
   }
@@ -204,7 +209,8 @@ export class Workspace {
       try {
         this.removeIndex(path);
         this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'');
-        this.db.prepare('INSERT INTO search(rowid,path,name,body) SELECT rowid,path,name,body FROM cards WHERE path=?').run(card.path);
+        for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
+        this.search.update(card);
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
         });
@@ -529,7 +535,51 @@ export class Workspace {
   }
   query(text: string) {
     if (text.startsWith('backlinks:')) return this.db.prepare('SELECT DISTINCT source AS path FROM links WHERE target=?').all(text.slice(10));
-    const terms = text.trim().split(/\s+/).filter(Boolean).map(t => `"${t.replaceAll('"','""')}"*`).join(' AND ');
-    return terms ? this.db.prepare('SELECT path FROM search WHERE search MATCH ? ORDER BY rank LIMIT 100').all(terms) : [];
+    return this.queryCards({text}).map(({path})=>({path}));
+  }
+  queryCards(query:CardQuery):CardResult[] {
+    if(!query||typeof query!=='object'||Array.isArray(query))throw new Error(ui.errors.invalidQuery);
+    const {text='',folder,tag,backlinksTo,properties=[],sort,direction='asc',limit=100,offset=0}=query;
+    if(typeof text!=='string'||text.length>2048||[folder,tag,backlinksTo].some(v=>v!==undefined&&(typeof v!=='string'||v.length>2048))||
+      !Array.isArray(properties)||properties.length>20||!Number.isInteger(limit)||limit<1||limit>500||!Number.isInteger(offset)||offset<0||offset>100000||
+      sort!==undefined&&!['name','title','path'].includes(sort)||!['asc','desc'].includes(direction)||query.recursive!==undefined&&typeof query.recursive!=='boolean')throw new Error(ui.errors.invalidQuery);
+    const where:string[]=[],args:(string|number|null)[]=[];
+    if(folder!==undefined){const path=folder.replaceAll('\\','/').replace(/\/$/,'');
+      if(query.recursive){where.push("(c.folder=? OR substr(c.folder,1,length(?))=?)");const prefix=path?path+'/':'';args.push(path,prefix,prefix);}
+      else {where.push('c.folder=?');args.push(path);}
+    }
+    if(backlinksTo!==undefined){where.push('c.path IN (SELECT source FROM links WHERE target=?)');args.push(backlinksTo);}
+    const filters=[...properties,...(tag!==undefined?[{field:'tags',op:'contains' as const,value:tag}]:[])];
+    for(const filter of filters){
+      if(!filter||typeof filter.field!=='string'||filter.field.length>256||!['eq','contains','exists','gt','gte','lt','lte'].includes(filter.op)||
+        filter.op!=='exists'&&(filter.value===undefined||!['string','number','boolean'].includes(typeof filter.value)&&filter.value!==null)||
+        typeof filter.value==='string'&&filter.value.length>2048||typeof filter.value==='number'&&!Number.isFinite(filter.value))throw new Error(ui.errors.invalidQuery);
+      let match='';args.push(filter.field);
+      if(filter.op==='eq'){match=' AND p.value=?';args.push(JSON.stringify(filter.value));}
+      else if(filter.op==='contains'){match=" AND EXISTS (SELECT 1 FROM json_each(p.value) v WHERE v.type=? AND v.value IS ?)";
+        args.push(filter.value===null?'null':typeof filter.value==='boolean'?String(filter.value):typeof filter.value==='number'?Number.isInteger(filter.value)?'integer':'real':'text',typeof filter.value==='boolean'?Number(filter.value):filter.value!);}
+      else if(filter.op!=='exists'){
+        if(typeof filter.value!=='number')throw new Error(ui.errors.invalidQuery);
+        const op={gt:'>',gte:'>=',lt:'<',lte:'<='}[filter.op];match=` AND json_type(p.value) IN ('integer','real') AND json_extract(p.value,'$') ${op} ?`;args.push(filter.value);
+      }
+      where.push(`c.path IN (SELECT p.path FROM properties p WHERE p.field=?${match})`);
+    }
+    const condition=where.length?' WHERE '+where.join(' AND '):'';
+    let ranking=new Map<string,{score:number;terms:string[]}>();
+    if(text.trim()){
+      const allowed=where.length?new Set((this.db.prepare('SELECT c.path FROM cards c'+condition).all(...args) as {path:string}[]).map(c=>c.path)):undefined;
+      ranking=new Map(this.search.search(text,allowed).map(hit=>[hit.path,hit]));
+      if(!ranking.size)return [];
+
+    }
+    const joinRank=ranking.size?' JOIN json_each(?) hit ON c.path=hit.value':'';
+    const ordering=sort?`c.${sort} COLLATE NOCASE ${direction},c.path`:ranking.size?'CAST(hit.key AS INTEGER)':'c.path';
+    const rows=this.db.prepare('SELECT c.* FROM cards c'+joinRank+(where.length?' WHERE '+where.join(' AND '):'')+' ORDER BY '+ordering+' LIMIT ? OFFSET ?')
+      .all(...(ranking.size?[JSON.stringify([...ranking.keys()])]:[]),...args,limit,offset);
+    return rows.map(row=>{
+      const {body,frontmatter,folder:_,...card}=row;void _;
+      const rank=ranking.get(String(row.path));
+      return {...card,legacy:!!card.legacy,properties:JSON.parse(String(frontmatter)),snippet:searchExcerpt(String(body),rank?.terms??[]),score:rank?.score??0,terms:rank?.terms??[]};
+    }) as unknown as CardResult[];
   }
 }

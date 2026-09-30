@@ -2,7 +2,6 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {act} from 'react';
-import {createRoot} from 'react-dom/client';
 import type {Bridge,Card,Preferences,Snapshot} from '../src/shared';
 import {remapPath,remapPreferences} from '../src/path-remap';
 
@@ -44,6 +43,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
       default:throw new Error('Unexpected '+request.kind);
     }
   }} as Bridge;
+  const {createRoot}=await import('react-dom/client');
   const {App,session}=await import('../src/renderer/App');
   let root=createRoot(document.getElementById('root')!);
   const settle=()=>act(async()=>{await session.run(async()=>undefined);await new Promise(resolve=>setTimeout(resolve,40));});
@@ -116,7 +116,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>session.flushPreferences());assert.ok(snapshot.preferences?.docks?.closed?.files);
     await click('.activity-bar [aria-label="File explorer"]');assert.equal(document.querySelector('#tab-files')?.getAttribute('aria-selected'),'true');
     await click('.activity-bar [aria-label="Search"]');
-    assert.ok(document.querySelector('.module-toolbar input[aria-label="Search cards"]'),'Search keeps its input');
+    assert.ok(document.querySelector('.search-view input[aria-label="Search cards"]'),'Search keeps its input');
     assert.equal(document.querySelector('[aria-label="Search actions"]'),null);
     await click('.activity-bar [aria-label="Whiteboard explorer"]');
     const control=document.querySelector<HTMLElement>('[aria-label="Switch workspace · Workspace"]')!;

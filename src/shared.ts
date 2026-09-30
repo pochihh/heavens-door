@@ -12,6 +12,14 @@ export function edgeStyle(edge:EdgeStyle):EdgeStyle {
 }
 export interface Mention { from:string; to:string }
 export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; showMentions?:boolean; mentionStyle?:Stroke; canvasColor?:string; gridColor?:string; inbox?:{x:number;y:number} }
+export type PropertyValue = string | number | boolean | null;
+export interface CardQuery {
+  text?:string; folder?:string; recursive?:boolean; tag?:string; backlinksTo?:string;
+  properties?:{field:string;op:'eq'|'contains'|'exists'|'gt'|'gte'|'lt'|'lte';value?:PropertyValue}[];
+  sort?:'name'|'title'|'path'; direction?:'asc'|'desc'; limit?:number; offset?:number;
+}
+export interface CardResult extends CardInfo { properties:Record<string,unknown>; snippet:string; score:number; terms:string[] }
+export interface CheckpointChange {path:string;added:number|null;removed:number|null}
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
@@ -44,8 +52,11 @@ export type Request =
   | { kind: 'setFill'; cards:{path:string;expected:string}[]; color:string|null; board?:{value:Board;expected:string} }
   | { kind: 'saveBoard'; board: Board; expected: string }
   | { kind: 'query'; text: string }
+  | { kind: 'queryCards'; query: CardQuery }
   | { kind: 'checkpoint'; label: string }
-  | { kind: 'history' }
+  | { kind: 'history'; limit?:number }
+  | { kind: 'checkpointChanges'; id:string }
+  | { kind: 'applyCheckpoint'; source:string; target:string }
   | { kind: 'restore'; id: string }
   | { kind: 'read'; path: string }
   | { kind: 'card'; path: string }

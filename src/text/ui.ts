@@ -165,7 +165,17 @@ export const ui = {
     recoverableDraft: "Recoverable draft",
     confirmDiscard: "Discard the unsaved draft and reload from disk?",
   },
+  search: {
+    placeholder:'Search cards…',searching:'Searching…',noResults:'No matching cards',
+    hint:'Search filenames, titles and content',count:(n:number)=>n===100?'Showing first 100 results':`${n} ${n===1?'result':'results'}`,
+  },
   history: {
+    restore:'Go to checkpoint',apply:'Apply changes onto current checkpoint',changes:'Checkpoint changes',empty:'No saved checkpoints',loadMore:'Load earlier checkpoints',binary:'Binary file',
+    applyLabel:(label:string)=>`Apply: ${label}`,
+    confirmRestore:(label:string)=>`Go to “${label}”? Current work will be saved first. Workspace content will change; tabs, layout and later checkpoints will be kept.`,
+    confirmApply:(source:string,target:string)=>`Apply the changes from “${source}” onto “${target}”? This creates and activates a new checkpoint. Current work and the original branches will be kept.`,
+    selected:'Selected checkpoint',graph:'Checkpoint history',
+
     edit: (path: string) => `Edit ${path}`,
     rename: (path: string) => `Rename ${path}`,
     moveRootCards: (folder: string) => `Move root cards into ${folder}`,
@@ -191,6 +201,14 @@ export const ui = {
     current: " · Current",
   },
   errors: {
+    invalidHistoryRecovery:'Invalid history recovery file; interface backup retained.',
+    historyNotDiverged:'Apply changes is available only between diverged branches.',
+    historySingleParent:'Only checkpoints with one parent can be applied.',
+    historyConflict:'These changes conflict with the destination checkpoint. Nothing was applied; both branches and current work are preserved.',
+    historyAlreadyApplied:'The destination already contains these changes.',
+    historyOtherWindows:'Close other windows for this workspace before changing history, so their unsaved edits remain safe.',
+
+    invalidQuery: "Invalid card query",
     invalidCardColor:'Invalid card color',invalidPalette:'Invalid workspace palette',invalidBoardStyle:'Invalid whiteboard style',
     whiteboardChanged: (path: string) => `The whiteboard changed while you were editing ${path}. Your move has not overwritten those changes.`,
     invalidFrontmatter: (detail: string) => `Invalid frontmatter: ${detail}`,
@@ -302,6 +320,7 @@ export const ui = {
     disconnected: "No agent connected.",
   },
   status: {
+    changingHistory:"Changing workspace history…",
     syncOff: "Sync off",
     openingWorkspace: "Opening workspace…",
     savedLocally: "Saved locally",

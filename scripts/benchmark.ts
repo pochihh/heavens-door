@@ -12,17 +12,26 @@ execFileSync('git',['init','-q'],{cwd:root});
 for (let start=0;start<10000;start+=100) {
   await Promise.all(Array.from({length:100},(_,offset) => {
     const i=start+offset;
-    return fs.writeFile(join(root,`card-${i}.md`),`---\ncard-id: benchmark-${i}\n---\n# Card ${i}\n\nResearch about ${i%2 ? 'neuroscience' : 'mathematics'}.\n\n${'A thought and its context. '.repeat(40)}\n\n[Related](card:benchmark-${(i+1)%10000})\n`);
+    return fs.writeFile(join(root,`card-${i}.md`),`---\ncard-id: benchmark-${i}\ntags: [research]\npriority: ${i%5}\n---\n# Card ${i}\n\nResearch about ${i%2 ? 'neuroscience' : 'mathematics'}.\n\n${'A thought and its context. '.repeat(40)} ${i%2?'繁體中文機器學習筆記':'简体中文机器学习笔记'}\n\n[Related](card:benchmark-${(i+1)%10000})\n`);
   }));
 }
 const begin=performance.now();
 const workspace=await Workspace.open(root,join(folder,'cache'));
 const indexed=performance.now();
-const times:number[]=[];
-for (let i=0;i<100;i++) { const start=performance.now(); workspace.query(i%2 ? 'neuroscience' : 'backlinks:benchmark-100'); times.push(performance.now()-start); }
-times.sort((a,b) => a-b);
+const queries={
+  prefix:()=>workspace.query('neurosc'),fuzzy:()=>workspace.query('neurosceince'),
+  chinese:()=>workspace.query('机器学习'),mixed:()=>workspace.query('mathematics 學習'),
+  structured:()=>workspace.queryCards({text:'学习',tag:'research',properties:[{field:'priority',op:'gte',value:3}]}),
+  backlink:()=>workspace.query('backlinks:benchmark-100'),
+};
+const timings:Record<string,{medianMs:number;p95Ms:number}>={};
+for(const [name,query] of Object.entries(queries)){
+  const times:number[]=[];
+  for(let i=0;i<40;i++){const start=performance.now();query();times.push(performance.now()-start);}
+  times.sort((a,b)=>a-b);timings[name]={medianMs:Number(times[20].toFixed(2)),p95Ms:Number(times[38].toFixed(2))};
+}
 const start=performance.now(),snapshot=workspace.snapshot(),end=performance.now();
 workspace.close();
 const warmStart=performance.now(); const reopened=await Workspace.open(root,join(folder,'cache')); const warmEnd=performance.now();
-console.log(JSON.stringify({cards:snapshot.cards.length,indexSeconds:Number(((indexed-begin)/1000).toFixed(2)),warmOpenSeconds:Number(((warmEnd-warmStart)/1000).toFixed(2)),queryMedianMs:Number(times[50].toFixed(2)),queryP95Ms:Number(times[95].toFixed(2)),metadataSnapshotMs:Number((end-start).toFixed(2)),snapshotKB:Math.round(JSON.stringify(snapshot).length/1024)},null,2));
+console.log(JSON.stringify({cards:snapshot.cards.length,indexSeconds:Number(((indexed-begin)/1000).toFixed(2)),warmOpenSeconds:Number(((warmEnd-warmStart)/1000).toFixed(2)),queries:timings,metadataSnapshotMs:Number((end-start).toFixed(2)),snapshotKB:Math.round(JSON.stringify(snapshot).length/1024)},null,2));
 reopened.close(); await fs.rm(folder,{recursive:true,force:true});

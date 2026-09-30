@@ -151,8 +151,10 @@ void app.whenReady().then(async()=>{
     const d=trusted(event);if(!d.host||!request||request.kind==='open')throw new Error(ui.errors.unsupportedRequest);
     // Migration is an explicit UI command with a destination review, never an open side effect.
     if(request.kind==='migrateRoot'&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.migrationOtherWindows);
+    // ponytail: block cross-window history switches until a shared draft-flush barrier exists.
+    if(['restore','applyCheckpoint'].includes(request.kind)&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.historyOtherWindows);
     const result=await d.host.call(request);
-    if(['create','createFolder','saveCard','saveBoard','setFill','write','restore','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
+    if(['create','createFolder','saveCard','saveBoard','setFill','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
     return result;
   });
   ipcMain.handle('workspace:current',event=>snapshot(trusted(event)));

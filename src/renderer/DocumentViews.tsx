@@ -102,13 +102,6 @@ export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:T
     {!rows.length&&<p className="empty-label">{ui.tags.empty(tag.tag)}</p>}
   </section>;
 }
-export function HistoryPanel({session}:{session:Session}) {
-  const state=session.state;
-  return <>
-    {!state.snapshot?.historyAvailable&&<p className="notice">{ui.history.unavailable}</p>}
-    <div className="history-list">{state.checkpoints.map(item=><button key={item.id} className={'checkpoint '+(item.active?'active':'')} data-tooltip={tooltips.history.checkpoint(item.label,item.active)} onClick={()=>{if(!item.active)void session.restore(item.id).catch(()=>undefined);}}><span className="history-dot"/><strong>{item.label}</strong><time>{new Date(item.time).toLocaleString()}</time><small>{item.id.slice(0,7)}{item.active?ui.history.current:''}</small></button>)}</div></>;
-}
-
 export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapshot:Snapshot;memory:ViewMemory;onViewChange:()=>void}) {
   const [file,setFile]=useState<FileInspection|null>(null),[error,setError]=useState('');
   const container=useRef<HTMLDivElement>(null);
