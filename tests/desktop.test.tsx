@@ -127,6 +127,9 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelector('[role=tooltip]'),null);
 
     await click('[data-tooltip="Expand Ideas"]');
+    assert.equal(document.querySelector('.file-tree [data-file-key="card:a"]'),null,'Whiteboard explorer omits note rows');
+    await click('.activity-bar [aria-label="File explorer"]');
+    await click('[data-tooltip="Expand Ideas"]');
     await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
     await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
     assert.equal(document.querySelectorAll('.workspace [role=tab]').length,2,'reopening a card reuses its tab');
@@ -162,6 +165,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('[aria-label="Collapse Left Side Dock"]');
     await click('.activity-bar [aria-label="Agent console"]');
     assert.ok(document.querySelector('.left-dock [aria-label="Agent console"][role=tabpanel]'),'activity buttons reveal a module in its chosen location');
+    await click('.activity-bar [aria-label="Whiteboard explorer"]');
     await click('.file-tree [data-file-key="board:Ideas"] .file-button');
     await click('.file-tree [aria-label="Add in Ideas"]');
     const newNote=[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='New card')!;

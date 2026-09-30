@@ -30,7 +30,7 @@ export function TooltipHost() {
   },[tip]);
   return tip?createPortal(<div ref={element} id="app-tooltip" className="hover-tooltip" role="tooltip">{tip.text}</div>,document.body):null;
 }
-export interface MenuAction {separatorBefore?:boolean;label:string;icon?:IconName;checked?:boolean;checkType?:'checkbox'|'radio';disabled?:boolean;hint?:string;run:()=>void}
+export interface MenuAction {danger?:boolean;separatorBefore?:boolean;label:string;icon?:IconName;checked?:boolean;checkType?:'checkbox'|'radio';disabled?:boolean;hint?:string;run:()=>void}
 export interface MenuState {anchor?:HTMLElement;above?:boolean;label?:string;x:number;y:number;actions:MenuAction[]}
 export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
   const ref=useRef<HTMLDivElement>(null),restoreFocus=useRef(true);
@@ -51,5 +51,5 @@ export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
     const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
     if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();onClose();}
-  }}>{menu.actions.map((action,i)=><Fragment key={i}>{action.separatorBefore&&<div role="separator" className="menu-separator"/>}<button role={action.checked!==undefined?(action.checkType==='checkbox'?'menuitemcheckbox':'menuitemradio'):'menuitem'} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button></Fragment>)}</div>,document.body);
+  }}>{menu.actions.map((action,i)=><Fragment key={i}>{action.separatorBefore&&<div role="separator" className="menu-separator"/>}<button role={action.checked!==undefined?(action.checkType==='checkbox'?'menuitemcheckbox':'menuitemradio'):'menuitem'} className={action.danger?'danger':undefined} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button></Fragment>)}</div>,document.body);
 }

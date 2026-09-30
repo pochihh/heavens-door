@@ -3,17 +3,20 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { act } from 'react';
 import { SearchDialog } from '../src/renderer/SearchView';
-import { HistoryPanel, diverged, historyLanes } from '../src/renderer/HistoryView';
+import { HistoryPanel, diverged, historyLanes, historyGraph } from '../src/renderer/HistoryView';
 import { Session } from '../src/renderer/session';
+import { ConfirmationProvider } from '../src/renderer/Confirmation';
 import type { Bridge, CardResult, Checkpoint, Snapshot } from '../src/shared';
 
 test('search keyboard/IME and menu-driven history navigation keep selection separate from restore',async()=>{
   const dom=new JSDOM('<button id="before">Search</button><div id="root"></div>',{url:'https://test.local',pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,Element:dom.window.Element,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true});
+  dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
+  dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   const snapshot:Snapshot={root:'/test',name:'Test',cards:[],boards:[],issues:[],historyAvailable:true};
   const a:Checkpoint={id:'a',parents:[],time:1,label:'A',active:false},b={...a,id:'b',parents:['a'],label:'B'},c={...a,id:'c',parents:['b'],label:'C'},d={...a,id:'d',parents:['b'],label:'D',active:true};
   const items=[d,c,b,a];assert.equal(diverged(c,d,items),true);assert.equal(diverged(b,d,items),false);assert.notEqual(historyLanes(items).get('c'),historyLanes(items).get('d'));
-  const calls:string[]=[],opened:string[]=[],restored:string[]=[],confirms:string[]=[];
+  const calls:string[]=[],opened:string[]=[],restored:string[]=[];
   const results:CardResult[]=[{id:'one',name:'機器學習',path:'one.md',title:'機器學習',revision:'r',legacy:false,properties:{},score:1,snippet:'原始內容',terms:[],previewImage:'assets/photo.jpg',highlights:{name:[[0,4]],path:[],snippet:[]}},{id:'two',name:'Two',path:'two.md',revision:'r',legacy:false,properties:{},score:1,snippet:'second',terms:[]}];
   let releaseQuery:()=>void=()=>{};const queryGate=new Promise<void>(resolve=>{releaseQuery=resolve;});
   const session=new Session({assetUrl:(path:string)=>'heavens-asset://test/'+path,request:async request=>{calls.push(request.kind);if(request.kind==='queryCards'){await queryGate;return results;}if(request.kind==='checkpointChanges')return [{path:'one.md',added:2,removed:1}];if(request.kind==='preferences')return snapshot;throw new Error(request.kind);}} as Bridge);
@@ -21,29 +24,65 @@ test('search keyboard/IME and menu-driven history navigation keep selection sepa
   const {createRoot}=await import('react-dom/client');
   const root=createRoot(document.getElementById('root')!);
   const onClose=()=>{root.render(null);};
+  const showSearch=()=>root.render(<ConfirmationProvider><SearchDialog session={session} snapshot={{...snapshot,preferences:{theme:'dark',stem:'untitled',starred:[],recent:[],icons:{},navigation:{search:{search:'学习'}}}}} onReveal={key=>opened.push('board:'+key)} onOpen={key=>opened.push(key)} onSplit={key=>opened.push('split:'+key)} onClose={onClose}/></ConfirmationProvider>);
+  const reopen=async()=>{await act(async()=>showSearch());await act(async()=>{await new Promise(resolve=>setTimeout(resolve,150));});};
   try{
     document.getElementById('before')!.focus();
-    await act(async()=>root.render(<SearchDialog session={session} snapshot={{...snapshot,preferences:{theme:'dark',stem:'untitled',starred:[],recent:[],icons:{},navigation:{search:{search:'学习'}}}}} onOpen={key=>opened.push(key)} onSplit={key=>opened.push('split:'+key)} onClose={onClose}/>));
+    await act(async()=>showSearch());
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,150));});
     assert.equal(document.querySelector('[role=listbox]')?.getAttribute('aria-busy'),'true');assert.ok(document.querySelector('.search-loading'));
     await act(async()=>releaseQuery());
     assert.equal(document.querySelector('[role=listbox]')?.getAttribute('aria-busy'),'false');assert.equal(document.querySelector('mark')?.textContent,'機器學習');assert.equal(document.querySelector('img')?.getAttribute('src'),'heavens-asset://test/assets/photo.jpg');
     const input=document.querySelector('input')!;assert.equal(document.activeElement,input);assert.equal(document.querySelectorAll('[role=option]').length,2);
-    const clear=document.querySelector<HTMLButtonElement>('.search button')!;clear.focus();
-    await act(async()=>clear.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})));assert.equal(document.activeElement,input);
-    await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true})));assert.equal(document.activeElement,clear);input.focus();
+    const last=document.querySelector<HTMLButtonElement>('.search-actions button:last-child')!;last.focus();
+    await act(async()=>last.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})));assert.equal(document.activeElement,input);
+    await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true})));assert.equal(document.activeElement,last);input.focus();
     await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true})));assert.deepEqual(opened,[]);
     await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));
     assert.equal(document.querySelector('[role=option][aria-selected=true] .search-result-path')?.textContent,'two.md');
     await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('[role=dialog]'),null);assert.equal(document.activeElement?.id,'before');
-    await act(async()=>root.render(<HistoryPanel session={session}/>));
+    await reopen();
+    await act(async()=>document.querySelector('input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));
+    assert.deepEqual(opened,['board:card:one']);
+    await reopen();
+    await act(async()=>document.querySelector('input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true})));
+    assert.equal(opened.at(-1),'card:one');
+    await reopen();
+    await act(async()=>document.querySelector('input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true})));
+    assert.equal(opened.at(-1),'split:card:one');
+    await reopen();
+    await act(async()=>document.querySelector('[role=option]')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:30,clientY:40})));
+    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['Show on whiteboard','Open card','Open card beside']);
+    await act(async()=>document.querySelector<HTMLButtonElement>('[role=menuitem]')!.click());assert.equal(opened.at(-1),'board:card:one');
+    await act(async()=>root.render(<ConfirmationProvider><HistoryPanel session={session}/></ConfirmationProvider>));
     const card=document.querySelector<HTMLButtonElement>('[data-checkpoint=c]')!;
-    await act(async()=>card.click());assert.deepEqual(restored,[]);assert.ok(document.querySelector('[aria-label="Checkpoint changes"]')?.textContent?.includes('+2 −1'));
-    window.confirm=(text)=>{confirms.push(text??'');return false;};
-    await act(async()=>card.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true})));assert.equal(confirms.length,1);assert.deepEqual(restored,[]);
+    await act(async()=>card.click());assert.deepEqual(restored,[]);assert.equal(document.querySelector('.change-added')?.textContent,'+2');assert.equal(document.querySelector('.change-removed')?.textContent,'−1');
+    card.focus();
+    await act(async()=>card.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true})));
+    assert.ok(document.querySelector('dialog[open][role=alertdialog]'));assert.equal(document.activeElement?.textContent,'Cancel');assert.deepEqual(restored,[]);
+    await act(async()=>document.querySelector('dialog')!.dispatchEvent(new dom.window.Event('cancel',{cancelable:true})));
+    assert.equal(document.querySelector('dialog'),null);assert.equal(document.activeElement,card);assert.deepEqual(restored,[]);
+    await act(async()=>card.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true})));
+    const backdrop=document.querySelector('dialog')!,press=new dom.window.MouseEvent('pointerdown',{bubbles:true,cancelable:true});
+    await act(async()=>backdrop.dispatchEvent(press));assert.equal(press.defaultPrevented,true);assert.ok(document.querySelector('dialog'));
+    await act(async()=>backdrop.click());assert.equal(document.querySelector('dialog'),null);assert.equal(document.activeElement,card);assert.deepEqual(restored,[]);
     await act(async()=>card.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:30,clientY:40})));
     const menu=document.querySelector('[role=menu]')!;assert.ok(menu.textContent?.includes('Apply changes'));
-    window.confirm=()=>true;
-    await act(async()=>menu.querySelector<HTMLButtonElement>('button')!.click());assert.deepEqual(restored,['c']);assert.equal(document.querySelector('[role=menu]'),null);
+    await act(async()=>menu.querySelector<HTMLButtonElement>('button')!.click());assert.equal(document.querySelector('[role=menu]'),null);assert.deepEqual(restored,[]);
+    await act(async()=>document.querySelector<HTMLButtonElement>('.confirmation-actions button:last-child')!.click());assert.deepEqual(restored,['c']);assert.equal(document.querySelector('dialog'),null);
+
   }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}
+});
+
+
+test('history graph keeps ancestry lanes straight, joins shared parents and continues truncated history',()=>{
+  const item=(id:string,parents:string[])=>({id,parents,label:id,time:0,active:false});
+  const items=[item('d',['b']),item('c',['b']),item('b',['a']),item('a',[])];
+  const graph=historyGraph(items);
+  assert.equal(graph.positions.get('d'),graph.positions.get('b'));assert.notEqual(graph.positions.get('c'),graph.positions.get('b'));
+  assert.equal(graph.lines.find(l=>l.id==='d:b')?.d,'M10 42 V226');
+  assert.equal(graph.lines.find(l=>l.id==='c:b')?.d,'M26 134 V144 L10 162');
+  assert.equal(graph.lines.find(l=>l.id==='b:a')?.d,'M10 226 V318');
+  const merge=historyGraph([item('m',['d','c']),...items]);assert.notEqual(merge.positions.get('d'),merge.positions.get('c'));assert.equal(merge.lines.length,5);
+  assert.match(historyGraph([item('d',['b'])]).lines[0].d,/V92$/);
 });

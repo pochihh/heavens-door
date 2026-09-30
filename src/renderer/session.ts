@@ -201,7 +201,7 @@ export class Session {
       if(draft&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
     });
   }
-  deleteSelection(board:Board,placements:string[],edges:string[],confirm:(names:string[])=>boolean) {
+  deleteSelection(board:Board,placements:string[],edges:string[],confirm:(names:string[])=>boolean|Promise<boolean>) {
     return this.run(async()=>{
       await this.flush();
       const current=this.state.snapshot?.boards.find(b=>b.path===board.path);
@@ -209,7 +209,7 @@ export class Session {
       // Finish editing before preparing the exact, revision-checked files for confirmation.
       if(board.cards.some(p=>placements.includes(p.id)&&p.cardId===this.state.draft?.card.id))this.update({draft:null});
       const deletion=await this.bridge.request<Deletion>({kind:'prepareDeletion',path:board.path,placements,edges,expected:current.revision});
-      if(!deletion.changes.length||deletion.nonEmpty.length&&!confirm(deletion.changes.filter(change=>change.content===null).map(change=>change.path)))return false;
+      if(!deletion.changes.length||deletion.nonEmpty.length&&!await confirm(deletion.changes.filter(change=>change.content===null).map(change=>change.path)))return false;
       const result=await this.bridge.request<Mutation>({kind:'write',changes:deletion.changes});
       this.accept(result,ui.history.deleteSelection);
       return true;

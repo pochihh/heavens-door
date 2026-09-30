@@ -383,3 +383,33 @@ test('card menu and keyboard share deletion without intercepting text editing',a
     assert.equal(calls.length,2,'typing never deletes a card');input.remove();
   }finally{await act(async()=>root.unmount());}
 });
+
+
+test('search reveal expands and selects a card without editing or zooming, and card menus open standalone views',async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,Node:dom.window.Node,innerWidth:1000,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  const {Whiteboard}=await import('../src/renderer/Board'),{cardPlacement}=await import('../src/renderer/documents');
+  const {useState}=await import('react');
+  const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[{id:'p',cardId:'c',x:5000,y:3000,width:340,height:280,collapsed:true}],edges:[]};
+  const card={id:'c',path:'Ideas/C.md',name:'C',title:'Card C',revision:'r',legacy:false};
+  const reference={...board,path:'Other/Other.whiteboard',folder:'Other'};
+  const snapshot={root:'/tmp',name:'Test',cards:[card],boards:[reference,board],issues:[],historyAvailable:true};
+  assert.equal(cardPlacement(snapshot,'c')?.board,board);assert.equal(cardPlacement({...snapshot,boards:[reference]},'c')?.board,reference);assert.equal(cardPlacement({...snapshot,boards:[]},'c'),undefined);
+  let saved=board,reveals=0;const opened:string[]=[];
+  window.door={request:async()=>({...card,body:'# Card C'}),assetUrl:(p:string)=>p} as unknown as typeof window.door;
+  dom.window.HTMLElement.prototype.getBoundingClientRect=function(){return {x:0,y:0,left:0,top:0,right:1000,bottom:800,width:1000,height:800,toJSON(){}};};
+  const root=createRoot(document.getElementById('root')!);
+  function Fixture({token}:{token:number}){const [b,setBoard]=useState(board);return <Whiteboard board={b} cards={[card]} initialCamera={{x:0,y:0,zoom:.5}} reveal={{placement:'p',token}} onRevealed={()=>reveals++} onOpen={()=>assert.fail('reveal must not edit')} onOpenCard={(id,beside)=>opened.push(id+(beside?':beside':''))} onCreate={()=>undefined} onSave={next=>{saved=next;setBoard(next);}}/>;}
+  try{
+    await act(async()=>root.render(<Fixture token={1}/>));
+    assert.equal(saved.cards[0].collapsed,false);assert.equal(reveals,1);
+    const cardElement=document.querySelector<HTMLElement>('.board-card')!;assert.ok(cardElement.classList.contains('selected'));assert.ok(!cardElement.classList.contains('editing'));
+    assert.match(document.querySelector<HTMLElement>('.board-world')!.style.transform,/scale\(0.5\)/);
+    assert.notEqual(document.querySelector<HTMLElement>('.board-world')!.style.transform,'translate(0px, 0px) scale(0.5)');
+    await act(async()=>root.render(<Fixture token={2}/>));assert.equal(reveals,2);
+    await act(async()=>cardElement.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100})));
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open card')!.click());assert.deepEqual(opened,['c']);
+    await act(async()=>cardElement.querySelector<HTMLButtonElement>('.card-more')!.click());
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open card beside')!.click());assert.deepEqual(opened,['c','c:beside']);
+  }finally{await act(async()=>root.unmount());}
+});

@@ -84,3 +84,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, and `Work
 6. Navigate by keyboard, including disabled items, Enter/Space, Tab/Shift+Tab, and Escape. No keyboard or programmatic focus event opens a tooltip.
 7. Repeat with a menu near each viewport edge, in a narrow window, and with long labels. No menu is clipped and no tooltip covers the actionable rows.
 8. Repeat in both themes and with reduced motion. Check Explorer, View tabs, Tab Group actions, workspace switching, and the card-link popover.
+
+## Confirmation dialogs
+
+Use `ConfirmationProvider` / `useConfirmation` for card deletion, history navigation/application, and discarding unsaved drafts. Its native `<dialog>` provides modal focus containment and makes the background inert, while app CSS defines its appearance. The Promise resolves only after the user chooses; mutation callers await it and retain revision checks. Cancel is initially focused. Escape and backdrop click cancel. Card context menus and More menus expose the same Open card / Open card beside actions, followed by card options and a separated destructive Delete card action.

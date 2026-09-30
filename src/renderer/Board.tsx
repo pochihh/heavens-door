@@ -52,6 +52,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} dangerouslySetInnerHTML={{ __html: collapsed?summary:html||preview('',card.path) }} />;
 });
 interface Props {
+  reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,beside?:boolean)=>void;
   edgeDefaults?:EdgeStyle;
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
@@ -72,7 +73,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
+export const Whiteboard = memo(function Whiteboard({ reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -132,7 +133,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
       nav.wheel(event);
     };
     const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing || !latest.current.enabled) return;
+      if (event.isComposing || !latest.current.enabled || document.querySelector('dialog[open]')) return;
       if (event.key === 'Escape') { cancel(); setSelected([]); setSelectedEdges([]); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
       if (editable(event.target)) return;
       if ((event.key==='Delete'||event.key==='Backspace')&&element.contains(event.target as Node)){event.preventDefault();latest.current.deleteSelection();return;}
@@ -175,6 +176,19 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
   }, []);
 
   useLayoutEffect(() => { navigation.current?.setInputMode(inputMode); }, [inputMode]);
+
+  useEffect(()=>{
+    if(!reveal||!enabled)return;
+    const p=current.cards.find(p=>p.id===reveal.placement),nav=navigation.current,element=viewport.current;
+    if(p&&nav&&element){
+      setSelected([p.id]);setSelectedEdges([]);setEditingPlacement('');
+      if(p.collapsed)save({...current,cards:current.cards.map(item=>item.id===p.id?{...item,collapsed:false}:item)},ui.history.expandCard);
+      const {width,height}=element.getBoundingClientRect(),zoom=nav.current.zoom;
+      nav.stopWheel();nav.set({...nav.current,x:(width-p.width*zoom)/2-p.x*zoom,y:Math.max(48,(height-Math.min(expandedHeight(p)*zoom,height-96))/2)-p.y*zoom});nav.flush();
+      element.focus({preventScroll:true});
+    }
+    onRevealed?.();
+  },[reveal?.token,enabled]);
 
   function begin(e: PointerEvent, type: Gesture['type'], ids: string[] = []) {
     const element = viewport.current!, nav = navigation.current!;
@@ -322,10 +336,10 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
-      [{label:ui.whiteboard.autoHeight,checked:autoHeight(p),checkType:'checkbox',run:()=>{
+      [...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.search.openCard,icon:'note' as const,run:()=>onOpenCard(p.cardId)},{label:ui.search.openBeside,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,true)}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
       }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,run:()=>removeReference(p)}]:[]),
-      ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'close' as const,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
+      ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
   }
   function openCanvasMenu(clientX:number,clientY:number) {
     const element=viewport.current!,nav=navigation.current!;nav.flush();
@@ -393,7 +407,7 @@ export const Whiteboard = memo(function Whiteboard({ edgeDefaults, mentions=[], 
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
             data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:tintColor(p.folder?p.fillColor:cardFill(savedCard,p)) }}
-            onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
+            onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;
               if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}

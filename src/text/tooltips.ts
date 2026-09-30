@@ -49,6 +49,7 @@ export const tooltips = {
     recent: "Recently opened files. Drag a file into Starred to keep it.",
   },
   common: {
+    cancel: "Cancel · Esc",
     moreActions: (name: string) => `More actions for ${name}`,
     newWhiteboard: "New whiteboard",
     newCard: "New card",
@@ -59,6 +60,10 @@ export const tooltips = {
   files: {
     open: (path: string) => `Open ${path}`,
     reveal: "Show the original file in your system file manager",
+  },
+  search: {
+    showOnBoard:'Show on whiteboard · Enter',openCard:'Open card · Shift+Enter',
+    openBeside:'Open card beside · ⌘Enter / Ctrl+Enter',
   },
   history: {
     loadMore:"Show earlier checkpoints",

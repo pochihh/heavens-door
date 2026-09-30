@@ -39,13 +39,11 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     void refresh();return()=>{fileLoad.current++;};
   },[module,snapshot,refresh]);
   const tree=useMemo(()=>{
-    const groups=new Map(snapshot.boards.map(b=>[portable(b.folder),{folders:[] as string[],keys:[] as string[]} ]));
+    const groups=new Map(snapshot.boards.map(b=>[portable(b.folder),{folders:[] as string[]} ]));
     for(const board of snapshot.boards)if(board.folder){let ancestor=parent(board.folder);while(ancestor&&!groups.has(ancestor))ancestor=parent(ancestor);groups.get(ancestor)?.folders.push(board.folder);}
-    for(const c of snapshot.cards){const folder=parent(c.path);if(folder)groups.get(folder)?.keys.push('card:'+c.id);}
-    for(const t of snapshot.tags??[])groups.get(parent(t.path))?.keys.push('tag:'+t.path);
     for(const group of groups.values())group.folders.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     return groups;
-  },[snapshot.boards,snapshot.cards,snapshot.tags]);
+  },[snapshot.boards]);
   const toggle=(folder:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(folder))next.delete(folder);else next.add(folder);return next;});
   const star=(key:string)=>onPrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));
   const drag=useBookmarkDrag(starred,(key,index,source)=>onPrefs(p=>{const next=insertBookmark(p.starred,key,index,source);return next.length===p.starred.length&&next.every((k,i)=>k===p.starred[i])?{}:{starred:next};}));
@@ -105,7 +103,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   }
   function boardBranch(folder:string,depth=0):ReactNode {
     const group=tree.get(portable(folder));
-    return <div key={folder}>{row(entryFor('board:'+folder),depth)}{expanded.has(folder)&&<>{group?.folders.map(f=>boardBranch(f,depth+1))}{group?.keys.map(key=>row(entryFor(key),depth+1))}</>}</div>;
+    return <div key={folder}>{row(entryFor('board:'+folder),depth)}{expanded.has(folder)&&<>{group?.folders.map(f=>boardBranch(f,depth+1))}</>}</div>;
   }
   function fileEntry(file:FileEntry):Entry {
     if(file.kind==='folder')return {path:file.path,folder:file.path,name:file.name};

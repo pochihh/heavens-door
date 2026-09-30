@@ -116,6 +116,7 @@ export const ui = {
   },
   card: {
     delete: "Delete card",
+    deleteTitle:(n:number)=>n===1?'Delete card':`Delete ${n} cards`,
     confirmDelete: (names:string[]) => `Delete ${names.length===1?`“${names[0]}”`:`${names.length} cards`}?\n\nCard files and their content will move to workspace trash. Other whiteboards will show missing references. You can undo this action.`,
     linkedFrom: (count: number) => `Linked from · ${count}`,
     count: (count: number) => `${count} card${count === 1 ? "" : "s"}`,
@@ -167,7 +168,7 @@ export const ui = {
   },
   search: {
     placeholder:'Search cards…',searching:'Searching…',noResults:'No matching cards',
-    preparing:'Preparing notes and the search index…',escape:'Esc',control:'Ctrl',scope:'Cards',navigate:'Navigate',open:'Open',openBeside:'Open beside',close:'Close',
+    preparing:'Preparing notes and the search index…',showOnBoard:'Show on whiteboard',openCard:'Open card',openBeside:'Open card beside',resultActions:'Search result actions',
     hint:'Search filenames, titles and content',count:(n:number)=>n===100?'Showing first 100 results':`${n} ${n===1?'result':'results'}`,
   },
   history: {

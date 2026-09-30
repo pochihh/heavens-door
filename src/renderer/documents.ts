@@ -25,3 +25,11 @@ export function documentInfo(key:string,snapshot:Snapshot):DocumentInfo {
   const split=key.indexOf(':'),kind=key.slice(0,split),id=key.slice(split+1);
   return {key,kind,id,title:kind==='card'?ui.whiteboard.missingCard:leaf(id),path:kind==='card'?'':id,icon:kind==='file'?fileIcon(id):kind==='board'?'map':kind==='tag'?'tag':'note',exists:kind==='file'};
 }
+
+export function cardPlacement(snapshot:Snapshot,id:string) {
+  const card=snapshot.cards.find(c=>c.id===id);if(!card)return;
+  const owner=parent(card.path);
+  const candidates=snapshot.boards.filter(b=>b.folder&&b.cards.some(p=>!p.folder&&p.cardId===id));
+  const board=candidates.find(b=>portable(b.folder)===owner)??candidates.sort((a,b)=>a.path.localeCompare(b.path))[0];
+  if(board)return {board,placement:board.cards.find(p=>!p.folder&&p.cardId===id)!};
+}
