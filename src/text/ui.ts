@@ -167,6 +167,7 @@ export const ui = {
   },
   search: {
     placeholder:'Search cards…',searching:'Searching…',noResults:'No matching cards',
+    preparing:'Preparing notes and the search index…',escape:'Esc',control:'Ctrl',scope:'Cards',navigate:'Navigate',open:'Open',openBeside:'Open beside',close:'Close',
     hint:'Search filenames, titles and content',count:(n:number)=>n===100?'Showing first 100 results':`${n} ${n===1?'result':'results'}`,
   },
   history: {

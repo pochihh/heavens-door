@@ -1,4 +1,5 @@
 import MiniSearch from 'minisearch';
+import { marked, type Token } from 'marked';
 import { Converter } from 'opencc-js/t2cn';
 import type { Card } from '../shared';
 
@@ -19,7 +20,7 @@ export class CardSearch {
   private engine=new MiniSearch({idField:'path',fields:['name','title','body'],storeFields:['name','title'],tokenize:text=>tokens(text,true),
     searchOptions:{tokenize:text=>tokens(text),combineWith:'AND',boost:{title:5,name:4},
       prefix:term=>!han.test(term),fuzzy:term=>!han.test(term)&&term.length>=4?.2:false,maxFuzzy:2}});
-  update(card:Pick<Card,'path'|'name'|'title'|'body'>){this.remove(card.path);this.engine.add(card);}
+  update(card:Pick<Card,'path'|'name'|'title'|'body'>){this.remove(card.path);this.engine.add({...card,body:searchDocument(card.body).text});}
   remove(path:string){if(this.engine.has(path))this.engine.discard(path);}
   search(text:string,allowed?:Set<string>):SearchHit[]{
     if(!text.trim())return [];
@@ -33,4 +34,50 @@ export function searchExcerpt(body:string,terms:string[]) {
   // Conversion is for locating a useful area only; snippets always use original bytes/text.
   const start=Math.max(0,(positions.length?Math.min(...positions):0)-60);
   return (start?'…':'')+body.slice(start,start+220).replace(/\s+/g,' ').trim()+(body.length>start+220?'…':'');
+}
+
+// Derived display text only: never render this HTML or execute embedded content.
+export function searchDocument(body:string) {
+  let image:string|undefined;
+  const local=(source:string)=>source&&!/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(source)&&/\.(png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i.test(source);
+  const text=(token:Token):string=>{
+    if(token.type==='image'){if(!image&&local(token.href))image=token.href;return token.text;}
+    if(token.type==='html'){
+      const html=token.text.replace(/<!--[\s\S]*?-->/g,'').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'');
+      const labels:string[]=[];
+      for(const img of html.matchAll(/<img\b[^>]*>/gi)){
+        const source=/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(img[0]);
+        const value=source?.[1]??source?.[2]??source?.[3]??'';
+        if(!image&&local(value))image=value;
+        const alt=/\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(img[0]);if(alt)labels.push(alt[1]??alt[2]??alt[3]??'');
+      }
+      return html.replace(/<[^>]*>/g,' ')+' '+labels.join(' ');
+    }
+    if(token.type==='list')return token.items.map(text).join('\n');
+    if(token.type==='table')return [token.header,...token.rows].map(row=>row.map((cell:{tokens:Token[]})=>cell.tokens.map(text).join('')).join(' ')).join('\n');
+    if('tokens' in token&&token.tokens)return token.tokens.map(text).join(token.type==='blockquote'||token.type==='list_item'?'\n':'');
+    return 'text' in token?String(token.text):' ';
+  };
+  return {text:marked.lexer(body).map(text).join('\n').trim(),image};
+}
+export function searchHighlights(text:string,terms:string[]):[number,number][] {
+  if(!terms.length)return [];
+  const canonical=normalizeSearch(text);
+  let offsets:number[];
+  if(canonical.length===text.length)offsets=Array.from({length:text.length+1},(_,i)=>i);
+  else {
+    offsets=[];let byCharacter='',offset=0;
+    for(const char of text){const value=normalizeSearch(char);byCharacter+=value;for(let i=0;i<value.length;i++)offsets.push(offset);offset+=char.length;}
+    offsets.push(text.length);
+    // Length-changing phrase conversions must not highlight the wrong original characters.
+    if(byCharacter!==canonical)return [];
+  }
+  const spans:[number,number][]=[];
+  for(const term of new Set(terms)){if(!term)continue;for(let i=canonical.indexOf(term);i>=0;i=canonical.indexOf(term,i+term.length)){
+    let end=i+term.length;while(end<offsets.length-1&&offsets[end]===offsets[end-1])end++;
+    spans.push([offsets[i],offsets[end]]);
+  }}
+  spans.sort((a,b)=>a[0]-b[0]);const merged:[number,number][]=[];
+  for(const span of spans){const last=merged.at(-1);if(last&&span[0]<=last[1])last[1]=Math.max(last[1],span[1]);else merged.push(span);}
+  return merged;
 }

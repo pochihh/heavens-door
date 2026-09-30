@@ -35,8 +35,9 @@ export class Session {
   }
   resume() {
     return this.run(async () => {
+      this.update({status:ui.status.openingWorkspace});
       const snapshot=await this.bridge.currentWorkspace();
-      if (snapshot) this.update({snapshot,status:ui.status.savedLocally});
+      this.update({snapshot,status:ui.status.savedLocally});
     });
   }
   dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={}; }

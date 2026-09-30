@@ -124,6 +124,12 @@ There are no grid style settings. Theme CSS can override these tokens:
 
 ## Search and History Views
 
-Search uses one results component in the Side Dock and keyboard dialog. Show title, relative path and an original-text excerpt. Arrow keys change the highlighted result; Enter opens it. IME composition must not activate results. Escape/outside click dismiss the dialog and restore focus. A newer query invalidates older responses.
+Search uses one results component in the Side Dock and keyboard dialog. Show filename with a quiet extension, relative path and a readable original-text excerpt. Highlight matched text with the theme accent tint. When a card includes a local image, show one small lazy-loaded preview beneath the excerpt; the result always opens the card. Keep a compact keyboard legend at the bottom of the dialog. Use theme colors, not a copied reference screenshot palette. Default search covers readable content and filenames, excluding storage details such as geometry, internal IDs and markup attributes. Property queries remain explicit. Arrow keys change the highlighted result; Enter opens it. IME composition must not activate results. Escape/outside click dismiss the dialog and restore focus. A newer query invalidates older responses.
 
 History checkpoints are compact cards with ancestry lines. Current checkpoint and selected card have distinct borders/backgrounds. Single-click inspects; double-click/context menu confirms before navigation. Use the shared pointer phantom for dragging a checkpoint to another branch: preserve the original node because application copies its delta. Highlight only an eligible destination; Escape cancels. The warning names both checkpoints. Keep tabs/layout during content navigation. See [Search and History](search-and-history.md).
+
+## Loading feedback
+
+Render the shell before workspace opening/indexing completes. During startup or a workspace switch, show an indeterminate spinner with “Opening workspace…” and a short preparation message; keep workspace controls inert until ready. Errors leave recovery controls available. Never invent a percentage or show a normal empty state while still loading.
+
+Search announces its busy status immediately and shows a central spinner if the request lasts 250 ms, avoiding a spinner flash on fast queries. Slow results must not look like “No matching cards.” Spinner rotation has an 800 ms loop; reduced motion leaves a static indicator and the text. Search results, menus and editor content do not animate while data loads.

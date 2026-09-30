@@ -263,3 +263,13 @@ test('card deletion confirms content, preserves trash and references, and restor
     assert.deepEqual((await w.prepareDeletion(b.path,[p.id],[],b.revision)).nonEmpty,[written.path]);
   }
 });
+
+
+test('workspace startup exposes pending state and clears it on success or failure',async()=>{
+  let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
+  const session=new Session({currentWorkspace:async()=>{await gate;return null;}} as Bridge);
+  const pending=session.resume();await Promise.resolve();assert.equal(session.state.status,'Opening workspace…');
+  release();await pending;assert.equal(session.state.status,'Saved locally');session.dispose();
+  const broken=new Session({currentWorkspace:async()=>{throw new Error('Folder unavailable');}} as unknown as Bridge);
+  await assert.rejects(()=>broken.resume(),/Folder unavailable/);assert.equal(broken.state.status,'Needs attention');broken.dispose();
+});

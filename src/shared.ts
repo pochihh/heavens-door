@@ -18,7 +18,7 @@ export interface CardQuery {
   properties?:{field:string;op:'eq'|'contains'|'exists'|'gt'|'gte'|'lt'|'lte';value?:PropertyValue}[];
   sort?:'name'|'title'|'path'; direction?:'asc'|'desc'; limit?:number; offset?:number;
 }
-export interface CardResult extends CardInfo { properties:Record<string,unknown>; snippet:string; score:number; terms:string[] }
+export interface CardResult extends CardInfo { properties:Record<string,unknown>; snippet:string; score:number; terms:string[]; previewImage?:string; highlights?:{name:[number,number][];path:[number,number][];snippet:[number,number][]} }
 export interface CheckpointChange {path:string;added:number|null;removed:number|null}
 export interface Checkpoint { id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}

@@ -8,7 +8,7 @@ import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
-import { CardSearch, searchExcerpt } from './search';
+import { CardSearch, searchExcerpt, searchDocument, searchHighlights } from './search';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
 import { COLLAPSED_CARD_HEIGHT, placementHeight, edgeStyle } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
@@ -23,6 +23,7 @@ export class Workspace {
   readonly history: History;
   private db: DatabaseSync;
   private search=new CardSearch();
+  private searchPreviews=new Map<string,ReturnType<typeof searchDocument>>();
   private folders = new Set<string>(['']);
   private tags = new Map<string,TagInfo>();
   private preferences = defaultPreferences();
@@ -180,7 +181,7 @@ export class Workspace {
     return this.snapshot();
   }
   private removeIndex(path: string) {
-    this.search.remove(path);
+    this.search.remove(path);this.searchPreviews.delete(path);
     this.db.prepare('DELETE FROM properties WHERE path=?').run(path);
     this.db.prepare('DELETE FROM cards WHERE path=?').run(path);
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
@@ -578,8 +579,15 @@ export class Workspace {
       .all(...(ranking.size?[JSON.stringify([...ranking.keys()])]:[]),...args,limit,offset);
     return rows.map(row=>{
       const {body,frontmatter,folder:_,...card}=row;void _;
-      const rank=ranking.get(String(row.path));
-      return {...card,legacy:!!card.legacy,properties:JSON.parse(String(frontmatter)),snippet:searchExcerpt(String(body),rank?.terms??[]),score:rank?.score??0,terms:rank?.terms??[]};
+      const path=String(row.path),rank=ranking.get(path),terms=rank?.terms??[];
+      let preview=this.searchPreviews.get(path);
+      if(!preview){preview=searchDocument(String(body));this.searchPreviews.set(path,preview);
+        // ponytail: cache the last 200 result previews; persist derived previews if profiling warrants it.
+        if(this.searchPreviews.size>200)this.searchPreviews.delete(this.searchPreviews.keys().next().value!);
+      }
+      const snippet=searchExcerpt(preview.text,terms);
+      return {...card,legacy:!!card.legacy,properties:JSON.parse(String(frontmatter)),snippet,score:rank?.score??0,terms,previewImage:preview.image,
+        highlights:{name:searchHighlights(String(row.name),terms),path:searchHighlights(path,terms),snippet:searchHighlights(snippet,terms)}};
     }) as unknown as CardResult[];
   }
 }

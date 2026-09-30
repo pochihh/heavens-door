@@ -19,7 +19,7 @@ app.on('gpu-info-update',()=>{gpuReady=true;});
 const appSettings=():AppSettings=>({hardwareAcceleration,restartRequired:hardwareAcceleration!==initialAppSettings.hardwareAcceleration,warning:settingsWarning});
 protocol.registerSchemesAsPrivileged([{scheme:'heavens-asset',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 interface Host { root:string; key:string; worker:Worker; call<T>(request:Request):Promise<T> }
-interface Desktop { window:BrowserWindow; host?:Host; closing:boolean; action:WindowAction|null; timer?:ReturnType<typeof setTimeout> }
+interface Desktop { window:BrowserWindow; opening?:Promise<Snapshot>; host?:Host; closing:boolean; action:WindowAction|null; timer?:ReturnType<typeof setTimeout> }
 let registry:WorkspaceRegistry;
 const desktops=new Map<number,Desktop>(), hosts=new Map<string,Promise<Host>>(), assets=new Map<string,Host>();
 // One worker owns a workspace's index and write queue, shared by all its windows.
@@ -87,7 +87,8 @@ async function createWindow(folder?:string){
   win.webContents.on('will-navigate',event=>event.preventDefault());
   win.on('close',event=>{if(!d.closing){event.preventDefault();prepareAction(d,'close');}});
   win.on('closed',()=>{clearAction(d);desktops.delete(win.id);});
-  if(folder)try{await open(d,folder);}catch(error){void dialog.showMessageBox(win,{type:'error',message:ui.desktop.couldNotOpenWorkspace,detail:String(error)});}
+  // Load the shell while the worker opens/indexes the workspace, so startup has feedback.
+  if(folder){d.opening=open(d,folder);void d.opening.catch(()=>undefined);}
   if(process.env.HEAVENS_DOOR_DEV_URL)await win.loadURL(process.env.HEAVENS_DOOR_DEV_URL);
   else await win.loadFile(join(__dirname,'renderer/index.html'));
 }
@@ -157,7 +158,7 @@ void app.whenReady().then(async()=>{
     if(['create','createFolder','saveCard','saveBoard','setFill','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
     return result;
   });
-  ipcMain.handle('workspace:current',event=>snapshot(trusted(event)));
+  ipcMain.handle('workspace:current',async event=>{const d=trusted(event),opening=d.opening;try{if(opening)await opening;return await snapshot(d);}finally{d.opening=undefined;}});
   ipcMain.handle('window:new',async(event,same:unknown)=>{
     const d=trusted(event);if(typeof same!=='boolean')throw new Error(ui.errors.invalidWindowRequest);await createWindow(same?d.host?.root:undefined);
   });

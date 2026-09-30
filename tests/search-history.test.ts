@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { Workspace } from '../src/core/workspace';
+import { CardSearch, searchDocument, searchHighlights } from '../src/core/search';
 import { newNote, revision, editCard, readCard } from '../src/core/format';
 
 async function fixture(){const directory=await fs.mkdtemp(join(tmpdir(),'heavens-search-history-')),root=join(directory,'Workspace'),cache=join(directory,'cache');await fs.mkdir(root);return {directory,root,cache};}
@@ -90,4 +91,38 @@ test('legacy checkpoints cannot roll back layout, and interrupted interface rest
   await w.history.restore(old);await w.scan();assert.equal(w.snapshot().preferences?.theme,'dark');
   await fs.writeFile(join(f.root,'.git/heavens-door-interface.json'),JSON.stringify({content:expected}));await fs.writeFile(join(f.root,'.heavens-door/settings.json'),expected.replace('dark','light'));
   w.close();w=await Workspace.open(f.root,f.cache);assert.equal(w.snapshot().preferences?.theme,'dark');await assert.rejects(()=>fs.stat(join(f.root,'.git/heavens-door-interface.json')),/ENOENT/);
+});
+
+
+test('search previews strip Markdown, find local embedded images and highlight original Chinese text',()=>{
+  const preview=searchDocument(`# Robot
+
+A **robot** with [a camera](https://example.com).
+
+![Robot photo](../assets/robot.png)
+
+- one
+- two`);
+  assert.match(preview.text,/A robot with a camera/);assert.ok(!preview.text.includes('**'));assert.ok(!preview.text.includes('https://'));
+  assert.equal(preview.image,'../assets/robot.png');
+  assert.equal(searchDocument('<img src="assets/photo.jpg" alt="photo"><script>danger()</script>').image,'assets/photo.jpg');
+  assert.equal(searchDocument('![remote](https://example.com/photo.jpg)').image,undefined);
+  assert.equal(searchDocument('<script>danger()</script>').text,'');
+  const text='機器學習與 robotics';const spans=searchHighlights(text,['机器','学习','robot']);
+  assert.deepEqual(spans.map(([a,b])=>text.slice(a,b)),['機器學習','robot']);
+  assert.deepEqual(searchHighlights('ﬃ test',['ffi']),[[0,1]]);
+});
+
+
+test('default text search ignores storage attributes, link destinations and hidden comments',()=>{
+  const index=new CardSearch();
+  index.update({path:'Notes/Robot.md',name:'Robot',title:'Robot vision',body:`# Robot vision
+
+A camera on the robot. Position is a useful word in this paragraph.
+
+[Reference](card:internal_target_8675309)
+<img src="assets/asset_secret_name.png" width="7654321" data-x="coordinate_secret" data-card-id="opaque_identity" alt="Visible caption">
+<!-- hidden_storage_comment -->`});
+  assert.equal(index.search('camera').length,1);assert.equal(index.search('position').length,1);assert.equal(index.search('Reference').length,1);assert.equal(index.search('caption').length,1);
+  for(const text of ['internal_target_8675309','asset_secret_name','7654321','coordinate_secret','opaque_identity','hidden_storage_comment'])assert.equal(index.search(text).length,0,text);
 });
