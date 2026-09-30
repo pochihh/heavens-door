@@ -28,10 +28,11 @@ export function historyGraph(items:Checkpoint[]) {
       if(!joins){destination=i===0?lane:free();lanes[destination]=parent;}
       widest=Math.max(widest,destination+1);
       const x=INSET+lane*STEP,px=INSET+destination*STEP,y=row*ROW+CENTER,py=next===undefined?items.length*ROW:next*ROW+CENTER;
-      // Keep each branch vertical until the parent row; the short diagonal
-      // ends at the actual parent, not halfway through an unrelated checkpoint.
-      if(x!==px)occupiedUntil[lane]=Math.max(occupiedUntil[lane]??-1,next??items.length);
-      const bend=x===px?'':` V${py-28} L${px} ${py-10}`;
+      // Stagger joins through the child-to-parent span instead of piling every
+      // elbow beside the parent. The shared destination lane still reaches it.
+      const joinY=Math.round(y+(py-y)*.7);
+      if(x!==px)occupiedUntil[lane]=Math.max(occupiedUntil[lane]??-1,Math.floor((joinY-CENTER)/ROW));
+      const bend=x===px?'':` V${joinY-18} L${px} ${joinY}`;
       lines.push({id:item.id+':'+parent,color:item.color??lane,d:`M${x} ${y}${bend} V${py}`});
     }
   }
