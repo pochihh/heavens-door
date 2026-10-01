@@ -19,13 +19,14 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,Node:dom.window.Node,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:true})});
   dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};dom.window.HTMLElement.prototype.hidePopover=function(){this.removeAttribute('data-open');};
   dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
+  let tagQueries=0;
   const session=new Session({request:async request=>{
     switch(request.kind){
       case 'createTag':return w.createTag(request.tag);
       case 'addTagProperty':return w.addTagProperty(request.path,request.expected,request.tag,request.tagExpected,request.field,request.value);
       case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits,request.createParent,request.propertiesCollapsed);
       case 'queryTags':return w.queryTags(request.text,request.exclude,request.limit);
-      case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
+      case 'tagCards':tagQueries++;return w.tagCards(request.tag,request.text,request.offset);
       case 'cardProperties':return w.cardProperties(request.path);
       case 'reorderTagProperties':return w.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
       case 'setTagProperty':return w.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
@@ -44,17 +45,23 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     const propertiesToggle=()=>document.querySelector<HTMLButtonElement>('.tag-properties-toggle')!;
     const propertyBody=()=>document.getElementById(propertiesToggle().getAttribute('aria-controls')!)!;
     const initialTag=await w.read(tag.path),initialCard=await w.read('Notes/A.md');
+    const resultTable=document.querySelector('.tag-results table'),initialQueries=tagQueries;let loadingChanges=0;
+    const loadingObserver=new dom.window.MutationObserver(records=>{loadingChanges+=records.length;});loadingObserver.observe(document.querySelector('.tag-results')!,{attributes:true,attributeFilter:['aria-busy']});
     assert.equal(propertyBody().hidden,false);assert.equal(tag.propertiesCollapsed,false);
     await act(async()=>propertiesToggle().click());await settle();assert.equal(propertyBody().hidden,true);assert.equal(propertiesToggle().getAttribute('aria-expanded'),'false');assert.ok(propertyBody().querySelector('.style-color'));assert.equal(document.querySelector('.tag-views-heading')!.closest('[hidden]'),null);
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});
+    assert.equal(tagQueries,initialQueries,'Collapsing properties must not query Views');assert.equal(loadingChanges,0,'Collapsing properties must not put Views into loading state');assert.equal(document.querySelector('.tag-results table'),resultTable);loadingObserver.disconnect();
     assert.equal(readTag(tag.path,await w.read(tag.path)).propertiesCollapsed,true);assert.equal(await w.read('Notes/A.md'),initialCard);
     await act(async()=>{await w.scan();session.update({snapshot:w.snapshot()});root.render(<App key="reopened"/>);});await settle();assert.equal(propertyBody().hidden,true);
     await act(async()=>session.saveTag(tag.path,tag.revision,tag.fields,tag.inherits));await settle();assert.equal(tag.propertiesCollapsed,true);
     await assert.rejects(()=>w.saveTag(tag.path,'stale',tag.fields,tag.inherits,undefined,false),/External changes/);assert.equal(w.snapshot().tags![0].propertiesCollapsed,true);
     await assert.rejects(()=>w.saveTag(tag.path,tag.revision,tag.fields,tag.inherits,undefined,'yes' as unknown as boolean),/Invalid collapsed state/);
     const collapsedTag=await w.read(tag.path);assert.throws(()=>readTag(tag.path,collapsedTag.replace('propertiesCollapsed: true','propertiesCollapsed: wrong')),/Invalid collapsed state/);
+    const beforeExpansionQueries=tagQueries;
     await act(async()=>propertiesToggle().click());await settle();assert.equal(propertyBody().hidden,false);
     await act(async()=>session.undo(false));await settle();assert.equal(propertyBody().hidden,true);
     await act(async()=>session.undo(true));await settle();assert.equal(propertyBody().hidden,false);
+    await act(async()=>session.update({snapshot:structuredClone(w.snapshot())}));await settle();await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});assert.equal(tagQueries,beforeExpansionQueries,'Expand, undo and identical IPC snapshots must preserve Views');
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-page-properties .property-label')].find(b=>b.textContent==='priority')!.click());
     const draftLabel=document.querySelector<HTMLInputElement>('.tag-page-properties .tag-definition label>input')!;
     await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(draftLabel,'Importance');draftLabel.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
@@ -64,11 +71,16 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     assert.equal(document.querySelector('.tag-results input[aria-label=reviewed]')!.getAttribute('role'),null);
     const select=document.querySelector<HTMLSelectElement>('.tag-results select')!;assert.equal(select.value,'Todo');assert.equal(select.querySelectorAll('optgroup').length,3);
     const dateSwitch=(name:string)=>[...document.querySelectorAll<HTMLInputElement>('.tag-results .tag-date-options input')].find(input=>input.closest('label')!.textContent===name)!;
+    const beforeCardEditQueries=tagQueries;
     await act(async()=>dateSwitch('End date').click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties['project/schedule'],{start:'2026-09-30',end:'2026-09-30'});
+    assert.ok(tagQueries>beforeCardEditQueries,'Card property edits must refresh Views');
     await act(async()=>dateSwitch('Include time').click());await settle();const schedule=w.cardProperties('Notes/A.md').properties['project/schedule'] as {start:string;end:string};assert.match(schedule.start,/T.*Z$/);assert.equal(schedule.start,schedule.end);assert.equal(document.querySelectorAll('.tag-results input[type="datetime-local"]').length,2);
     await act(async()=>dateSwitch('Include time').click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties['project/schedule'],{start:'2026-09-30',end:'2026-09-30'});
     await act(async()=>{select.value='Done';select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});await settle();
     assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
+    const filter=document.querySelector<HTMLInputElement>('.tag-view-toolbar input')!;
+    const filterCards=async(value:string)=>{await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(filter,value);filter.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});await settle();};
+    await filterCards('unmatched-query-987654');assert.equal(document.querySelectorAll('.tag-results tbody tr').length,0);await filterCards('');assert.equal(document.querySelectorAll('.tag-results tbody tr').length,1);
     await act(async()=>session.undo(false));await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Todo');
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-view-toolbar button')].find(b=>b.textContent==='Kanban')!.click());
     assert.ok(document.querySelector('[data-tag-column="Todo"] .kanban-card'));assert.ok(document.querySelector('[data-tag-column="Done"]'));

@@ -26,7 +26,7 @@ fields:
 ---
 ```
 
-The optional `propertiesCollapsed` boolean stores the tag page’s Properties section state in the `.tag` frontmatter; absent means expanded. It affects only presentation, survives reopening and ordinary schema edits, and participates in shared undo/history. Collapsing hides Default, Optional, Color and any open property editor, preserving its draft; Views remain visible.
+The optional `propertiesCollapsed` boolean stores the tag page’s Properties section state in the `.tag` frontmatter; absent means expanded. It affects only presentation, survives reopening and ordinary schema edits, and participates in shared undo/history. Collapsing hides Default, Optional, Color and any open property editor, preserving its draft; Views remain visible. Collapsing or expanding Properties preserves the loaded Views and never starts a card query or loading state. Views refresh for card-data or filter changes; schema controls update in place.
 
 A card stores `tags: [project]` and `project/status: Todo` in its frontmatter. Supported types: text, number, date, boolean, select, status, multi-select, card link (`card:<id>`), URL, email and phone. Multi-select values are YAML lists; empty values are null. Unknown frontmatter and note bodies are preserved. Regular UI hides YAML.
 
