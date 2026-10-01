@@ -64,3 +64,8 @@ Dragging operates within one app window and does not create floating windows. Le
 ## Tag property rows
 
 `TagProperties` reuses `useBookmarkDrag` in reorder-only mode: property labels start the vertical drag, values remain editable, and leaving the list cancels rather than removing the property. A type icon changes to the grip on label hover. The shared phantom retains the hovered appearance and follows only Y; no destination tint or duplicate row. Alt+Up/Down performs the same reorder. Persist YAML key order on this card, never change the tag schema from a card’s property list. Missing fields become explicit null values on an intentional reorder.
+
+
+## Card tag pills
+
+Tag pills use `useBookmarkDrag` in horizontal, reorder-only mode. Five pixels start the drag; the phantom retains the pill’s color and active state, stays on its row and leaves one empty slot. Neighbor movement uses the shared 150ms animation. Drag never toggles properties or removes a tag. The strip scrolls horizontally as needed; input and property values never initiate this drag. Escape, blur, pointer cancel or releasing outside the strip restores order without writing. Alt+Left/Right is the keyboard alternative. Persist only on drop through shared content undo; keep the active tag unchanged.

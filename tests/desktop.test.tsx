@@ -116,7 +116,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>session.flushPreferences());assert.ok(snapshot.preferences?.docks?.closed?.files);
     await click('.activity-bar [aria-label="File explorer"]');assert.equal(document.querySelector('#tab-files')?.getAttribute('aria-selected'),'true');
     await click('.activity-bar [aria-label="Search"]');
-    assert.ok(document.querySelector('.search-view input[aria-label="Search cards"]'),'Search keeps its input');
+    assert.ok(document.querySelector('.search-view input[aria-label="Search workspace"]'),'Search keeps its input');
     assert.equal(document.querySelector('[aria-label="Search actions"]'),null);
     await click('.activity-bar [aria-label="Whiteboard explorer"]');
     const control=document.querySelector<HTMLElement>('[aria-label="Switch workspace · Workspace"]')!;

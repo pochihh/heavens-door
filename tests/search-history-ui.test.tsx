@@ -6,7 +6,7 @@ import { SearchDialog } from '../src/renderer/SearchView';
 import { HistoryPanel, diverged, historyLanes, historyGraph } from '../src/renderer/HistoryView';
 import { Session } from '../src/renderer/session';
 import { ConfirmationProvider } from '../src/renderer/Confirmation';
-import type { Bridge, CardResult, Checkpoint, Snapshot } from '../src/shared';
+import type { Bridge, WorkspaceSearchResult, Checkpoint, Snapshot } from '../src/shared';
 
 test('search keyboard/IME and menu-driven history navigation keep selection separate from restore',async()=>{
   const dom=new JSDOM('<button id="before">Search</button><div id="root"></div>',{url:'https://test.local',pretendToBeVisual:true});
@@ -17,9 +17,9 @@ test('search keyboard/IME and menu-driven history navigation keep selection sepa
   const a:Checkpoint={id:'a',parents:[],time:1,label:'A',active:false},b={...a,id:'b',parents:['a'],label:'B'},c={...a,id:'c',parents:['b'],label:'C'},d={...a,id:'d',parents:['b'],label:'D',active:true};
   const items=[d,c,b,a];assert.equal(diverged(c,d,items),true);assert.equal(diverged(b,d,items),false);assert.notEqual(historyLanes(items).get('c'),historyLanes(items).get('d'));
   const calls:string[]=[],opened:string[]=[],restored:string[]=[];
-  const results:CardResult[]=[{id:'one',name:'機器學習',path:'one.md',title:'機器學習',revision:'r',legacy:false,properties:{},score:1,snippet:'原始內容',terms:[],previewImage:'assets/photo.jpg',highlights:{name:[[0,4]],path:[],snippet:[]}},{id:'two',name:'Two',path:'two.md',revision:'r',legacy:false,properties:{},score:1,snippet:'second',terms:[]}];
+  const results:WorkspaceSearchResult[]=[{id:'one',name:'機器學習',path:'one.md',title:'機器學習',revision:'r',legacy:false,properties:{},score:1,snippet:'原始內容',terms:[],previewImage:'assets/photo.jpg',highlights:{name:[[0,4]],path:[],snippet:[]}},{id:'two',name:'Two',path:'two.md',revision:'r',legacy:false,properties:{},score:1,snippet:'second',terms:[]}];
   let releaseQuery:()=>void=()=>{};const queryGate=new Promise<void>(resolve=>{releaseQuery=resolve;});
-  const session=new Session({assetUrl:(path:string)=>'heavens-asset://test/'+path,request:async request=>{calls.push(request.kind);if(request.kind==='queryCards'){await queryGate;return results;}if(request.kind==='checkpointChanges')return [{path:'one.md',added:2,removed:1}];if(request.kind==='preferences')return snapshot;throw new Error(request.kind);}} as Bridge);
+  const session=new Session({assetUrl:(path:string)=>'heavens-asset://test/'+path,request:async request=>{calls.push(request.kind);if(request.kind==='queryCards'||request.kind==='searchWorkspace'){await queryGate;return results;}if(request.kind==='checkpointChanges')return [{path:'one.md',added:2,removed:1}];if(request.kind==='preferences')return snapshot;throw new Error(request.kind);}} as Bridge);
   session.update({snapshot,checkpoints:items});session.restore=async id=>{restored.push(id);};
   const {createRoot}=await import('react-dom/client');
   const root=createRoot(document.getElementById('root')!);
@@ -50,9 +50,11 @@ test('search keyboard/IME and menu-driven history navigation keep selection sepa
     await reopen();
     await act(async()=>document.querySelector('input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true})));
     assert.equal(opened.at(-1),'split:card:one');
+    results.push({kind:'tag',tag:'project',name:'#project',path:'tags/project.tag',revision:'r',score:1,snippet:'',terms:[],highlights:{name:[],path:[],snippet:[]}});
+    await reopen();await act(async()=>document.querySelectorAll<HTMLButtonElement>('[role=option]')[2].click());assert.equal(opened.at(-1),'tag:tags/project.tag');results.pop();
     await reopen();
     await act(async()=>document.querySelector('[role=option]')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:30,clientY:40})));
-    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['Show on whiteboard','Open card','Open card beside']);
+    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['Show on whiteboard','Open card','Open beside']);
     await act(async()=>document.querySelector<HTMLButtonElement>('[role=menuitem]')!.click());assert.equal(opened.at(-1),'board:card:one');
     await act(async()=>root.render(<ConfirmationProvider><HistoryPanel session={session}/></ConfirmationProvider>));
     const card=document.querySelector<HTMLButtonElement>('[data-checkpoint=c]')!;

@@ -11,6 +11,9 @@ import {UndoHistory} from '../src/renderer/history';
 test('tags preserve Markdown, apply typed defaults, query descendants and remove only unshared values with undo',async t=>{
   const dir=await fs.mkdtemp(join(tmpdir(),'heavens-tags-')),root=join(dir,'notes'),cache=join(dir,'cache');await fs.mkdir(root);let w=await Workspace.open(root,cache);
   t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.setPreferences({tagColors:{project:'#c9838a'}});assert.equal(w.snapshot().preferences?.tagColors?.project,'#c9838a');
+  await assert.rejects(()=>w.setPreferences({tagColors:{project:'red'}}),/six-digit hex/);
+  await assert.rejects(()=>w.setPreferences({tagColors:{'bad tag':'#c9838a'}}),/six-digit hex/);
   await w.createFolder('','Notes');await w.create('Notes','A',20,20);await w.create('Notes','B',400,20);
   await w.createTag('project');let tag=w.snapshot().tags!.find(t=>t.tag==='project')!;
   await w.saveTag(tag.path,tag.revision,[{key:'status',type:'select',options:['Todo','Done'],default:'Todo'},{key:'priority',type:'number',default:2},{key:'related',type:'link'}],[]);
@@ -29,6 +32,8 @@ test('tags preserve Markdown, apply typed defaults, query descendants and remove
   await assert.rejects(()=>w.setTagProperty(path,props.revision,'project','project/priority',4),/External changes/);
   props=w.cardProperties(path);const target=(await w.card('Notes/B.md')).id;await w.setTagProperty(path,props.revision,'project','project/related','card:'+target);assert.equal(w.query('backlinks:'+target).length,1);
   await w.setCardTag(path,(await w.card(path)).revision,'task',true);
+  await assert.rejects(()=>w.reorderCardTags(path,(w.cardProperties(path)).revision,['task','task']),/valid tag/);
+  await w.reorderCardTags(path,w.cardProperties(path).revision,['task','project/research']);assert.deepEqual(w.cardProperties(path).properties.tags,['task','project/research']);assert.equal(w.cardProperties(path).properties['project/priority'],3);assert.match(await w.read(path),/# Keep comment/);
   const original=await w.read(path);await w.reorderTagProperties(path,(await w.card(path)).revision,'project/research',['project/research/method','project/related','project/priority','project/status']);
   assert.ok((await w.read(path)).indexOf('project/related:')<(await w.read(path)).indexOf('project/status:'));assert.equal(w.cardProperties(path).properties['project/status'],'Done');assert.match(await w.read(path),/# Keep comment/);assert.equal((await w.read(path)).split('---')[2],original.split('---')[2]);
   const undo=new UndoHistory(),removed=await w.setCardTag(path,(await w.card(path)).revision,'project/research',false);undo.record('Remove tag',removed.edits);
@@ -36,7 +41,7 @@ test('tags preserve Markdown, apply typed defaults, query descendants and remove
   await undo.travel(false,changes=>w.write(changes));assert.equal(w.cardProperties(path).properties['project/research/method'],'Read');
   await undo.travel(true,changes=>w.write(changes));await w.setCardTag(path,(await w.card(path)).revision,'task',false);assert.equal(w.cardProperties(path).properties['project/status'],undefined);assert.equal(w.query('backlinks:'+target).length,0);
   await w.history.checkpoint('Tags');assert.ok((await w.history.changes((await w.history.list())[0].id)).some(c=>c.path.endsWith('.tag')));
-  w.close();w=await Workspace.open(root,cache);assert.equal(resolveTag(w.snapshot().tags!,'project/research').fields[0].propertyKey,'project/status');
+  w.close();w=await Workspace.open(root,cache);assert.equal(w.snapshot().preferences?.tagColors?.project,'#c9838a');assert.equal(resolveTag(w.snapshot().tags!,'project/research').fields[0].propertyKey,'project/status');
   const external='---\ntag: external\nfields:\n  - key: date\n    type: date\n---\n';await fs.writeFile(join(root,'external.tag'),external);await w.refresh('external.tag');assert.ok(w.snapshot().tags!.some(t=>t.tag==='external'));
   tag=w.snapshot().tags!.find(t=>t.tag==='task')!;await w.saveTag(tag.path,tag.revision,[],['task']);assert.match(resolveTag(w.snapshot().tags!,'task').warnings.join(' '),/cycle/);
   await assert.rejects(()=>w.createTag('../escape'),/valid tag/);
@@ -59,4 +64,22 @@ test('Status groups and date ranges remain readable values, with validation and 
   assert.deepEqual(w.tagCards('task')[0].properties['task/schedule'],range);assert.match(await w.read(path),/task\/schedule:\n {2}start: 2026-09-30\n {2}end: 2026-10-03/);
   const undo=new UndoHistory();undo.record('Set dates',result.edits);await undo.travel(false,changes=>w.write(changes));assert.equal(w.cardProperties(path).properties['task/schedule'],undefined);await undo.travel(true,changes=>w.write(changes));assert.deepEqual(w.cardProperties(path).properties['task/schedule'],range);
   await w.setTagProperty(path,(await w.card(path)).revision,'task','task/status','Review');assert.equal(w.queryCards({properties:[{field:'task/status',op:'eq',value:'Review'}]}).length,1);
+});
+
+
+test('tag suggestions and global search reuse fuzzy bilingual indexing without indexing storage metadata',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-tag-search-')),root=join(dir,'notes'),cache=join(dir,'cache');await fs.mkdir(root);let w=await Workspace.open(root,cache);t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.createTag('research');await w.createTag('旅行');
+  const tag=w.snapshot().tags!.find(t=>t.tag==='research')!;await w.saveTag(tag.path,tag.revision,[{key:'location',type:'text'},{key:'cities',type:'multi-select',options:['Boston','上海']}],[]);
+  const path='Notes/A.md';await w.setCardTag(path,w.cardProperties(path).revision,'research',true);await w.setTagProperty(path,w.cardProperties(path).revision,'research','research/location','臺北 Taipei');await w.setTagProperty(path,w.cardProperties(path).revision,'research','research/cities',['Boston','上海']);
+  assert.equal(w.queryTags('researh')[0]?.tag,'research');assert.equal(w.queryTags('researh',['research']).length,0);assert.equal(w.queryTags('旅')[0]?.tag,'旅行');
+  assert.throws(()=>w.queryTags('research',[],1000),/Invalid card query/);
+  for(const query of ['researh','台北','taipai','Boston','上海'])assert.equal(w.queryCards({text:query})[0]?.path,path,query);
+  const result=w.queryCards({text:'台北'})[0];assert.match(result.snippet,/research\/location: 臺北 Taipei/);assert.ok(result.highlights!.snippet.some(([start,end])=>result.snippet.slice(start,end)==='臺北'));
+  assert.ok(w.searchWorkspace('researh').some(r=>'kind' in r&&r.kind==='tag'));assert.ok(w.searchWorkspace('researh').some(r=>'id' in r&&r.path===path));
+  const raw=await w.read(path);await fs.writeFile(join(root,path),raw.replace('臺北 Taipei','京都 Kyoto').replace('card-id:', 'card-color: "#ff9876"\ncard-id:'));await w.refresh(path);
+  assert.equal(w.queryCards({text:'台北'}).length,0);assert.equal(w.queryCards({text:'Kyoto'})[0]?.path,path);assert.equal(w.queryCards({text:'ff9876'}).length,0);assert.equal(w.queryCards({text:(await w.card(path)).id}).length,0);
+  w.close();w=await Workspace.open(root,cache);assert.equal(w.queryCards({text:'Kyoto'})[0]?.path,path);assert.equal(w.queryTags('researh')[0]?.tag,'research');
+  const deletion=await w.setCardTag(path,w.cardProperties(path).revision,'research',false),undo=new UndoHistory();undo.record('Remove tag',deletion.edits);assert.equal(w.queryCards({text:'Kyoto'}).length,0);await undo.travel(false,changes=>w.write(changes));assert.equal(w.queryCards({text:'Kyoto'})[0]?.path,path);
+  await fs.unlink(join(root,tag.path));await w.scan();assert.equal(w.queryTags('researh').length,0);assert.equal(w.queryCards({text:'Kyoto'})[0]?.path,path);
 });

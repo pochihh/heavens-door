@@ -60,7 +60,8 @@ async function dispatch(request: Request) {
     case 'createTag': string(request.tag);return workspace.createTag(request.tag);
     case 'saveTag': string(request.path);string(request.expected);return workspace.saveTag(request.path,request.expected,request.fields,request.inherits);
     case 'cardProperties': string(request.path);return workspace.cardProperties(request.path);
-    case 'setCardTag': string(request.path);string(request.expected);string(request.tag);return workspace.setCardTag(request.path,request.expected,request.tag,request.add);
+    case 'setCardTag': string(request.path);string(request.expected);string(request.tag);return workspace.setCardTag(request.path,request.expected,request.tag,request.add,request.create);
+    case 'reorderCardTags': string(request.path);string(request.expected);return workspace.reorderCardTags(request.path,request.expected,request.tags);
     case 'reorderTagProperties': string(request.path);string(request.expected);string(request.tag);return workspace.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
     case 'setTagProperty': string(request.path);string(request.expected);string(request.tag);string(request.key);return workspace.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
@@ -106,6 +107,8 @@ async function dispatch(request: Request) {
       }
       return workspace.write(request.changes);
     case 'query': string(request.text); return workspace.query(request.text);
+    case 'queryTags': string(request.text);return workspace.queryTags(request.text,request.exclude,request.limit);
+    case 'searchWorkspace': string(request.text);return workspace.searchWorkspace(request.text);
     case 'queryCards': return workspace.queryCards(request.query);
     case 'checkpoint': string(request.label); await workspace.history.checkpoint(request.label); return workspace.history.list();
     case 'history': return workspace.history.list(request.limit);

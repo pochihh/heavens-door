@@ -1,7 +1,11 @@
-import {useEffect,useMemo,useRef,useState,useId,type PointerEvent as ReactPointerEvent} from 'react';
-import type {CardInfo,CardProperties,Snapshot,TagField,TagInfo,TagResult,TagValue} from '../shared';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,useId,type PointerEvent as ReactPointerEvent} from 'react';
+import {createPortal} from 'react-dom';
+import {DEFAULT_PALETTE,tintColor} from '../colors';
+import {Color} from './StyleView';
+import {Highlight} from './SearchView';
+import type {CardInfo,CardProperties,Snapshot,TagField,TagInfo,TagResult,TagValue,TagSearchResult} from '../shared';
 import {TAG_FIELD_TYPES,STATUS_GROUPS} from '../shared';
-import {resolveTag,validateTagValue,fieldOptions,validTagDate} from '../tags';
+import {resolveTag,validateTagValue,fieldOptions,validTagDate,validTag} from '../tags';
 import type {Session} from './session';
 import type {ViewMemory} from '../layout';
 import {Icon,Tool} from './Icons';
@@ -36,7 +40,7 @@ export function PropertyInput({field,value,cards,disabled,onSave}:{field:TagFiel
   const [focused,setFocused]=useState(false);
   async function save(next:TagValue){setError('');try{validateTagValue(field,next);setBusy(true);await onSave(next);}catch(error){setError(String(error));}finally{setBusy(false);}}
   const blocked=disabled||busy;
-  return <div className="tag-value">{field.type==='date'?<DateProperty value={value} label={label} disabled={blocked} onSave={save}/>:field.type==='boolean'?<span className="settings-toggle"><input type="checkbox" role="switch" aria-label={label} checked={value===true} disabled={blocked} onChange={e=>void save(e.target.checked)}/></span>:
+  return <div className="tag-value">{field.type==='date'?<DateProperty value={value} label={label} disabled={blocked} onSave={save}/>:field.type==='boolean'?<span className="property-checkbox"><input type="checkbox" aria-label={label} checked={value===true} disabled={blocked} onChange={e=>void save(e.target.checked)}/></span>:
     field.type==='select'||field.type==='status'?<select aria-label={label} value={typeof value==='string'?value:''} disabled={blocked} onChange={e=>void save(e.target.value||null)}><option value="">{ui.tags.clear}</option>
       {value&&!fieldOptions(field).includes(String(value))?<option value={String(value)}>{String(value)}</option>:null}
       {field.type==='status'?STATUS_GROUPS.map(group=><optgroup key={group} label={ui.tags.statusGroups[group]}>{field.statusGroups?.[group].map(o=><option key={o}>{o}</option>)}</optgroup>):field.options?.map(o=><option key={o}>{o}</option>)}
@@ -64,19 +68,56 @@ function TagProperties({card,tag,snapshot,session,properties}:{card:CardInfo;tag
     </div>)}{!fields.length&&<p className="muted">{ui.tags.emptyFields}</p>}
   </div></>;
 }
+function InlineTagInput({tags,attached,busy,onAttach,session}:{session:Session;tags:TagInfo[];attached:string[];busy:boolean;onAttach:(tag:string,create:boolean)=>Promise<boolean>}) {
+  const [text,setText]=useState(''),[focused,setFocused]=useState(false),[selected,setSelected]=useState(0),input=useRef<HTMLInputElement>(null),popup=useRef<HTMLDivElement>(null),id=useId();
+  const query=text.trim().replace(/^#/,''),[matches,setMatches]=useState<TagSearchResult[]>([]),[searching,setSearching]=useState(false),[searchError,setSearchError]=useState(''),attachedKey=attached.join('\n');
+  useEffect(()=>{
+    let live=true;setMatches([]);setSearchError('');setSearching(!!query&&focused);
+    if(!query||!focused)return;
+    const timer=setTimeout(()=>{void session.bridge.request<TagSearchResult[]>({kind:'queryTags',text:query,exclude:attached}).then(rows=>{if(live)setMatches(rows);}).catch(error=>{if(live)setSearchError(String(error));}).finally(()=>{if(live)setSearching(false);});},100);
+    return()=>{live=false;clearTimeout(timer);};
+  },[query,focused,attachedKey,tags,session]);
+  const choices=searching?[]:[...matches.map(t=>({tag:t.tag,create:false})),...(validTag(query)&&!tags.some(t=>t.tag===query)&&!attached.includes(query)?[{tag:query,create:true}]:[])];
+  const open=focused&&!!query&&!busy,index=Math.min(selected,choices.length-1);
+  useLayoutEffect(()=>{
+    if(!open||!popup.current||!input.current)return;
+    const el=popup.current,rect=input.current.getBoundingClientRect();el.showPopover();
+    const box=el.getBoundingClientRect();el.style.left=Math.max(8,Math.min(rect.left,innerWidth-box.width-8))+'px';el.style.top=(rect.bottom+box.height+8<innerHeight?rect.bottom+4:Math.max(8,rect.top-box.height-4))+'px';
+  },[open,query,matches,searching,searchError]);
+  useEffect(()=>{popup.current?.querySelector<HTMLElement>('[aria-selected=true]')?.scrollIntoView?.({block:'nearest'});},[selected,matches]);
+  async function choose(i:number){const choice=choices[i];if(choice&&await onAttach(choice.tag,choice.create)){setText('');setSelected(0);input.current?.focus();}}
+  return <><input ref={input} className="tag-inline-input" role="combobox" aria-label={ui.tags.add} aria-autocomplete="list" aria-expanded={open} aria-controls={open?id:undefined} aria-activedescendant={open&&index>=0?`${id}-${index}`:undefined} autoComplete="off" spellCheck={false} readOnly={busy} aria-disabled={busy} value={text} style={{width:Math.max(4,Math.min(22,text.length+2))+'ch'}} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} onChange={e=>{setText(e.target.value);setFocused(true);setSelected(0);}} onKeyDown={e=>{
+    if(e.nativeEvent.isComposing)return;
+    if(open&&['ArrowDown','ArrowUp','Enter','Escape'].includes(e.key)){e.preventDefault();e.stopPropagation();if(e.key==='Escape')setFocused(false);else if(e.key==='Enter')void choose(index);else if(choices.length)setSelected((index+(e.key==='ArrowDown'?1:-1)+choices.length)%choices.length);}
+  }}/>{open&&createPortal(<div ref={popup} id={id} popover="auto" role="listbox" className="context-menu tag-suggestions" aria-busy={searching} aria-label={ui.tags.suggestions} onToggle={e=>{if(e.newState==='closed')setFocused(false);}} onPointerDown={e=>{e.preventDefault();e.stopPropagation();}} onContextMenu={e=>{e.preventDefault();e.stopPropagation();}}>
+    {searchError?<div role="alert">{searchError}</div>:searching?<div role="status">{ui.search.searching}</div>:!choices.length?<div role="status">{ui.search.noResults}</div>:null}
+    {choices.map((choice,i)=><button key={choice.tag} id={`${id}-${i}`} type="button" role="option" tabIndex={-1} aria-selected={i===index} onPointerMove={()=>setSelected(i)} onClick={e=>{e.stopPropagation();void choose(i);}}><Icon name={choice.create?'plus':'tag'} size={14}/><span>{choice.create?ui.tags.create(choice.tag):<Highlight text={'#'+choice.tag} ranges={matches.find(t=>t.tag===choice.tag)?.highlights.name}/>}</span></button>)}
+  </div>,document.body)}</>;
+}
+
 export function CardTags({card,snapshot,session,onOpen,allowAdd=true}:{card:CardInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;allowAdd?:boolean}) {
-  const expanded=session.tagExpansion.get(card.id)??[],active=expanded.join('\n');
-  const [properties,setProperties]=useState<CardProperties>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[menu,setMenu]=useState<MenuState|null>(null),confirm=useConfirmation();
+  const tags=card.tags??[],memory=session.tagExpansion.get(card.id),active=tags.includes(memory?.active??'')?memory?.active:undefined;
+  const [properties,setProperties]=useState<CardProperties>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[menu,setMenu]=useState<MenuState|null>(null),confirm=useConfirmation(),list=useRef<HTMLDivElement>(null),id=useId();
   useEffect(()=>{let live=true;if(!active)return;void session.bridge.request<CardProperties>({kind:'cardProperties',path:card.path}).then(p=>{if(live){setProperties(p);setError('');}}).catch(e=>{if(live)setError(String(e));});return()=>{live=false;};},[active,card.path,card.revision,session]);
-  async function attach(tag:string){setBusy(true);try{await session.setCardTag(card.path,card.revision,tag,true);session.tagExpansion.set(card.id,[...expanded,tag]);session.update({});}catch{/* Session presents write errors. */}finally{setBusy(false);}}
+  function toggle(tag?:string){session.tagExpansion.set(card.id,{active:tag===active?undefined:tag,last:tag??memory?.last});session.update({});}
+  async function attach(tag:string,create=false){setBusy(true);try{await session.setCardTag(card.path,card.revision,tag,true,create);session.tagExpansion.set(card.id,{active:tag,last:tag});session.update({});return true;}catch{return false;}finally{setBusy(false);}}
+  function reorder(tag:string,index:number|null){if(index===null||busy||tags.indexOf(tag)===index)return;const next=tags.filter(t=>t!==tag);next.splice(index,0,tag);setBusy(true);void session.reorderCardTags(card.path,card.revision,next).catch(()=>undefined).finally(()=>setBusy(false));}
+  const drag=useBookmarkDrag(list,(tag,index)=>reorder(tag,index),'horizontal',true),colors=snapshot.preferences?.tagColors;
   function actions(tag:string,anchor:HTMLElement){const rect=anchor.getBoundingClientRect();setMenu({anchor,x:rect.left,y:rect.bottom,label:tag,actions:[{label:ui.tags.definition,icon:'external',run:()=>{const definition=snapshot.tags?.find(t=>t.tag===tag);if(definition)onOpen('tag:'+definition.path);}},{label:ui.tags.remove,icon:'close',danger:true,run:()=>{void confirm({title:ui.tags.remove,message:ui.tags.removeMessage(tag),accept:ui.tags.remove,danger:true}).then(ok=>{if(ok)void session.setCardTag(card.path,card.revision,tag,false).catch(()=>undefined);});}}]});}
-  return <div className="card-tags" onDoubleClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()} onContextMenu={e=>e.stopPropagation()}>
-    <div className="tag-chips">{card.tags?.map(tag=><button key={tag} className="tag-chip" aria-expanded={expanded.includes(tag)} data-tooltip={tooltips.tags.properties} onContextMenu={e=>{e.preventDefault();actions(tag,e.currentTarget);}} onClick={()=>{session.tagExpansion.set(card.id,expanded.includes(tag)?expanded.filter(t=>t!==tag):[...expanded,tag]);session.update({});}}><Icon name="tag" size={12}/>{tag}<Icon name={expanded.includes(tag)?'chevronUp':'down'} size={12}/></button>)}
-      {allowAdd&&<select className="tag-add" aria-label={ui.tags.add} data-tooltip={tooltips.tags.add} disabled={busy} value="" onChange={e=>void attach(e.target.value)}><option value="" disabled>{ui.tags.add}</option>{snapshot.tags?.filter(t=>!card.tags?.includes(t.tag)).map(t=><option key={t.path} value={t.tag}>{t.tag}</option>)}</select>}
+  return <div className="card-tags" data-expanded={!!active} onDoubleClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()} onContextMenu={e=>e.stopPropagation()}>
+    <div className="tag-row"><Tool icon="tag" label={tooltips.tags.toggleProperties} disabled={!tags.length} aria-expanded={!!active} aria-controls={active?id:undefined} onClick={()=>toggle(active??(tags.includes(memory?.last??'')?memory!.last:tags[0]))}/>
+      <div className="tag-chips" ref={list} role="group" aria-label={ui.layout.tags}>{tags.map((tag,i)=><button type="button" key={tag} id={`${id}-tab-${i}`} data-file-key={tag} className="tag-chip" style={{backgroundColor:tintColor(colors&&Object.hasOwn(colors,tag)?colors[tag]:undefined)}} aria-expanded={active===tag} aria-controls={active===tag?id:undefined} disabled={busy} data-tooltip={tooltips.tags.properties} onPointerDown={e=>drag(e,tag,true)} onKeyDown={e=>{if(e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();reorder(tag,Math.max(0,Math.min(tags.length-1,i+(e.key==='ArrowLeft'?-1:1))));}}} onContextMenu={e=>{e.preventDefault();actions(tag,e.currentTarget);}} onClick={()=>toggle(tag)}>#{tag}</button>)}</div>
+      {allowAdd&&<InlineTagInput session={session} tags={snapshot.tags??[]} attached={tags} busy={busy} onAttach={attach}/>}
     </div>
-    {card.tags?.filter(tag=>expanded.includes(tag)).map(tag=><section className="tag-fields" key={tag}><div className="tag-fields-heading"><span>{tag}</span><Tool icon="more" label={tooltips.tags.actions} onClick={e=>actions(tag,e.currentTarget)}/></div>{error?<p role="alert">{error}</p>:!properties?<p>{ui.common.loading}</p>:<TagProperties card={card} tag={tag} snapshot={snapshot} session={session} properties={properties}/>}</section>)}
+    {active&&<section className="tag-fields" id={id} role="region" aria-labelledby={`${id}-tab-${tags.indexOf(active)}`}><div className="tag-fields-heading"><Tool icon="more" label={tooltips.tags.actions} onClick={e=>actions(active,e.currentTarget)}/></div>{error?<p role="alert">{error}</p>:!properties?<p>{ui.common.loading}</p>:<TagProperties card={card} tag={active} snapshot={snapshot} session={session} properties={properties}/>}</section>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </div>;
+}
+
+export function TagColorSettings({snapshot,onChange}:{snapshot:Snapshot;onChange:(colors:Record<string,string>)=>void}){
+  const tags=[...new Set([...(snapshot.tags??[]).map(t=>t.tag),...snapshot.cards.flatMap(c=>c.tags??[])])].sort(),[selected,setSelected]=useState('');
+  const tag=tags.includes(selected)?selected:tags[0],colors=snapshot.preferences?.tagColors??{};
+  return <section className="settings-section tag-color-settings" aria-label={ui.tags.colors}><h3>{ui.tags.colors}</h3><small>{ui.tags.colorsHelp}</small>{tag&&<><select aria-label={ui.tags.name} value={tag} onChange={e=>setSelected(e.target.value)}>{tags.map(tag=><option key={tag} value={tag}>#{tag}</option>)}</select><Color label={ui.style.color} value={Object.hasOwn(colors,tag)?colors[tag]:''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>{const next={...colors,...(color?{[tag]:color.toLowerCase()}: {})};if(!color)delete next[tag];onChange(next);}}/></>}</section>;
 }
 
 function Options({value,onChange,label}:{value:string[];onChange:(options:string[])=>void;label?:string}) {

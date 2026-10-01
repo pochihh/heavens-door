@@ -10,7 +10,7 @@ const DEFAULT_EDGE_WIDTHS=[1,2,4] as const;
 const ARROWHEAD_STYLES=['arrow','triangle','triangle-outline'] as const;
 const hasArrow=(value:Arrowhead|undefined):value is Exclude<Arrowhead,'none'>=>!!value&&value!=='none';
 const common=<T,>(values:T[])=>values.every(value=>value===values[0])?values[0]:undefined;
-function Color({label,value,palette,onChange}:{label:string;value:string|undefined;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
+export function Color({label,value,palette,onChange}:{label:string;value:string|undefined;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
   const [custom,setCustom]=useState(value||'#8b929e'),[editing,setEditing]=useState(false);
   useEffect(()=>{setCustom(value||'#8b929e');setEditing(false);},[value]);
   return <fieldset className="style-color" aria-label={label}><legend>{label}</legend><div className="style-swatches">

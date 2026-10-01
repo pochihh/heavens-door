@@ -32,6 +32,14 @@ export function editCardTag(raw:string,path:string,tags:TagInfo[],tag:string,add
   front.set('tags',after);front.set('card-id',readCard(path,raw).id);
   return `---\n${front.toString()}---\n${body}`;
 }
+export function reorderCardTags(raw:string,path:string,tags:string[]) {
+  const {front,body}=splitNote(raw),stored=front.toJSON()?.tags;
+  if(!(validTag(stored)||Array.isArray(stored)&&stored.every(validTag)))throw new Error(ui.tags.invalidStoredTags);
+  const before=tagsFrom(stored);
+  if(!Array.isArray(tags)||tags.length!==before.length||new Set(tags).size!==tags.length||tags.some(tag=>!before.includes(tag)))throw new Error(ui.tags.invalidTag);
+  front.set('tags',tags);front.set('card-id',readCard(path,raw).id);
+  return `---\n${front.toString()}---\n${body}`;
+}
 export function editTagProperty(raw:string,path:string,tags:TagInfo[],tag:string,key:string,value:TagValue) {
   const {front,body}=splitNote(raw),attached=tagsFrom(front.toJSON()?.tags);
   if(!attached.some(t=>t===tag||t.startsWith(tag+'/')))throw new Error(ui.tags.notAttached);

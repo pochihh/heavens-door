@@ -3,6 +3,7 @@ import { tooltips } from '../text/tooltips';
 import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { remapKey } from '../path-remap';
+import {TagColorSettings} from './TagView';
 import {PerformanceSettings} from './PerformanceSettings';
 import { StyleView, type BoardSelection } from './StyleView';
 import { Breadcrumbs } from './Breadcrumbs';
@@ -319,7 +320,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <label>New split direction<select aria-label="New split direction" value={prefs.newSplitDirection??'row'} onChange={e=>changePrefs(()=>({newSplitDirection:e.target.value as Preferences['newSplitDirection']}))}><option value="row">Right</option><option value="column">Below</option></select></label>
         <button data-tooltip="Restore the default left and right dock arrangement" onClick={()=>changeDocks(defaultDocks())}>Reset side docks</button>
         <small>Workspace settings and layout are saved inside this workspace. Side docks are shared across its windows.</small>
-        {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}</section><PerformanceSettings/>
+        {!!rootCards.length&&<button data-tooltip="Review root-card migration" onClick={()=>setModal('migration')}>Organize {rootCards.length} root cards…</button>}</section><TagColorSettings snapshot={snapshot} onChange={tagColors=>changePrefs(()=>({tagColors}))}/><PerformanceSettings/>
       </div>:modal==='folder'?<form className="settings-body" onSubmit={e=>{e.preventDefault();attempt(submitFolder());}}><label>{ui.whiteboard.folderName}<input autoFocus aria-label={ui.whiteboard.whiteboardFolderName} value={folderName} onChange={e=>setFolderName(e.target.value)}/></label><small>{folderParent||snapshot.name} / {folderName||'…'}</small><button className="primary" data-tooltip={tooltips.whiteboard.createWhiteboard} disabled={!folderName.trim()}>{ui.history.createWhiteboard}</button></form>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>
         <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?ui.icons.selectedIcon:ui.icons.defaultIcon}</span></div>

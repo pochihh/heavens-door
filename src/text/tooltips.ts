@@ -62,8 +62,9 @@ export const tooltips = {
     reveal: "Show the original file in your system file manager",
   },
   search: {
+    openTag:'Open tag · Shift+Enter',
     showOnBoard:'Show on whiteboard · Enter',openCard:'Open card · Shift+Enter',
-    openBeside:'Open card beside · ⌘Enter / Ctrl+Enter',
+    openBeside:'Open beside · ⌘Enter / Ctrl+Enter',
   },
   history: {
     loadMore:"Show earlier checkpoints",
@@ -80,7 +81,7 @@ export const tooltips = {
     manage:'Review workspace locations, availability and last update times',
     refreshWorkspaces:'Refresh workspace availability and update times',
     workspaceUpdated:'Latest file or folder modification, including workspace settings. Git internals are excluded. For unavailable folders, the last known time is retained.',
-    search: "Search workspace cards · ⌘K / Ctrl+K",
+    search: "Search workspace · ⌘K / Ctrl+K",
   },
   layout: {
     tabGroupActions: "Tab Group actions",
@@ -125,6 +126,7 @@ export const tooltips = {
     placeReference: "Add a reference to this card on another whiteboard",
   },
   tags: {
+    toggleProperties:'Show or hide tag properties',reorderTags:'Drag to reorder · Alt+← / Alt+→',
     dateRange:'Set an end date',dateTime:'Include a time; shown in this device’s time zone',statusGroups:'Options grouped by progress; one per line',actions:'Tag actions',reorder:'Drag to reorder · Alt+↑ / Alt+↓',
     inherit:'Comma-separated tag names. Inherited properties keep their original namespace.',
     add:'Add a tag to this card',properties:'Expand or collapse properties',definition:'Edit property definitions',newTag:'Create a tag definition',remove:'Remove this tag and its property values',removeField:'Remove the definition; existing card values are kept',move:'Move to another column',save:'Save property definitions',list:'Show tagged cards as a list',

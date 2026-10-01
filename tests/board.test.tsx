@@ -410,6 +410,6 @@ test('search reveal expands and selects a card without editing or zooming, and c
     await act(async()=>cardElement.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100})));
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open card')!.click());assert.deepEqual(opened,['c']);
     await act(async()=>cardElement.querySelector<HTMLButtonElement>('.card-more')!.click());
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open card beside')!.click());assert.deepEqual(opened,['c','c:beside']);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open beside')!.click());assert.deepEqual(opened,['c','c:beside']);
   }finally{await act(async()=>root.unmount());}
 });

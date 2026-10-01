@@ -124,6 +124,7 @@ export const ui = {
     placeOnWhiteboard: "Place on whiteboard…",
   },
   tags: {
+    reorderTags:'Reorder tags',colors:'Tag colors',colorsHelp:'Colors apply to this tag everywhere in this workspace.',invalidColors:'Tag colors must be valid tag names and six-digit hex colors.',create:(tag:string)=>`Create #${tag}`,suggestions:'Tag suggestions',
     reorder:'Reorder properties',yes:'Yes',no:'No',newTag:'New tag',name:'Tag name',add:'Add tag',remove:'Remove tag',properties:'Properties',definition:'Definition',addField:'Add property',fieldKey:'Property key',fieldLabel:'Label',fieldType:'Type',fieldOptions:'Options (one per line)',fieldDefault:'Default value',inherits:'Inherits from',emptyFields:'No properties defined',filter:'Filter cards…',loadMore:'Load more cards',list:'List',save:'Save definition',saved:'Definition saved',clear:'Clear value',missing:(tag:string)=>`Missing tag definition: ${tag}`,duplicate:(tag:string)=>`More than one definition uses tag ${tag}`,cycle:(tag:string)=>`Tag inheritance cycle: ${tag}`,missingField:(field:string)=>`Unknown property: ${field}`,invalidTag:'Enter a valid tag name, such as project or project/research.',invalidFields:'Check property keys, types, options and defaults.',invalidValue:(name:string)=>`Invalid value for ${name}`,notAttached:'This tag is not attached to the card.',removeMessage:(tag:string)=>`Remove ${tag} and its property values from this card? Shared inherited properties used by other attached tags are kept. You can undo this action.`,noGrouping:'Add a Status or Select property to use Kanban.',moveTo:'Move to',unavailable:'No more tags available',invalidStoredTags:'The card’s tags field is not a tag name or a list of valid tag names. Fix it before changing tags.',
     statusGroups:{todo:'Todo',inProgress:'In progress',done:'Done'},startDate:'Start date',endDate:'End date',includeTime:'Include time',dateStart:(name:string)=>`${name}: start`,dateEnd:(name:string)=>`${name}: end`,
     types:{status:'Status',text:'Text',number:'Number',date:'Date',boolean:'Boolean',select:'Select','multi-select':'Multi-select',link:'Card link',url:'URL',email:'Email',phone:'Phone'},
@@ -170,9 +171,10 @@ export const ui = {
     confirmDiscard: "Discard the unsaved draft and reload from disk?",
   },
   search: {
-    placeholder:'Search cards…',searching:'Searching…',noResults:'No matching cards',
-    preparing:'Preparing notes and the search index…',showOnBoard:'Show on whiteboard',openCard:'Open card',openBeside:'Open card beside',resultActions:'Search result actions',
-    hint:'Search filenames, titles and content',count:(n:number)=>n===100?'Showing first 100 results':`${n} ${n===1?'result':'results'}`,
+    label:'Search workspace',openTag:'Open tag',
+    placeholder:'Search workspace…',searching:'Searching…',noResults:'No results',
+    preparing:'Preparing notes and the search index…',showOnBoard:'Show on whiteboard',openCard:'Open card',openBeside:'Open beside',resultActions:'Search result actions',
+    hint:'Search cards, tags and properties',count:(n:number)=>n===100?'Showing first 100 results':`${n} ${n===1?'result':'results'}`,
   },
   history: {
     restore:'Go to checkpoint',apply:'Apply changes onto current checkpoint',changes:'Checkpoint changes',empty:'No saved checkpoints',loadMore:'Load earlier checkpoints',binary:'Binary file',

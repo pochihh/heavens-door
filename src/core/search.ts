@@ -2,6 +2,7 @@ import MiniSearch from 'minisearch';
 import { marked, type Token } from 'marked';
 import { Converter } from 'opencc-js/t2cn';
 import type { Card } from '../shared';
+import {tagsFrom,validTag} from '../tags';
 
 const simplify=Converter({from:'tw',to:'cn'});
 export const normalizeSearch=(text:string)=>simplify(text.normalize('NFKC').toLowerCase());
@@ -16,11 +17,11 @@ function tokens(text:string,indexing=false) {
   });
 }
 export interface SearchHit {path:string;score:number;terms:string[]}
-export class CardSearch {
-  private engine=new MiniSearch({idField:'path',fields:['name','title','body'],storeFields:['name','title'],tokenize:text=>tokens(text,true),
-    searchOptions:{tokenize:text=>tokens(text),combineWith:'AND',boost:{title:5,name:4},
+export class TextSearch {
+  private engine=new MiniSearch({idField:'path',fields:['name','title','body','metadata'],storeFields:['name','title'],tokenize:text=>tokens(text,true),
+    searchOptions:{tokenize:text=>tokens(text),combineWith:'AND',boost:{title:5,name:4,metadata:2},
       prefix:term=>!han.test(term),fuzzy:term=>!han.test(term)&&term.length>=4?.2:false,maxFuzzy:2}});
-  update(card:Pick<Card,'path'|'name'|'title'|'body'>){this.remove(card.path);this.engine.add({...card,body:searchDocument(card.body).text});}
+  update(card:Pick<Card,'path'|'name'|'title'|'body'>&{metadata?:string}){this.remove(card.path);this.engine.add({...card,body:searchDocument(card.body).text});}
   remove(path:string){if(this.engine.has(path))this.engine.discard(path);}
   search(text:string,allowed?:Set<string>):SearchHit[]{
     if(!text.trim())return [];
@@ -28,6 +29,16 @@ export class CardSearch {
     return this.engine.search(text,{filter:allowed?hit=>allowed.has(String(hit.id)):undefined})
       .map(hit=>({path:String(hit.id),score:hit.score*([hit.title,hit.name].some(v=>String(v).normalize('NFKC').toLowerCase().includes(original))?1.25:1),terms:hit.terms})).sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path));
   }
+}
+// Search user metadata, never the whole frontmatter blob (IDs, styling and geometry).
+// Namespaced values remain searchable even if their definition is temporarily unavailable.
+export function searchProperties(properties:Record<string,unknown>) {
+  const value=(v:unknown):string=>typeof v==='string'?(/^card:[\w-]+$/.test(v)?'':v):typeof v==='number'||typeof v==='boolean'?String(v):'';
+  return [...tagsFrom(properties.tags).map(tag=>'#'+tag),...Object.entries(properties).flatMap(([key,v])=>{
+    const slash=key.lastIndexOf('/');if(slash<1||!validTag(key.slice(0,slash)))return [];
+    const text=Array.isArray(v)?v.map(value).filter(Boolean).join(', '):v&&typeof v==='object'&&'start' in v&&'end' in v?[value(v.start),value(v.end)].join(' – '):value(v);
+    return text?[key+': '+text]:[];
+  })].join('\n');
 }
 export function searchExcerpt(body:string,terms:string[]) {
   const normalized=normalizeSearch(body),positions=terms.map(t=>normalized.indexOf(t)).filter(i=>i>=0);

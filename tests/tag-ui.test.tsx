@@ -13,18 +13,20 @@ import type {Bridge} from '../src/shared';
 
 test('tag tables, Kanban moves and confirmed tag removal edit the same files and share undo',async()=>{
   const dir=await fs.mkdtemp(join(tmpdir(),'heavens-tag-ui-')),path=join(dir,'notes');await fs.mkdir(path);const w=await Workspace.open(path,join(dir,'cache'));
-  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.createTag('project');let tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[{key:'status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Review'],done:['Done']},default:'Todo'},{key:'priority',type:'number',default:1},{key:'schedule',type:'date',default:'2026-09-30'}],[]);await w.setCardTag('Notes/A.md',(await w.card('Notes/A.md')).revision,'project',true);
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.createTag('project');let tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[{key:'status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Review'],done:['Done']},default:'Todo'},{key:'priority',type:'number',default:1},{key:'schedule',type:'date',default:'2026-09-30'},{key:'reviewed',type:'boolean'}],[]);await w.setCardTag('Notes/A.md',(await w.card('Notes/A.md')).revision,'project',true);
   const dom=new JSDOM('<div id="root"></div>',{url:'https://test.local',pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,Node:dom.window.Node,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:true})});
   dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};dom.window.HTMLElement.prototype.hidePopover=function(){this.removeAttribute('data-open');};
   dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   const session=new Session({request:async request=>{
     switch(request.kind){
+      case 'queryTags':return w.queryTags(request.text,request.exclude,request.limit);
       case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
       case 'cardProperties':return w.cardProperties(request.path);
       case 'reorderTagProperties':return w.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
       case 'setTagProperty':return w.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
-      case 'setCardTag':return w.setCardTag(request.path,request.expected,request.tag,request.add);
+      case 'setCardTag':return w.setCardTag(request.path,request.expected,request.tag,request.add,request.create);
+      case 'reorderCardTags':return w.reorderCardTags(request.path,request.expected,request.tags);
       case 'write':return w.write(request.changes);
       case 'preferences':return w.setPreferences(request.patch);
       default:throw new Error(request.kind);
@@ -35,6 +37,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
   const settle=async()=>{await act(async()=>session.run(async()=>undefined));for(let i=0;i<120;i++){await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25));});if(!document.querySelector('.tag-results[aria-busy=true]'))return;}assert.fail('Tag view did not finish loading');};
   try{
     await act(async()=>root.render(<App/>));await settle();
+    assert.equal(document.querySelector('.tag-results input[aria-label=reviewed]')!.getAttribute('role'),null);
     const select=document.querySelector<HTMLSelectElement>('.tag-results select')!;assert.equal(select.value,'Todo');assert.equal(select.querySelectorAll('optgroup').length,3);
     const dateSwitch=(name:string)=>[...document.querySelectorAll<HTMLInputElement>('.tag-results .tag-date-options input')].find(input=>input.closest('label')!.textContent===name)!;
     await act(async()=>dateSwitch('End date').click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties['project/schedule'],{start:'2026-09-30',end:'2026-09-30'});
@@ -48,6 +51,20 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>document.querySelector<HTMLButtonElement>('.kanban-card .tool')!.click());
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]')].find(b=>b.textContent==='Done')!.click());await settle();assert.ok(document.querySelector('[data-tag-column="Done"] .kanban-card'));
     await act(async()=>document.querySelector<HTMLButtonElement>('.tag-chip')!.click());await settle();
+    const chips=()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-chips .tag-chip')];
+    const icon=()=>document.querySelector<HTMLButtonElement>('.tag-row>.tool')!;
+    assert.equal(chips()[0].textContent,'#project');assert.equal(chips()[0].querySelector('svg'),null);
+    await act(async()=>icon().click());assert.equal(document.querySelector('.tag-fields'),null);
+    await act(async()=>icon().click());await settle();assert.equal(chips()[0].getAttribute('aria-expanded'),'true');
+    await act(async()=>session.setCardTag('Notes/A.md',w.cardProperties('Notes/A.md').revision,'todo',true,true));await settle();
+    await act(async()=>chips()[1].click());await settle();assert.equal(document.querySelectorAll('.tag-fields').length,1);assert.equal(chips()[0].getAttribute('aria-expanded'),'false');
+    await act(async()=>chips()[1].click());assert.equal(document.querySelector('.tag-fields'),null);
+    await act(async()=>icon().click());await settle();assert.equal(chips()[1].getAttribute('aria-expanded'),'true');
+    await act(async()=>chips()[1].dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',altKey:true,bubbles:true})));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['todo','project']);
+    assert.equal(chips()[0].getAttribute('aria-expanded'),'true');
+    await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todo']);
+    await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project']);assert.ok(!w.snapshot().tags!.some(t=>t.tag==='todo'));
+    await act(async()=>chips()[0].click());await settle();
     const labels=()=>[...document.querySelectorAll<HTMLButtonElement>('.property-label')];
     await act(async()=>labels()[1].dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowUp',altKey:true,bubbles:true})));await settle();
     assert.equal(labels()[0].textContent,'priority');assert.ok((await w.read('Notes/A.md')).indexOf('project/priority:')<(await w.read('Notes/A.md')).indexOf('project/status:'));
@@ -66,5 +83,14 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Remove tag')!.click());assert.ok(document.querySelector('dialog[open]'));assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
     await act(async()=>document.querySelector<HTMLButtonElement>('.confirmation-actions button:last-child')!.click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,[]);assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],undefined);
     await act(async()=>session.undo(false));await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
+    const input=document.querySelector<HTMLInputElement>('.tag-inline-input')!;
+    const type=(text:string)=>{input.focus();Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,text);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
+    await act(async()=>type('todo'));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});assert.ok(document.querySelector('[role=listbox]'));assert.equal(document.querySelector('[role=option]')!.textContent,'Create #todo');
+    await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('[role=listbox]'),null);
+    await act(async()=>type('todos'));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.ok(w.snapshot().tags!.some(t=>t.tag==='todos'));assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todos']);assert.equal(input.value,'');
+    await act(async()=>session.setCardTag('Notes/A.md',w.cardProperties('Notes/A.md').revision,'todos',false));await settle();
+    await act(async()=>type('tods'));await settle();await act(async()=>{await new Promise(resolve=>setTimeout(resolve,120));});assert.equal(document.querySelector('[role=option]')!.textContent,'#todos');
+    await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todos']);
+    await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project']);
   }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();w.close();await fs.rm(dir,{recursive:true,force:true});}
 });

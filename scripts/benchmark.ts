@@ -12,13 +12,15 @@ execFileSync('git',['init','-q'],{cwd:root});
 for (let start=0;start<10000;start+=100) {
   await Promise.all(Array.from({length:100},(_,offset) => {
     const i=start+offset;
-    return fs.writeFile(join(root,`card-${i}.md`),`---\ncard-id: benchmark-${i}\ntags: [research]\npriority: ${i%5}\n---\n# Card ${i}\n\nResearch about ${i%2 ? 'neuroscience' : 'mathematics'}.\n\n${'A thought and its context. '.repeat(40)} ${i%2?'繁體中文機器學習筆記':'简体中文机器学习笔记'}\n\n[Related](card:benchmark-${(i+1)%10000})\n`);
+    return fs.writeFile(join(root,`card-${i}.md`),`---\ncard-id: benchmark-${i}\ntags: [research]\npriority: ${i%5}\nresearch/location: ${i%2?"臺北 Taipei":"京都 Kyoto"}\n---\n# Card ${i}\n\nResearch about ${i%2 ? 'neuroscience' : 'mathematics'}.\n\n${'A thought and its context. '.repeat(40)} ${i%2?'繁體中文機器學習筆記':'简体中文机器学习笔记'}\n\n[Related](card:benchmark-${(i+1)%10000})\n`);
   }));
 }
+for(let i=0;i<100;i++)await fs.writeFile(join(root,`research-${i}.tag`),`---\ntag: research-${i}\nfields: []\n---\n`);
 const begin=performance.now();
 const workspace=await Workspace.open(root,join(folder,'cache'));
 const indexed=performance.now();
 const queries={
+  tagSuggestion:()=>workspace.queryTags('researh'),property:()=>workspace.queryCards({text:'taipai'}),global:()=>workspace.searchWorkspace('research'),
   prefix:()=>workspace.query('neurosc'),fuzzy:()=>workspace.query('neurosceince'),
   chinese:()=>workspace.query('机器学习'),mixed:()=>workspace.query('mathematics 學習'),
   structured:()=>workspace.queryCards({text:'学习',tag:'research',properties:[{field:'priority',op:'gte',value:3}]}),

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TITLE_PLACEHOLDER, type Preferences } from '../shared';
 import { isHexColor } from '../colors';
+import {validTag} from '../tags';
 import { ui } from '../text/ui';
 import {MODULE_IDS,validateDocks,validateDocuments} from '../layout';
 
@@ -17,6 +18,7 @@ export function validatePreferences(value: unknown): Preferences {
   if(p.explorerMode!==undefined&&!['whiteboards','files'].includes(p.explorerMode))throw new Error('Invalid explorer mode');
   if(p.whiteboardInput!==undefined&&!['auto','mouse','trackpad'].includes(p.whiteboardInput))throw new Error('Invalid whiteboard input mode');
   if(p.newSplitDirection!==undefined&&!['row','column'].includes(p.newSplitDirection))throw new Error('Invalid navigation settings');
+  if(p.tagColors!==undefined&&(!p.tagColors||typeof p.tagColors!=='object'||Array.isArray(p.tagColors)||Object.keys(p.tagColors).length>20000||Object.entries(p.tagColors).some(([tag,color])=>!validTag(tag)||!isHexColor(color))))throw new Error(ui.tags.invalidColors);
   if(p.palette!==undefined&&(!Array.isArray(p.palette)||p.palette.length>24||new Set(p.palette.map(c=>c?.id)).size!==p.palette.length||p.palette.some(c=>!c||typeof c.id!=='string'||!/^[-\w]{1,64}$/.test(c.id)||typeof c.name!=='string'||!c.name.trim()||c.name.length>32||!isHexColor(c.color))))throw new Error(ui.errors.invalidPalette);
   if(p.docks!==undefined)p.docks=validateDocks(p.docks);
   if(p.documents!==undefined)validateDocuments(p.documents);
@@ -24,7 +26,7 @@ export function validatePreferences(value: unknown): Preferences {
     if(!p.navigation||typeof p.navigation!=='object'||Array.isArray(p.navigation))throw new Error('Invalid module navigation');
     for(const [id,v] of Object.entries(p.navigation))if(!MODULE_IDS.includes(id as typeof MODULE_IDS[number])||!v||typeof v!=='object'||Array.isArray(v)||v.expanded!==undefined&&(!Array.isArray(v.expanded)||v.expanded.length>10000||v.expanded.some(p=>typeof p!=='string'||p.length>2048))||v.search!==undefined&&(typeof v.search!=='string'||v.search.length>2048)||v.scroll!==undefined&&(!Number.isFinite(v.scroll)||v.scroll<0))throw new Error('Invalid module navigation');
   }
-  return {palette:p.palette,whiteboardInput:p.whiteboardInput??'auto',newSplitDirection:p.newSplitDirection??'row',docks:p.docks,documents:p.documents,navigation:p.navigation,explorerMode:p.explorerMode??'whiteboards',theme:p.theme,stem:p.stem,titlePlaceholder:p.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
+  return {tagColors:p.tagColors,palette:p.palette,whiteboardInput:p.whiteboardInput??'auto',newSplitDirection:p.newSplitDirection??'row',docks:p.docks,documents:p.documents,navigation:p.navigation,explorerMode:p.explorerMode??'whiteboards',theme:p.theme,stem:p.stem,titlePlaceholder:p.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
 }
 export async function readPreferences(root: string) {
   try {

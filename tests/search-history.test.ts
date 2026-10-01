@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { Workspace } from '../src/core/workspace';
-import { CardSearch, searchDocument, searchHighlights } from '../src/core/search';
+import { TextSearch, searchDocument, searchHighlights } from '../src/core/search';
 import { newNote, revision, editCard, readCard } from '../src/core/format';
 
 async function fixture(){const directory=await fs.mkdtemp(join(tmpdir(),'heavens-search-history-')),root=join(directory,'Workspace'),cache=join(directory,'cache');await fs.mkdir(root);return {directory,root,cache};}
@@ -121,7 +121,7 @@ A **robot** with [a camera](https://example.com).
 
 
 test('default text search ignores storage attributes, link destinations and hidden comments',()=>{
-  const index=new CardSearch();
+  const index=new TextSearch();
   index.update({path:'Notes/Robot.md',name:'Robot',title:'Robot vision',body:`# Robot vision
 
 A camera on the robot. Position is a useful word in this paragraph.

@@ -1,6 +1,6 @@
-import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties} from './tags';
+import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags} from './tags';
 import {validTag,tagsFrom} from '../tags';
-import type {TagField,TagValue} from '../shared';
+import type {TagField,TagValue,TagSearchResult,WorkspaceSearchResult} from '../shared';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
 import { promises as fs } from 'node:fs';
@@ -11,7 +11,7 @@ import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
-import { CardSearch, searchExcerpt, searchDocument, searchHighlights } from './search';
+import { TextSearch, searchExcerpt, searchDocument, searchHighlights, searchProperties } from './search';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
 import { COLLAPSED_CARD_HEIGHT, placementHeight, edgeStyle } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
@@ -25,7 +25,7 @@ function validateStem(stem:string) {
 export class Workspace {
   readonly history: History;
   private db: DatabaseSync;
-  private search=new CardSearch();
+  private search=new TextSearch();
   private searchPreviews=new Map<string,ReturnType<typeof searchDocument>>();
   private folders = new Set<string>(['']);
   private tags = new Map<string,TagInfo>();
@@ -53,7 +53,7 @@ export class Workspace {
       CREATE INDEX IF NOT EXISTS outgoing_links ON links(source);
       CREATE TABLE IF NOT EXISTS ui_cache(key TEXT PRIMARY KEY,value TEXT);`);
     this.history = new History(root,this.db);
-    for(const card of this.db.prepare('SELECT path,name,title,body FROM cards').all())this.search.update(card as unknown as import('../shared').Card);
+    for(const row of this.db.prepare('SELECT path,name,title,body,frontmatter FROM cards').all()){const card=row as unknown as import('../shared').Card;this.search.update({...card,metadata:searchProperties(JSON.parse(String(row.frontmatter)))});}
     try {
       const row=this.db.prepare("SELECT value FROM ui_cache WHERE key='edge-style'").get();
       if(row){const style=JSON.parse(String(row.value));validateEdgeStyle(style);this.lastEdgeStyle=edgeStyle(style);}
@@ -161,6 +161,7 @@ export class Workspace {
   async scan() {
     this.preferences=await readPreferences(this.root);
     const unseen=new Set((this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(row => row.path));
+    for(const path of this.tags.keys())this.search.remove(path);
     this.boards.clear(); this.issues.clear(); this.folders=new Set(['']); this.tags.clear();
     const walk = async (folder: string) => {
       for (const entry of await fs.readdir(join(this.root,folder),{withFileTypes:true})) {
@@ -193,14 +194,14 @@ export class Workspace {
     if(isTrash(path))return;
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
-    this.boards.delete(path); this.tags.delete(path);
+    this.boards.delete(path); this.tags.delete(path);if(path.endsWith('.tag'))this.search.remove(path);
     try {
       const raw = await this.raw(path);
       if (raw === null) { this.removeIndex(path); return; }
       let folder=dirname(path);
       while (folder !== '.') { this.folders.add(folder); folder=dirname(folder); }
       if (path.endsWith('.tag')) {
-        this.tags.set(path,readTag(path,raw));
+        const tag=readTag(path,raw);this.tags.set(path,tag);this.search.update({path,name:tag.tag,title:tag.tag,body:''});
         return;
       }
       if (path.endsWith('.whiteboard')) { this.boards.set(path,readBoard(path,raw)); return; }
@@ -214,7 +215,7 @@ export class Workspace {
         this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'');
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
         for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'&&/^card:[\w-]{1,128}$/.test(value))this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,value.slice(5));
-        this.search.update(card);
+        this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
         });
@@ -319,20 +320,27 @@ export class Workspace {
     if(!row)throw new Error(ui.errors.fileMissing);
     return {revision:String(row.revision),properties:JSON.parse(String(row.frontmatter))};
   }
-  async createTag(tag:string) {
+  async createTag(tag:string) {return this.write([await this.newTagChange(tag)]);}
+  private async newTagChange(tag:string) {
     if(!validTag(tag))throw new Error(ui.tags.invalidTag);
     tag.split('/').forEach(validateStem);
     if([...this.tags.values()].some(t=>t.tag===tag))throw new Error(ui.tags.duplicate(tag));
     const path='tags/'+tag+'.tag';await fs.mkdir(dirname(await this.path(path)),{recursive:true});
-    return this.write([{path,content:`---\ntag: ${JSON.stringify(tag)}\nfields: []\ninherits: []\n---\n`,expected:null}]);
+    return {path,content:`---\ntag: ${JSON.stringify(tag)}\nfields: []\ninherits: []\n---\n`,expected:null};
   }
   async saveTag(path:string,expected:string,fields:TagField[],inherits:string[]) {
     if(!path.endsWith('.tag'))throw new Error(ui.tags.invalidTag);
     return this.write([{path,content:editTag(await this.read(path),fields,inherits),expected}]);
   }
-  async setCardTag(path:string,expected:string,tag:string,add:boolean) {
-    if(!path.endsWith('.md')||typeof add!=='boolean')throw new Error(ui.tags.invalidTag);
-    return this.write([{path,content:editCardTag(await this.read(path),path,[...this.tags.values()],tag,add),expected}]);
+  async setCardTag(path:string,expected:string,tag:string,add:boolean,create=false) {
+    if(!path.endsWith('.md')||typeof add!=='boolean'||typeof create!=='boolean'||create&&!add)throw new Error(ui.tags.invalidTag);
+    const definition=create?await this.newTagChange(tag):undefined,tags=[...this.tags.values()];
+    if(definition)tags.push(readTag(definition.path,definition.content));
+    return this.write([...(definition?[definition]:[]),{path,content:editCardTag(await this.read(path),path,tags,tag,add),expected}]);
+  }
+  async reorderCardTags(path:string,expected:string,tags:string[]){
+    if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
+    return this.write([{path,content:reorderCardTags(await this.read(path),path,tags),expected}]);
   }
   async reorderTagProperties(path:string,expected:string,tag:string,keys:string[]){
     if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
@@ -561,6 +569,17 @@ export class Workspace {
     if (text.startsWith('backlinks:')) return this.db.prepare('SELECT DISTINCT source AS path FROM links WHERE target=?').all(text.slice(10));
     return this.queryCards({text}).map(({path})=>({path}));
   }
+  queryTags(text:string,exclude:string[]=[],limit=20):TagSearchResult[] {
+    if(typeof text!=='string'||text.length>2048||!Array.isArray(exclude)||exclude.length>20000||exclude.some(t=>!validTag(t))||!Number.isInteger(limit)||limit<1||limit>100)throw new Error(ui.errors.invalidQuery);
+    const excluded=new Set(exclude),allowed=new Set([...this.tags.values()].filter(tag=>!excluded.has(tag.tag)).map(tag=>tag.path));
+    return this.search.search(text,allowed).slice(0,limit).map(hit=>{
+      const tag=this.tags.get(hit.path)!,name='#'+tag.tag;
+      return {kind:'tag',path:tag.path,name,tag:tag.tag,revision:tag.revision,snippet:'',score:hit.score,terms:hit.terms,highlights:{name:searchHighlights(name,hit.terms),path:searchHighlights(tag.path,hit.terms),snippet:[]}};
+    });
+  }
+  searchWorkspace(text:string):WorkspaceSearchResult[] {
+    return [...this.queryCards({text,limit:100}),...this.queryTags(text,[],100)].sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path)).slice(0,100);
+  }
   queryCards(query:CardQuery):CardResult[] {
     if(!query||typeof query!=='object'||Array.isArray(query))throw new Error(ui.errors.invalidQuery);
     const {text='',folder,tag,backlinksTo,properties=[],sort,direction='asc',limit=100,offset=0}=query;
@@ -609,8 +628,9 @@ export class Workspace {
         // ponytail: cache the last 200 result previews; persist derived previews if profiling warrants it.
         if(this.searchPreviews.size>200)this.searchPreviews.delete(this.searchPreviews.keys().next().value!);
       }
-      const snippet=searchExcerpt(preview.text,terms);
-      return {...card,legacy:!!card.legacy,properties:JSON.parse(String(frontmatter)),snippet,score:rank?.score??0,terms,previewImage:preview.image,
+      const properties=JSON.parse(String(frontmatter)),metadata=searchProperties(properties);
+      const snippet=searchExcerpt(preview.text+(metadata?'\n'+metadata:''),terms);
+      return {...card,legacy:!!card.legacy,properties,snippet,score:rank?.score??0,terms,previewImage:preview.image,
         highlights:{name:searchHighlights(String(row.name),terms),path:searchHighlights(path,terms),snippet:searchHighlights(snippet,terms)}};
     }) as unknown as CardResult[];
   }
