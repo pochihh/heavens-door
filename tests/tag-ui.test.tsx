@@ -20,6 +20,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
   dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   const session=new Session({request:async request=>{
     switch(request.kind){
+      case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits);
       case 'queryTags':return w.queryTags(request.text,request.exclude,request.limit);
       case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
       case 'cardProperties':return w.cardProperties(request.path);
@@ -50,14 +51,35 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     assert.ok(document.querySelector('[data-tag-column="Todo"] .kanban-card'));assert.ok(document.querySelector('[data-tag-column="Done"]'));
     await act(async()=>document.querySelector<HTMLButtonElement>('.kanban-card .tool')!.click());
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]')].find(b=>b.textContent==='Done')!.click());await settle();assert.ok(document.querySelector('[data-tag-column="Done"] .kanban-card'));
-    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-chip')!.click());await settle();
-    const chips=()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-chips .tag-chip')];
+    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-chip-label')!.click());await settle();
+    const chips=()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-chips .tag-chip-label')];
     const icon=()=>document.querySelector<HTMLButtonElement>('.tag-row>.tool')!;
     assert.equal(chips()[0].textContent,'#project');assert.equal(chips()[0].querySelector('svg'),null);
     await act(async()=>icon().click());assert.equal(document.querySelector('.tag-fields'),null);
     await act(async()=>icon().click());await settle();assert.equal(chips()[0].getAttribute('aria-expanded'),'true');
     await act(async()=>session.setCardTag('Notes/A.md',w.cardProperties('Notes/A.md').revision,'todo',true,true));await settle();
     await act(async()=>chips()[1].click());await settle();assert.equal(document.querySelectorAll('.tag-fields').length,1);assert.equal(chips()[0].getAttribute('aria-expanded'),'false');
+    const clickPill=async(i:number)=>{await act(async()=>chips()[i].dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0})));await act(async()=>chips()[i].click());};
+    const rightClick=async(i:number)=>{await act(async()=>chips()[i].dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2})));assert.ok(document.querySelector('[role=menu]'));};
+    // Menus consume the next click on their pill, without toggling active properties.
+    await rightClick(0);await clickPill(0);assert.equal(document.querySelector('[role=menu]'),null);assert.equal(chips()[0].getAttribute('aria-expanded'),'false');assert.equal(chips()[1].getAttribute('aria-expanded'),'true');
+    await rightClick(1);await clickPill(1);assert.equal(document.querySelector('[role=menu]'),null);assert.equal(chips()[1].getAttribute('aria-expanded'),'true');
+    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-chip .tool')!.click());await clickPill(1);assert.equal(document.querySelector('[role=menu]'),null);assert.equal(chips()[1].getAttribute('aria-expanded'),'true');
+    const strip=document.querySelector<HTMLElement>('.tag-chips')!,pillRows=()=>[...strip.querySelectorAll<HTMLElement>(':scope > .tag-chip')];
+    const pillRect=(left:number,width:number)=>({left,top:20,width,height:30,right:left+width,bottom:50,x:left,y:20,toJSON(){}});
+    strip.getBoundingClientRect=()=>pillRect(20,250);
+    for(const row of pillRows())row.getBoundingClientRect=()=>pillRect(20+[...strip.children].filter(c=>(c as HTMLElement).style.display!=='none').indexOf(row)*100,90);
+    const dragPill=(target:Element|Document,type:string,x:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:30}));
+    const beforeDrag=await w.read('Notes/A.md');
+    await act(async()=>{dragPill(chips()[0],'pointerdown',30);dragPill(document,'pointermove',60);});
+    await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(chips()[1].getAttribute('aria-expanded'),'true');assert.equal(await w.read('Notes/A.md'),beforeDrag);
+    // Dropping in its original slot still activates an inactive tag, without a content edit.
+    await act(async()=>{dragPill(chips()[0],'pointerdown',30);dragPill(document,'pointermove',60);dragPill(document,'pointerup',60);});await settle();assert.equal(chips()[0].getAttribute('aria-expanded'),'true');assert.equal(await w.read('Notes/A.md'),beforeDrag);
+    await act(async()=>chips()[1].click());await settle();
+    await act(async()=>{dragPill(chips()[0],'pointerdown',30);dragPill(document,'pointermove',240);dragPill(document,'pointerup',240);});await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['todo','project']);assert.equal(chips()[1].textContent,'#project');assert.equal(chips()[1].getAttribute('aria-expanded'),'true');assert.equal(document.querySelector('.tag-fields-heading'),null);
+    await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todo']);
+    await act(async()=>chips()[1].click());await settle();
+
     await act(async()=>chips()[1].click());assert.equal(document.querySelector('.tag-fields'),null);
     await act(async()=>icon().click());await settle();assert.equal(chips()[1].getAttribute('aria-expanded'),'true');
     await act(async()=>chips()[1].dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',altKey:true,bubbles:true})));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['todo','project']);
@@ -79,7 +101,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     assert.equal(document.querySelectorAll('.drag-phantom').length,1);assert.equal(document.querySelectorAll('.sort-placeholder').length,1);assert.equal(document.body.dataset.bookmarkDrop,undefined);
     await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.drag-phantom'),null);assert.equal(await w.read('Notes/A.md'),unchanged);
     await act(async()=>{pointer(labels()[0],'pointerdown',110);pointer(document,'pointermove',160);pointer(document,'pointerup',160);});await settle();assert.equal(labels()[0].textContent,'priority');
-    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-fields-heading .tool')!.click());
+    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-chip .tool')!.click());
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Remove tag')!.click());assert.ok(document.querySelector('dialog[open]'));assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
     await act(async()=>document.querySelector<HTMLButtonElement>('.confirmation-actions button:last-child')!.click());await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,[]);assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],undefined);
     await act(async()=>session.undo(false));await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/status'],'Done');
@@ -92,5 +114,14 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>type('tods'));await settle();await act(async()=>{await new Promise(resolve=>setTimeout(resolve,120));});assert.equal(document.querySelector('[role=option]')!.textContent,'#todos');
     await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todos']);
     await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project']);
+    await act(async()=>chips()[0].click());await settle();
+    const addProperty=()=>document.querySelector<HTMLButtonElement>('.tag-add-property>button')!;
+    await act(async()=>addProperty().click());assert.equal(document.querySelectorAll('.tag-add-property fieldset').length,1);
+    const fieldKey=document.querySelector<HTMLInputElement>('.tag-add-property input[aria-label="Property key"]')!;
+    await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(fieldKey,'location');fieldKey.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+    await act(async()=>document.querySelector<HTMLFormElement>('.tag-add-property form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();
+    assert.ok(w.snapshot().tags!.find(t=>t.tag==='project')!.fields.some(f=>f.key==='location'));assert.ok(document.querySelector('.tag-fields input[aria-label=location]'));assert.equal(document.querySelector('.tag-add-property form'),null);
+    await act(async()=>session.undo(false));await settle();assert.ok(!w.snapshot().tags!.find(t=>t.tag==='project')!.fields.some(f=>f.key==='location'));
+    await act(async()=>addProperty().click());await act(async()=>document.querySelector('.tag-add-property form')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.tag-add-property form'),null);
   }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();w.close();await fs.rm(dir,{recursive:true,force:true});}
 });
