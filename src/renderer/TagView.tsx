@@ -193,7 +193,7 @@ function TagInheritance({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snap
 }
 function TagPageProperties({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){
   const colors=snapshot.preferences?.tagColors??{};
-  return <div className="tag-page-properties"><div className="tag-page-preview" style={{backgroundColor:tintColor(Object.hasOwn(colors,tag.tag)?colors[tag.tag]:undefined)}}><div className="tag-page-content"><h1>#{tag.tag}</h1><TagInheritance tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/><SchemaProperties tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/></div></div>
+  return <div className="tag-page-properties"><h1><span className="tag-chip tag-title-chip" style={{backgroundColor:tintColor(Object.hasOwn(colors,tag.tag)?colors[tag.tag]:undefined)}}>#{tag.tag}</span></h1><TagInheritance tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/><SchemaProperties tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/>
     <section className="tag-property-group tag-page-color"><Color label={ui.style.color} value={Object.hasOwn(colors,tag.tag)?colors[tag.tag]:''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>{const tagColors={...colors,...(color?{[tag.tag]:color.toLowerCase()}: {})};if(!color)delete tagColors[tag.tag];void session.run(async()=>{await session.flushPreferences();session.update({snapshot:await session.bridge.request<Snapshot>({kind:'preferences',patch:{tagColors}})});}).catch(()=>undefined);}}/></section>
   </div>;
 }

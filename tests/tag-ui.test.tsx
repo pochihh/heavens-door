@@ -169,7 +169,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await lift('priority',285);await act(async()=>pointer(document,'pointerup',285));await settle();assert.equal(groupList('default').lastElementChild!.getAttribute('data-file-key'),'project/priority');
     const reordered=await w.read(tag.path);await lift('priority',460);await act(async()=>pointer(document,'pointerup',650));await settle();assert.equal(await w.read(tag.path),reordered);assert.equal(document.querySelector('.sort-placeholder'),null);assert.equal(await w.read('Notes/A.md'),originalCard);
     await act(async()=>session.undo(false));await settle();await act(async()=>session.undo(false));await settle();await act(async()=>session.undo(false));await settle();assert.equal(await w.read(tag.path),originalTag);
-    assert.ok((document.querySelector<HTMLElement>('.tag-page-preview')!.style.backgroundColor).includes('c9838a'));
+    assert.ok((document.querySelector<HTMLElement>('.tag-title-chip')!.style.backgroundColor).includes('c9838a'));
     assert.ok(document.querySelector('.tag-page-properties h1')!.nextElementSibling!.classList.contains('tag-inheritance'));
     const newTagButton=document.querySelector<HTMLButtonElement>('.new-tag button')!,newTagName=document.querySelector<HTMLInputElement>('.new-tag input')!;assert.equal(newTagButton.disabled,false);
     await act(async()=>newTagButton.click());assert.equal(document.activeElement,newTagName);
