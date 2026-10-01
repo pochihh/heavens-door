@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Workspace} from '../src/core/workspace';
 import {Session} from '../src/renderer/session';
-import {TagView,CardTags} from '../src/renderer/TagView';
+import {TagView,CardTags,NewTag} from '../src/renderer/TagView';
 import {ConfirmationProvider} from '../src/renderer/Confirmation';
 import type {Bridge} from '../src/shared';
 
@@ -20,8 +20,9 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
   dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   const session=new Session({request:async request=>{
     switch(request.kind){
+      case 'createTag':return w.createTag(request.tag);
       case 'addTagProperty':return w.addTagProperty(request.path,request.expected,request.tag,request.tagExpected,request.field,request.value);
-      case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits);
+      case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits,request.createParent);
       case 'queryTags':return w.queryTags(request.text,request.exclude,request.limit);
       case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
       case 'cardProperties':return w.cardProperties(request.path);
@@ -34,8 +35,8 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
       default:throw new Error(request.kind);
     }
   }} as Bridge);session.update({snapshot:w.snapshot()});
-  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);
-  function App(){const state=useSyncExternalStore(session.subscribe,session.getState);tag=state.snapshot!.tags!.find(t=>t.tag==='project')!;return <ConfirmationProvider><CardTags card={state.snapshot!.cards[0]} snapshot={state.snapshot!} session={session} onOpen={()=>undefined}/><TagView tag={tag} snapshot={state.snapshot!} session={session} onOpen={()=>undefined} memory={{}} onViewChange={()=>undefined}/></ConfirmationProvider>;}
+  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!),opened:string[]=[];
+  function App(){const state=useSyncExternalStore(session.subscribe,session.getState);tag=state.snapshot!.tags!.find(t=>t.tag==='project')!;return <ConfirmationProvider><NewTag session={session} onCreated={path=>opened.push(path)}/><CardTags card={state.snapshot!.cards[0]} snapshot={state.snapshot!} session={session} onOpen={()=>undefined}/><TagView tag={tag} snapshot={state.snapshot!} session={session} onOpen={key=>opened.push(key)} memory={{}} onViewChange={()=>undefined}/></ConfirmationProvider>;}
   const settle=async()=>{await act(async()=>session.run(async()=>undefined));for(let i=0;i<120;i++){await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25));});if(!document.querySelector('.tag-results[aria-busy=true]'))return;}assert.fail('Tag view did not finish loading');};
   try{
     await act(async()=>root.render(<App/>));await settle();
@@ -128,23 +129,65 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>session.saveTag(definition.path,definition.revision,[...definition.fields,{key:'location',type:'text',optional:true,default:'Taipei'}],definition.inherits));await settle();
     assert.equal(await w.read('Notes/A.md'),beforeSchema);assert.equal(document.querySelector('.tag-fields input[aria-label=location]'),null);
     assert.equal(document.querySelector('.tag-page-properties h1')!.textContent,'#project');
-    const schemaLocation=document.querySelector<HTMLInputElement>('.tag-property-group[aria-label="Optional properties"] input[aria-label=location]')!;
+    const schemaLocation=document.querySelector<HTMLInputElement>('.tag-property-group[aria-label="Optional"] input[aria-label=location]')!;
     assert.equal(schemaLocation.value,'Taipei');
     await act(async()=>{schemaLocation.focus();Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(schemaLocation,'Tokyo');schemaLocation.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
     await act(async()=>schemaLocation.blur());await settle();assert.equal(w.snapshot().tags!.find(t=>t.tag==='project')!.fields.at(-1)!.default,'Tokyo');assert.equal(await w.read('Notes/A.md'),beforeSchema);
     await act(async()=>addProperty().click());const options=[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')];assert.equal(options[0].textContent,'location · Tokyo');assert.ok(document.querySelector('[role=separator]'));
     await act(async()=>options[0].click());await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/location'],'Tokyo');assert.equal(document.querySelector<HTMLInputElement>('.tag-fields input[aria-label=location]')!.value,'Tokyo');
     await act(async()=>session.undo(false));await settle();assert.equal(document.querySelector('.tag-fields input[aria-label=location]'),null);
-    const optionalLabel=document.querySelector<HTMLButtonElement>('.tag-property-group[aria-label="Optional properties"] .property-label')!;
+    const optionalLabel=document.querySelector<HTMLButtonElement>('.tag-property-group[aria-label="Optional"] .property-label')!;
     await act(async()=>optionalLabel.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2})));
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Make default property')!.click());await settle();
-    assert.ok(document.querySelector('.tag-property-group[aria-label="Default properties"] input[aria-label=location]'));assert.equal(w.cardProperties('Notes/A.md').properties['project/location'],undefined);
+    assert.ok(document.querySelector('.tag-property-group[aria-label="Default"] input[aria-label=location]'));assert.equal(w.cardProperties('Notes/A.md').properties['project/location'],undefined);
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-property-group .property-label')].find(b=>b.textContent==='location')!.click());
     const propertyLabel=document.querySelector<HTMLInputElement>('.tag-page-properties .tag-definition label>input')!;
     await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(propertyLabel,'Location');propertyLabel.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
     await act(async()=>document.querySelector<HTMLFormElement>('.tag-page-properties .tag-definition')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();
     const savedField=w.snapshot().tags!.find(t=>t.tag==='project')!.fields.find(f=>f.key==='location')!;assert.equal(savedField.label,'Location');assert.equal('propertyKey' in savedField,false);assert.equal('sourceTag' in savedField,false);assert.equal(await w.read('Notes/A.md'),beforeSchema);
     await act(async()=>document.querySelector<HTMLButtonElement>('.tag-page-properties button[aria-label=Rose]')!.click());await settle();assert.equal(w.snapshot().preferences?.tagColors?.project,'#c9838a');
+    assert.equal(document.querySelectorAll('.tag-page-properties .tag-add-property>button').length,1);
+    assert.ok(document.querySelector('[aria-label="Optional"] .tag-add-property'));
+    const groupList=(name:string)=>document.querySelector<HTMLElement>(`[data-sort-group="${name}"]`)!;
+    const schemaField=(key:string)=>w.snapshot().tags!.find(t=>t.tag==='project')!.fields.find(f=>f.key===key)!;
+    const positionGroups=()=>{
+      document.querySelector<HTMLElement>('.tag-schema-properties')!.getBoundingClientRect=()=>rect(100,500);
+      document.querySelector<HTMLElement>('.tag-view')!.getBoundingClientRect=()=>rect(0,800);
+      for(const [name,top] of [['default',100],['optional',400]] as const){
+        const list=groupList(name);list.parentElement!.getBoundingClientRect=()=>rect(top,name==='default'?300:200);list.getBoundingClientRect=()=>rect(top+20,160);
+        for(const row of list.querySelectorAll<HTMLElement>('[data-file-key]'))row.getBoundingClientRect=()=>rect(top+20+[...list.children].filter(c=>(c as HTMLElement).style.display!=='none').indexOf(row)*38,34);
+      }
+    };
+    const lift=async(key:string,y:number)=>{positionGroups();const row=document.querySelector<HTMLElement>(`.tag-schema-properties [data-file-key="project/${key}"]`)!;await act(async()=>{pointer(row.querySelector('.property-label')!,'pointerdown',row.getBoundingClientRect().top+10);pointer(document,'pointermove',y);});};
+    const originalTag=await w.read(tag.path),originalCard=await w.read('Notes/A.md');
+    await lift('priority',460);assert.equal(document.querySelectorAll('.drag-phantom').length,1);assert.ok(groupList('optional').querySelector('.sort-placeholder'));assert.equal(await w.read(tag.path),originalTag);
+    await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.drag-phantom'),null);assert.equal(await w.read(tag.path),originalTag);
+    await lift('priority',460);await act(async()=>pointer(document,'pointerup',460));await settle();assert.equal(schemaField('priority').optional,true);assert.equal(schemaField('priority').default,1);assert.equal(await w.read('Notes/A.md'),originalCard);
+    await act(async()=>session.undo(false));await settle();assert.equal(await w.read(tag.path),originalTag);
+    await act(async()=>session.undo(true));await settle();assert.equal(schemaField('priority').optional,true);
+    await lift('priority',120);await act(async()=>pointer(document,'pointerup',120));await settle();assert.equal(schemaField('priority').optional,false);assert.equal(groupList('default').firstElementChild!.getAttribute('data-file-key'),'project/priority');
+    await lift('priority',285);await act(async()=>pointer(document,'pointerup',285));await settle();assert.equal(groupList('default').lastElementChild!.getAttribute('data-file-key'),'project/priority');
+    const reordered=await w.read(tag.path);await lift('priority',460);await act(async()=>pointer(document,'pointerup',650));await settle();assert.equal(await w.read(tag.path),reordered);assert.equal(document.querySelector('.sort-placeholder'),null);assert.equal(await w.read('Notes/A.md'),originalCard);
+    await act(async()=>session.undo(false));await settle();await act(async()=>session.undo(false));await settle();await act(async()=>session.undo(false));await settle();assert.equal(await w.read(tag.path),originalTag);
+    assert.ok((document.querySelector<HTMLElement>('.tag-title-chip')!.style.backgroundColor).includes('c9838a'));
+    assert.ok(document.querySelector('.tag-page-properties h1')!.nextElementSibling!.classList.contains('tag-inheritance'));
+    const newTagButton=document.querySelector<HTMLButtonElement>('.new-tag button')!,newTagName=document.querySelector<HTMLInputElement>('.new-tag input')!;assert.equal(newTagButton.disabled,false);
+    await act(async()=>newTagButton.click());assert.equal(document.activeElement,newTagName);
+    await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(newTagName,'parent');newTagName.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});await act(async()=>newTagButton.click());await settle();assert.ok(opened.includes('tags/parent.tag'));
+    const parentInput=()=>document.querySelector<HTMLInputElement>('.tag-inheritance input[aria-label="Add parent tag"]')!;
+    const typeParent=async(text:string)=>{await act(async()=>{const input=parentInput();input.focus();Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,text);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});};
+    await typeParent('parnt');assert.equal(document.querySelector('[role=option]')!.textContent,'#parent');await act(async()=>parentInput().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.deepEqual(tag.inherits,['parent']);assert.equal(await w.read('Notes/A.md'),originalCard);
+    await typeParent('second');assert.equal(document.querySelector('[role=option]')!.textContent,'Create #second');await act(async()=>parentInput().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.deepEqual(tag.inherits,['parent','second']);assert.ok(w.snapshot().tags!.some(t=>t.tag==='second'));
+    await act(async()=>session.undo(false));await settle();assert.deepEqual(tag.inherits,['parent']);assert.ok(!w.snapshot().tags!.some(t=>t.tag==='second'));await act(async()=>session.undo(true));await settle();assert.deepEqual(tag.inherits,['parent','second']);
+    const parents=()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-inheritance .tag-chip-label')];
+    await act(async()=>parents()[1].dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',altKey:true,bubbles:true})));await settle();assert.deepEqual(tag.inherits,['second','parent']);
+    await act(async()=>parents()[0].dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2})));await act(async()=>parents()[0].click());assert.equal(document.querySelector('[role=menu]'),null);assert.equal(opened.at(-1),'tags/parent.tag');
+    await act(async()=>parents()[0].click());assert.equal(opened.at(-1),'tag:tags/second.tag');
+    await act(async()=>parents()[0].dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2})));await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Remove parent')!.click());await settle();assert.deepEqual(tag.inherits,['parent']);assert.equal(await w.read('Notes/A.md'),originalCard);
+    await act(async()=>session.createTag('descendant'));await settle();const descendant=w.snapshot().tags!.find(t=>t.tag==='descendant')!;await act(async()=>session.saveTag(descendant.path,descendant.revision,[],['project']));await settle();await typeParent('descendant');assert.equal(document.querySelector('[role=option]'),null);await act(async()=>parentInput().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    await assert.rejects(()=>w.saveTag(tag.path,'stale',tag.fields,[...tag.inherits,'stale-parent'],'stale-parent'),/External changes/);assert.ok(!w.snapshot().tags!.some(t=>t.tag==='stale-parent'));assert.equal(await fs.stat(join(path,'tags/stale-parent.tag')).then(()=>true,()=>false),false);
+
+
 
 
   }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();w.close();await fs.rm(dir,{recursive:true,force:true});}

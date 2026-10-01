@@ -56,7 +56,7 @@ export type Request =
   | { kind: 'migrateRoot' }
   | { kind:'tagCards';tag:string;text?:string;offset?:number }
   | { kind:'createTag';tag:string }
-  | { kind:'saveTag';path:string;expected:string;fields:TagField[];inherits:string[] }
+  | { kind:'saveTag';path:string;expected:string;fields:TagField[];inherits:string[];createParent?:string }
   | { kind:'cardProperties';path:string }
   | { kind:'setCardTag';path:string;expected:string;tag:string;add:boolean;create?:boolean }
   | { kind:'reorderCardTags';path:string;expected:string;tags:string[] }

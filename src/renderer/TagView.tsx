@@ -50,9 +50,9 @@ export function PropertyInput({field,value,cards,disabled,onSave}:{field:TagFiel
   </div>;
 }
 export function NewTag({session,onCreated}:{session:Session;onCreated:(path:string)=>void}) {
-  const [name,setName]=useState(''),[busy,setBusy]=useState(false);
-  return <form className="new-tag" onSubmit={e=>{e.preventDefault();if(busy||!name.trim())return;setBusy(true);void session.createTag(name.trim()).then(tag=>{setName('');onCreated(tag.path);}).catch(()=>undefined).finally(()=>setBusy(false));}}>
-    <input aria-label={ui.tags.name} placeholder={ui.tags.newTag} value={name} onChange={e=>setName(e.target.value)}/><Tool icon="plus" label={tooltips.tags.newTag} disabled={busy||!name.trim()} type="submit"/>
+  const [name,setName]=useState(''),[busy,setBusy]=useState(false),input=useRef<HTMLInputElement>(null);
+  return <form className="new-tag" onSubmit={e=>{e.preventDefault();if(busy)return;if(!name.trim()){input.current?.focus();return;}setBusy(true);void session.createTag(name.trim()).then(tag=>{setName('');onCreated(tag.path);}).catch(()=>undefined).finally(()=>setBusy(false));}}>
+    <input ref={input} aria-label={ui.tags.name} placeholder={ui.tags.newTag} value={name} onChange={e=>setName(e.target.value)}/><Tool icon="plus" label={tooltips.tags.newTag} disabled={busy} type="submit"/>
   </form>;
 }
 function TagProperties({card,tag,snapshot,session,properties}:{card:CardInfo;tag:string;snapshot:Snapshot;session:Session;properties:CardProperties}){
@@ -67,7 +67,7 @@ function TagProperties({card,tag,snapshot,session,properties}:{card:CardInfo;tag
     </div>)}{!fields.length&&<p className="muted">{ui.tags.emptyFields}</p>}
   </div>{definition&&!resolved.warnings.length&&<PropertyAdder key={tag} cards={snapshot.cards} disabled={busy} valueLabel={ui.tags.value} existing={resolved.fields.filter(f=>!Object.hasOwn(properties.properties,f.propertyKey)).sort((a,b)=>Number(!!b.optional)-Number(!!a.optional))} onExisting={field=>session.setTagProperty(card.path,properties.revision,tag,field.propertyKey,field.default??null)} onCreate={(field,value)=>session.addTagProperty(card.path,properties.revision,tag,definition.revision,field,value)}/>}</>;
 }
-function InlineTagInput({tags,attached,busy,onAttach,session}:{session:Session;tags:TagInfo[];attached:string[];busy:boolean;onAttach:(tag:string,create:boolean)=>Promise<boolean>}) {
+function InlineTagInput({tags,attached,busy,onAttach,session,label=ui.tags.add}:{label?:string;session:Session;tags:TagInfo[];attached:string[];busy:boolean;onAttach:(tag:string,create:boolean)=>Promise<boolean>}) {
   const [text,setText]=useState(''),[focused,setFocused]=useState(false),[selected,setSelected]=useState(0),input=useRef<HTMLInputElement>(null),popup=useRef<HTMLDivElement>(null),id=useId();
   const query=text.trim().replace(/^#/,''),[matches,setMatches]=useState<TagSearchResult[]>([]),[searching,setSearching]=useState(false),[searchError,setSearchError]=useState(''),attachedKey=attached.join('\n');
   useEffect(()=>{
@@ -85,7 +85,7 @@ function InlineTagInput({tags,attached,busy,onAttach,session}:{session:Session;t
   },[open,query,matches,searching,searchError]);
   useEffect(()=>{popup.current?.querySelector<HTMLElement>('[aria-selected=true]')?.scrollIntoView?.({block:'nearest'});},[selected,matches]);
   async function choose(i:number){const choice=choices[i];if(choice&&await onAttach(choice.tag,choice.create)){setText('');setSelected(0);input.current?.focus();}}
-  return <><input ref={input} className="tag-inline-input" role="combobox" aria-label={ui.tags.add} aria-autocomplete="list" aria-expanded={open} aria-controls={open?id:undefined} aria-activedescendant={open&&index>=0?`${id}-${index}`:undefined} autoComplete="off" spellCheck={false} readOnly={busy} aria-disabled={busy} value={text} style={{width:Math.max(4,Math.min(22,text.length+2))+'ch'}} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} onChange={e=>{setText(e.target.value);setFocused(true);setSelected(0);}} onKeyDown={e=>{
+  return <><input ref={input} className="tag-inline-input" role="combobox" aria-label={label} aria-autocomplete="list" aria-expanded={open} aria-controls={open?id:undefined} aria-activedescendant={open&&index>=0?`${id}-${index}`:undefined} autoComplete="off" spellCheck={false} readOnly={busy} aria-disabled={busy} value={text} style={{width:Math.max(4,Math.min(22,text.length+2))+'ch'}} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} onChange={e=>{setText(e.target.value);setFocused(true);setSelected(0);}} onKeyDown={e=>{
     if(e.nativeEvent.isComposing)return;
     if(open&&['ArrowDown','ArrowUp','Enter','Escape'].includes(e.key)){e.preventDefault();e.stopPropagation();if(e.key==='Escape')setFocused(false);else if(e.key==='Enter')void choose(index);else if(choices.length)setSelected((index+(e.key==='ArrowDown'?1:-1)+choices.length)%choices.length);}
   }}/>{open&&createPortal(<div ref={popup} id={id} popover="auto" role="listbox" className="context-menu tag-suggestions" aria-busy={searching} aria-label={ui.tags.suggestions} onToggle={e=>{if(e.newState==='closed')setFocused(false);}} onPointerDown={e=>{e.preventDefault();e.stopPropagation();}} onContextMenu={e=>{e.preventDefault();e.stopPropagation();}}>
@@ -147,26 +147,54 @@ function PropertyAdder({cards,disabled,existing=[],valueLabel,onExisting,onCreat
     {field&&<PropertyEditor key={field.type} initial={field} cards={cards} valueLabel={valueLabel} onSave={onCreate} onClose={close}/>} {error&&<p role="alert">{error}</p>}{menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </div>;
 }
-function SchemaProperties({tag,optional,snapshot,session,onOpen}:{tag:TagInfo;optional:boolean;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){
-  const resolved=resolveTag(snapshot.tags??[],tag.tag),fields=resolved.fields.filter(f=>!!f.optional===optional),list=useRef<HTMLDivElement>(null);
+function SchemaProperties({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){
+  const resolved=resolveTag(snapshot.tags??[],tag.tag),list=useRef<HTMLDivElement>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[editing,setEditing]=useState<{field:TagField;expected:string;fields:TagField[];inherits:string[]}>(),[menu,setMenu]=useState<MenuState|null>(null);
   const blocked=busy||!!resolved.warnings.length;
   async function save(next:TagField[]){setBusy(true);setError('');try{await session.saveTag(tag.path,tag.revision,next,tag.inherits);}catch(error){setError(String(error));throw error;}finally{setBusy(false);}}
   const edit=(field:ResolvedTagField)=>{if(field.sourceTag!==tag.tag){const parent=snapshot.tags?.find(t=>t.tag===field.sourceTag);if(parent)onOpen('tag:'+parent.path);return;}setEditing({field:tag.fields.find(f=>f.key===field.key)!,expected:tag.revision,fields:tag.fields,inherits:tag.inherits});};
-  const reorder=(key:string,index:number|null)=>{if(blocked||index===null)return;const order=fields.map(f=>f.propertyKey),from=order.indexOf(key);if(from===index||from<0||fields.some(f=>f.sourceTag!==tag.tag))return;order.splice(from,1);order.splice(index,0,key);const next=order.map(k=>tag.fields.find(f=>tag.tag+'/'+f.key===k)!);let i=0;void save(tag.fields.map(f=>!!f.optional===optional?next[i++]:f)).catch(()=>undefined);};
-  const drag=useBookmarkDrag(list,(key,index)=>reorder(key,index),'vertical',true);
-  const actions=(field:ResolvedTagField,anchor:HTMLElement)=>{const rect=anchor.getBoundingClientRect();setMenu({anchor,x:rect.left,y:rect.bottom,label:field.label||field.key,actions:[{label:ui.tags.editProperty,icon:'edit',run:()=>edit(field)},...(field.sourceTag===tag.tag?[{label:optional?ui.tags.makeDefault:ui.tags.makeOptional,icon:'list' as const,run:()=>{void save(tag.fields.map(f=>f.key===field.key?{...f,optional:!optional}:f)).catch(()=>undefined);}},{label:ui.tags.removeProperty,icon:'close' as const,run:()=>{void save(tag.fields.filter(f=>f.key!==field.key)).catch(()=>undefined);}}]:[])]});};
-  return <section className="tag-property-group" aria-label={optional?ui.tags.optionalProperties:ui.tags.defaultProperties}><h3>{optional?ui.tags.optionalProperties:ui.tags.defaultProperties}</h3><div className="tag-properties" ref={list}>
-    {fields.map((field,i)=><div className="tag-property-row" key={field.propertyKey} data-file-key={field.propertyKey} onContextMenu={e=>{e.preventDefault();actions(field,e.currentTarget);}}><PropertyName field={field} disabled={blocked} data-tooltip={tooltips.tags.editProperty} onClick={()=>edit(field)} onPointerDown={e=>{if(fields.every(f=>f.sourceTag===tag.tag))drag(e,field.propertyKey,true);}} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();reorder(field.propertyKey,Math.max(0,Math.min(fields.length-1,i+(e.key==='ArrowUp'?-1:1))));}}}/><PropertyInput field={field} value={field.default} disabled={blocked||field.sourceTag!==tag.tag} cards={snapshot.cards} onSave={value=>save(tag.fields.map(f=>f.key===field.key?{...f,default:value}:f))}/></div>)}
-  </div>{editing&&<PropertyEditor key={editing.field.key} fixedKey initial={editing.field} cards={snapshot.cards} valueLabel={ui.tags.fieldDefault} onSave={(field,value)=>session.saveTag(tag.path,editing.expected,editing.fields.map(f=>f.key===field.key?{...field,default:value}:f),editing.inherits)} onClose={()=>setEditing(undefined)}/>}
-    <PropertyAdder cards={snapshot.cards} disabled={blocked} valueLabel={ui.tags.fieldDefault} onCreate={(field,value)=>save([...tag.fields,{...field,optional,default:value}])}/>{error&&<p role="alert">{error}</p>}{menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
-  </section>;
+  const reorder=(key:string,index:number|null,group?:string)=>{
+    if(blocked||index===null||!group)return;
+    const field=tag.fields.find(f=>tag.tag+'/'+f.key===key);if(!field)return;
+    const optional=group==='optional',fields=resolved.fields.filter(f=>!!f.optional===optional);
+    if(!!field.optional===optional&&fields.findIndex(f=>f.propertyKey===key)===index)return;
+    const visible=fields.filter(f=>f.propertyKey!==key);
+    const ownIndex=visible.slice(0,index).filter(f=>f.sourceTag===tag.tag).length,next=tag.fields.filter(f=>f.key!==field.key),target=next.filter(f=>!!f.optional===optional);
+    const at=target[ownIndex]?next.indexOf(target[ownIndex]):target.length?next.indexOf(target.at(-1)!)+1:next.length;
+    next.splice(at,0,{...field,optional});
+    if(JSON.stringify(next)!==JSON.stringify(tag.fields))void save(next).catch(()=>undefined);
+  };
+  const drag=useBookmarkDrag(list,(key,index,_source,group)=>reorder(key,index,group),'vertical',true);
+  const actions=(field:ResolvedTagField,anchor:HTMLElement)=>{const optional=!!field.optional,rect=anchor.getBoundingClientRect();setMenu({anchor,x:rect.left,y:rect.bottom,label:field.label||field.key,actions:[{label:ui.tags.editProperty,icon:'edit',run:()=>edit(field)},...(field.sourceTag===tag.tag?[{label:optional?ui.tags.makeDefault:ui.tags.makeOptional,icon:'list' as const,run:()=>{void save(tag.fields.map(f=>f.key===field.key?{...f,optional:!optional}:f)).catch(()=>undefined);}},{label:ui.tags.removeProperty,icon:'close' as const,run:()=>{void save(tag.fields.filter(f=>f.key!==field.key)).catch(()=>undefined);}}]:[])]});};
+  return <><div ref={list} className="tag-schema-properties">{[false,true].map(optional=>{
+    const fields=resolved.fields.filter(f=>!!f.optional===optional),group=optional?'optional':'default';
+    return <section key={group} className="tag-property-group" data-sort-area aria-label={optional?ui.tags.optionalProperties:ui.tags.defaultProperties}><h3>{optional?ui.tags.optionalProperties:ui.tags.defaultProperties}</h3><div className="tag-properties" data-sort-group={group}>
+      {fields.map((field,i)=><div className="tag-property-row" key={field.propertyKey} data-file-key={field.propertyKey} onContextMenu={e=>{e.preventDefault();actions(field,e.currentTarget);}}><PropertyName field={field} disabled={blocked} data-tooltip={tooltips.tags.editProperty} onClick={()=>edit(field)} onPointerDown={e=>{if(field.sourceTag===tag.tag)drag(e,field.propertyKey,true);}} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();reorder(field.propertyKey,Math.max(0,Math.min(fields.length-1,i+(e.key==='ArrowUp'?-1:1))),group);}}}/><PropertyInput field={field} value={field.default} disabled={blocked||field.sourceTag!==tag.tag} cards={snapshot.cards} onSave={value=>save(tag.fields.map(f=>f.key===field.key?{...f,default:value}:f))}/></div>)}
+    </div>{optional&&<PropertyAdder cards={snapshot.cards} disabled={blocked} valueLabel={ui.tags.fieldDefault} onCreate={(field,value)=>save([...tag.fields,{...field,optional:true,default:value}])}/>}</section>;
+  })}</div>{editing&&<PropertyEditor key={editing.field.key} fixedKey initial={editing.field} cards={snapshot.cards} valueLabel={ui.tags.fieldDefault} onSave={(field,value)=>session.saveTag(tag.path,editing.expected,editing.fields.map(f=>f.key===field.key?{...field,default:value}:f),editing.inherits)} onClose={()=>setEditing(undefined)}/>}
+    {error&&<p role="alert">{error}</p>}{menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}</>;
+}
+function TagInheritance({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){
+  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[menu,setMenu]=useState<MenuState|null>(null),row=useRef<HTMLDivElement>(null),list=useRef<HTMLDivElement>(null),tags=snapshot.tags??[],colors=snapshot.preferences?.tagColors;
+  async function save(inherits:string[],createParent?:string){setBusy(true);setError('');try{await session.saveTag(tag.path,tag.revision,tag.fields,inherits,createParent);return true;}catch(error){setError(String(error));return false;}finally{setBusy(false);}}
+  const open=(name:string)=>{const parent=tags.find(t=>t.tag===name);if(parent)onOpen('tag:'+parent.path);};
+  const excluded=useMemo(()=>{
+    const children=new Map<string,string[]>();for(const item of tags)for(const parent of item.inherits){if(!children.has(parent))children.set(parent,[]);children.get(parent)!.push(item.tag);}
+    const blocked=new Set([tag.tag]),pending=[tag.tag];for(let i=0;i<pending.length;i++)for(const child of children.get(pending[i])??[])if(!blocked.has(child)){blocked.add(child);pending.push(child);}
+    return [...new Set([...blocked,...tag.inherits])];
+  },[tag.tag,tag.inherits,tags]);
+  const reorder=(name:string,index:number|null)=>{if(busy||index===null||tag.inherits.indexOf(name)===index)return;const next=tag.inherits.filter(t=>t!==name);next.splice(index,0,name);void save(next);};
+  const drag=useBookmarkDrag(list,(name,index)=>reorder(name,index),'horizontal',true);
+  const actions=(name:string,anchor:HTMLElement)=>{const rect=anchor.getBoundingClientRect();setMenu({anchor,x:rect.left,y:rect.bottom,label:name,actions:[{label:ui.tags.definition,icon:'external',run:()=>open(name)},{label:ui.tags.removeParent,icon:'close',run:()=>{void save(tag.inherits.filter(t=>t!==name));}}]});};
+  return <div className="tag-inheritance"><div className="tag-row" ref={row}><button type="button" className="tag-parent-label" data-tooltip={tooltips.tags.inherit} onClick={()=>row.current?.querySelector<HTMLInputElement>('input')?.focus()}><Icon name="branch" size={14}/>{ui.tags.inherits}</button>
+    <div className="tag-chips" ref={list} role="group" aria-label={ui.tags.parents}>{tag.inherits.map((name,i)=><div key={name} className="tag-chip" data-file-key={name} style={{backgroundColor:tintColor(colors&&Object.hasOwn(colors,name)?colors[name]:undefined)}} onContextMenu={e=>{e.preventDefault();actions(name,e.currentTarget);}}><button type="button" className="tag-chip-label" disabled={busy} data-tooltip={tooltips.tags.parent} onPointerDown={e=>{if(!menu)drag(e,name,true);}} onClick={()=>{if(menu)setMenu(null);else open(name);}} onKeyDown={e=>{if(e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();reorder(name,Math.max(0,Math.min(tag.inherits.length-1,i+(e.key==='ArrowLeft'?-1:1))));}}}>#{name}</button></div>)}</div>
+    <InlineTagInput session={session} tags={tags} attached={excluded} busy={busy} label={ui.tags.addParent} onAttach={(name,create)=>save([...tag.inherits,name],create?name:undefined)}/>
+  </div>{error&&<p role="alert">{error}</p>}{menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}</div>;
 }
 function TagPageProperties({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){
   const colors=snapshot.preferences?.tagColors??{};
-  return <div className="tag-page-properties"><h1>#{tag.tag}</h1><h2>{ui.tags.properties}</h2>{[false,true].map(optional=><SchemaProperties key={String(optional)} tag={tag} optional={optional} snapshot={snapshot} session={session} onOpen={onOpen}/>)}
-    <Color label={ui.style.color} value={Object.hasOwn(colors,tag.tag)?colors[tag.tag]:''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>{const tagColors={...colors,...(color?{[tag.tag]:color.toLowerCase()}: {})};if(!color)delete tagColors[tag.tag];void session.run(async()=>{await session.flushPreferences();session.update({snapshot:await session.bridge.request<Snapshot>({kind:'preferences',patch:{tagColors}})});}).catch(()=>undefined);}}/>
-    <details className="tag-inheritance"><summary data-tooltip={tooltips.tags.inherit}>{ui.tags.inherits}</summary><input key={tag.revision} aria-label={ui.tags.inherits} defaultValue={tag.inherits.join(', ')} onBlur={e=>{const next=e.target.value.split(',').map(t=>t.trim()).filter(Boolean);if(JSON.stringify(next)!==JSON.stringify(tag.inherits))void session.saveTag(tag.path,tag.revision,tag.fields,next).catch(()=>undefined);}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){e.currentTarget.value=tag.inherits.join(', ');e.stopPropagation();}}}/></details>
+  return <div className="tag-page-properties"><h1><span className="tag-chip tag-title-chip" style={{backgroundColor:tintColor(Object.hasOwn(colors,tag.tag)?colors[tag.tag]:undefined)}}>#{tag.tag}</span></h1><TagInheritance tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/><h2>{ui.tags.properties}</h2><SchemaProperties tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/>
+    <section className="tag-property-group"><Color label={ui.style.color} value={Object.hasOwn(colors,tag.tag)?colors[tag.tag]:''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>{const tagColors={...colors,...(color?{[tag.tag]:color.toLowerCase()}: {})};if(!color)delete tagColors[tag.tag];void session.run(async()=>{await session.flushPreferences();session.update({snapshot:await session.bridge.request<Snapshot>({kind:'preferences',patch:{tagColors}})});}).catch(()=>undefined);}}/></section>
   </div>;
 }
 export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;memory:ViewMemory;onViewChange:()=>void}) {
