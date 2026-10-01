@@ -34,7 +34,7 @@ export type TagFieldType=typeof TAG_FIELD_TYPES[number];
 export const STATUS_GROUPS=['todo','inProgress','done'] as const;
 export type TagDateRange={start:string;end:string};
 export type TagValue=string|number|boolean|string[]|TagDateRange|null;
-export interface TagField {key:string;type:TagFieldType;label?:string;description?:string;options?:string[];statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
+export interface TagField {optional?:boolean;key:string;type:TagFieldType;label?:string;description?:string;options?:string[];statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
 export interface TagInfo { path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];overrides:(Partial<TagField>&{key:string})[] }
 export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
@@ -61,6 +61,7 @@ export type Request =
   | { kind:'setCardTag';path:string;expected:string;tag:string;add:boolean;create?:boolean }
   | { kind:'reorderCardTags';path:string;expected:string;tags:string[] }
   | { kind:'reorderTagProperties';path:string;expected:string;tag:string;keys:string[] }
+  | { kind:'addTagProperty';path:string;expected:string;tag:string;tagExpected:string;field:TagField;value:TagValue }
   | { kind:'setTagProperty';path:string;expected:string;tag:string;key:string;value:TagValue }
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
   | { kind: 'renameBoard'; folder:string; name:string; expected:string }

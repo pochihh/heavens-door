@@ -158,8 +158,9 @@ export class Session {
   setCardTag(path:string,expected:string,tag:string,add:boolean,create=false) {return this.tagEdit(path,expected,next=>({kind:'setCardTag',path,expected:next,tag,add,create}),add?ui.tags.add:ui.tags.remove);}
   reorderCardTags(path:string,expected:string,tags:string[]){return this.tagEdit(path,expected,next=>({kind:'reorderCardTags',path,expected:next,tags}),ui.tags.reorderTags);}
   reorderTagProperties(path:string,expected:string,tag:string,keys:string[]){return this.tagEdit(path,expected,next=>({kind:'reorderTagProperties',path,expected:next,tag,keys}),ui.tags.reorder);}
+  addTagProperty(path:string,expected:string,tag:string,tagExpected:string,field:TagField,value:TagValue){return this.tagEdit(path,expected,next=>({kind:'addTagProperty',path,expected:next,tag,tagExpected,field,value}),ui.tags.addField);}
   setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {return this.tagEdit(path,expected,next=>({kind:'setTagProperty',path,expected:next,tag,key,value}),ui.tags.properties);}
-  private tagEdit(path:string,expected:string,request:(next:string)=>Extract<import('../shared').Request,{kind:'setCardTag'|'setTagProperty'|'reorderTagProperties'|'reorderCardTags'}>,label:string) {
+  private tagEdit(path:string,expected:string,request:(next:string)=>Extract<import('../shared').Request,{kind:'addTagProperty'|'setCardTag'|'setTagProperty'|'reorderTagProperties'|'reorderCardTags'}>,label:string) {
     return this.run(async()=>{
       if(this.state.snapshot?.cards.find(c=>c.path===path)?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
       await this.flush();

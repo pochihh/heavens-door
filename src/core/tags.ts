@@ -1,6 +1,6 @@
 import {basename} from 'node:path';
 import {splitNote,revision,readCard} from './format';
-import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag} from '../tags';
+import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag,cardTagFields} from '../tags';
 import type {TagInfo,TagField,TagValue} from '../shared';
 import {ui} from '../text/ui';
 export function readTag(path:string,raw:string):TagInfo {
@@ -23,7 +23,7 @@ export function editCardTag(raw:string,path:string,tags:TagInfo[],tag:string,add
   const before=tagsFrom(stored),fields=add?schema(tags,tag):resolveTag(tags,tag).fields;
   if(add===before.includes(tag))return raw;
   const after=add?[...before,tag]:before.filter(t=>t!==tag);
-  if(add){for(const field of fields)if(!front.has(field.propertyKey)&&field.default!==undefined)front.set(field.propertyKey,field.default);}
+  if(add){for(const field of fields)if(!field.optional&&!front.has(field.propertyKey))front.set(field.propertyKey,field.default??null);}
   else {
     const keep=new Set(after.flatMap(t=>resolveTag(tags,t).fields.map(f=>f.propertyKey)));
     const owned=Object.keys(front.toJSON()??{}).filter(key=>key.startsWith(tag+'/')&&!key.slice(tag.length+1).includes('/'));
@@ -43,7 +43,7 @@ export function reorderCardTags(raw:string,path:string,tags:string[]) {
 export function editTagProperty(raw:string,path:string,tags:TagInfo[],tag:string,key:string,value:TagValue) {
   const {front,body}=splitNote(raw),attached=tagsFrom(front.toJSON()?.tags);
   if(!attached.some(t=>t===tag||t.startsWith(tag+'/')))throw new Error(ui.tags.notAttached);
-  const field=schema(tags,tag).find(f=>f.propertyKey===key);if(!field)throw new Error(ui.tags.missingField(key));
+  const field=schema(tags,tag).find(f=>f.propertyKey===key)??cardTagFields(tags,tag,front.toJSON()??{}).find(f=>f.propertyKey===key);if(!field)throw new Error(ui.tags.missingField(key));
   validateTagValue(field,value);front.set(key,value);front.set('card-id',readCard(path,raw).id);
   return `---\n${front.toString()}---\n${body}`;
 }
@@ -51,9 +51,8 @@ export function editTagProperty(raw:string,path:string,tags:TagInfo[],tag:string
 export function reorderTagProperties(raw:string,path:string,tags:TagInfo[],tag:string,keys:string[]){
   const {front,body}=splitNote(raw),attached=tagsFrom(front.toJSON()?.tags);
   if(!attached.includes(tag))throw new Error(ui.tags.notAttached);
-  const fields=schema(tags,tag),allowed=new Set(fields.map(f=>f.propertyKey));
+  schema(tags,tag);const allowed=new Set(cardTagFields(tags,tag,front.toJSON()??{}).map(f=>f.propertyKey));
   if(!Array.isArray(keys)||keys.length!==allowed.size||new Set(keys).size!==keys.length||keys.some(k=>!allowed.has(k)))throw new Error(ui.tags.invalidFields);
-  for(const key of keys)if(!front.has(key))front.set(key,null);
   const items=front.contents as import('yaml').YAMLMap,byKey=new Map(items.items.map(item=>[String(item.key),item]));
   let i=0;items.items=items.items.map(item=>allowed.has(String(item.key))?byKey.get(keys[i++])!:item);
   front.set('card-id',readCard(path,raw).id);return `---\n${front.toString()}---\n${body}`;

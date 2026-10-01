@@ -63,9 +63,14 @@ Dragging operates within one app window and does not create floating windows. Le
 
 ## Tag property rows
 
-`TagProperties` reuses `useBookmarkDrag` in reorder-only mode: property labels start the vertical drag, values remain editable, and leaving the list cancels rather than removing the property. A type icon changes to the grip on label hover. The shared phantom retains the hovered appearance and follows only Y; no destination tint or duplicate row. Alt+Up/Down performs the same reorder. Persist YAML key order on this card, never change the tag schema from a card’s property list. Missing fields become explicit null values on an intentional reorder.
+`TagProperties` reuses `useBookmarkDrag` in reorder-only mode: property labels start the vertical drag, values remain editable, and leaving the list cancels rather than removing the property. A type icon changes to the grip on label hover. The shared phantom retains the hovered appearance and follows only Y; no destination tint or duplicate row. Alt+Up/Down performs the same reorder. Persist YAML key order on this card, never change the tag schema from a card’s property list. Only keys already present on the card participate; dragging never creates missing properties.
 
 
 ## Card tag pills
 
 Tag pills use `useBookmarkDrag` in horizontal, reorder-only mode. Five pixels start the drag; the phantom retains the pill’s color and active state, stays on its row and leaves one empty slot. Neighbor movement uses the shared 150ms animation. Dragging leaves properties unchanged until release and never removes a tag. The strip scrolls horizontally as needed; input and property values never initiate this drag. Escape, blur, pointer cancel or releasing outside the strip restores order without writing. Alt+Left/Right is the keyboard alternative. Persist an order change only on drop through shared content undo. Every valid drop activates the dragged tag and opens its properties, even if the final index is unchanged; that selection-only change writes no content. Cancellation preserves the previous selection. The pill’s separate More button never starts a drag.
+
+
+## Tag definition properties
+
+Default and optional sections on a tag page reuse the property-row visuals and vertical phantom. A label click edits its definition; a completed drag suppresses that click and saves only the order in `.tag`. Alt+Up/Down reorders within the section. The property context menu moves it between default and optional sections. Inherited rows open their source tag and do not rewrite the parent definition through child reordering. Card values and membership remain unchanged.

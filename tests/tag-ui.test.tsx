@@ -20,6 +20,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
   dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   const session=new Session({request:async request=>{
     switch(request.kind){
+      case 'addTagProperty':return w.addTagProperty(request.path,request.expected,request.tag,request.tagExpected,request.field,request.value);
       case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits);
       case 'queryTags':return w.queryTags(request.text,request.exclude,request.limit);
       case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
@@ -34,7 +35,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     }
   }} as Bridge);session.update({snapshot:w.snapshot()});
   const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);
-  function App(){const state=useSyncExternalStore(session.subscribe,session.getState);tag=state.snapshot!.tags![0];return <ConfirmationProvider><CardTags card={state.snapshot!.cards[0]} snapshot={state.snapshot!} session={session} onOpen={()=>undefined}/><TagView tag={tag} snapshot={state.snapshot!} session={session} onOpen={()=>undefined} memory={{}} onViewChange={()=>undefined}/></ConfirmationProvider>;}
+  function App(){const state=useSyncExternalStore(session.subscribe,session.getState);tag=state.snapshot!.tags!.find(t=>t.tag==='project')!;return <ConfirmationProvider><CardTags card={state.snapshot!.cards[0]} snapshot={state.snapshot!} session={session} onOpen={()=>undefined}/><TagView tag={tag} snapshot={state.snapshot!} session={session} onOpen={()=>undefined} memory={{}} onViewChange={()=>undefined}/></ConfirmationProvider>;}
   const settle=async()=>{await act(async()=>session.run(async()=>undefined));for(let i=0;i<120;i++){await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25));});if(!document.querySelector('.tag-results[aria-busy=true]'))return;}assert.fail('Tag view did not finish loading');};
   try{
     await act(async()=>root.render(<App/>));await settle();
@@ -87,11 +88,11 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todo']);
     await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project']);assert.ok(!w.snapshot().tags!.some(t=>t.tag==='todo'));
     await act(async()=>chips()[0].click());await settle();
-    const labels=()=>[...document.querySelectorAll<HTMLButtonElement>('.property-label')];
+    const labels=()=>[...document.querySelectorAll<HTMLButtonElement>('.card-tags .property-label')];
     await act(async()=>labels()[1].dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowUp',altKey:true,bubbles:true})));await settle();
     assert.equal(labels()[0].textContent,'priority');assert.ok((await w.read('Notes/A.md')).indexOf('project/priority:')<(await w.read('Notes/A.md')).indexOf('project/status:'));
     await act(async()=>session.undo(false));await settle();assert.equal(labels()[0].textContent,'status');
-    const propertyList=document.querySelector<HTMLElement>('.tag-properties')!,cardTags=document.querySelector<HTMLElement>('.card-tags')!;
+    const propertyList=document.querySelector<HTMLElement>('.card-tags .tag-properties')!,cardTags=document.querySelector<HTMLElement>('.card-tags')!;
     const rect=(top:number,height:number)=>({left:20,top,width:320,height,right:340,bottom:top+height,x:20,y:top,toJSON(){}});
     propertyList.getBoundingClientRect=()=>rect(100,80);cardTags.getBoundingClientRect=()=>rect(80,160);
     for(const row of propertyList.querySelectorAll<HTMLElement>('.tag-property-row'))row.getBoundingClientRect=()=>rect(100+[...propertyList.children].filter(c=>(c as HTMLElement).style.display!=='none').indexOf(row)*38,34);
@@ -116,12 +117,35 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project']);
     await act(async()=>chips()[0].click());await settle();
     const addProperty=()=>document.querySelector<HTMLButtonElement>('.tag-add-property>button')!;
-    await act(async()=>addProperty().click());assert.equal(document.querySelectorAll('.tag-add-property fieldset').length,1);
+    await act(async()=>addProperty().click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Text')!.click());assert.equal(document.querySelectorAll('.tag-add-property fieldset').length,1);
     const fieldKey=document.querySelector<HTMLInputElement>('.tag-add-property input[aria-label="Property key"]')!;
     await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(fieldKey,'location');fieldKey.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
     await act(async()=>document.querySelector<HTMLFormElement>('.tag-add-property form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();
-    assert.ok(w.snapshot().tags!.find(t=>t.tag==='project')!.fields.some(f=>f.key==='location'));assert.ok(document.querySelector('.tag-fields input[aria-label=location]'));assert.equal(document.querySelector('.tag-add-property form'),null);
+    assert.ok(w.snapshot().tags!.find(t=>t.tag==='project')!.fields.some(f=>f.key==='location'&&f.optional));assert.equal(w.cardProperties('Notes/A.md').properties['project/location'],null);assert.ok(document.querySelector('.tag-fields input[aria-label=location]'));assert.equal(document.querySelector('.tag-add-property form'),null);
     await act(async()=>session.undo(false));await settle();assert.ok(!w.snapshot().tags!.find(t=>t.tag==='project')!.fields.some(f=>f.key==='location'));
-    await act(async()=>addProperty().click());await act(async()=>document.querySelector('.tag-add-property form')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.tag-add-property form'),null);
+    await act(async()=>addProperty().click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Text')!.click());await act(async()=>document.querySelector('.tag-add-property form')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.tag-add-property form'),null);
+    const beforeSchema=await w.read('Notes/A.md'),definition=w.snapshot().tags!.find(t=>t.tag==='project')!;
+    await act(async()=>session.saveTag(definition.path,definition.revision,[...definition.fields,{key:'location',type:'text',optional:true,default:'Taipei'}],definition.inherits));await settle();
+    assert.equal(await w.read('Notes/A.md'),beforeSchema);assert.equal(document.querySelector('.tag-fields input[aria-label=location]'),null);
+    assert.equal(document.querySelector('.tag-page-properties h1')!.textContent,'#project');
+    const schemaLocation=document.querySelector<HTMLInputElement>('.tag-property-group[aria-label="Optional properties"] input[aria-label=location]')!;
+    assert.equal(schemaLocation.value,'Taipei');
+    await act(async()=>{schemaLocation.focus();Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(schemaLocation,'Tokyo');schemaLocation.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+    await act(async()=>schemaLocation.blur());await settle();assert.equal(w.snapshot().tags!.find(t=>t.tag==='project')!.fields.at(-1)!.default,'Tokyo');assert.equal(await w.read('Notes/A.md'),beforeSchema);
+    await act(async()=>addProperty().click());const options=[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')];assert.equal(options[0].textContent,'location · Tokyo');assert.ok(document.querySelector('[role=separator]'));
+    await act(async()=>options[0].click());await settle();assert.equal(w.cardProperties('Notes/A.md').properties['project/location'],'Tokyo');assert.equal(document.querySelector<HTMLInputElement>('.tag-fields input[aria-label=location]')!.value,'Tokyo');
+    await act(async()=>session.undo(false));await settle();assert.equal(document.querySelector('.tag-fields input[aria-label=location]'),null);
+    const optionalLabel=document.querySelector<HTMLButtonElement>('.tag-property-group[aria-label="Optional properties"] .property-label')!;
+    await act(async()=>optionalLabel.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2})));
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Make default property')!.click());await settle();
+    assert.ok(document.querySelector('.tag-property-group[aria-label="Default properties"] input[aria-label=location]'));assert.equal(w.cardProperties('Notes/A.md').properties['project/location'],undefined);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-property-group .property-label')].find(b=>b.textContent==='location')!.click());
+    const propertyLabel=document.querySelector<HTMLInputElement>('.tag-page-properties .tag-definition label>input')!;
+    await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(propertyLabel,'Location');propertyLabel.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+    await act(async()=>document.querySelector<HTMLFormElement>('.tag-page-properties .tag-definition')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();
+    const savedField=w.snapshot().tags!.find(t=>t.tag==='project')!.fields.find(f=>f.key==='location')!;assert.equal(savedField.label,'Location');assert.equal('propertyKey' in savedField,false);assert.equal('sourceTag' in savedField,false);assert.equal(await w.read('Notes/A.md'),beforeSchema);
+    await act(async()=>document.querySelector<HTMLButtonElement>('.tag-page-properties button[aria-label=Rose]')!.click());await settle();assert.equal(w.snapshot().preferences?.tagColors?.project,'#c9838a');
+
+
   }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();w.close();await fs.rm(dir,{recursive:true,force:true});}
 });

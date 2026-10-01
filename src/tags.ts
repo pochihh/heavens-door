@@ -34,6 +34,7 @@ export function validateFields(fields:unknown):asserts fields is TagField[] {
     if(!field||typeof field!=='object'||typeof field.key!=='string'||!field.key.trim()||field.key!==field.key.trim()||field.key.length>100||/[/\n\r]/.test(field.key)||keys.has(field.key)||!TAG_FIELD_TYPES.includes(field.type)||
       ['label','description'].some(k=>field[k]!==undefined&&(typeof field[k]!=='string'||field[k].length>2000))||
       field.options!==undefined&&(!Array.isArray(field.options)||field.options.length>200||field.options.some((o:unknown)=>typeof o!=='string'||!o||o.length>200)||new Set(field.options).size!==field.options.length))throw new Error(ui.tags.invalidFields);
+    if(field.optional!==undefined&&typeof field.optional!=='boolean')throw new Error(ui.tags.invalidFields);
     if(field.type==='status'){
       const groups=field.statusGroups;
       if(!groups||typeof groups!=='object'||Array.isArray(groups)||Object.keys(groups).length!==3||STATUS_GROUPS.some(group=>!Array.isArray(groups[group])||groups[group].some((option:unknown)=>typeof option!=='string'||!option.trim()||option.length>200)))throw new Error(ui.tags.invalidFields);
@@ -54,4 +55,16 @@ export function resolveTag(tags:TagInfo[],name:string,stack:string[]=[]):{fields
   }
   for(const field of tag.fields)fields.set(field.key,{...field,sourceTag:name,propertyKey:name+'/'+field.key});
   return {fields:[...fields.values()],warnings:[...new Set(warnings)]};
+}
+
+// A card's YAML keys are its property membership; schema changes never add rows to it.
+export function cardTagFields(tags:TagInfo[],name:string,properties:Record<string,unknown>):ResolvedTagField[]{
+  const known=new Map(resolveTag(tags,name).fields.map(field=>[field.propertyKey,field]));
+  return Object.entries(properties).flatMap(([key,value])=>{
+    const field=known.get(key);if(field)return [field];
+    if(!key.startsWith(name+'/')||key.slice(name.length+1).includes('/'))return [];
+    // Removed definitions retain editable stored values without writing inferred schema back.
+    const fallback:TagField=typeof value==='number'?{key,type:'number'}:typeof value==='boolean'?{key,type:'boolean'}:Array.isArray(value)&&value.every(v=>typeof v==='string')?{key,type:'multi-select',options:[...new Set(value)]}:value&&typeof value==='object'&&'start' in value&&'end' in value&&validTagDate(value.start)&&validTagDate(value.end)?{key,type:'date'}:{key,type:'text'};
+    return [{...fallback,key:key.slice(name.length+1),sourceTag:name,propertyKey:key}];
+  });
 }

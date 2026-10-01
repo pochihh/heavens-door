@@ -1,5 +1,5 @@
 import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags} from './tags';
-import {validTag,tagsFrom} from '../tags';
+import {validTag,tagsFrom,validateFields,resolveTag} from '../tags';
 import type {TagField,TagValue,TagSearchResult,WorkspaceSearchResult} from '../shared';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
@@ -345,6 +345,19 @@ export class Workspace {
   async reorderTagProperties(path:string,expected:string,tag:string,keys:string[]){
     if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
     return this.write([{path,content:reorderTagProperties(await this.read(path),path,[...this.tags.values()],tag,keys),expected}]);
+  }
+  async addTagProperty(path:string,expected:string,tag:string,tagExpected:string,field:TagField,value:TagValue) {
+    if(!path.endsWith('.md')||!validTag(tag)||typeof tagExpected!=='string')throw new Error(ui.tags.invalidTag);
+    validateFields([field]);
+    const tags=[...this.tags.values()],resolved=resolveTag(tags,tag),definition=tags.find(t=>t.tag===tag);
+    if(!definition||resolved.warnings.length)throw new Error(resolved.warnings.join('\n')||ui.tags.missing(tag));
+    if(resolved.fields.some(f=>f.key===field.key))throw new Error(ui.tags.invalidFields);
+    const optional={...field,optional:true};delete optional.default;
+    const raw=await this.read(definition.path),current=readTag(definition.path,raw),content=editTag(raw,[...current.fields,optional],current.inherits);
+    const nextTags=tags.map(t=>t.path===definition.path?readTag(t.path,content):t);
+    const cardRaw=await this.read(path);if(splitNote(cardRaw).front.has(tag+'/'+field.key))throw new Error(ui.tags.invalidFields);
+    const card=editTagProperty(cardRaw,path,nextTags,tag,tag+'/'+field.key,value);
+    return this.write([{path:definition.path,content,expected:tagExpected},{path,content:card,expected}]);
   }
   async setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {
     if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
