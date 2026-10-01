@@ -3,6 +3,8 @@ import { tooltips } from '../text/tooltips';
 import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { remapKey } from '../path-remap';
+import {DateDisplayContext} from './DateProperty';
+import {DEFAULT_DATE_DISPLAY} from '../dates';
 import {TagColorSettings} from './TagView';
 import {PerformanceSettings} from './PerformanceSettings';
 import { StyleView, type BoardSelection } from './StyleView';
@@ -282,7 +284,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     if(module==='agent')return <div className="agent-empty">{ui.agent.disconnected}</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={active.active} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
   }
-  return <div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status===ui.status.openingWorkspace||state.status===ui.status.changingHistory} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
+  return <DateDisplayContext value={{display:prefs.dateDisplay??DEFAULT_DATE_DISPLAY,onChange:dateDisplay=>session.run(async()=>{await session.flushPreferences();session.update({snapshot:await window.door.request<Snapshot>({kind:'preferences',patch:{dateDisplay}})});})}}><div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status===ui.status.openingWorkspace||state.status===ui.status.changingHistory} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
       <Tool icon="left" label={left?tooltips.layout.collapseLeftSideDock:tooltips.layout.expandLeftSideDock} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
@@ -327,7 +329,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <Suspense fallback={<small>{ui.icons.loading}</small>}><IconPicker onSelect={setCustomIcon}/></Suspense><div className="dialog-actions"><button type="button" data-tooltip={tooltips.icons.restoreDefault} onClick={()=>setCustomIcon('')}>{ui.common.default}</button><button className="primary" data-tooltip={tooltips.icons.save}>{ui.common.save}</button></div>
       </form>:<div className="settings-body"><p>{ui.migration.description(rootCards.length)}</p><p>{ui.migration.preservedData}</p><button className="primary" data-tooltip={tooltips.migration.moveCards} onClick={()=>attempt(session.run(async()=>{await session.flush();const result=await window.door.request<Snapshot>({kind:'migrateRoot'});session.undoHistory.clear();session.update({snapshot:result,draft:null,error:''});setModal(null);}))}>{ui.migration.moveCards}</button></div>}
     </section></div>}
-  </div>;
+  </div></DateDisplayContext>;
 }
 function SplitDivider({node,onResize}:{node:Extract<Layout,{type:'split'}>;onResize:(ratio:number)=>void}) {
   const drag=useRef<{start:number;ratio:number;size:number}|null>(null);
