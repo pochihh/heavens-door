@@ -59,6 +59,7 @@ async function dispatch(request: Request) {
     case 'tagCards': string(request.tag); return workspace.tagCards(request.tag,request.text,request.offset);
     case 'createTag': string(request.tag);return workspace.createTag(request.tag);
     case 'saveTag': string(request.path);string(request.expected);if(request.createParent!==undefined)string(request.createParent);return workspace.saveTag(request.path,request.expected,request.fields,request.inherits,request.createParent,request.propertiesCollapsed);
+    case 'renameTagProperty': string(request.path);string(request.expected);string(request.key);string(request.name);return workspace.renameTagProperty(request.path,request.expected,request.key,request.name);
     case 'cardProperties': string(request.path);return workspace.cardProperties(request.path);
     case 'setCardTag': string(request.path);string(request.expected);string(request.tag);return workspace.setCardTag(request.path,request.expected,request.tag,request.add,request.create);
     case 'reorderCardTags': string(request.path);string(request.expected);return workspace.reorderCardTags(request.path,request.expected,request.tags);

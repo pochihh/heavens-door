@@ -29,12 +29,14 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface Preferences { tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
-export const TAG_FIELD_TYPES=['text','number','date','boolean','select','status','multi-select','link','url','email','phone'] as const;
-export type TagFieldType=typeof TAG_FIELD_TYPES[number];
+export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
+// Read old definitions without rewriting them just because they were opened.
+export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
+export type TagFieldType=typeof TAG_FIELD_TYPES[number]|typeof LEGACY_TAG_FIELD_TYPES[number];
 export const STATUS_GROUPS=['todo','inProgress','done'] as const;
 export type TagDateRange={start:string;end:string};
 export type TagValue=string|number|boolean|string[]|TagDateRange|null;
-export interface TagField {optional?:boolean;key:string;type:TagFieldType;label?:string;description?:string;options?:string[];statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
+export interface TagField {optional?:boolean;key:string;type:TagFieldType;label?:string;description?:string;options?:string[];multiple?:boolean;statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
 export interface TagInfo { path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];propertiesCollapsed?:boolean;overrides:(Partial<TagField>&{key:string})[] }
 export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
@@ -57,6 +59,7 @@ export type Request =
   | { kind:'tagCards';tag:string;text?:string;offset?:number }
   | { kind:'createTag';tag:string }
   | { kind:'saveTag';path:string;expected:string;fields:TagField[];inherits:string[];createParent?:string;propertiesCollapsed?:boolean }
+  | { kind:'renameTagProperty';path:string;expected:string;key:string;name:string }
   | { kind:'cardProperties';path:string }
   | { kind:'setCardTag';path:string;expected:string;tag:string;add:boolean;create?:boolean }
   | { kind:'reorderCardTags';path:string;expected:string;tags:string[] }

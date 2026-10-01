@@ -1,6 +1,6 @@
 import {basename} from 'node:path';
 import {splitNote,revision,readCard} from './format';
-import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag,cardTagFields} from '../tags';
+import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag,cardTagFields,validReferencePath} from '../tags';
 import type {TagInfo,TagField,TagValue} from '../shared';
 import {ui} from '../text/ui';
 export function readTag(path:string,raw:string):TagInfo {
@@ -58,4 +58,19 @@ export function reorderTagProperties(raw:string,path:string,tags:TagInfo[],tag:s
   const items=front.contents as import('yaml').YAMLMap,byKey=new Map(items.items.map(item=>[String(item.key),item]));
   let i=0;items.items=items.items.map(item=>allowed.has(String(item.key))?byKey.get(keys[i++])!:item);
   front.set('card-id',readCard(path,raw).id);return `---\n${front.toString()}---\n${body}`;
+}
+
+// References are readable workspace-relative paths. Only typed reference values/defaults are rewritten.
+export function remapTagReferences(raw:string,path:string,tags:TagInfo[],remap:(path:string)=>string) {
+  const {front,body}=splitNote(raw);let changed=false;
+  const rewrite=(value:unknown)=>{if(typeof value!=='string'||!validReferencePath(value))return value;const next=remap(value);changed ||= next!==value;return next;};
+  if(path.endsWith('.tag')){
+    const tag=readTag(path,raw),resolved=resolveTag(tags,tag.tag).fields;
+    for(const key of ['fields','overrides']){const fields=front.toJSON()?.[key] as TagField[]|undefined;if(!fields)continue;
+      for(let i=0;i<fields.length;i++)if((fields[i].type??resolved.find(f=>f.key===fields[i].key)?.type)==='link'&&fields[i].default!==undefined){const value=rewrite(fields[i].default);if(value!==fields[i].default)front.setIn([key,i,'default'],value);}
+    }
+  }else{
+    for(const field of tags.flatMap(tag=>resolveTag(tags,tag.tag).fields))if(field.type==='link'&&front.has(field.propertyKey)){const before=front.get(field.propertyKey),after=rewrite(before);if(after!==before)front.set(field.propertyKey,after);}
+  }
+  return changed?`---\n${front.toString()}---\n${body}`:raw;
 }

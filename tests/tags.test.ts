@@ -113,3 +113,46 @@ test('default and optional tag properties are file-backed templates, with isolat
   assert.throws(()=>validateFields([{key:'invalid',type:'text',optional:'yes'}]),/Check property/);
   w.close();w=await Workspace.open(root,cache);assert.equal(props('Old').properties['project/budget'],14);assert.equal(tag().fields.find(f=>f.key==='location')!.optional,true);assert.equal(props('New').properties['project/location'],undefined);
 });
+
+test('property rename is file based, collision-safe, inherited and undoable; seven types preserve portable values',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-property-rename-')),root=join(dir,'notes');await fs.mkdir(root);let w=await Workspace.open(root,join(dir,'cache'));
+  t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.createTag('project');await w.createTag('task');
+  let project=w.snapshot().tags!.find(t=>t.tag==='project')!,task=w.snapshot().tags!.find(t=>t.tag==='task')!;
+  await w.saveTag(project.path,project.revision,[{key:'Location',type:'text',default:'Taipei'},{key:'Topics',type:'select',multiple:true,options:['Red','Blue'],default:['Red','Blue']}],[]);
+  await w.saveTag(task.path,task.revision,[],['project']);task=w.snapshot().tags!.find(t=>t.tag==='task')!;
+  await w.write([{path:task.path,content:(await w.read(task.path)).replace('fields: []','fields: []\noverrides:\n  - key: Location\n    default: Kyoto'),expected:task.revision}]);
+  await w.setCardTag('Notes/A.md',(await w.card('Notes/A.md')).revision,'task',true);
+  assert.equal(w.cardProperties('Notes/A.md').properties['project/Location'],'Kyoto');
+  const before=await w.read('Notes/A.md'),beforeTag=await w.read(project.path),beforeChild=await w.read(task.path);project=w.snapshot().tags!.find(t=>t.tag==='project')!;
+  const undo=new UndoHistory(),renamed=await w.renameTagProperty(project.path,project.revision,'Location','Place');undo.record('Rename property',renamed.edits);
+  assert.equal(w.cardProperties('Notes/A.md').properties['project/Place'],'Kyoto');assert.equal(w.cardProperties('Notes/A.md').properties['project/Location'],undefined);
+  assert.ok(w.snapshot().tags!.find(t=>t.tag==='project')!.fields.some(f=>f.key==='Place'&&!f.label));assert.equal(w.snapshot().tags!.find(t=>t.tag==='task')!.overrides[0].key,'Place');
+  assert.equal(resolveTag(w.snapshot().tags!,'task').warnings.length,0);assert.equal(w.queryCards({text:'Kyoto'})[0]?.path,'Notes/A.md');
+  await undo.travel(false,changes=>w.write(changes));assert.equal(await w.read('Notes/A.md'),before);assert.equal(await w.read(project.path),beforeTag);assert.equal(await w.read(task.path),beforeChild);
+  await undo.travel(true,changes=>w.write(changes));project=w.snapshot().tags!.find(t=>t.tag==='project')!;
+  const stable=await w.read(project.path);await assert.rejects(()=>w.renameTagProperty(project.path,project.revision,'Place','Topics'),/already exists/);assert.equal(await w.read(project.path),stable);
+  const withCollision=(await w.read('Notes/A.md')).replace('---\n','---\nproject/Destination: preserved\n');await w.write([{path:'Notes/A.md',content:withCollision,expected:(await w.card('Notes/A.md')).revision}]);
+  await assert.rejects(()=>w.renameTagProperty(project.path,project.revision,'Place','Destination'),/already exists/);assert.equal(await w.read(project.path),stable);assert.equal(await w.read('Notes/A.md'),withCollision);
+  await assert.rejects(()=>w.renameTagProperty(project.path,'stale','Place','Elsewhere'),/External changes/);
+  w.close();w=await Workspace.open(root,join(dir,'fresh-cache'));assert.equal(resolveTag(w.snapshot().tags!,'task').warnings.length,0);assert.equal(w.cardProperties('Notes/A.md').properties['project/Place'],'Kyoto');assert.deepEqual(w.cardProperties('Notes/A.md').properties['project/Topics'],['Red','Blue']);assert.equal(w.queryCards({text:'Kyoto'})[0]?.path,'Notes/A.md');
+  validateFields([{key:'Legacy',type:'multi-select',options:['A'],default:['A']},{key:'Website',type:'url',default:'https://example.com'}]);
+});
+
+test('readable property references survive card and whiteboard renames, undo and a fresh index',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-property-links-')),root=join(dir,'notes');await fs.mkdir(root);let w=await Workspace.open(root,join(dir,'cache'));
+  t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);await w.create('Notes','B',400,0);await w.createTag('project');let tag=w.snapshot().tags![0];
+  await w.saveTag(tag.path,tag.revision,[{key:'Related',type:'link',default:'Notes/B.md'},{key:'Board',type:'link',default:'Notes/Notes.whiteboard'}],[]);
+  await w.setCardTag('Notes/A.md',(await w.card('Notes/A.md')).revision,'project',true);
+  const target=(await w.card('Notes/B.md')).id,source=(await w.card('Notes/A.md')).id;
+  assert.equal(w.query('backlinks:'+target).length,1);assert.equal(w.queryCards({backlinksTo:target}).length,1);assert.deepEqual(w.boardMentions('Notes/Notes.whiteboard').map(r=>({...r})),[{from:source,to:target}]);
+  const undo=new UndoHistory(),rename=await w.renameCard('Notes/B.md','Renamed',(await w.card('Notes/B.md')).revision);undo.record('Rename card',rename.edits);
+  assert.equal(w.cardProperties('Notes/A.md').properties['project/Related'],'Notes/Renamed.md');assert.equal(w.snapshot().tags![0].fields[0].default,'Notes/Renamed.md');
+  await undo.travel(false,changes=>w.write(changes));assert.equal(w.cardProperties('Notes/A.md').properties['project/Related'],'Notes/B.md');await undo.travel(true,changes=>w.write(changes));
+  const board=w.snapshot().boards.find(b=>b.folder==='Notes')!;await w.renameBoard('Notes','Renamed board',board.revision);
+  assert.equal(w.cardProperties('Renamed board/A.md').properties['project/Related'],'Renamed board/Renamed.md');assert.equal(w.cardProperties('Renamed board/A.md').properties['project/Board'],'Renamed board/Renamed board.whiteboard');
+  tag=w.snapshot().tags![0];assert.equal(tag.fields[1].default,'Renamed board/Renamed board.whiteboard');
+  w.close();w=await Workspace.open(root,join(dir,'new-cache'));assert.equal(w.queryCards({backlinksTo:target})[0]?.path,'Renamed board/A.md');assert.equal(w.cardProperties('Renamed board/A.md').properties['project/Board'],'Renamed board/Renamed board.whiteboard');
+  assert.throws(()=>validateTagValue(tag.fields[0],'../outside.md'),/Invalid value/);
+});

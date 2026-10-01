@@ -1,5 +1,5 @@
-import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags} from './tags';
-import {validTag,tagsFrom,validateFields,resolveTag} from '../tags';
+import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags,remapTagReferences} from './tags';
+import {validTag,tagsFrom,validateFields,resolveTag,validReferencePath} from '../tags';
 import type {TagField,TagValue,TagSearchResult,WorkspaceSearchResult} from '../shared';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
@@ -7,6 +7,7 @@ import { promises as fs } from 'node:fs';
 import { join, resolve, relative, basename, dirname, sep, extname, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { isScalar } from 'yaml';
 import { marked } from 'marked';
 import { defaultPreferences, readPreferences, writePreferences } from './preferences';
 import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
@@ -39,8 +40,8 @@ export class Workspace {
   private pathMoves:{from:string;to:string}[]=[];
   constructor(readonly root: string, readonly cache: string) {
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 5) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=5;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 6) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=6;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT);
@@ -214,7 +215,7 @@ export class Workspace {
         this.removeIndex(path);
         this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'');
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
-        for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'&&/^card:[\w-]{1,128}$/.test(value))this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,value.slice(5));
+        for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,target);}
         this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
         marked.walkTokens(marked.lexer(card.body), token => {
           if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
@@ -335,6 +336,36 @@ export class Workspace {
     const parent=createParent?await this.newTagChange(createParent):undefined;
     return this.write([...(parent?[parent]:[]),{path,content,expected}]);
   }
+  async renameTagProperty(path:string,expected:string,key:string,name:string) {
+    if(!path.endsWith('.tag'))throw new Error(ui.tags.invalidTag);
+    for(const file of this.issues.keys())if(/\.(md|tag)$/.test(file))throw new Error(ui.errors.renameRefresh(file));
+    validateFields([{key:name,type:'text'}]);
+    const raw=await this.read(path),definition=readTag(path,raw),tags=[...this.tags.values()];
+    if(definition.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+    const warnings=resolveTag(tags,definition.tag).warnings;if(warnings.length)throw new Error(warnings.join('\n'));
+    if(!definition.fields.some(field=>field.key===key))throw new Error(ui.tags.missingField(key));
+    if(name===key&&!definition.fields.find(field=>field.key===key)!.label)return {snapshot:this.snapshot(),edits:[]};
+    const oldKey=definition.tag+'/'+key,newKey=definition.tag+'/'+name,changes:Write[]=[];
+    for(const tag of tags){
+      const resolved=resolveTag(tags,tag.tag),owns=resolved.fields.some(field=>field.propertyKey===oldKey);
+      if(name!==key&&owns&&resolved.fields.some(field=>field.key===name&&field.propertyKey!==oldKey))throw new Error(ui.tags.propertyNameConflict(name));
+      const inherited=resolveTag(tags.map(item=>item===tag?{...item,fields:[],overrides:[]}:item),tag.tag).fields.some(field=>field.propertyKey===oldKey);
+      if(tag.path!==path&&(!inherited||!tag.overrides.some(field=>field.key===key)))continue;
+      const before=await this.read(tag.path);if(revision(before)!==tag.revision)throw new Error(ui.errors.externalEdit(tag.path));
+      const {front,body}=splitNote(before);
+      if(tag.path===path){const index=tag.fields.findIndex(field=>field.key===key);front.setIn(['fields',index,'key'],name);front.deleteIn(['fields',index,'label']);}
+      if(inherited)tag.overrides.forEach((field,index)=>{if(field.key===key){front.setIn(['overrides',index,'key'],name);front.deleteIn(['overrides',index,'label']);}});
+      changes.push({path:tag.path,content:`---\n${front.toString()}---\n${body}`,expected:tag.revision});
+    }
+    if(name!==key)for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
+      const cardPath=String(row.path),before=await this.read(cardPath),{front,body}=splitNote(before);if(!front.has(oldKey))continue;
+      if(revision(before)!==row.revision)throw new Error(ui.errors.externalEdit(cardPath));
+      if(front.has(newKey))throw new Error(ui.tags.propertyNameConflict(name));
+      const map=front.contents as import('yaml').YAMLMap,pair=map.items.find(pair=>String(pair.key)===oldKey)!;if(isScalar(pair.key))pair.key.value=newKey;else pair.key=front.createNode(newKey);
+      changes.push({path:cardPath,content:`---\n${front.toString()}---\n${body}`,expected:String(row.revision)});
+    }
+    return this.write(changes);
+  }
   async setCardTag(path:string,expected:string,tag:string,add:boolean,create=false) {
     if(!path.endsWith('.md')||typeof add!=='boolean'||typeof create!=='boolean'||create&&!add)throw new Error(ui.tags.invalidTag);
     const definition=create?await this.newTagChange(tag):undefined,tags=[...this.tags.values()];
@@ -418,6 +449,9 @@ export class Workspace {
       const content=source.path===this.boardPath('')||remaining.length?writeBoard({...source,cards:remaining,edges:source.edges.filter(e=>ids.has(e.from)&&ids.has(e.to))}):null;
       changes.push({path:source.path,content,expected:source.revision});
     }
+    const remap=(value:string)=>moving.has(value)?join(folder,value):value,tags=[...this.tags.values()];
+    for(const change of changes)if(change.content!==null&&change.path.endsWith('.md'))change.content=remapTagReferences(change.content,change.path,tags,remap);
+    for(const info of [...this.snapshot().cards,...tags]){if(moving.has(info.path))continue;const before=await this.read(info.path),after=remapTagReferences(before,info.path,tags,remap);if(after!==before)changes.push({path:info.path,content:after,expected:info.revision});}
     const originals=await Promise.all(changes.filter(c=>c.expected!==null).map(async c=>({path:c.path,content:await this.read(c.path)})));
     await fs.writeFile(join(this.cache,'migration-'+randomUUID()+'.json'),JSON.stringify({folder,originals},null,2),{flag:'wx'});
     await this.write(changes);
@@ -499,8 +533,12 @@ export class Workspace {
       let body=card.body;
       marked.walkTokens(marked.lexer(body),token=>{if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}});
       body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(all,lead,href)=>{const next=rewrite(href);return next===href?all:lead+'<'+next+'>';});
-      const after=body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before;
+      const after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remapFilePath(value,from,to));
       if(after!==before)edits.push({path,before,after});
+    }
+    for(const tag of this.tags.values()){
+      const before=await this.read(tag.path);if(revision(before)!==tag.revision)throw new Error(ui.errors.renameRefresh(tag.path));
+      const after=remapTagReferences(before,tag.path,[...this.tags.values()],value=>remapFilePath(value,from,to));if(after!==before)edits.push({path:tag.path,before,after});
     }
     for(const b of this.boards.values()){
       const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error(ui.errors.renameRefresh(b.path));
@@ -536,7 +574,10 @@ export class Workspace {
     if(names.some(name=>name.toLocaleLowerCase()===(stem+'.md').toLocaleLowerCase()))throw new Error(ui.errors.fileNameConflict);
     // Reuse the journaled transaction so rename is recoverable and one undo action.
     // Persist a legacy card's existing provisional identity before its path changes.
-    return this.write([{path,content:null,expected},{path:next,content:editCard(raw,card,card.body),expected:null}]);
+    const remap=(value:string)=>value===path?next:value,tags=[...this.tags.values()];
+    const changes:Write[]=[{path,content:null,expected},{path:next,content:remapTagReferences(editCard(raw,card,card.body),path,tags,remap),expected:null}];
+    for(const info of [...this.snapshot().cards,...tags]){if(info.path===path)continue;const before=await this.read(info.path),after=remapTagReferences(before,info.path,tags,remap);if(after!==before)changes.push({path:info.path,content:after,expected:info.revision});}
+    return this.write(changes);
   }
   async saveCard(path: string, body: string, expected: string) {
     const raw = await this.read(path), card = readCard(path,raw);
@@ -577,12 +618,12 @@ export class Workspace {
   boardMentions(path:string) {
     const board=this.boards.get(path);if(!board)return [];
     const ids=[...new Set(board.cards.filter(p=>!p.folder).map(p=>p.cardId))];
-    return this.db.prepare(`SELECT DISTINCT c.id AS "from", l.target AS "to"
-      FROM json_each(?) selected JOIN cards c ON c.id=selected.value JOIN links l ON l.source=c.path
-      WHERE l.target IN (SELECT value FROM json_each(?)) AND c.id<>l.target`).all(JSON.stringify(ids),JSON.stringify(ids));
+    return this.db.prepare(`SELECT DISTINCT c.id AS "from", target.id AS "to"
+      FROM json_each(?) selected JOIN cards c ON c.id=selected.value JOIN links l ON l.source=c.path JOIN cards target ON l.target=target.id OR (substr(l.target,1,5)='file:' AND target.path=substr(l.target,6))
+      WHERE target.id IN (SELECT value FROM json_each(?)) AND c.id<>target.id`).all(JSON.stringify(ids),JSON.stringify(ids));
   }
   query(text: string) {
-    if (text.startsWith('backlinks:')) return this.db.prepare('SELECT DISTINCT source AS path FROM links WHERE target=?').all(text.slice(10));
+    if (text.startsWith('backlinks:')) return this.db.prepare("SELECT DISTINCT source AS path FROM links WHERE target=? OR target='file:'||(SELECT path FROM cards WHERE id=?)").all(text.slice(10),text.slice(10));
     return this.queryCards({text}).map(({path})=>({path}));
   }
   queryTags(text:string,exclude:string[]=[],limit=20):TagSearchResult[] {
@@ -607,7 +648,7 @@ export class Workspace {
       if(query.recursive){where.push("(c.folder=? OR substr(c.folder,1,length(?))=?)");const prefix=path?path+'/':'';args.push(path,prefix,prefix);}
       else {where.push('c.folder=?');args.push(path);}
     }
-    if(backlinksTo!==undefined){where.push('c.path IN (SELECT source FROM links WHERE target=?)');args.push(backlinksTo);}
+    if(backlinksTo!==undefined){where.push("c.path IN (SELECT source FROM links WHERE target=? OR target='file:'||(SELECT path FROM cards WHERE id=?))");args.push(backlinksTo,backlinksTo);}
     if(tag!==undefined&&query.tagChildren){where.push("c.path IN (SELECT p.path FROM properties p,json_each(p.value) v WHERE p.field='tags' AND v.type='text' AND (v.value=? OR substr(v.value,1,length(?))=?))");args.push(tag,tag+'/',tag+'/');}
     const filters=[...properties,...(tag!==undefined&&!query.tagChildren?[{field:'tags',op:'contains' as const,value:tag}]:[])];
     for(const filter of filters){
