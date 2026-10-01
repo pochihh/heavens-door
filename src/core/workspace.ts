@@ -328,9 +328,9 @@ export class Workspace {
     const path='tags/'+tag+'.tag';await fs.mkdir(dirname(await this.path(path)),{recursive:true});
     return {path,content:`---\ntag: ${JSON.stringify(tag)}\nfields: []\ninherits: []\n---\n`,expected:null};
   }
-  async saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string) {
+  async saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string,propertiesCollapsed?:boolean) {
     if(!path.endsWith('.tag')||!Array.isArray(inherits)||createParent!==undefined&&(!validTag(createParent)||!inherits.includes(createParent)))throw new Error(ui.tags.invalidTag);
-    const content=editTag(await this.read(path),fields,inherits),current=readTag(path,content);
+    const content=editTag(await this.read(path),fields,inherits,propertiesCollapsed),current=readTag(path,content);
     if(createParent===current.tag)throw new Error(ui.tags.cycle(current.tag));
     const parent=createParent?await this.newTagChange(createParent):undefined;
     return this.write([...(parent?[parent]:[]),{path,content,expected}]);

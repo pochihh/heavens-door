@@ -35,7 +35,7 @@ export const STATUS_GROUPS=['todo','inProgress','done'] as const;
 export type TagDateRange={start:string;end:string};
 export type TagValue=string|number|boolean|string[]|TagDateRange|null;
 export interface TagField {optional?:boolean;key:string;type:TagFieldType;label?:string;description?:string;options?:string[];statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
-export interface TagInfo { path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];overrides:(Partial<TagField>&{key:string})[] }
+export interface TagInfo { path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];propertiesCollapsed?:boolean;overrides:(Partial<TagField>&{key:string})[] }
 export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
@@ -56,7 +56,7 @@ export type Request =
   | { kind: 'migrateRoot' }
   | { kind:'tagCards';tag:string;text?:string;offset?:number }
   | { kind:'createTag';tag:string }
-  | { kind:'saveTag';path:string;expected:string;fields:TagField[];inherits:string[];createParent?:string }
+  | { kind:'saveTag';path:string;expected:string;fields:TagField[];inherits:string[];createParent?:string;propertiesCollapsed?:boolean }
   | { kind:'cardProperties';path:string }
   | { kind:'setCardTag';path:string;expected:string;tag:string;add:boolean;create?:boolean }
   | { kind:'reorderCardTags';path:string;expected:string;tags:string[] }

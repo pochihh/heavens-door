@@ -6,13 +6,15 @@ import {ui} from '../text/ui';
 export function readTag(path:string,raw:string):TagInfo {
   const {front}=splitNote(raw),data=front.toJSON()??{},tag=data.tag??basename(path,'.tag');
   if(!validTag(tag)||data.inherits!==undefined&&(!Array.isArray(data.inherits)||data.inherits.length>32||!data.inherits.every(validTag)))throw new Error(ui.tags.invalidTag);
+  if(data.propertiesCollapsed!==undefined&&typeof data.propertiesCollapsed!=='boolean')throw new Error(ui.errors.invalidCollapsedState);
   const fields=data.fields??[];validateFields(fields);
   const overrides=data.overrides??[];
   if(!Array.isArray(overrides)||overrides.length>100||overrides.some(o=>!o||typeof o!=='object'||typeof o.key!=='string'))throw new Error(ui.tags.invalidFields);
-  return {path,name:tag.split('/').at(-1)!,tag,revision:revision(raw),fields,inherits:data.inherits??[],overrides};
+  return {path,name:tag.split('/').at(-1)!,tag,revision:revision(raw),fields,inherits:data.inherits??[],propertiesCollapsed:data.propertiesCollapsed??false,overrides};
 }
-export function editTag(raw:string,fields:TagField[],inherits:string[]) {
+export function editTag(raw:string,fields:TagField[],inherits:string[],propertiesCollapsed?:boolean) {
   const {front,body}=splitNote(raw);front.set('fields',fields);front.set('inherits',inherits);
+  if(propertiesCollapsed!==undefined){if(typeof propertiesCollapsed!=='boolean')throw new Error(ui.errors.invalidCollapsedState);front.set('propertiesCollapsed',propertiesCollapsed);}
   return `---\n${front.toString()}---\n${body}`;
 }
 function schema(tags:TagInfo[],tag:string){const resolved=resolveTag(tags,tag);if(resolved.warnings.length)throw new Error(resolved.warnings.join('\n'));return resolved.fields;}

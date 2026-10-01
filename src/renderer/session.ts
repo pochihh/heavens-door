@@ -152,8 +152,8 @@ export class Session {
   createTag(tag:string) {
     return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'createTag',tag});this.accept(result,ui.tags.newTag);return result.snapshot.tags!.find(t=>t.tag===tag)!;});
   }
-  saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string) {
-    return this.run(async()=>{await this.flush();this.accept(await this.bridge.request<Mutation>({kind:'saveTag',path,expected,fields,inherits,createParent}),ui.tags.save);});
+  saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string,propertiesCollapsed?:boolean) {
+    return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'saveTag',path,expected,fields,inherits,createParent,propertiesCollapsed});this.accept(result,ui.tags.save);return result.snapshot.tags!.find(t=>t.path===path)!;});
   }
   setCardTag(path:string,expected:string,tag:string,add:boolean,create=false) {return this.tagEdit(path,expected,next=>({kind:'setCardTag',path,expected:next,tag,add,create}),add?ui.tags.add:ui.tags.remove);}
   reorderCardTags(path:string,expected:string,tags:string[]){return this.tagEdit(path,expected,next=>({kind:'reorderCardTags',path,expected:next,tags}),ui.tags.reorderTags);}

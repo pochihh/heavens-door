@@ -6,6 +6,7 @@ import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Workspace} from '../src/core/workspace';
+import {readTag} from '../src/core/tags';
 import {Session} from '../src/renderer/session';
 import {TagView,CardTags,NewTag} from '../src/renderer/TagView';
 import {ConfirmationProvider} from '../src/renderer/Confirmation';
@@ -22,7 +23,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     switch(request.kind){
       case 'createTag':return w.createTag(request.tag);
       case 'addTagProperty':return w.addTagProperty(request.path,request.expected,request.tag,request.tagExpected,request.field,request.value);
-      case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits,request.createParent);
+      case 'saveTag':return w.saveTag(request.path,request.expected,request.fields,request.inherits,request.createParent,request.propertiesCollapsed);
       case 'queryTags':return w.queryTags(request.text,request.exclude,request.limit);
       case 'tagCards':return w.tagCards(request.tag,request.text,request.offset);
       case 'cardProperties':return w.cardProperties(request.path);
@@ -40,6 +41,26 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
   const settle=async()=>{await act(async()=>session.run(async()=>undefined));for(let i=0;i<120;i++){await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25));});if(!document.querySelector('.tag-results[aria-busy=true]'))return;}assert.fail('Tag view did not finish loading');};
   try{
     await act(async()=>root.render(<App/>));await settle();
+    const propertiesToggle=()=>document.querySelector<HTMLButtonElement>('.tag-properties-toggle')!;
+    const propertyBody=()=>document.getElementById(propertiesToggle().getAttribute('aria-controls')!)!;
+    const initialTag=await w.read(tag.path),initialCard=await w.read('Notes/A.md');
+    assert.equal(propertyBody().hidden,false);assert.equal(tag.propertiesCollapsed,false);
+    await act(async()=>propertiesToggle().click());await settle();assert.equal(propertyBody().hidden,true);assert.equal(propertiesToggle().getAttribute('aria-expanded'),'false');assert.ok(propertyBody().querySelector('.style-color'));assert.equal(document.querySelector('.tag-views-heading')!.closest('[hidden]'),null);
+    assert.equal(readTag(tag.path,await w.read(tag.path)).propertiesCollapsed,true);assert.equal(await w.read('Notes/A.md'),initialCard);
+    await act(async()=>{await w.scan();session.update({snapshot:w.snapshot()});root.render(<App key="reopened"/>);});await settle();assert.equal(propertyBody().hidden,true);
+    await act(async()=>session.saveTag(tag.path,tag.revision,tag.fields,tag.inherits));await settle();assert.equal(tag.propertiesCollapsed,true);
+    await assert.rejects(()=>w.saveTag(tag.path,'stale',tag.fields,tag.inherits,undefined,false),/External changes/);assert.equal(w.snapshot().tags![0].propertiesCollapsed,true);
+    await assert.rejects(()=>w.saveTag(tag.path,tag.revision,tag.fields,tag.inherits,undefined,'yes' as unknown as boolean),/Invalid collapsed state/);
+    const collapsedTag=await w.read(tag.path);assert.throws(()=>readTag(tag.path,collapsedTag.replace('propertiesCollapsed: true','propertiesCollapsed: wrong')),/Invalid collapsed state/);
+    await act(async()=>propertiesToggle().click());await settle();assert.equal(propertyBody().hidden,false);
+    await act(async()=>session.undo(false));await settle();assert.equal(propertyBody().hidden,true);
+    await act(async()=>session.undo(true));await settle();assert.equal(propertyBody().hidden,false);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.tag-page-properties .property-label')].find(b=>b.textContent==='priority')!.click());
+    const draftLabel=document.querySelector<HTMLInputElement>('.tag-page-properties .tag-definition label>input')!;
+    await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(draftLabel,'Importance');draftLabel.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+    await act(async()=>propertiesToggle().click());await settle();await act(async()=>propertiesToggle().click());await settle();assert.equal(draftLabel.value,'Importance');
+    await act(async()=>document.querySelector<HTMLFormElement>('.tag-page-properties .tag-definition')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();assert.equal(tag.fields.find(f=>f.key==='priority')!.label,'Importance');
+    await act(async()=>session.undo(false));await settle();assert.equal(await w.read('Notes/A.md'),initialCard);assert.deepEqual(tag.fields,readTag(tag.path,initialTag).fields);
     assert.equal(document.querySelector('.tag-results input[aria-label=reviewed]')!.getAttribute('role'),null);
     const select=document.querySelector<HTMLSelectElement>('.tag-results select')!;assert.equal(select.value,'Todo');assert.equal(select.querySelectorAll('optgroup').length,3);
     const dateSwitch=(name:string)=>[...document.querySelectorAll<HTMLInputElement>('.tag-results .tag-date-options input')].find(input=>input.closest('label')!.textContent===name)!;
