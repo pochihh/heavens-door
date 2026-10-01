@@ -147,7 +147,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     const savedField=w.snapshot().tags!.find(t=>t.tag==='project')!.fields.find(f=>f.key==='location')!;assert.equal(savedField.label,'Location');assert.equal('propertyKey' in savedField,false);assert.equal('sourceTag' in savedField,false);assert.equal(await w.read('Notes/A.md'),beforeSchema);
     await act(async()=>document.querySelector<HTMLButtonElement>('.tag-page-properties button[aria-label=Rose]')!.click());await settle();assert.equal(w.snapshot().preferences?.tagColors?.project,'#c9838a');
     assert.equal(document.querySelectorAll('.tag-page-properties .tag-add-property>button').length,1);
-    assert.ok(document.querySelector('[aria-label="Optional"] .tag-add-property'));
+    assert.ok(document.querySelector('.tag-properties-heading .tag-add-property'));
     const groupList=(name:string)=>document.querySelector<HTMLElement>(`[data-sort-group="${name}"]`)!;
     const schemaField=(key:string)=>w.snapshot().tags!.find(t=>t.tag==='project')!.fields.find(f=>f.key===key)!;
     const positionGroups=()=>{
@@ -169,7 +169,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await lift('priority',285);await act(async()=>pointer(document,'pointerup',285));await settle();assert.equal(groupList('default').lastElementChild!.getAttribute('data-file-key'),'project/priority');
     const reordered=await w.read(tag.path);await lift('priority',460);await act(async()=>pointer(document,'pointerup',650));await settle();assert.equal(await w.read(tag.path),reordered);assert.equal(document.querySelector('.sort-placeholder'),null);assert.equal(await w.read('Notes/A.md'),originalCard);
     await act(async()=>session.undo(false));await settle();await act(async()=>session.undo(false));await settle();await act(async()=>session.undo(false));await settle();assert.equal(await w.read(tag.path),originalTag);
-    assert.ok((document.querySelector<HTMLElement>('.tag-title-chip')!.style.backgroundColor).includes('c9838a'));
+    assert.ok((document.querySelector<HTMLElement>('.tag-page-preview')!.style.backgroundColor).includes('c9838a'));
     assert.ok(document.querySelector('.tag-page-properties h1')!.nextElementSibling!.classList.contains('tag-inheritance'));
     const newTagButton=document.querySelector<HTMLButtonElement>('.new-tag button')!,newTagName=document.querySelector<HTMLInputElement>('.new-tag input')!;assert.equal(newTagButton.disabled,false);
     await act(async()=>newTagButton.click());assert.equal(document.activeElement,newTagName);
