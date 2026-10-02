@@ -8,6 +8,8 @@ import {Workspace} from '../src/core/workspace';
 import {queryFields,parseViewBlock,writeViewBlock,newViewBlock,viewBlockRanges,type Rule} from '../src/view-block';
 import {compileView} from '../src/core/view-query';
 import {searchDocument} from '../src/core/search';
+import {Session} from '../src/renderer/session';
+import type {Bridge} from '../src/shared';
 import {UndoHistory} from '../src/renderer/history';
 
 test('file-backed views use exact tags, typed indexed values, pinned merged keys and shared/per-view intersections',async t=>{
@@ -95,4 +97,45 @@ test('view edits honor merge settings, validate every attached destination and u
   await w.setPreferences({query:{mergeProperties:true,caseSensitive:false}});card=await w.card(card.path);const range={start:'2026-10-01',end:'2026-10-03'};await w.setViewProperty(card.path,card.revision,'project/Date',range);props=w.cardProperties(card.path).properties;assert.deepEqual(props['project/Date'],range);assert.deepEqual(props['task/Date'],range);
   card=await w.card(card.path);await w.write([{path:card.path,expected:card.revision,content:'---\n'+stringify({'card-id':card.id,tags:['child'],'project/Status':'Todo'})+'---\n# A\n'}]);card=await w.card(card.path);await w.setViewProperty(card.path,card.revision,'project/Status','Done');props=w.cardProperties(card.path).properties;assert.equal(props['project/Status'],'Done');assert.equal(props['child/Status'],undefined);assert.equal(props['task/status'],undefined);
   const current=await w.read(card.path);card=await w.card(card.path);await assert.rejects(()=>w.setViewProperty(card.path,card.revision,'missing/Status','Todo'),/Unknown property/);assert.equal(await w.read(card.path),current);
+});
+
+test('Kanban order is lazy, reconciles query pages and new arrivals, and moves missing properties atomically',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-order-')),root=join(dir,'notes');await fs.mkdir(root);await fs.mkdir(join(root,'Notes'));
+  const w=await Workspace.open(root,join(dir,'cache'));t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  await w.createTag('project');let tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:[],done:['Done','__proto__','constructor']}},{key:'Unrelated',type:'number',default:123}],[]);
+  const put=async(name:string,id:string,props:Record<string,unknown>={})=>fs.writeFile(join(root,'Notes',name+'.md'),'---\n'+stringify({'card-id':id,...props})+'---\n# '+name+'\n\nBody.\n');
+  await Promise.all(Array.from({length:105},(_,i)=>put(String(i).padStart(3,'0'),'card-'+i,{tags:['project'],'project/Status':'Todo'})));
+  await put('Empty','empty');await put('Attached','attached',{tags:['project']});
+  const block=newViewBlock();block.query.where={field:'file.folder',op:'under',value:'Notes'};block.views=[{id:'board',type:'kanban',name:'Board',groupBy:'project/Status'}];
+  let source=writeViewBlock('',block);await fs.writeFile(join(root,'Query.md'),'---\ncard-id: query\n---\n# Query\n\n```view-block\n'+source+'```\n');await w.scan();
+  const owner=async()=>({path:'Query.md',expected:(await w.card('Query.md')).revision,block:0,source});
+  const card=async(path:string)=>({path,expected:(await w.card(path)).revision});
+  const refresh=async()=>{source=viewBlockRanges((await w.card('Query.md')).body)[0].source;};
+  const ids=(value:string)=>w.viewCards(source,'board').columns!.find(c=>c.value===value)?.ids??[];
+  const original=await w.read('Query.md');let page=w.viewCards(source,'board');assert.equal(page.rows.length,102);assert.equal(page.nextOffset,100);assert.equal(w.viewCards(source,'board',100).rows.length,5);assert.equal(await w.read('Query.md'),original);assert.equal(parseViewBlock(source).views[0].order,undefined);
+  await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/104.md'),from:'Todo',to:'Todo',before:'card-0'});await refresh();
+  assert.equal(ids('Todo')[0],'card-104');assert.equal(parseViewBlock(source).views[0].order!.Todo.length,105);assert.equal(parseViewBlock(source).views[0].order![''],undefined);
+  await put('000 new','new',{tags:['project'],'project/Status':'Todo'});await w.refresh('Notes/000 new.md');page=w.viewCards(source,'board',100);assert.equal(page.columns!.find(c=>c.value==='Todo')!.ids.at(-1),'new');assert.ok(!parseViewBlock(source).views[0].order!.Todo.includes('new'));
+  const before=await w.read('Query.md');await w.setViewProperty('Notes/002.md',(await w.card('Notes/002.md')).revision,'project/Status','Done');assert.ok(!ids('Todo').includes('card-2'));assert.equal(await w.read('Query.md'),before,'Refresh does not prune or rewrite the order');await w.setViewProperty('Notes/002.md',(await w.card('Notes/002.md')).revision,'project/Status','Todo');assert.equal(ids('Todo')[3],'card-2');
+  const raw=await w.read('Notes/Empty.md'),undo=new UndoHistory();
+  const mutation=await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Empty.md'),from:'',to:'Done'});undo.record('Move',mutation.edits);await refresh();
+  assert.equal(mutation.edits.length,2);let props=w.cardProperties('Notes/Empty.md').properties;assert.deepEqual(props.tags,['project']);assert.equal(props['project/Status'],'Done');assert.equal(props['project/Unrelated'],undefined);assert.deepEqual(ids('Done'),['empty']);
+  await undo.travel(false,changes=>w.write(changes));await refresh();assert.equal(await w.read('Notes/Empty.md'),raw);assert.equal(await w.read('Query.md'),before);
+  await undo.travel(true,changes=>w.write(changes));await refresh();assert.equal(w.cardProperties('Notes/Empty.md').properties['project/Status'],'Done');
+  await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Attached.md'),from:'',to:'Todo',before:'card-0'});await refresh();props=w.cardProperties('Notes/Attached.md').properties;assert.equal(props['project/Status'],'Todo');assert.equal(props['project/Unrelated'],undefined);assert.ok(parseViewBlock(source).views[0].order!.Todo.includes('new'),'Reordering this column now records its new arrivals');
+  const snapshot=await w.read('Query.md'),empty=await w.read('Notes/Empty.md');
+  await assert.rejects(()=>w.moveViewCard({owner:{path:'Query.md',expected:'stale',block:0,source},view:'board',card:{path:'Notes/Empty.md',expected:'stale'},from:'Done',to:'Todo'}),/External changes/);assert.equal(await w.read('Query.md'),snapshot);assert.equal(await w.read('Notes/Empty.md'),empty);
+  await assert.rejects(async()=>w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Empty.md'),from:'Done',to:'Invalid'}),/Invalid value/);assert.equal(await w.read('Query.md'),snapshot);
+  tag=w.snapshot().tags![0];const legacy=await w.moveViewCard({owner:{path:tag.path,expected:tag.revision,block:-1,source},view:'board',card:await card('Notes/Empty.md'),from:'Done',to:'Todo',before:'card-0'});assert.equal(legacy.edits.length,2);assert.equal(viewBlockRanges(w.snapshot().tags![0].body!).length,1);
+  const filtered=parseViewBlock(source);filtered.views[0].filter={field:'file.title',op:'neq',value:'000'};const filteredSource=writeViewBlock(source,filtered);assert.ok(!w.viewCards(filteredSource,'board').columns!.find(c=>c.value==='Todo')!.ids.includes('card-0'));assert.ok(ids('Todo').includes('card-0'));
+  // The block's own card can move too, even with pending body edits, without duplicate writes or losing its draft.
+  const own=parseViewBlock(source);delete own.query.where;source=writeViewBlock(source,own);const ownCard=await w.card('Query.md');await w.saveCard(ownCard.path,'# Query\n\n```view-block\n'+source+'```\n',ownCard.revision);
+  const session=new Session({request:async request=>{switch(request.kind){case 'card':return w.card(request.path);case 'saveCard':return w.saveCard(request.path,request.body,request.expected);case 'moveViewCard':return w.moveViewCard(request.move);case 'write':return w.write(request.changes);default:throw new Error(request.kind);}}} as Bridge);
+  session.state.snapshot={...w.snapshot(),historyAvailable:false};await session.select('Query.md');session.edit(session.state.draft!.body+'\nPending text.\n');
+  await session.moveViewCard({owner:await owner(),view:'board',card:await card('Query.md'),from:'',to:'Done'});assert.match(session.state.draft!.body,/Pending text/);assert.equal(session.state.draft!.dirty,false);assert.equal(w.cardProperties('Query.md').properties['project/Status'],'Done');assert.equal(session.state.draft!.body,(await w.card('Query.md')).body);
+  await session.undo();assert.equal(w.cardProperties('Query.md').properties['project/Status'],undefined);assert.match(session.state.draft!.body,/Pending text/);session.dispose();
+  await refresh();const emptyColumn=w.cardProperties('Notes/Empty.md').properties['project/Status'] as string;
+  await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Empty.md'),from:emptyColumn,to:'__proto__'});await refresh();assert.deepEqual(ids('__proto__'),['empty']);assert.ok(Object.hasOwn(parseViewBlock(source).views[0].order!,'__proto__'));
+  await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Empty.md'),from:'__proto__',to:'constructor'});await refresh();assert.deepEqual(ids('constructor'),['empty']);
+  const started=performance.now();for(let i=0;i<20;i++)w.viewCards(source,'board');t.diagnostic(`Indexed Kanban query, ${w.viewCards(source,'board').total} cards: ${((performance.now()-started)/20).toFixed(2)} ms average`);
 });

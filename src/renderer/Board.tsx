@@ -47,7 +47,7 @@ const Preview = memo(function Preview({ afterTitle,card, onOpen, cache, onReady,
   }, [card.path, card.revision, key, cache, collapsed]);
   const summary=useMemo(()=>collapsed?titlePreview(card):'',[collapsed,card.title,card.titleMarkdown,card.path]);
   useLayoutEffect(()=>{if(ready||collapsed)onReady();},[html,ready,collapsed,onReady]);
-  return <TitleContent afterTitle={collapsed?undefined:afterTitle} data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
+  return <TitleContent path={card.path} afterTitle={collapsed?undefined:afterTitle} data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href');
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
   }} html={collapsed?summary:html||preview('',card.path)} />;

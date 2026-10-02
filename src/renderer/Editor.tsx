@@ -21,7 +21,7 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
   const [initialContent]=useState(()=>withCardTitle(body));
   const [linkQuery,setLinkQuery]=useState('');
   const [slot]=useState(titleSlot),hasMetadata=!!afterTitle,metadataVisible=useRef(hasMetadata);metadataVisible.current=hasMetadata;
-  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(ViewBlockNode)),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
+  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(props=><ViewBlockNode {...props} path={path}/>)),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
   const editor=useEditor({
     extensions:configuredExtensions,
     content:initialContent,contentType:'markdown',editable:!blocked,
@@ -40,7 +40,7 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
     const position=focusPoint ? editor.view.posAtCoords({left:focusPoint.x,top:focusPoint.y})?.pos : undefined;
     editor.commands.focus(position ?? (focusPoint ? 'end' : 'start'),{scrollIntoView:false});
   },[editor,autofocus,blocked,focusPoint]);
-  if (blocked) return <div className="editor-body"><p className="notice">{ui.editor.unsupportedMarkdown}</p><TitleContent className="prose" html={preview(body,path)} afterTitle={afterTitle}/></div>;
+  if (blocked) return <div className="editor-body"><p className="notice">{ui.editor.unsupportedMarkdown}</p><TitleContent path={path} className="prose" html={preview(body,path)} afterTitle={afterTitle}/></div>;
   if (!editor) return null;
   return <>
     <div className="editor-tools" aria-label={ui.editor.formatting}>

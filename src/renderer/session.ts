@@ -1,3 +1,4 @@
+import {replaceViewSource,viewBlockRanges} from '../view-block';
 import { ui } from '../text/ui';
 import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot, Deletion, TagField, TagValue } from '../shared';
 import { UndoHistory } from './history';
@@ -18,6 +19,8 @@ interface State {
 }
 export class Session {
   state: State = {snapshot:null,draft:null,status:ui.status.ready,error:'',checkpoints:[],revision:0};
+  viewTabs=new Map<string,string>();
+  viewScrolls=new Map<string,{left:number;top:number}>();
   tagExpansion=new Map<string,{active?:string;last?:string}>();
   undoHistory = new UndoHistory();
   private listeners = new Set<() => void>();
@@ -84,7 +87,7 @@ export class Session {
       await this.flush();
       this.update({status:ui.status.openingWorkspace,error:''});
       const snapshot = await (registeredRoot ? this.bridge.openWorkspace(registeredRoot) : demo ? this.bridge.demo() : this.bridge.chooseWorkspace());
-      if (snapshot) { this.dispose(); this.undoHistory.clear(); this.update({snapshot,draft:null,checkpoints:[]}); }
+      if (snapshot) { this.dispose(); this.viewTabs.clear(); this.viewScrolls.clear(); this.undoHistory.clear(); this.update({snapshot,draft:null,checkpoints:[]}); }
       this.update({status:ui.status.savedLocally});
     });
   }
@@ -161,6 +164,19 @@ export class Session {
   reorderCardTags(path:string,expected:string,tags:string[]){return this.tagEdit(path,expected,next=>({kind:'reorderCardTags',path,expected:next,tags}),ui.tags.reorderTags);}
   reorderTagProperties(path:string,expected:string,tag:string,keys:string[]){return this.tagEdit(path,expected,next=>({kind:'reorderTagProperties',path,expected:next,tag,keys}),ui.tags.reorder);}
   addTagProperty(path:string,expected:string,tag:string,tagExpected:string,field:TagField,value:TagValue){return this.tagEdit(path,expected,next=>({kind:'addTagProperty',path,expected:next,tag,tagExpected,field,value}),ui.tags.addField);}
+  moveViewCard(move:import('../shared').ViewCardMove){return this.run(async()=>{
+    const info=(path:string)=>this.state.snapshot?.cards.find(c=>c.path===path)??this.state.snapshot?.tags?.find(t=>t.path===path);
+    for(const item of [move.owner,move.card])if(info(item.path)?.revision!==item.expected)throw new Error(ui.errors.externalEdit(item.path));
+    await this.flush();
+    const result=await this.bridge.request<Mutation>({kind:'moveViewCard',move:{...move,owner:{...move.owner,expected:info(move.owner.path)!.revision},card:{...move.card,expected:info(move.card.path)!.revision}}});
+    this.accept(result,ui.views.reorder);
+    const draft=this.state.draft;
+    if(draft){const card=info(draft.card.path);if(card){let body=draft.body;
+      if(draft.card.path===move.owner.path){const after=result.edits.find(e=>e.path===move.owner.path)!.after!,next=viewBlockRanges(after)[move.owner.block].source;body=replaceViewSource(body,move.owner.block,move.owner.source,next);}
+      this.update({draft:{...draft,body,card:{...draft.card,...card,body:draft.dirty?draft.card.body:body}}});
+    }}
+    return result;
+  });}
   setViewProperty(path:string,expected:string,key:string,value:TagValue){return this.tagEdit(path,expected,next=>({kind:'setViewProperty',path,expected:next,key,value}),ui.tags.properties);}
   setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {return this.tagEdit(path,expected,next=>({kind:'setTagProperty',path,expected:next,tag,key,value}),ui.tags.properties);}
   private tagEdit(path:string,expected:string,request:(next:string)=>Extract<import('../shared').Request,{kind:'setViewProperty'|'addTagProperty'|'setCardTag'|'setTagProperty'|'reorderTagProperties'|'reorderCardTags'}>,label:string) {

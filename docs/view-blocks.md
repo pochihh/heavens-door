@@ -4,7 +4,7 @@ View blocks work in Markdown cards and the Markdown body of `.tag` files. They s
 
 ## Use in the app
 
-In a card, show formatting controls and choose **Add view block** (database icon). In a tag page, choose **Add view block** below the existing views. This explicitly switches that tag page to saved blocks; old tag pages retain their existing property editing and Kanban behavior until a block is added. The tag schema remains in frontmatter, and view blocks live in its ordinary Markdown body.
+In a card, show formatting controls and choose **Add view block** (database icon). In a tag page, choose **Add view block** below the existing views. This explicitly switches that tag page to saved blocks; old tag pages retain their existing property editing and Kanban behavior until a block is added or a Kanban card is explicitly reordered. That first reorder saves equivalent views in a block. The tag schema remains in frontmatter, and view blocks live in its ordinary Markdown body.
 
 The **Query** row controls all views. **Filter**, **Sort** and **View options** apply to the selected view. Use + to add another view, including another view of the same layout. View options supports naming, layout, visible properties, Kanban grouping, duplication, removing a view and editing the YAML. Removing a view/block never removes source cards. Edits use normal file revision checks and undo.
 
@@ -72,7 +72,7 @@ Use compact theme-aware controls. Query sits above the view tabs; current-view f
 
 Malformed YAML, unsupported versions, misspelled options/operators, unresolved property keys and incompatible types show an error inside the affected block. YAML syntax errors include the parser’s source location. Semantic errors identify the offending property/option. The raw source remains editable through **Edit YAML**. An error in one view leaves other views usable; a shared-query error affects all views. Unknown keys are never ignored to run a broader query. Invalid source values simply fail typed comparisons; per-card diagnostic counts and typo correction suggestions remain follow-up work.
 
-Results show loading, empty and failure states separately. Requests are cancelled logically when source/view/workspace changes, including pagination. The index returns 100 references per page plus an exact total; Load more explicitly grows the result set. Kanban groups the loaded page and shows that partial count in the footer. It keeps approximately two card heights of breathing room below its longest column.
+Results show loading, empty and failure states separately. Requests are cancelled logically when source/view/workspace changes, including pagination. The index returns 100 references per page plus an exact total; Load more explicitly grows the result set. Kanban pages each column independently, after applying its saved order, and shows full column counts and the loaded total in the footer. It keeps approximately two card heights of breathing room below its longest column.
 
 The implementation reuses the core SQLite index, fuzzy text search, theme tokens, popup placement, status colors and file-write/undo paths. The index now includes meaningful body text and rebuilds automatically when the cache version changes. No new runtime dependency or execution of user JavaScript is required. Gallery, Timeline and drag reordering of view tabs are deferred. Source-card property editing reuses the same editors as Card View, detailed below.
 
@@ -82,7 +82,7 @@ The earlier references-only limit is superseded. Table, List and Kanban results 
 
 Reuse the same property editors as Card View: click a Status/Select pill for choices, click a date summary for the existing date/time/range popup, edit text/numbers without changing geometry, and use checkboxes for Boolean values. A property interaction must not open the card or start a drag; the title remains the explicit open action. Use only supported property types and existing tag definitions. Layout controls still configure the view, not source data.
 
-Each committed edit uses source-file revision checks, preserves unrelated frontmatter and Markdown, participates in the shared undo history, updates the rebuildable index and refreshes other appearances of that card. Never overwrite a newer external edit. Keep an invalid or failed edit visible with a local error. A successful edit may move or remove the card from the current filtered view; wait until the value is committed and the editor closes before applying that result change. Do not change the filter or silently restore the old value to keep the card visible.
+Each committed edit uses source-file revision checks, preserves unrelated frontmatter and Markdown, participates in the shared undo history, updates the rebuildable index and refreshes other appearances of that card. Never overwrite a newer external edit. Keep an invalid or failed edit visible with a local error. Preserve the active view and Kanban scroll position across file updates. A successful edit may move or remove the card from the current filtered view; wait until the value is committed and the editor closes before applying that result change. Do not change the filter or silently restore the old value to keep the card visible.
 
 The current workspace merge setting determines editable property grouping. `project/Status` and `task/Status` remain separate stored properties even if their displayed values are equal. Never discard their source identity when rendering editable results. Inherited fields retain their original namespace. A missing value is still missing: merely viewing a result must not add a property, copy a default or attach a tag.
 
@@ -91,6 +91,26 @@ The current workspace merge setting determines editable property grouping. `proj
 - With **Merge properties across tags** on, one value editor updates every same-name, compatible field resolved through tags attached to that card, respecting **Case-sensitive property names**. The existing namespaced keys remain on disk. Inheritance retains the defining namespace; duplicate destinations are written once. All destinations validate before one atomic, undoable file write. Choice menus offer options accepted by every destination. Different property types or multiplicity stay separate.
 - With merging off, fields appear separately with their tag names and edits affect only the chosen key. Display/edit grouping responds to settings immediately; saved query/filter/sort bindings keep their explicit keys. If a previously merged Kanban grouping now resolves to several separate fields, choose one under **View options → Group**.
 - A column's property is its **Group** setting, normally Status. Dropping Todo → Done sets that property to Done. Cards can also move through their More menu. Pointer-down alone does nothing; movement starts after the shared drag threshold, uses the shared phantom, and Escape cancels. Unsupported destinations cannot accept a drop. The merge rules above apply to movement too.
-- An explicit edit can add a missing value only for a field belonging to a tag already attached to the card. Merely opening, focusing, cancelling or blurring an unchanged editor does not add fields, attach tags or copy defaults. When displayed values differ, choosing an option or explicitly confirming an input applies that value to every matching destination.
+- An explicit edit or drop from No value can add a missing property. If no compatible attached tag defines it, attach the tag that defines the selected view property and write only the chosen value; do not copy unrelated defaults. Merely opening, focusing, cancelling or blurring an unchanged editor does not add fields, attach tags or copy defaults. When displayed values differ, choosing an option or explicitly confirming an input applies that value to every matching destination.
 
 The menu structure and density contract is in [Menus and tooltips](interactions/menus-and-tooltips.md#compact-menu-direction). These changes do not require a new query schema or a centralized property schema.
+
+### Manual Kanban order
+
+Kanban defaults to **Manual** under Sort. A property sort takes precedence while selected; switching back restores the saved manual order. Cross-column moves still update the property under a property sort, but do not change its sort rule or generate manual order.
+
+Each view can optionally store `order` (up to 10,000 IDs across 200 columns; blocks are limited to 1,000,000 characters), a mapping from the exact column value to an array of `card-id` strings. The empty-string key represents No value. This is presentation data in the block's owning Markdown or `.tag` file; card content stays in its source file.
+
+```yaml
+order:
+  Todo: [card-b, card-a]
+  "": [card-c]
+```
+
+Omit `order` until the user actually changes a position. An explicit drop records all current IDs in the destination column, including unloaded matches; untouched columns do not get order arrays. New matches absent from the saved array append at the bottom and remain unsaved until that column is reordered. Initial unsaved order uses title/path sorting; subsequent arrivals append for the current app session. After restarting, unsaved arrivals use title/path sorting below saved IDs.
+
+On refresh, match saved IDs against the current query using maps and sets. Ignore absent IDs for display; retain them on disk so a temporary filter does not erase positions. Querying, opening, pagination and refresh never write order or clean up files. The index reads compact metadata for grouping and ordering, then loads the displayed references. A bounded in-memory tail preserves new-arrival order without adding a persistent cache or modifying notes.
+
+A drop between columns updates the grouping property and the view order in one revision-checked, undoable transaction. Existing cards with merged properties follow the same validation rules as other view edits. Cancelling a drag or dropping back into the original slot writes nothing. Filtering a moved card out is allowed: the query remains unchanged.
+
+The development-machine benchmark (`npm run benchmark`) with 10,000 cards measured 29.58 ms median and 38.53 ms p95 for the indexed Kanban query, including order reconciliation and the first 100 references per column. This excludes IPC and rendering; actual content and hardware affect results.

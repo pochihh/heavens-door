@@ -6,7 +6,7 @@ import {resolveTag,propertyType,multipleChoices,validTagDate,tagsFrom} from './t
 
 export type FieldRef=string|string[];
 export type Rule={field:FieldRef;op:string;value?:unknown}|{all:Rule[]}|{any:Rule[]}|{not:Rule};
-export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:{field:FieldRef;direction:'asc'|'desc'}}
+export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc'};order?:Record<string,string[]>}
 export interface ViewBlock {version:1;query:{from:'cards';where?:Rule};views:BlockView[]}
 export interface QueryPreferences {mergeProperties:boolean;caseSensitive:boolean}
 export const DEFAULT_QUERY_PREFERENCES:QueryPreferences={mergeProperties:true,caseSensitive:false};
@@ -56,15 +56,16 @@ export function validateRule(value:unknown,tags?:TagInfo[],depth=0,budget={left:
   }
 }
 export function validateView(value:unknown,tags?:TagInfo[]):asserts value is BlockView {
-  if(!record(value))throw new Error(viewText.errors.invalidView);keys(value,['id','name','type','filter','fields','groupBy','sort']);
+  if(!record(value))throw new Error(viewText.errors.invalidView);keys(value,['id','name','type','filter','fields','groupBy','sort','order']);
   if(typeof value.id!=='string'||!value.id||value.id.length>100||typeof value.name!=='string'||!value.name.trim()||value.name.length>100||!['table','list','kanban'].includes(String(value.type)))throw new Error(viewText.errors.requiredView);
   if(value.filter!==undefined)validateRule(value.filter,tags);
   if(value.fields!==undefined){if(!Array.isArray(value.fields)||value.fields.length>40)throw new Error(viewText.errors.invalidProperties);for(const f of value.fields){field(f);if(tags)resolveField(f,tags);}}
   if(value.groupBy!==undefined){field(value.groupBy);if(tags)resolveField(value.groupBy,tags);}
-  if(value.sort!==undefined){if(!record(value.sort))throw new Error(viewText.errors.invalidSort);keys(value.sort,['field','direction']);field(value.sort.field);if(!['asc','desc'].includes(String(value.sort.direction)))throw new Error(viewText.errors.invalidDirection);if(tags)resolveField(value.sort.field,tags);}
+  if(value.sort!==undefined&&value.sort!=='manual'){if(!record(value.sort))throw new Error(viewText.errors.invalidSort);keys(value.sort,['field','direction']);field(value.sort.field);if(!['asc','desc'].includes(String(value.sort.direction)))throw new Error(viewText.errors.invalidDirection);if(tags)resolveField(value.sort.field,tags);}
+  if(value.order!==undefined){if(!record(value.order)||Object.keys(value.order).length>200)throw new Error(viewText.errors.invalidOrder);let count=0;for(const [column,ids] of Object.entries(value.order)){if(column.length>2048||!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!id||id.length>256)||new Set(ids).size!==ids.length||(count+=ids.length)>10000)throw new Error(viewText.errors.invalidOrder);}}
 }
 export function parseViewBlock(source:string):ViewBlock {
-  if(source.length>100000)throw new Error(viewText.errors.tooLarge);
+  if(source.length>1000000)throw new Error(viewText.errors.tooLarge);
   const lineCounter=new LineCounter(),doc=parseDocument(source,{lineCounter,uniqueKeys:true});
   if(doc.errors.length)throw new Error(doc.errors[0].message);
   const data:unknown=doc.toJS({maxAliasCount:50});
@@ -92,13 +93,29 @@ export function viewDisplayFields(refs:FieldRef[],tags:TagInfo[],prefs:QueryPref
   }
   return out;
 }
-export function viewPropertyTargets(key:string,tags:TagInfo[],properties:Record<string,unknown>,prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES){
+export function viewPropertyTargets(key:string,tags:TagInfo[],properties:Record<string,unknown>,prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES,attach=false){
   const seed=resolveField(key,tags);if(!seed.definition)throw new Error(viewText.errors.chooseProperty);
   const name=(name:string)=>prefs.caseSensitive?name:name.toLowerCase();
-  return tagsFrom(properties.tags).flatMap(tag=>{
+  const targets=tagsFrom(properties.tags).flatMap(tag=>{
     const resolved=resolveTag(tags,tag);
     const fields=resolved.fields.filter(f=>prefs.mergeProperties?name(f.key)===name(seed.definition!.key)&&propertyType(f.type)===seed.type&&multipleChoices(f)===multipleChoices(seed.definition!):f.propertyKey===key);
     if(fields.length&&resolved.warnings.length)throw new Error(resolved.warnings.join('\n'));
     return fields.map(field=>({tag,field}));
   });
+  if(targets.length||!attach)return targets;
+  const tag=key.slice(0,-seed.definition.key.length-1),resolved=resolveTag(tags,tag),field=resolved.fields.find(f=>f.propertyKey===key);
+  if(!field||resolved.warnings.length)throw new Error(resolved.warnings.join('\n')||viewText.errors.chooseProperty);
+  return [{tag,field}];
+}
+
+// Missing results stay in the saved list; new matches live only in the unsaved tail until a drop.
+export function orderedCardIds(saved:readonly string[],current:readonly string[],previous:readonly string[]=[]){
+  const remaining=new Set(current),out:string[]=[];for(const id of [...saved,...previous,...current])if(remaining.delete(id))out.push(id);return out;
+}
+export function moveCardId(saved:readonly string[],visible:readonly string[],id:string,before?:string,after?:string){
+  const ids=[...new Set([...saved,...visible])].filter(key=>key!==id);let at=before?ids.indexOf(before):after&&ids.includes(after)?ids.indexOf(after)+1:ids.length;if(at<0)at=ids.length;ids.splice(at,0,id);return ids;
+}
+export function replaceViewSource(body:string,index:number,source:string,next:string){
+  const block=viewBlockRanges(body)[index];if(!block||block.source.trim()!==source.trim())throw new Error(viewText.errors.viewChanged);
+  return body.slice(0,block.start)+'```view-block\n'+next.trimEnd()+'\n```\n'+body.slice(block.end);
 }

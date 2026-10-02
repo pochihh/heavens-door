@@ -55,7 +55,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,suspend
       if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
     }}>
     {shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={body=>{if(!suspended)session.edit(body);}} autofocus={!suspended} focusPoint={focus}/>:
-      <TitleContent className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
+      <TitleContent path={path} className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
       {info&&!info.legacy&&<select aria-label={ui.card.placeCardOnWhiteboard} data-tooltip={tooltips.card.placeReference} value="" onChange={e=>{

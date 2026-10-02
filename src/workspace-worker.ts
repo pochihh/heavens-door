@@ -113,6 +113,7 @@ async function dispatch(request: Request) {
     case 'queryTags': string(request.text);return workspace.queryTags(request.text,request.exclude,request.limit);
     case 'searchWorkspace': string(request.text);return workspace.searchWorkspace(request.text);
     case 'queryCards': return workspace.queryCards(request.query);
+    case 'moveViewCard': return workspace.moveViewCard(request.move);
     case 'viewCards': return workspace.viewCards(request.source,request.view,request.offset);
     case 'saveTagBody': string(request.path);string(request.expected);return workspace.saveTagBody(request.path,request.expected,request.body);
     case 'checkpoint': string(request.label); await workspace.history.checkpoint(request.label); return workspace.history.list();

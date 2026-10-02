@@ -1,5 +1,6 @@
 import {compileView} from './view-query';
-import {viewPropertyTargets} from '../view-block';
+import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView} from '../view-block';
+import {viewText} from '../text/views';
 import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags,remapTagReferences} from './tags';
 import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag,validReferencePath} from '../tags';
 import type {TagField,TagValue,TagSearchResult,WorkspaceSearchResult} from '../shared';
@@ -34,6 +35,7 @@ export class Workspace {
   private tags = new Map<string,TagInfo>();
   private preferences = defaultPreferences();
   private lastEdgeStyle:EdgeStyle|undefined;
+  private viewOrderTails=new Map<string,Map<string,string[]>>();
   private boards = new Map<string, Board>();
   private issues = new Map<string, string>();
   private scanning = false;
@@ -395,15 +397,19 @@ export class Workspace {
     const card=editTagProperty(cardRaw,path,nextTags,tag,tag+'/'+field.key,value);
     return this.write([{path:definition.path,content,expected:tagExpected},{path,content:card,expected}]);
   }
-  async setViewProperty(path:string,expected:string,key:string,value:TagValue){
+  private viewPropertyContent(raw:string,path:string,key:string,value:TagValue){
     if(!path.endsWith('.md')||typeof key!=='string'||!key||key.length>256)throw new Error(ui.errors.invalidQuery);
-    const raw=await this.read(path),{front,body}=splitNote(raw),targets=viewPropertyTargets(key,[...this.tags.values()],front.toJSON()??{},this.preferences.query);
-    if(!targets.length)throw new Error(ui.tags.notAttached);
-    // Validate every destination before writing; incompatible options cannot partially update a card.
+    const {front,body}=splitNote(raw),stored=front.toJSON()?.tags;
+    if(stored!==undefined&&stored!==null&&!(validTag(stored)||Array.isArray(stored)&&stored.every(validTag)))throw new Error(ui.tags.invalidStoredTags);
+    const targets=viewPropertyTargets(key,[...this.tags.values()],front.toJSON()??{},this.preferences.query,true);
     for(const {field} of targets)validateTagValue(field,value);
+    front.set('tags',[...new Set([...tagsFrom(front.toJSON()?.tags),...targets.map(t=>t.tag)])]);
     for(const property of new Set(targets.map(t=>t.field.propertyKey)))front.set(property,value);
     front.set('card-id',readCard(path,raw).id);
-    return this.write([{path,expected,content:'---\n'+front.toString()+'---\n'+body}]);
+    return '---\n'+front.toString()+'---\n'+body;
+  }
+  async setViewProperty(path:string,expected:string,key:string,value:TagValue){
+    return this.write([{path,expected,content:this.viewPropertyContent(await this.read(path),path,key,value)}]);
   }
   async setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {
     if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);
@@ -649,12 +655,67 @@ export class Workspace {
   searchWorkspace(text:string):WorkspaceSearchResult[] {
     return [...this.queryCards({text,limit:100}),...this.queryTags(text,[],100)].sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path)).slice(0,100);
   }
+  private kanbanColumns(source:string,id:string){
+    const tags=[...this.tags.values()],plan=compileView(source,id,tags),view=plan.view;
+    const fields=viewDisplayFields(view.groupBy?[view.groupBy]:[],tags,this.preferences.query),group=fields.length===1?fields[0]:undefined;
+    if(view.type!=='kanban'||!group?.definition||!['status','select'].includes(group.type))throw new Error(ui.errors.invalidQuery);
+    // Read IDs and indexed metadata only; bodies and previews never enter the ordering pass.
+    const rows=this.db.prepare('SELECT c.id,c.path,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order).all(...plan.args);
+    const columns=new Map<string,string[]>(),keysByTags=new Map<string,string[]>();
+    for(const row of rows){
+      const props=JSON.parse(String(row.frontmatter)),signature=JSON.stringify(props.tags??[]);
+      let keys=keysByTags.get(signature);
+      if(!keys){const targets=viewPropertyTargets(group.keys[0],tags,props,this.preferences.query);keys=targets.length?[...new Set(targets.map(t=>t.field.propertyKey))]:group.keys;keysByTags.set(signature,keys);}
+      const values=[...new Set(keys.map(key=>props[key]).filter(v=>typeof v==='string'&&v))];if(!values.length)values.push('');
+      for(const value of values){if(!columns.has(value))columns.set(value,[]);columns.get(value)!.push(String(row.id));}
+    }
+    const block=parseViewBlock(source),cacheKey=JSON.stringify([block.query,view.id,view.filter,view.groupBy,view.sort,this.preferences.query]);
+    const previous=this.viewOrderTails.get(cacheKey),manual=typeof view.sort!=='object',tails=new Map<string,string[]>();
+    for(const [value,ids] of columns){const tail=orderedCardIds([],ids,previous?.get(value));tails.set(value,tail);if(manual)columns.set(value,orderedCardIds(view.order&&Object.hasOwn(view.order,value)?view.order[value]:[],tail));}
+    this.viewOrderTails.delete(cacheKey);this.viewOrderTails.set(cacheKey,tails);
+    if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
+    return {columns,total:rows.length,view,group};
+  }
   viewCards(source:string,view:string,offset=0):import('../shared').ViewResults {
     if(typeof source!=='string'||typeof view!=='string'||!Number.isInteger(offset)||offset<0||offset>100000)throw new Error(ui.errors.invalidQuery);
     const plan=compileView(source,view,[...this.tags.values()]);
-    const total=Number(this.db.prepare('SELECT count(*) AS count FROM cards c WHERE '+plan.where).get(...plan.whereArgs)!.count);
-    const rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order+' LIMIT 100 OFFSET ?').all(...plan.args,offset);
-    return {total,rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));return {card:{...card,legacy:!!card.legacy,...(properties['card-color']!==undefined?{fillColor:properties['card-color']}: {})} as unknown as import('../shared').CardInfo,properties};})};
+    let rows:Record<string,unknown>[],total:number,columns:import('../shared').ViewResults['columns'],nextOffset:number|undefined;
+    if(plan.view.type==='kanban'&&plan.view.groupBy){
+      const result=this.kanbanColumns(source,view);total=result.total;
+      columns=[...result.columns].map(([value,ids])=>({value,ids:ids.slice(offset,offset+100),total:ids.length}));
+      const ids=[...new Set(columns.flatMap(c=>c.ids))];
+      rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c JOIN json_each(?) ids ON c.id=ids.value').all(JSON.stringify(ids));
+      if(columns.some(c=>c.total>offset+100))nextOffset=offset+100;
+    }else{
+      total=Number(this.db.prepare('SELECT count(*) AS count FROM cards c WHERE '+plan.where).get(...plan.whereArgs)!.count);
+      rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order+' LIMIT 100 OFFSET ?').all(...plan.args,offset);
+      if(offset+rows.length<total)nextOffset=offset+rows.length;
+    }
+    return {total,...(columns?{columns}:{}),...(nextOffset!==undefined?{nextOffset}:{}),rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));return {card:{...card,legacy:!!card.legacy,...(properties['card-color']!==undefined?{fillColor:properties['card-color']}: {})} as unknown as CardInfo,properties};})};
+  }
+  async moveViewCard(move:import('../shared').ViewCardMove){
+    if(!move||typeof move!=='object'||!move.owner||!move.card||typeof move.owner.path!=='string'||!['.md','.tag'].includes(extname(move.owner.path))||typeof move.card.path!=='string'||!move.card.path.endsWith('.md')||typeof move.owner.expected!=='string'||typeof move.card.expected!=='string'||typeof move.owner.source!=='string'||typeof move.view!=='string'||!Number.isInteger(move.owner.block)||move.owner.block< -1||[move.from,move.to].some(v=>typeof v!=='string'||v.length>2048)||[move.before,move.after].some(v=>v!==undefined&&(typeof v!=='string'||!v||v.length>256)))throw new Error(ui.errors.invalidQuery);
+    const raw=await this.read(move.owner.path),cardRaw=move.owner.path===move.card.path?raw:await this.read(move.card.path);
+    if(revision(raw)!==move.owner.expected)throw new Error(ui.errors.externalEdit(move.owner.path));
+    if(revision(cardRaw)!==move.card.expected)throw new Error(ui.errors.externalEdit(move.card.path));
+    const card=readCard(move.card.path,cardRaw),block=parseViewBlock(move.owner.source),data=this.kanbanColumns(move.owner.source,move.view),view=block.views.find(v=>v.id===move.view)!;
+    if(!data.columns.get(move.from)?.includes(card.id))throw new Error(viewText.errors.viewChanged);
+    const target=data.columns.get(move.to)??[];
+    if([move.before,move.after].some(id=>id!==undefined&&(id===card.id||!target.includes(id))))throw new Error(viewText.errors.viewChanged);
+    const moved=move.from!==move.to;
+    const content=moved?this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.groupBy!)[0],move.to||null):cardRaw;
+    if(typeof view.sort!=='object'){
+      const saved=view.order&&Object.hasOwn(view.order,move.to)?view.order[move.to]:[];
+      view.order=Object.fromEntries([...Object.entries(view.order??{}).map(([value,ids])=>[value,ids.filter(id=>id!==card.id)]),[move.to,moveCardId(saved,target,card.id,move.before,move.after)]]);
+    }
+    validateView(view,[...this.tags.values()]);const next=writeViewBlock(move.owner.source,block);parseViewBlock(next);
+    const ownerContent=move.owner.path===card.path?content:raw,{header,body}=splitNote(ownerContent);
+    let nextBody:string;
+    if(move.owner.block===-1){if(!move.owner.path.endsWith('.tag')||viewBlockRanges(body).length)throw new Error(viewText.errors.viewChanged);nextBody=body+'\n\n```view-block\n'+next+'```\n';}
+    else nextBody=replaceViewSource(body,move.owner.block,move.owner.source,next);
+    const changes:Write[]=[{path:move.owner.path,expected:move.owner.expected,content:header+nextBody}];
+    if(moved&&move.owner.path!==card.path)changes.push({path:card.path,expected:move.card.expected,content});
+    return this.write(changes);
   }
   async saveTagBody(path:string,expected:string,body:string){
     if(!path.endsWith('.tag')||typeof body!=='string'||body.length>1000000)throw new Error(ui.tags.invalidTag);

@@ -1,4 +1,4 @@
-import {useContext,useEffect,useRef,useState,type PointerEvent as ReactPointerEvent} from 'react';
+import {useContext,useEffect,useLayoutEffect,useRef,useState,type PointerEvent as ReactPointerEvent} from 'react';
 import {cardFill,tintColor} from '../colors';
 import type {NavigationMode} from '../layout';
 import type {Snapshot,TagField,TagResult,TagValue,ViewResults} from '../shared';
@@ -14,7 +14,7 @@ import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 const t=ui.views;
 function cardField(field:QueryField,row:TagResult,snapshot:Snapshot){
-  const targets=field.definition?viewPropertyTargets(field.keys[0],snapshot.tags??[],row.properties,snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES):[];
+  const targets=field.definition?viewPropertyTargets(field.keys[0],snapshot.tags??[],row.properties,snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES,true):[];
   const keys=targets.length?[...new Set(targets.map(t=>t.field.propertyKey))]:field.keys;
   const values=[...new Map(keys.flatMap(key=>{const value=key==='file.path'?row.card.path:key==='file.folder'?row.card.path.split('/').slice(0,-1).join('/'):row.properties[key];return value===undefined||value===null?[]:[[JSON.stringify(value),value] as const];})).values()];
   let definition:TagField|undefined=targets[0]?.field;
@@ -36,7 +36,9 @@ function Cell({field,row,snapshot,editing,onEditing,onSave,onOpen}:{field:QueryF
       <button type="button" aria-label={data.definition?t.editProperty(field.name):field.name} disabled={!data.definition} onClick={()=>onEditing(true)}><Values field={field} values={data.values}/></button>}
   </div>;
 }
-export function ViewResultContent({view,result,columns,group,snapshot,editing,onEditing,onSave,onOpen,onPreview=onOpen,onNavigate}:{view:BlockView;result:ViewResults;columns:QueryField[];group?:QueryField;snapshot:Snapshot;editing:string|null;onEditing:(key:string|null)=>void;onSave:(row:TagResult,key:string,value:TagValue)=>Promise<void>;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){
+export function ViewResultContent({view,result,columns,group,snapshot,editing,onEditing,onSave,onOpen,onPreview=onOpen,onNavigate,onMove,scroll}:{scroll?:{left:number;top:number};view:BlockView;result:ViewResults;columns:QueryField[];group?:QueryField;snapshot:Snapshot;editing:string|null;onEditing:(key:string|null)=>void;onMove?:(row:TagResult,from:string,to:string,position:{before?:string;after?:string})=>Promise<void>;onSave:(row:TagResult,key:string,value:TagValue)=>Promise<void>;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){
+  const kanban=useRef<HTMLDivElement>(null);
+  useLayoutEffect(()=>{if(kanban.current&&scroll&&result.total){kanban.current.scrollLeft=scroll.left;kanban.current.scrollTop=scroll.top;}},[view.id,result,scroll]);
   const cancel=useRef<()=>void>(()=>{}),[moveMenu,setMoveMenu]=useState<{anchor:HTMLElement;row:TagResult}|null>(null),[moveError,setMoveError]=useState('');
   useEffect(()=>()=>cancel.current(),[]);
   useEffect(()=>{cancel.current();setMoveMenu(null);},[view.id,view.type,group?.keys.join('\0')]);
@@ -44,14 +46,24 @@ export function ViewResultContent({view,result,columns,group,snapshot,editing,on
   function names(row:TagResult){if(!group)return [];try{return cardField(group,row,snapshot).values.map(propertyText).filter(Boolean);}catch{return [];}}
   function allowed(row:TagResult){if(!group?.definition||!['status','select'].includes(group.type)||multipleChoices(group.definition))return [];try{const f=cardField(group,row,snapshot).definition;return f?['',...fieldOptions(f)]:[];}catch{return [];}}
   async function move(row:TagResult,value:string){if(!group)return;setMoveError('');onEditing('@move');try{await onSave(row,group.keys[0],value||null);setMoveMenu(null);}catch(e){setMoveError(String(e).replace(/^Error: /,''));}finally{onEditing(null);}}
-  function drag(e:ReactPointerEvent<HTMLDivElement>,row:TagResult){if(editing||e.button!==0||(e.target as HTMLElement).closest('[data-property],button.tool'))return;const options=allowed(row),root=e.currentTarget.closest<HTMLElement>('.view-kanban');if(!root||!options.length)return;cancel.current();cancel.current=dragKanban(e,root,value=>{if(names(row).length!==1||names(row)[0]!==value)void move(row,value);},value=>options.includes(value));}
+  function drag(e:ReactPointerEvent<HTMLDivElement>,row:TagResult){
+    if(editing||e.button!==0||(e.target as HTMLElement).closest('[data-property],button.tool'))return;
+    const options=allowed(row),root=e.currentTarget.closest<HTMLElement>('.view-kanban'),from=e.currentTarget.closest<HTMLElement>('[data-tag-column]')?.dataset.tagColumn;
+    if(!root||from===undefined||!options.length)return;
+    cancel.current();cancel.current=dragKanban(e,root,(value,position)=>{
+      if(!onMove){if(from!==value)void move(row,value);return;}
+      setMoveError('');onEditing('@move');void onMove(row,from,value,position).catch(e=>setMoveError(String(e).replace(/^Error: /,''))).finally(()=>onEditing(null));
+    },value=>options.includes(value),typeof view.sort!=='object');
+  }
   const title=(row:TagResult)=><button className="view-card-title" onClick={e=>{e.stopPropagation();(view.type==='kanban'?onPreview:onOpen)('card:'+row.card.id);}}><Icon name="note" size={14}/><span>{row.card.title||row.card.name}</span></button>;
   const properties=columns.filter(f=>f.keys[0]!=='file.title');
-  const groups=group?[...new Set([...(group.definition?fieldOptions(group.definition):[]),...result.rows.flatMap(names),...(result.rows.some(row=>!names(row).length)?['']:[])])]:[];
+  const groups=group?[...new Set([...(group.definition?fieldOptions(group.definition):[]),...(result.columns?.map(c=>c.value)??result.rows.flatMap(names)),...(result.rows.some(row=>!names(row).length)?['']:[])])]:[];
+  const byId=new Map(result.rows.map(row=>[row.card.id,row]));
+  const inColumn=(name:string)=>result.columns?result.columns.find(c=>c.value===name)?.ids.flatMap(id=>byId.has(id)?[byId.get(id)!]:[])??[]:result.rows.filter(row=>name?names(row).includes(name):!names(row).length);
   return <>
     {view.type==='table'?<div className="view-table"><table><thead><tr>{columns.map(f=><th key={f.keys.join('\0')}>{f.name}{!(snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).mergeProperties&&f.definition&&<small>{f.tags.map(t=>'#'+t).join(', ')}</small>}</th>)}</tr></thead><tbody>{result.rows.map(row=><tr key={row.card.path}>{columns.map(f=><td key={f.keys.join('\0')}>{f.keys[0]==='file.title'?title(row):cell(row,f)}</td>)}</tr>)}</tbody></table></div>:
       view.type==='list'?<div className="view-list">{result.rows.map(row=><div className="view-list-row" key={row.card.path}>{title(row)}<small>{row.card.path}</small>{properties.map(f=><div className="view-list-property" key={f.keys.join('\0')}><span>{f.name}{!(snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).mergeProperties&&!!f.tags.length&&<small>{f.tags.map(t=>'#'+t).join(', ')}</small>}</span>{cell(row,f)}</div>)}</div>)}</div>:
-      !group?<p className="muted">{t.chooseGroup}</p>:<div className="view-kanban">{groups.map(name=><section key={name} data-tag-column={name}><h3>{name?<Values field={group} values={[name]}/>:t.ungrouped}<span>{result.rows.filter(row=>name?names(row).includes(name):!names(row).length).length}</span></h3>{result.rows.filter(row=>name?names(row).includes(name):!names(row).length).map(row=><div key={row.card.path} className="view-result-card" style={{background:tintColor(cardFill(row.card))}} onClick={e=>{if(!(e.target as HTMLElement).closest('button,input,a,[data-property]'))onPreview('card:'+row.card.id);}} onPointerDown={e=>drag(e,row)}>{title(row)}{(!!allowed(row).length||!!onNavigate)&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{setMoveError('');setMoveMenu(moveMenu?.row.card.path===row.card.path?null:{anchor:e.currentTarget,row});}}/>}{properties.map(f=><div className="view-list-property" key={f.keys.join('\0')}><span>{f.name}{!(snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).mergeProperties&&!!f.tags.length&&<small>{f.tags.map(t=>'#'+t).join(', ')}</small>}</span>{cell(row,f,name)}</div>)}</div>)}</section>)}</div>}
+      !group?<p className="muted">{t.chooseGroup}</p>:<div className="view-kanban" ref={kanban} onScroll={e=>{if(scroll&&result.total){scroll.left=e.currentTarget.scrollLeft;scroll.top=e.currentTarget.scrollTop;}}}>{groups.map(name=><section key={name} data-tag-column={name}><h3>{name?<Values field={group} values={[name]}/>:t.ungrouped}<span>{result.columns?.find(c=>c.value===name)?.total??inColumn(name).length}</span></h3>{inColumn(name).map(row=><div key={row.card.path} data-card-id={row.card.id} className="view-result-card" style={{background:tintColor(cardFill(row.card))}} onClick={e=>{if(!(e.target as HTMLElement).closest('button,input,a,[data-property]'))onPreview('card:'+row.card.id);}} onPointerDown={e=>drag(e,row)}>{title(row)}{(!!allowed(row).length||!!onNavigate)&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{setMoveError('');setMoveMenu(moveMenu?.row.card.path===row.card.path?null:{anchor:e.currentTarget,row});}}/>}{properties.map(f=><div className="view-list-property" key={f.keys.join('\0')}><span>{f.name}{!(snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).mergeProperties&&!!f.tags.length&&<small>{f.tags.map(t=>'#'+t).join(', ')}</small>}</span>{cell(row,f,name)}</div>)}</div>)}</section>)}</div>}
     {moveError&&<p className="change-removed" role="alert">{moveError}</p>}
     {moveMenu&&<PropertyPopover anchor={moveMenu.anchor} align="end" label={ui.tags.moveTo} onClose={()=>setMoveMenu(null)}><div className="view-menu-list">{onNavigate&&<>{(['same','new','other'] as const).map(mode=><button key={mode} onClick={()=>{setMoveMenu(null);onNavigate('card:'+moveMenu.row.card.id,mode);}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}{!!allowed(moveMenu.row).length&&<hr/>}</>}{allowed(moveMenu.row).map(value=><button key={value} disabled={!!editing} onClick={()=>void move(moveMenu.row,value)}><span>{value||t.ungrouped}</span>{names(moveMenu.row).includes(value)&&<Icon name="check"/>}</button>)}</div></PropertyPopover>}
   </>;

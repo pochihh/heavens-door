@@ -9,7 +9,7 @@ import {writeViewBlock,newViewBlock,parseViewBlock} from '../src/view-block';
 
 test('editable view blocks render without changing Markdown, commit group edits and preserve source through focus changes',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
- Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const snapshot:Snapshot={root:'/test',name:'Test',cards:[],boards:[],tags:[],issues:[],historyAvailable:false};let requests=0;
  const bridge={assetUrl:(s:string)=>s,request:async()=>{requests++;return {rows:[],total:0} satisfies ViewResults;}} as unknown as Bridge;window.door=bridge;
@@ -42,7 +42,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
 
 test('compact subpanels and result editors preserve anchors, support status/date edits and Kanban drop',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
- Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const snapshot:Snapshot={root:'/test',name:'Test',cards:[{id:'a',path:'A.md',name:'A',title:'Task A',fillColor:'#c9838a',revision:'r1',legacy:false}],boards:[],issues:[],historyAvailable:false,tags:['project','task'].map(tag=>({path:tag+'.tag',name:tag,tag,revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Doing'],done:['Done']}},{key:'Date',type:'date'},{key:'Location',type:'text'},{key:'Checked',type:'boolean'}]}))};
  const row:ViewResults['rows'][number]={card:snapshot.cards[0],properties:{tags:['project','task'],'project/Status':'Todo','task/Status':'Todo','project/Date':'2026-10-01','project/Location':'Here','task/Location':'There'}};
@@ -66,7 +66,10 @@ test('compact subpanels and result editors preserve anchors, support status/date
   const card=()=>document.querySelector<HTMLElement>('[data-tag-column="Todo"] .view-result-card')!;
   assert.equal(card().style.background,tintColor('#c9838a'));
   const pointer=(target:Element|Document,type:string,x:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:40}));
-  document.elementFromPoint=()=>document.querySelector('[data-tag-column="Done"]');
+  const rect=(left:number,top:number,width:number,height:number)=>({left,top,right:left+width,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
+  document.querySelector<HTMLElement>('.view-kanban')!.getBoundingClientRect=()=>rect(0,0,120,300);
+  document.querySelectorAll<HTMLElement>('[data-tag-column]').forEach((el,i)=>{el.getBoundingClientRect=()=>rect(i*40,0,38,300);});
+  card().getBoundingClientRect=()=>rect(0,30,38,80);
   await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointerup',20);});assert.equal(writes.length,0);
   await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointermove',60);});assert.ok(document.querySelector('.drag-phantom'));await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(writes.length,0);assert.equal(document.querySelector('.drag-phantom'),null);
   await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointermove',80);pointer(document,'pointerup',80);});await settle();assert.deepEqual(writes[0],{key:'project/Status',value:'Done'});assert.ok(document.querySelector('[data-tag-column="Done"] .view-result-card'));assert.equal(opened,0);
@@ -80,4 +83,23 @@ test('compact subpanels and result editors preserve anchors, support status/date
   await click('[data-tag-column=Todo] [aria-label="Edit Location"]');assert.equal(document.querySelectorAll('.view-property input[type=text]').length,1,'Only the clicked appearance of a merged card opens an editor');await act(async()=>document.querySelector<HTMLInputElement>('.view-property input[type=text]')!.blur());
   await click('.view-card-title');assert.equal(previewed,1);assert.equal(opened,0);await click('.view-result-card');assert.equal(previewed,2);
  }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}
+});
+
+test('Kanban reorder slots snap, release and cancel without changing source DOM',async()=>{
+ const dom=new JSDOM('<div id="board"><section data-tag-column="Todo"><h3>Todo</h3><div data-card-id="a">A</div><div data-card-id="b">B</div><div data-card-id="c">C</div></section><section data-tag-column="Done"><h3>Done</h3></section></div>',{pretendToBeVisual:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:true})});
+ const {dragKanban}=await import('../src/renderer/sortable'),board=document.getElementById('board')!,source=board.querySelector<HTMLElement>('[data-card-id=a]')!,drops:{value:string;before?:string;after?:string}[]=[];
+ dom.window.HTMLElement.prototype.getBoundingClientRect=function(){const column=this.closest('[data-tag-column]'),left=column?.getAttribute('data-tag-column')==='Done'?220:0;let top=0,height=400,width=200;
+  if(this===board)width=420;else if(this.tagName!=='SECTION'){const siblings=[...(this.parentElement?.children??[])].filter(el=>(el as HTMLElement).style.display!=='none');top=30+siblings.indexOf(this)*68;height=60;}
+  return {left,right:left+width,top,bottom:top+height,width,height,x:left,y:top,toJSON(){}};
+ };
+ const event=(type:string,x:number,y:number)=>document.dispatchEvent(new dom.window.MouseEvent(type,{clientX:x,clientY:y,bubbles:true}));
+ const begin=()=>dragKanban({currentTarget:source,clientX:20,clientY:110,pointerId:undefined} as unknown as Parameters<typeof dragKanban>[0],board,(value,position)=>drops.push({value,...position}),()=>true);
+ try{
+  begin();event('pointerup',20,110);assert.equal(drops.length,0);
+  begin();event('pointermove',20,210);assert.ok(document.querySelector('.kanban-slot'));event('pointerup',20,210);assert.deepEqual(drops.pop(),{value:'Todo',before:'c',after:'b'});assert.equal(source.style.display,'');assert.equal(document.querySelector('.kanban-slot'),null);
+  begin();event('pointermove',214,110);assert.ok(board.querySelector('[data-tag-column=Done] .kanban-slot'),'Near the column snaps into its slot');event('pointermove',600,110);assert.equal(document.querySelector('.kanban-slot'),null);event('pointerup',600,110);assert.equal(drops.length,0);
+  begin();event('pointermove',240,110);document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(drops.length,0);assert.equal(source.style.display,'');assert.equal(document.querySelector('.drag-phantom'),null);
+  begin();event('pointermove',240,110);event('pointerup',240,110);assert.deepEqual(drops.pop(),{value:'Done',before:undefined,after:undefined});assert.deepEqual([...board.querySelectorAll('[data-card-id]')].map(el=>el.textContent),['A','B','C']);
+ }finally{dom.window.close();}
 });

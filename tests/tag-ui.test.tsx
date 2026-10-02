@@ -32,6 +32,7 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
       case 'tagCards':tagQueries++;return w.tagCards(request.tag,request.text,request.offset);
       case 'cardProperties':return w.cardProperties(request.path);
       case 'reorderTagProperties':return w.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
+      case 'setViewProperty':return w.setViewProperty(request.path,request.expected,request.key,request.value);
       case 'setTagProperty':return w.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
       case 'setCardTag':return w.setCardTag(request.path,request.expected,request.tag,request.add,request.create);
       case 'reorderCardTags':return w.reorderCardTags(request.path,request.expected,request.tags);

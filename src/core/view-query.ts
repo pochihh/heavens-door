@@ -40,6 +40,7 @@ export function compileView(source:string,id:string,tags:TagInfo[]){
   function condition(rule?:Rule):string {if(!rule)return '1';if('all'in rule)return rule.all.length?'('+rule.all.map(condition).join(' AND ')+')':'1';if('any'in rule)return rule.any.length?'('+rule.any.map(condition).join(' OR ')+')':'0';if('not'in rule)return '(NOT '+condition(rule.not)+')';return leaf(rule);}
   const where=condition(block.query.where)+' AND '+condition(view.filter),whereArgs=[...args];
   function sortValue(ref:FieldRef){return fieldKeys(ref).map(key=>file(key)||`(SELECT json_extract(p.value,'$') FROM properties p WHERE p.path=c.path AND p.field=${bind(key)})`);}
-  const sorts=sortValue(view.sort?.field??'file.title'),order=(sorts.length>1?'COALESCE('+sorts.join(',')+')':sorts[0])+' '+(view.sort?.direction==='desc'?'DESC':'ASC')+',c.path';
-  return {where,whereArgs,order,args};
+  const sort=typeof view.sort==='object'?view.sort:undefined;
+  const sorts=sortValue(sort?.field??'file.title'),order=(sorts.length>1?'COALESCE('+sorts.join(',')+')':sorts[0])+' '+(sort?.direction==='desc'?'DESC':'ASC')+',c.path';
+  return {where,whereArgs,order,args,view};
 }

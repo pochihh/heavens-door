@@ -42,7 +42,8 @@ export interface TagField {optional?:boolean;key:string;type:TagFieldType;label?
 export interface TagInfo { body?:string; path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];propertiesCollapsed?:boolean;overrides:(Partial<TagField>&{key:string})[] }
 export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
-export interface ViewResults {rows:TagResult[];total:number}
+export interface ViewResults {rows:TagResult[];total:number;columns?:{value:string;ids:string[];total:number}[];nextOffset?:number}
+export interface ViewCardMove {owner:{path:string;expected:string;block:number;source:string};view:string;card:{path:string;expected:string};from:string;to:string;before?:string;after?:string}
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
@@ -78,6 +79,7 @@ export type Request =
   | { kind: 'saveBoard'; board: Board; expected: string }
   | { kind: 'query'; text: string }
   | { kind: 'queryCards'; query: CardQuery }
+  | { kind:'moveViewCard';move:ViewCardMove }
   | { kind:'viewCards';source:string;view:string;offset?:number }
   | { kind:'saveTagBody';path:string;expected:string;body:string }
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }
