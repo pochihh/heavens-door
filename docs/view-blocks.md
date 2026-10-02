@@ -41,7 +41,7 @@ Both query and view filters use the same nested condition language: `all` means 
 
 ## Block chrome
 
-Use a small shared Query row above the view tabs. It summarizes the common collection with quiet chips such as `#project` and `Projects/`, and an `All views` scope label. Empty query conditions read `All cards`. More complex queries display a condition summary rather than a misleading flat list. Clicking the row opens the query editor, labelled `Query` with the short explanation `Applies to all views`.
+Use a small shared Query row above the view tabs. It summarizes the common collection with quiet chips such as `#project` and `Projects/`, and an `All views` scope label. Empty query conditions read `All cards`. More complex queries display a condition summary rather than a misleading flat list. Clicking the row opens the editor labelled `Query`. The visible block-level row already communicates its scope; do not repeat an explanation in the popup.
 
 Below it, show content-width view tabs with a layout icon and user-chosen name, followed by + Add view. Highlight the active tab clearly using the existing app active treatment. Several views of the same type are permitted. The right side contains Filter, Sort and View options; avoid an always-expanded search field and duplicate layout buttons. At narrow pane widths, move the tools onto a second line and put excess view tabs behind an overflow menu.
 
@@ -53,9 +53,23 @@ Filter opens an anchored popup headed `Filter · <view name>`. A basic condition
 
 Use existing controls: fuzzy property/tag suggestions, colored Status/Select choices, number inputs, calendar/date popups, and reference pickers. Display familiar phrases: `contains`, `is at least`, `is before`, `is empty`. Namespace labels appear where needed to distinguish identically named properties. Missing values are not silently treated as zero or an empty string.
 
-`Add condition` adds a sibling. A secondary `Add group` exposes nested all/any logic with a thin indentation guide. Group controls stay local to their group; the group can be removed without deleting its siblings. Ordinary users never need to open this path. The filter popup has a quiet shared-query summary and `Edit query`, making inherited restrictions visible without duplicating their editable controls.
+`Add condition` adds a sibling. A secondary `Add group` exposes nested all/any logic with a thin indentation guide. Group controls stay local to their group; the group can be removed without deleting its siblings. Ordinary users never need to open this path. Keep the popup limited to its condition rows and actions. Omit scope explanations, empty-condition messages and the From query / Edit query footer; the Query row above the tabs owns shared restrictions.
 
 Query and Filter reuse the same editor, with explicit scope. Query edits update all view tabs; Filter edits affect only the current tab. Only valid, committed changes persist; incomplete drafts keep the last valid result rather than briefly broadening the query. Show input validation beside the relevant field. Escape cancels an unfinished field edit and dismisses the popup; outside click dismisses it. Do not show tooltips just because a popup opens. Restore focus to the trigger. Query/filter edits use the app's normal undo and file revision checks.
+
+## Tag scope and query validation (proposed)
+
+The following rules are design recommendations pending discussion, not a shipped query compiler.
+
+Start query editing with tag membership: all selected tags, any selected tag, and excluded tags. Keep Boolean meaning explicit when combining groups; the same `all` / `any` / `not` condition language remains the file representation. Scope is a UI step, not a new centralized schema. Built-in filename, folder, meaningful text and timestamp fields remain available without choosing a tag.
+
+Offer properties from positively selected tags and their resolved inherited definitions, grouped by tag and searchable through the reusable core fuzzy search. Excluded tags do not add property options. Current-view filters start with the shared query’s tag scope and may narrow it. Do not derive available properties from the currently matching rows: an empty result must not erase choices. If a scope edit leaves a condition outside the selected tags, retain and flag it for review; never delete or retarget it automatically. Complex handwritten Boolean expressions must retain their grouping when shown in the editor rather than being flattened into misleading scope chips.
+
+A property’s stored identity is its actual namespaced key, such as `project/Status`. Inheritance retains the defining tag’s key. The recommended picker keeps equal-looking names from different tags separate; whether to additionally offer a combined name-and-type condition is still open. Definitions remain in local `.tag` files, values remain in each card’s frontmatter, and any database catalog is only a rebuildable index. Do not rename, merge, coerce or correct user data automatically.
+
+Before implementation, settle these semantics: exact versus inherited tag membership; matching absent, empty or mistyped values; querying historical keys whose definitions have been removed; and date-range comparisons. Recommended defaults are explicit tag membership, typed comparisons that require a present valid value, and separate missing/empty operators. A property missing from one side of an OR tag query is normal, not a schema error. A tag’s template default is not a fallback value for cards that do not store that property. Negation must have documented behavior for absent values rather than accidentally treating absence as a value.
+
+For handwritten YAML, show validation within the affected block, not repeated modal warnings. Identify the source line/column and offending field or operator. Offer fuzzy suggestions as explicit corrections, never silently apply them. Preserve the raw source. Malformed syntax, unsupported versions/operators and unresolved or ambiguous property bindings must never be ignored to run a broader query. A shared-query error affects every view; an error confined to one view affects that view only. During a draft, a last-valid preview can remain visibly labelled as previous results; opening an invalid saved block shows its error rather than silently presenting stale data. Valid zero matches is an ordinary empty result. Invalid values in individual source cards should be distinguishable from an invalid query, with affected values excluded from typed comparisons and a compact, expandable diagnostic.
 
 ## View management and results
 

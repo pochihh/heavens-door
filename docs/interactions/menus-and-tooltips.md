@@ -61,6 +61,12 @@ Use one shared tooltip per window with `role="tooltip"`, an associated descripti
 
 Menu rows use the same padding, icon column, text alignment, checkmark placement, disabled appearance, separators, and focus treatment everywhere. Labels use established app terms, including **View**, **Tab Group**, **Main Dock**, **Side Dock**, and **Workspace**. Use one shared menu implementation rather than separate behavior for each View.
 
+## Menu appearance
+
+Context menus, dropdowns, suggestion lists and form popovers explicitly use the app’s surface, text, border and shadow tokens. Use 13 px body text, a 1.4 line height, compact rows of at least 30 px and 16 px icons. Do not inherit large document-heading styles or native popover text colors. Native controls follow the selected app color scheme; option surfaces use the same theme tokens where supported by the platform.
+
+Removal actions (Delete, Remove and Clear) use normal text at rest and the theme’s negative color on hover or visible keyboard focus. Disabled actions retain their disabled appearance. Mark these actions with the existing `danger` flag/class, including icon-only removal controls. Close and Cancel dismiss a surface and remain neutral. Destructive confirmation buttons keep their distinct confirmation styling; error messages and history deletions remain red without requiring hover.
+
 ## Current implementation gaps
 
 Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, and `WorkspaceMenu.tsx`:

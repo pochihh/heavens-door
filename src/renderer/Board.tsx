@@ -339,7 +339,7 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
       [...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,run:()=>setMenu({anchor,placementId:p.id,label:ui.tags.add,x,y,actions:addTagActions(lookup.get(p.cardId)!)})}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.search.openCard,icon:'note' as const,run:()=>onOpenCard(p.cardId)},{label:ui.search.openBeside,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,true)}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
-      }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,run:()=>removeReference(p)}]:[]),
+      }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,danger:true,run:()=>removeReference(p)}]:[]),
       ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
   }
   function openCanvasMenu(clientX:number,clientY:number) {

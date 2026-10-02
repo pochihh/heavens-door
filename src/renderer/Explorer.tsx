@@ -64,7 +64,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
         {label:ui.explorer.open,icon:'file' as const,run:()=>onOpen(key)},
         {label:ui.common.openInNewTab,icon:'external' as const,run:()=>onOpen(key)},
         {label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onSplit(key)},
-        {label:index>=0?ui.explorer.removeFromStarred:ui.explorer.addToStarred,icon:'star' as const,run:()=>star(key)},
+        {label:index>=0?ui.explorer.removeFromStarred:ui.explorer.addToStarred,icon:'star' as const,danger:index>=0,run:()=>star(key)},
         {label:ui.explorer.changeIcon,icon:'art' as const,run:()=>onIcon(key)},
         ...(index>=0?[
           {label:ui.explorer.moveUpInStarred,icon:'up' as const,disabled:index===0,run:()=>onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)-1,true)}))},

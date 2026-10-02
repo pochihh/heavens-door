@@ -30,7 +30,7 @@ export function WorkspaceManager({snapshot,session}:{snapshot:Snapshot|null;sess
           <small data-tooltip={tooltips.workspace.workspaceUpdated}>{ui.workspace.lastUpdated}: {w.lastUpdated===null?ui.workspace.unknownUpdate:<time dateTime={new Date(w.lastUpdated).toISOString()}>{new Date(w.lastUpdated).toLocaleString()}</time>}</small>
         </span>{w.root===snapshot?.root&&<Icon name="check"/>}
       </button>
-      <Tool icon="close" label={tooltips.workspace.unregister(w.name)} disabled={w.root===snapshot?.root} onClick={()=>{void window.door.unregisterWorkspace(w.root).then(setWorkspaces).catch(error=>setError(String(error)));}}/>
+      <Tool icon="close" className="danger" label={tooltips.workspace.unregister(w.name)} disabled={w.root===snapshot?.root} onClick={()=>{void window.door.unregisterWorkspace(w.root).then(setWorkspaces).catch(error=>setError(String(error)));}}/>
     </div>)}</div>
     {error&&<p role="alert">{error}</p>}
     <button className="primary" data-tooltip={tooltips.workspace.addWorkspace} onClick={()=>{void session.open(false).catch(error=>setError(String(error)));}}><Icon name="plus"/>{ui.workspace.openOrAddWorkspace}</button>
