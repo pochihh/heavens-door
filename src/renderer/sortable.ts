@@ -160,10 +160,12 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
         }
       }
       if(slot.nextElementSibling!==before&&(before||slot!==target.lastElementChild)){target.insertBefore(slot,before??null);layoutChanged=true;}
-      const r=slot.getBoundingClientRect(),freeY=rect.top+y-start.y;
-      // Snap only to the column; vertical motion follows the pointer exactly.
-      phantom.style.left=r.left+'px';phantom.style.top=freeY+'px';phantom.style.width=r.width+'px';
-    }else{phantom.style.left=rect.left+x-start.x+'px';phantom.style.top=rect.top+y-start.y+'px';phantom.style.width=rect.width+'px';}
+      const r=slot.getBoundingClientRect();
+      phantom.style.left=r.left+'px';phantom.style.width=r.width+'px';
+    }else{phantom.style.left=rect.left+x-start.x+'px';phantom.style.width=rect.width+'px';}
+    // Follow the pointer between rows, stopping only at the block's outer edges.
+    const block=root.getBoundingClientRect();
+    phantom.style.top=Math.max(block.top,Math.min(rect.top+y-start.y,block.bottom-rect.height))+'px';
     if(layoutChanged)animateReorder(beforeRects,'vertical',animations);lastY=y;
   }
   function scroll(){
