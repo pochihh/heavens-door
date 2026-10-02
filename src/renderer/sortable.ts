@@ -163,9 +163,11 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
       const r=slot.getBoundingClientRect();
       phantom.style.left=r.left+'px';phantom.style.width=r.width+'px';
     }else{phantom.style.left=rect.left+x-start.x+'px';phantom.style.width=rect.width+'px';}
-    // Follow the pointer between rows, stopping only at the block's outer edges.
-    const block=root.getBoundingClientRect();
-    phantom.style.top=Math.max(block.top,Math.min(rect.top+y-start.y,block.bottom-rect.height))+'px';
+    // Keep free vertical motion inside the card area, below the column heading.
+    const block=root.getBoundingClientRect(),column=target??home;
+    const heading=column.querySelector<HTMLElement>(':scope > .kanban-progress')??column.querySelector<HTMLElement>(':scope > h3');
+    const top=Math.max(block.top,heading?heading.getBoundingClientRect().bottom+(parseFloat(getComputedStyle(heading).marginBottom)||0):block.top);
+    phantom.style.top=Math.max(top,Math.min(rect.top+y-start.y,block.bottom-rect.height))+'px';
     if(layoutChanged)animateReorder(beforeRects,'vertical',animations);lastY=y;
   }
   function scroll(){
