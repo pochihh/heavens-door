@@ -191,11 +191,11 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
-test('wide tabs reorder by their leading edge regardless of grab offset in either dock family',async()=>{
+test('wide tabs reorder by their leading edge regardless of grab offset in dock and view tab strips',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const root=createRoot(document.getElementById('root')!);let order:string[]=[],writes=0;
-  function Harness({family,initial}:{family:'side'|'main';initial:string[]}){
+  function Harness({family,initial}:{family:'side'|'main'|'view';initial:string[]}){
     const [keys,setKeys]=useState(initial);
     const tabs=useTabDrag((source,target)=>{order=keys.filter(key=>key!==source.key);const index=target.before?order.indexOf(target.before):order.length;order.splice(index,0,source.key);writes++;setKeys(order);});
     return <div data-tab-strip data-tab-family={family} data-tab-group="group">{keys.map(key=><button key={key} data-tab-key={key} onPointerDown={e=>tabs.begin(e,{family,group:'group',key})}>{key}</button>)}</div>;
@@ -212,7 +212,7 @@ test('wide tabs reorder by their leading edge regardless of grab offset in eithe
   const pointer=(target:Element|Document,type:string,x:number)=>act(async()=>{const e=new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:50});Object.defineProperty(e,'pointerId',{value:1});target.dispatchEvent(e);});
   const previewOrder=()=>[...document.querySelector('[data-tab-strip]')!.children].filter(el=>(el as HTMLElement).style.display!=='none').map(el=>el.textContent);
   try{
-    for(const family of ['side','main'] as const)for(const direction of [1,-1])for(const offset of [8,172]){
+    for(const family of ['side','main','view'] as const)for(const direction of [1,-1])for(const offset of [8,172]){
       const initial=direction>0?['wide','b','c']:['b','c','wide'];order=initial;writes=0;
       await act(async()=>root.render(<Harness key={family+direction+offset} family={family} initial={initial}/>));
       const source=document.querySelector<HTMLElement>('[data-tab-key=wide]')!,start=source.getBoundingClientRect().left+offset;

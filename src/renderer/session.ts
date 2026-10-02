@@ -104,14 +104,14 @@ export class Session {
     clearTimeout(this.saveTimer);
     this.saveTimer=setTimeout(() => { void this.run(() => this.flush()).catch(() => undefined); },600);
   }
-  async flush() {
+  async flush(label?:string) {
     await this.flushPreferences();
     clearTimeout(this.saveTimer);
     while (this.state.draft?.dirty) {
       const draft=this.state.draft;
       this.update({status:ui.status.saving});
       const result=await this.bridge.request<Mutation>({kind:'saveCard',path:draft.card.path,body:draft.body,expected:draft.card.revision});
-      this.accept(result,ui.history.edit(draft.card.path),true);
+      this.accept(result,label??ui.history.edit(draft.card.path),!label);
       const info=result.snapshot.cards.find(c => c.path === draft.card.path)!;
       const card={...info,body:draft.body};
       const current=this.state.draft!;
@@ -155,6 +155,16 @@ export class Session {
   createTag(tag:string) {
     return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'createTag',tag});this.accept(result,ui.tags.newTag);return result.snapshot.tags!.find(t=>t.tag===tag)!;});
   }
+  saveViewBlock(path:string,expected:string,index:number,source:string,next:string|null){return this.run(async()=>{
+    if(this.state.snapshot?.cards.find(c=>c.path===path)?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+    await this.flush();
+    const draft=this.state.draft;
+    if(draft?.card.path===path){this.edit(replaceViewSource(draft.body,index,source,next));await this.flush(ui.views.options);return;}
+    const card=await this.bridge.request<Card>({kind:'card',path});
+    if(card.revision!==this.state.snapshot?.cards.find(c=>c.path===path)?.revision)throw new Error(ui.errors.externalEdit(path));
+    const body=replaceViewSource(card.body,index,source,next);
+    if(body!==card.body)this.accept(await this.bridge.request<Mutation>({kind:'saveCard',path,body,expected:card.revision}),ui.views.options);
+  });}
   saveTagBody(path:string,expected:string,body:string){return this.run(async()=>{await this.flush();this.accept(await this.bridge.request<Mutation>({kind:'saveTagBody',path,expected,body}),ui.tags.save);});}
   saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string,propertiesCollapsed?:boolean) {
     return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'saveTag',path,expected,fields,inherits,createParent,propertiesCollapsed});this.accept(result,ui.tags.save);return result.snapshot.tags!.find(t=>t.path===path)!;});

@@ -51,7 +51,7 @@ The split containers in the Main Dock and both Side Docks are **Tab Groups**. Th
 | Drop | Move/reorder the tab and activate it at the destination. Save the resulting layout only after release. Moving a Main Dock tab carries its view position unless the target already has that file open. |
 | Cancel | Escape, pointer cancel, window blur, unmount, an invalid destination or release outside the viewport restores original order, selection and content. Remove every phantom, preview and temporary style. |
 
-Side Dock tabs can move between the Left and Right Side Docks only. Main Dock tabs can move between Main Dock Tab Groups only. Crossing those families is invalid, not a conversion or a file move. The same underlying file may remain open in other Main Dock Tab Groups.
+Side Dock tabs can move between the Left and Right Side Docks only. Main Dock tabs can move between Main Dock Tab Groups only. Saved view tabs use the same interaction within their own view block; they cannot cross into another block or a dock. Their drop saves the `views` array order, and Alt+Left/Right offers the same operation without dragging. Crossing those families is invalid, not a conversion or a file move. The same underlying file may remain open in other Main Dock Tab Groups.
 
 A collapsed or empty Side Dock temporarily exposes an empty destination while a Side Dock tab is lifted; it stays open only after a successful drop.
 

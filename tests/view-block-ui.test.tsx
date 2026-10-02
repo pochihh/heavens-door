@@ -140,3 +140,45 @@ test('Kanban drops keep preview and editor views mounted while saves and refresh
   await act(async()=>root.render(null));session.dispose();
  }}finally{await act(async()=>root.unmount());}
 });
+
+
+test('preview setup stays editable, configured properties stay available, and view tabs reorder within their block',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
+ const snapshot:Snapshot={root:'/test',name:'Test',cards:['owner','a'].map(id=>({id,path:id+'.md',name:id,revision:'r1',legacy:false})),boards:[],issues:[],historyAvailable:false,tags:[{path:'project.tag',name:'project',tag:'project',revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:[],done:['Done']}},{key:'priority',type:'number'},{key:'Due',type:'date'}]}]};
+ let results:ViewResults={rows:[],total:0},writes=0;
+ const session=new Session({assetUrl:(s:string)=>s,request:async()=>results} as unknown as Bridge);window.door=session.bridge;session.state.snapshot=snapshot;
+ const {createRoot}=await import('react-dom/client'),{ViewBlockProvider}=await import('../src/renderer/ViewBlock'),{TitleContent}=await import('../src/renderer/TitleContent'),{preview}=await import('../src/renderer/markdown');
+ const definition=newViewBlock();definition.query.where={field:'file.folder',op:'under',value:'Notes'};definition.views=[{id:'board',name:'Board',type:'kanban',groupBy:'project/Status',fields:['project/priority','project/Due']},{id:'table',name:'Table',type:'table'},{id:'list',name:'List',type:'list'}];let source=writeViewBlock('',definition);
+ const root=createRoot(document.getElementById('root')!),render=()=>{const body='# Dashboard\n\n'+(source?'```view-block\n'+source+'```\n':'');root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><TitleContent path="owner.md" html={preview(body,'owner.md')}/><TitleContent path="owner.md" html={preview(body,'owner.md')}/></ViewBlockProvider>);};
+ session.saveViewBlock=async(path,revision,index,previous,next)=>{assert.equal(path,'owner.md');assert.equal(revision,'r1');assert.equal(index,0);assert.equal(previous.trim(),source.trim());writes++;source=next??'';render();};
+ const settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,130));}),click=async(selector:string)=>{const element=document.querySelector<HTMLElement>(selector);assert.ok(element,selector);await act(async()=>element.click());},escape=()=>act(async()=>{document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));});
+ const property=(name:string)=>[...document.querySelectorAll<HTMLLabelElement>('.view-menu-properties label')].find(el=>el.textContent===name)?.querySelector('input');
+ const order=()=>parseViewBlock(source).views.map(v=>v.id);
+ try{
+  await act(async()=>render());await settle();
+  assert.equal(document.querySelector<HTMLButtonElement>('.view-query-line button')?.disabled,false);assert.ok(document.querySelector('.view-tabs > [aria-label="Add view"]'));
+  await click('[aria-label="View options"]');await click('.view-menu-list button:nth-child(2)');assert.equal(property('priority')?.checked,true);assert.equal(property('Due')?.checked,true,'configured fields appear even before any query results');await escape();
+  results={rows:[{card:snapshot.cards[1],properties:{tags:['project'],'project/priority':3,'project/Due':'2026-10-18','project/Status':'Todo'}}],total:1};snapshot.cards=[...snapshot.cards.map(c=>({...c,revision:c.id==='a'?'r2':c.revision}))];await act(async()=>render());await settle();
+  await click('[aria-label="View options"]');await click('.view-menu-list button:nth-child(2)');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,false,'hidden properties remain available to enable');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,true);await escape();
+  await click('.view-query-line button');assert.ok(document.querySelector('.view-condition'));await click('.view-popup-footer button');await settle();
+  await click('.view-toolbar > button');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await escape();
+  const strips=[...document.querySelectorAll<HTMLElement>('[data-tab-strip]')],rect=(left:number,top:number,width:number)=>({left,top,width,height:34,right:left+width,bottom:top+34,x:left,y:top,toJSON(){}});
+  const original=dom.window.HTMLElement.prototype.getBoundingClientRect;
+  dom.window.HTMLElement.prototype.getBoundingClientRect=function(){const strip=this.hasAttribute('data-tab-strip')?this:this.parentElement;if(!strip||!strips.includes(strip))return original.call(this);const top=strips.indexOf(strip)*100+40;if(this===strip)return rect(10,top,300);const siblings=[...strip.children].filter(e=>(e as HTMLElement).style.display!=='none');return rect(10+siblings.indexOf(this)*92,top,90);};
+  const pointer=(target:Element|Document,type:string,x:number,y=50)=>act(async()=>{target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));});
+  const board=()=>strips[0].querySelector<HTMLElement>('[data-tab-key=board]')!,before=writes;
+  await pointer(board(),'pointerdown',30);await pointer(document,'pointermove',250);assert.ok(document.querySelector('.tab-phantom'));assert.equal(writes,before);await escape();assert.deepEqual(order(),['board','table','list']);
+  await pointer(board(),'pointerdown',30);await pointer(document,'pointermove',140,150);await pointer(document,'pointerup',140,150);assert.equal(writes,before,'view tabs cannot move into another block instance');
+  await pointer(board(),'pointerdown',30);await pointer(document,'pointermove',250);await pointer(document,'pointerup',250);await settle();assert.deepEqual(order(),['table','list','board']);assert.equal(strips[0].querySelector('[aria-selected=true]')?.getAttribute('data-tab-key'),'board');
+  await act(async()=>board().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',altKey:true,bubbles:true})));await settle();assert.deepEqual(order(),['table','board','list']);assert.equal(document.querySelector('.tab-phantom'),null);assert.equal(document.querySelector('.view-popup'),null,'dragging never opens a tab menu');
+  await click('[data-tab-key=board]');assert.ok(document.querySelector('.view-menu-list'));await click('.view-menu-list button:nth-child(2)');await click('[data-tab-key=board]');assert.equal(document.querySelector('.view-popup'),null,'a second tab click dismisses the menu even in a subpanel');
+  const action=async(name:string)=>{const button=[...document.querySelectorAll<HTMLElement>('.view-menu-list button')].find(el=>el.textContent===name);assert.ok(button,name);await act(async()=>button.click());};
+  await act(async()=>strips[0].querySelector('[data-tab-key=list]')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{button:2,bubbles:true,cancelable:true})));await action('Rename view');
+  const input=document.querySelector<HTMLInputElement>('.view-popup input')!;await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,'Renamed list');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});await act(async()=>document.querySelector('.view-popup form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();assert.equal(parseViewBlock(source).views.find(v=>v.id==='list')!.name,'Renamed list');
+  await click('[data-tab-key=list]');await action('Duplicate view');await settle();assert.equal(parseViewBlock(source).views.length,4);assert.equal(parseViewBlock(source).views.at(-1)!.name,'Renamed list copy');
+  await click('[data-tab-key=list]');await action('Delete view');await settle();assert.equal(parseViewBlock(source).views.some(v=>v.id==='list'),false);assert.equal(parseViewBlock(source).views.length,3,'delete applies to the clicked view, not the previously active copy');
+  while(source){const id=order()[0];await click('[data-tab-key="'+id+'"]');await action('Delete view');await settle();}assert.equal(document.querySelector('.view-block'),null,'deleting the last view removes its block');
+ }finally{await act(async()=>root.unmount());session.dispose();}
+});

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Workspace } from '../src/core/workspace';
 import { Session } from '../src/renderer/session';
+import {newViewBlock,writeViewBlock,viewBlockRanges} from '../src/view-block';
 import {defaultDocks} from '../src/layout';
 import type { Bridge } from '../src/shared';
 
@@ -272,4 +273,35 @@ test('workspace startup exposes pending state and clears it on success or failur
   release();await pending;assert.equal(session.state.status,'Saved locally');session.dispose();
   const broken=new Session({currentWorkspace:async()=>{throw new Error('Folder unavailable');}} as unknown as Bridge);
   await assert.rejects(()=>broken.resume(),/Folder unavailable/);assert.equal(broken.state.status,'Needs attention');broken.dispose();
+});
+
+
+test('preview view settings preserve Markdown and other drafts, participate in undo, and reject stale sources',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-door-view-settings-')),root=join(folder,'notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));await w.create('','owner',0,0);await w.create('','other',0,0);
+  const definition=newViewBlock(),source=writeViewBlock('',definition),body='# Dashboard\n\n<div>Keep raw HTML</div>\n\n```view-block\n'+source+'```\n\nAn untouched paragraph.\n';
+  await w.saveCard('owner.md',body,(await w.card('owner.md')).revision);
+  const session=new Session({request:async request=>{
+    if(request.kind==='card')return w.card(request.path);
+    if(request.kind==='saveCard')return w.saveCard(request.path,request.body,request.expected);
+    if(request.kind==='write')return w.write(request.changes);
+    throw new Error(request.kind);
+  }} as Bridge);session.update({snapshot:w.snapshot()});
+  t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  await session.select('other.md');session.edit('# Unrelated typing');
+  definition.views[0].name='Renamed';const next=writeViewBlock(source,definition),revision=(await w.card('owner.md')).revision;
+  await session.saveViewBlock('owner.md',revision,0,source,next);
+  assert.equal((await w.card('owner.md')).body,body.replace(source,next));assert.equal(session.state.draft?.card.path,'other.md');assert.equal((await w.card('other.md')).body,'# Unrelated typing');
+  await session.undo();assert.equal((await w.card('owner.md')).body,body);await session.undo(true);assert.equal((await w.card('owner.md')).body,body.replace(source,next));
+  await assert.rejects(session.saveViewBlock('owner.md',revision,0,source,next),/External changes/);
+  await session.select('owner.md');session.edit(session.state.draft!.body+'\nNew typing');
+  definition.views[0].name='Current draft';const updated=writeViewBlock(next,definition);
+  await session.saveViewBlock('owner.md',session.state.snapshot!.cards.find(c=>c.path==='owner.md')!.revision,0,next,updated);
+  assert.equal((await w.card('owner.md')).body,body.replace(source,updated)+'\nNew typing');assert.equal(session.state.draft?.body,(await w.card('owner.md')).body);
+  await session.saveViewBlock('owner.md',(await w.card('owner.md')).revision,0,updated,null);assert.equal(viewBlockRanges((await w.card('owner.md')).body).length,0);await session.undo();assert.equal(viewBlockRanges((await w.card('owner.md')).body)[0].source,updated.trimEnd());
+  const fresh=(await w.card('owner.md')).revision;
+  await assert.rejects(session.saveViewBlock('owner.md',fresh,0,source,next),/view changed/);
+  await session.select('other.md');await fs.writeFile(join(root,'owner.md'),(await w.read('owner.md'))+'\nExternal edit');
+  await assert.rejects(session.saveViewBlock('owner.md',fresh,0,updated,source),/External changes/);
+  assert.match(await w.read('owner.md'),/External edit/);assert.equal(viewBlockRanges((await w.card('owner.md')).body)[0].source,updated.trimEnd());
 });

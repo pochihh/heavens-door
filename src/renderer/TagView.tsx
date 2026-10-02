@@ -1,5 +1,5 @@
 import {ViewBlock} from './ViewBlock';
-import {viewFence,viewBlockRanges,newViewBlock,writeViewBlock} from '../view-block';
+import {viewFence,viewBlockRanges,replaceViewSource,newViewBlock,writeViewBlock} from '../view-block';
 import {preview} from './markdown';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,useId,type ReactNode,type ButtonHTMLAttributes,type PointerEvent as ReactPointerEvent} from 'react';
 import {createPortal} from 'react-dom';
@@ -186,7 +186,7 @@ export function TagView(props:Parameters<typeof LegacyTagView>[0]){
   if(!blocks.length)return <div className="tag-view-container"><LegacyTagView {...props}/><div className="tag-view-add">{add}</div></div>;
   return <section className="tag-view"><TagPageProperties tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/><h2 className="tag-views-heading">{ui.tags.views}</h2>{blocks.map((block,i)=><div key={i}>
     <div className="prose" dangerouslySetInnerHTML={{__html:preview(body.slice(i?blocks[i-1].end:0,block.start),tag.path,false)}}/>
-    <ViewBlock path={tag.path} blockIndex={i} source={block.source} onChange={source=>save(body.slice(0,block.start)+'```view-block\n'+source.trimEnd()+'\n```\n'+body.slice(block.end))} onRemove={()=>void save(body.slice(0,block.start)+body.slice(block.end)).catch(()=>undefined)}/>
+    <ViewBlock path={tag.path} blockIndex={i} source={block.source} onChange={source=>save(replaceViewSource(body,i,block.source,source))} onRemove={()=>save(replaceViewSource(body,i,block.source,null))}/>
   </div>)}<div className="prose" dangerouslySetInnerHTML={{__html:preview(body.slice(blocks.at(-1)!.end),tag.path,false)}}/>{add}</section>;
 }
 function LegacyTagView({tag,snapshot,session,onOpen,onPreview=onOpen,memory,onViewChange}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;memory:ViewMemory;onViewChange:()=>void}) {

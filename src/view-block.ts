@@ -115,7 +115,8 @@ export function orderedCardIds(saved:readonly string[],current:readonly string[]
 export function moveCardId(saved:readonly string[],visible:readonly string[],id:string,before?:string,after?:string){
   const ids=[...new Set([...saved,...visible])].filter(key=>key!==id);let at=before?ids.indexOf(before):after&&ids.includes(after)?ids.indexOf(after)+1:ids.length;if(at<0)at=ids.length;ids.splice(at,0,id);return ids;
 }
-export function replaceViewSource(body:string,index:number,source:string,next:string){
+export function replaceViewSource(body:string,index:number,source:string,next:string|null){
   const block=viewBlockRanges(body)[index];if(!block||block.source.trim()!==source.trim())throw new Error(viewText.errors.viewChanged);
-  return body.slice(0,block.start)+'```view-block\n'+next.trimEnd()+'\n```\n'+body.slice(block.end);
+  if(next===null)return body.slice(0,block.start)+body.slice(block.end);
+  return body.slice(0,block.start)+'```view-block\n'+next.trimEnd()+'\n```'+(body[block.end-1]==='\n'?'\n':'')+body.slice(block.end);
 }
