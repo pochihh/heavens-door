@@ -1,7 +1,7 @@
 import {createContext,useContext,useEffect,useMemo,useState,useRef,type ReactNode} from 'react';
 import type {NavigationMode} from '../layout';
 import type {Snapshot,ViewResults,TagResult,TagValue} from '../shared';
-import {parseViewBlock,writeViewBlock,newViewBlock,validateRule,validateView,queryFields,positiveTags,resolveField,sameField,operators,OPERATORS,DEFAULT_QUERY_PREFERENCES,viewDisplayFields,viewPropertyTargets,type ViewBlock as Definition,type BlockView,type Rule,type FieldRef,type QueryField} from '../view-block';
+import {parseViewBlock,writeViewBlock,newViewBlock,validateRule,validateView,queryFields,positiveTags,resolveField,sameField,operators,OPERATORS,DEFAULT_QUERY_PREFERENCES,viewDisplayFields,viewPropertyTargets,moveCardId,type ViewBlock as Definition,type BlockView,type Rule,type FieldRef,type QueryField} from '../view-block';
 import {TextSearch} from '../core/search';
 import type {Session} from './session';
 import {Icon,Tool} from './Icons';
@@ -70,7 +70,15 @@ export function ViewBlock({source,onChange,onRemove,path,blockIndex=0}:{source:s
   async function moveCard(row:TagResult,from:string,to:string,position:{before?:string;after?:string}){
     if(!path||!view)return;
     const owner=context!.snapshot.cards.find(c=>c.path===path)??tags.find(t=>t.path===path);if(!owner)return;
-    await context!.session.moveViewCard({owner:{path,expected:owner.revision,source,block:blockIndex},view:view.id,card:{path:row.card.path,expected:row.card.revision},from,to,...position});
+    const previous=result,id=row.card.id,keys=from!==to&&group?viewPropertyTargets(group.keys[0],tags,row.properties,prefs,true).map(t=>t.field.propertyKey):[];
+    // Keep the dropped slot visible while the file transaction and indexed refresh finish.
+    generation.current++;
+    setResult({...result,rows:result.rows.map(r=>r.card.id===id?{...r,properties:{...r.properties,...Object.fromEntries(keys.map(key=>[key,to||null]))}}:r),columns:result.columns&&[...result.columns,...(result.columns.some(c=>c.value===to)?[]:[{value:to,ids:[],total:0}])].map(column=>{
+      const had=column.ids.includes(id),ids=column.ids.filter(key=>key!==id),target=column.value===to;
+      return {...column,ids:target?moveCardId([],ids,id,position.before,position.after):from===to?column.ids:ids,total:column.total+(target&&!had?1:!target&&had&&from!==to?-1:0)};
+    })});
+    try{await context!.session.moveViewCard({owner:{path,expected:owner.revision,source,block:blockIndex},view:view.id,card:{path:row.card.path,expected:row.card.revision},from,to,...position});}
+    catch(error){setResult(previous);throw error;}
   }
   async function more(){if(!view)return;const version=generation.current;setBusy(true);try{const next=await context!.session.bridge.request<ViewResults>({kind:'viewCards',source,view:view.id,offset:result.nextOffset??result.rows.length});if(version===generation.current)setResult(old=>({...next,rows:[...new Map([...old.rows,...next.rows].map(r=>[r.card.id,r])).values()],...(next.columns?{columns:next.columns.map(c=>({...c,ids:[...new Set([...(old.columns?.find(p=>p.value===c.value)?.ids??[]),...c.ids])]}))}: {})}));}catch(e){if(version===generation.current)setError(String(e));}finally{if(version===generation.current)setBusy(false);}}
   return <section className="view-block" contentEditable={false} aria-label={t.addBlock} onPointerDown={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
@@ -79,7 +87,7 @@ export function ViewBlock({source,onChange,onRemove,path,blockIndex=0}:{source:s
     {(parsed.error||checked.error||error&&!popup)&&<div className="view-error" role="alert"><strong>{t.error}</strong><p>{parsed.error||checked.error||error}</p>{onChange&&<button onClick={e=>open('source',e.currentTarget)}>{t.editSource}</button>}</div>}
     {block&&view&&!parsed.error&&!checked.error&&!error&&<div className="view-results" aria-busy={busy}>
       <ViewResultContent scroll={scroll} view={view} result={result} columns={columns} group={group} snapshot={context.snapshot} editing={editing} onEditing={setEditing} onSave={saveProperty} onMove={path?moveCard:undefined} onOpen={context.onOpen} onPreview={context.onPreview} onNavigate={context.onNavigate}/>
-      <div className="view-result-footer"><span role="status">{busy?t.loading:!result.total?t.empty:t.count(result.rows.length,result.total)}</span>{(result.nextOffset!==undefined||!result.columns&&result.rows.length<result.total)&&<button disabled={busy} onClick={()=>void more()}>{t.more}</button>}</div>
+      <div className="view-result-footer"><span role="status">{busy&&!result.total?t.loading:!result.total?t.empty:t.count(result.rows.length,result.total)}</span>{(result.nextOffset!==undefined||!result.columns&&result.rows.length<result.total)&&<button disabled={busy} onClick={()=>void more()}>{t.more}</button>}</div>
     </div>}
     {popup&&<PropertyPopover anchor={popup.anchor} align={popup.kind==='query'?'start':'end'} className="view-setup-popover" label={popup.kind==='source'?t.source:t[popup.kind as 'query']??t.options} onClose={()=>{setPopup(null);setDraft(null);setError('');}}><div className="view-popup" data-kind={popup.kind} key={popup.kind}>
       <div className="view-popup-heading">{['layout','properties','group','rename'].includes(popup.kind)&&<Tool className="view-back" icon="chevron" label={tooltips.views.back} onClick={()=>panel('options')}/>}<strong>{popup.kind==='filter'?t.filter+' · '+view?.name:popup.kind==='source'?t.source:popup.kind==='add'?t.addView:t[popup.kind as 'options']??t.options}</strong><Tool icon="close" label={tooltips.common.closeDialog} onClick={()=>{setPopup(null);setError('');}}/></div>

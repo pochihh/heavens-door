@@ -1,6 +1,9 @@
-import test from 'node:test';
+import test,{after} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
+// DOMPurify retains its renderer window across these tests.
+const windows:JSDOM[]=[];
+after(()=>windows.forEach(dom=>dom.window.close()));
 import {act} from 'react';
 import type {Snapshot,Bridge,ViewResults} from '../src/shared';
 import {tintColor} from '../src/colors';
@@ -8,7 +11,7 @@ import {Session} from '../src/renderer/session';
 import {writeViewBlock,newViewBlock,parseViewBlock} from '../src/view-block';
 
 test('editable view blocks render without changing Markdown, commit group edits and preserve source through focus changes',async()=>{
- const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const snapshot:Snapshot={root:'/test',name:'Test',cards:[],boards:[],tags:[],issues:[],historyAvailable:false};let requests=0;
@@ -37,7 +40,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
    await click('.view-toolbar button:nth-last-child(3)');await click('[aria-label="Find a property…"]');
    await click('[role="option"][aria-selected="true"]');assert.ok(document.querySelector('.view-condition'));assert.equal(writes,1);
 
- }finally{await act(async()=>root.unmount());dom.window.close();}
+ }finally{await act(async()=>root.unmount());}
 });
 
 test('compact subpanels and result editors preserve anchors, support status/date edits and Kanban drop',async()=>{
@@ -102,4 +105,32 @@ test('Kanban reorder slots snap, release and cancel without changing source DOM'
   begin();event('pointermove',240,110);document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(drops.length,0);assert.equal(source.style.display,'');assert.equal(document.querySelector('.drag-phantom'),null);
   begin();event('pointermove',240,110);event('pointerup',240,110);assert.deepEqual(drops.pop(),{value:'Done',before:undefined,after:undefined});assert.deepEqual([...board.querySelectorAll('[data-card-id]')].map(el=>el.textContent),['A','B','C']);
  }finally{dom.window.close();}
+});
+
+test('Kanban drops keep preview and editor views mounted while saves and refreshes finish',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ const {createRoot}=await import('react-dom/client'),{ViewBlockProvider}=await import('../src/renderer/ViewBlock'),{TitleContent}=await import('../src/renderer/TitleContent'),{CardEditor}=await import('../src/renderer/Editor'),{preview}=await import('../src/renderer/markdown');
+ const root=createRoot(document.getElementById('root')!);
+ const settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,130));});
+ try{for(const editable of [true,false]){
+  let snapshot:Snapshot={root:'/test',name:'Test',cards:['owner','a','b'].map(id=>({id,path:id+'.md',name:id,revision:'r1',legacy:false})),boards:[],issues:[],historyAvailable:false,tags:[{path:'project.tag',name:'project',tag:'project',revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:[],done:['Done']}}]}]};
+  const definition=newViewBlock('project');definition.views=[{id:'board',name:'Board',type:'kanban',groupBy:'project/Status',fields:[]}];let source=writeViewBlock('',definition),writes=0,requests=0;
+  const results:ViewResults={rows:snapshot.cards.slice(1).map(card=>({card,properties:{tags:['project'],'project/Status':'Todo'}})),total:2,columns:[{value:'Todo',ids:['a','b'],total:2},{value:'Done',ids:[],total:0}]};
+  let finishSave:()=>void=()=>{},failSave:(e:Error)=>void=()=>{},finishRefresh:(rows:ViewResults)=>void=()=>{};
+  const session=new Session({assetUrl:(s:string)=>s,request:async()=>{requests++;return requests===1?structuredClone(results):new Promise<ViewResults>(resolve=>{finishRefresh=resolve;});}} as unknown as Bridge);window.door=session.bridge;session.state.snapshot=snapshot;
+  const render=()=>{const body='# Board\n\n```view-block\n'+source+'```\n\nAn unchanged paragraph.';root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}>{editable?<CardEditor path="owner.md" body={body} cards={snapshot.cards} onEdit={()=>{writes++;}}/>:<TitleContent path="owner.md" html={preview(body,'owner.md')}/>}</ViewBlockProvider>);};
+  session.moveViewCard=async()=>{await new Promise<void>((resolve,reject)=>{finishSave=resolve;failSave=reject;});definition.views[0].order={Todo:['b','a']};source=writeViewBlock(source,definition);snapshot={...snapshot,cards:snapshot.cards.map(c=>c.id==='owner'?{...c,revision:'r2'}:c)};session.state.snapshot=snapshot;render();return {snapshot,edits:[]};};
+  await act(async()=>render());await settle();const view=document.querySelector('.view-block'),board=document.querySelector<HTMLElement>('.view-kanban')!,other=document.querySelector('[data-card-id=b]'),heading=document.querySelector('h1');board.scrollLeft=52;board.dispatchEvent(new dom.window.Event('scroll',{bubbles:true}));
+  const ids=()=>[...document.querySelectorAll('[data-tag-column=Todo] [data-card-id]')].map(el=>(el as HTMLElement).dataset.cardId);
+  const rect=(left:number,top:number,width:number,height:number)=>({left,right:left+width,top,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
+  const drag=async(toDone=false)=>{board.getBoundingClientRect=()=>rect(0,0,420,500);document.querySelectorAll<HTMLElement>('[data-tag-column]').forEach((el,i)=>el.getBoundingClientRect=()=>rect(i*220,0,200,500));document.querySelectorAll<HTMLElement>('[data-card-id]').forEach(el=>el.getBoundingClientRect=()=>rect(0,el.dataset.cardId==='a'?40:130,200,70));const card=document.querySelector('[data-card-id=a]')!;const event=(target:Element|Document,type:string,x:number,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));await act(async()=>{event(card,'pointerdown',20,60);event(document,'pointermove',toDone?260:20,toDone?60:225);event(document,'pointerup',toDone?260:20,toDone?60:225);});};
+  await drag();assert.deepEqual(ids(),['b','a'],'the drop is visible before the file save completes');
+  await act(async()=>finishSave());await settle();assert.equal(document.querySelector('.view-block'),view,'source updates keep the view mounted in '+(editable?'editor':'preview'));assert.equal(document.querySelector('.view-kanban'),board);assert.equal(document.querySelector('[data-card-id=b]'),other);assert.equal(document.querySelector('h1'),heading);assert.deepEqual(ids(),['b','a'],'a pending query never empties or reverts the view');assert.equal(board.scrollLeft,52);assert.doesNotMatch(document.querySelector('.view-result-footer')?.textContent??'',/Loading/);assert.equal(writes,0,'external order updates do not become editor changes');
+  const refreshed={...results,columns:[{value:'Todo',ids:['b','a'],total:2},{value:'Done',ids:[],total:0}]};await act(async()=>finishRefresh(refreshed));assert.deepEqual(ids(),['b','a']);
+  await drag(true);assert.ok(document.querySelector('[data-tag-column=Done] [data-card-id=a]'),'cross-column drops appear immediately too');
+  await act(async()=>failSave(new Error('Save failed')));assert.deepEqual(ids(),['b','a'],'a failed save restores the previous order');assert.equal(document.querySelector('[data-tag-column=Done] [data-card-id=a]'),null);assert.match(document.querySelector('[role=alert]')?.textContent??'',/Save failed/);assert.equal(document.querySelector('.view-block'),view);
+  await act(async()=>root.render(null));session.dispose();
+ }}finally{await act(async()=>root.unmount());}
 });
