@@ -119,6 +119,8 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
 // Shared by tag pages and embedded views; pressing a card is not a drag until it moves.
 export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onDrop:(value:string,position:{before?:string;after?:string})=>void,accepts:(value:string)=>boolean,reorder=true){
   const source=e.currentTarget,rect=source.getBoundingClientRect(),start={x:e.clientX,y:e.clientY},pointer=e.pointerId,id=source.dataset.cardId;
+  const scroller=root.closest<HTMLElement>('.editor-body,.card-preview,.tag-view')??root,horizontal=root.closest<HTMLElement>('.tag-results')??root;
+  const bounds=()=>{const r=root.getBoundingClientRect(),clip=scroller.getBoundingClientRect();return {left:Math.max(r.left,clip.left),right:Math.min(r.right,clip.right),top:Math.max(r.top,clip.top),bottom:Math.min(r.bottom,clip.bottom)};};
   const home=source.closest<HTMLElement>('[data-tag-column]')!,columns=[...root.querySelectorAll<HTMLElement>('[data-tag-column]')];
   const cards=(column:HTMLElement)=>[...column.querySelectorAll<HTMLElement>('[data-card-id]')].filter(row=>row!==source&&row.dataset.cardId!==id);
   const initialBefore=source.nextElementSibling instanceof HTMLElement?source.nextElementSibling.dataset.cardId:undefined;
@@ -138,8 +140,8 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
   }
   function place(scrollY=0){
     if(!phantom||!slot)return;
-    const bounds=root.getBoundingClientRect();
-    const hit=columns.filter(column=>accepts(column.dataset.tagColumn!)&&(()=>{const r=column.getBoundingClientRect(),margin=column===target?24:12;return x>=bounds.left-24&&x<=bounds.right+24&&x>=r.left-margin&&x<=r.right+margin&&y>=bounds.top-24&&y<=bounds.bottom+24;})()).sort((a,b)=>Math.abs(x-(a.getBoundingClientRect().left+a.getBoundingClientRect().right)/2)-Math.abs(x-(b.getBoundingClientRect().left+b.getBoundingClientRect().right)/2))[0]??null;
+    const area=bounds();
+    const hit=columns.filter(column=>accepts(column.dataset.tagColumn!)&&(()=>{const r=column.getBoundingClientRect(),margin=column===target?24:12;return x>=area.left-24&&x<=area.right+24&&x>=r.left-margin&&x<=r.right+margin&&y>=area.top-24&&y<=area.bottom+24;})()).sort((a,b)=>Math.abs(x-(a.getBoundingClientRect().left+a.getBoundingClientRect().right)/2)-Math.abs(x-(b.getBoundingClientRect().left+b.getBoundingClientRect().right)/2))[0]??null;
     const changed=hit!==target;let layoutChanged=changed;
     const beforeRects=new Map([...new Set([target,hit])].flatMap(column=>column?cards(column):[]).map(row=>[row,row.getBoundingClientRect()]));
     if(changed){target?.classList.remove('kanban-drop');reveal();conceal(source);target=hit;
@@ -159,20 +161,21 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
       }
       if(slot.nextElementSibling!==before&&(before||slot!==target.lastElementChild)){target.insertBefore(slot,before??null);layoutChanged=true;}
       const r=slot.getBoundingClientRect(),freeY=rect.top+y-start.y;
-      phantom.style.left=r.left+'px';phantom.style.top=(r.top+Math.max(-10,Math.min(10,freeY-r.top)))+'px';phantom.style.width=r.width+'px';
+      // Snap only to the column; vertical motion follows the pointer exactly.
+      phantom.style.left=r.left+'px';phantom.style.top=freeY+'px';phantom.style.width=r.width+'px';
     }else{phantom.style.left=rect.left+x-start.x+'px';phantom.style.top=rect.top+y-start.y+'px';phantom.style.width=rect.width+'px';}
     if(layoutChanged)animateReorder(beforeRects,'vertical',animations);lastY=y;
   }
   function scroll(){
     if(ended||!phantom)return;if(!root.isConnected){finish(false);return;}
-    const r=root.getBoundingClientRect(),speed=(p:number,lo:number,hi:number)=>p<lo+32?-Math.min(14,(lo+32-p)/3):p>hi-32?Math.min(14,(p-hi+32)/3):0;
-    const left=root.scrollLeft,top=root.scrollTop;
-    if(x>=r.left-24&&x<=r.right+24&&y>=r.top-24&&y<=r.bottom+24){root.scrollLeft+=speed(x,r.left,r.right);root.scrollTop+=speed(y,r.top,r.bottom);if(left!==root.scrollLeft||top!==root.scrollTop)place(root.scrollTop-top);}
+    const r=bounds(),speed=(p:number,lo:number,hi:number)=>p<lo+32?-Math.min(14,(lo+32-p)/3):p>hi-32?Math.min(14,(p-hi+32)/3):0;
+    const left=horizontal.scrollLeft,top=scroller.scrollTop;
+    if(x>=r.left-12&&x<=r.right+12&&y>=r.top-12&&y<=r.bottom+12){horizontal.scrollLeft+=speed(x,r.left,r.right);scroller.scrollTop+=speed(y,r.top,r.bottom);if(left!==horizontal.scrollLeft||top!==scroller.scrollTop)place(scroller.scrollTop-top);}
     frame=requestAnimationFrame(scroll);
   }
   function motion(event:PointerEvent){
     if(event.pointerId!==pointer||ended)return;if(!phantom&&Math.hypot(event.clientX-start.x,event.clientY-start.y)<5)return;event.preventDefault();x=event.clientX;y=event.clientY;
-    if(!phantom){phantom=createDragPhantom(source,rect);phantom.style.transition=matchMedia('(prefers-reduced-motion: reduce)').matches?'none':'left 100ms ease, top 100ms ease, width 100ms ease';slot=document.createElement('div');slot.className='kanban-slot';slot.style.height=rect.height+'px';slot.setAttribute('aria-hidden','true');source.before(slot);conceal(source);target=home;home.classList.add('kanban-drop');document.body.classList.add('list-dragging');frame=requestAnimationFrame(scroll);}
+    if(!phantom){phantom=createDragPhantom(source,rect);phantom.style.transition=matchMedia('(prefers-reduced-motion: reduce)').matches?'none':'left 100ms ease, width 100ms ease';slot=document.createElement('div');slot.className='kanban-slot';slot.style.height=rect.height+'px';slot.setAttribute('aria-hidden','true');source.before(slot);conceal(source);target=home;home.classList.add('kanban-drop');document.body.classList.add('list-dragging');frame=requestAnimationFrame(scroll);}
     place();
   }
   const up=(event:PointerEvent)=>{if(event.pointerId===pointer)finish(true);},abort=()=>finish(false),cancel=(event:PointerEvent)=>{if(event.pointerId===pointer)abort();},key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();abort();}};
