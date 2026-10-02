@@ -174,9 +174,15 @@ Follow the compact Notion-style direction in [Menus and tooltips](interactions/m
 View options separates Layout, Properties and Group into focused subpanels in the same anchored surface, with Back returning to the parent menu. Simple settings apply immediately; query/filter drafts and YAML retain explicit commits. Results edit through Card View controls and the source-file undo path. Merging follows the workspace setting: one edit applies to every compatible matching property on the card’s attached tags, retaining their distinct keys. Kanban cards use their source card’s saved fill color with the same theme tint as whiteboard cards; changing a column or status does not recolor them. Kanban Todo → Done writes the grouping property with the same rules, shared drag phantom and equivalent More-menu action.
 
 
+## Card property previews
+
+Kanban property previews use a compact label/value grid: an 88 px label column and an 8 px gap. Values align to the same start position across rows within a card. Widening a card gives the extra space to values; labels do not grow proportionally and values are never pushed to the far edge. Use this spacing in both saved view blocks and tag-page Kanban cards.
+
+Keep labels muted and values in the normal text color, with aligned first-line baselines. Long labels and values wrap within their columns instead of overlapping or widening the card. Preserve native date formatting and status pills. Previews have no separate input or hover treatment: clicking the title, label or value opens the same editable card popup.
+
 ## Card popups and tab navigation
 
-Kanban card clicks open a centered editable Card popup over a dimmed background. Keep the source view mounted, with its selected view and scroll position intact. Reuse Card View’s title, tags, properties, Markdown editor, file writes and undo history. Clicks inside a property edit that value; pointer movement beyond the shared drag threshold moves the card without opening it. Whiteboard card menus and full-card toolbar menus can open this same popup.
+Kanban card clicks open a centered editable Card popup over a dimmed background. Keep the source view mounted, with its selected view and scroll position intact. Reuse Card View’s title, tags, properties, Markdown editor, file writes and undo history. Kanban preview titles and properties all open the popup; its properties use the normal editors. Pointer movement beyond the shared drag threshold moves the Kanban card without opening it. Whiteboard card menus and full-card toolbar menus can open this same popup.
 
 Use a compact toolbar with Open in same tab, Open in new tab, the editable filename, formatting, More and Close. More also offers another Tab Group. Escape and backdrop clicks close the popup; nested menus consume Escape first. Save before closing or transferring to a tab. A failed save retains the popup and draft with a visible error. Use the theme surface, 12px corners, a restrained shadow and a maximum width of 920px. Native modal focus containment includes nested property menus and tag suggestions.
 
