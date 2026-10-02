@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon, type IconName } from './Icons';
 
+export function overlayContainer(anchor?:Element|null){return anchor?.closest('dialog[open]')??[...document.querySelectorAll('dialog[open]')].at(-1)??document.body;}
+
 // One delegated tooltip for the window, including controls mounted inside portals.
 export function TooltipHost() {
   const [tip,setTip]=useState<{text:string;rect:DOMRect}|null>(null);
@@ -28,7 +30,7 @@ export function TooltipHost() {
     element.current.style.left=Math.max(8,Math.min(innerWidth-box.width-8,r.left+(r.width-box.width)/2))+'px';
     element.current.style.top=(r.bottom+box.height+14<innerHeight?r.bottom+7:Math.max(8,r.top-box.height-7))+'px';
   },[tip]);
-  return tip?createPortal(<div ref={element} id="app-tooltip" className="hover-tooltip" role="tooltip">{tip.text}</div>,document.body):null;
+  return tip?createPortal(<div ref={element} id="app-tooltip" className="hover-tooltip" role="tooltip">{tip.text}</div>,overlayContainer()):null;
 }
 export interface MenuAction {danger?:boolean;separatorBefore?:boolean;label:string;icon?:IconName;checked?:boolean;checkType?:'checkbox'|'radio';disabled?:boolean;hint?:string;run:()=>void}
 export interface MenuState {anchor?:HTMLElement;above?:boolean;label?:string;x:number;y:number;actions:MenuAction[]}
@@ -51,5 +53,5 @@ export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
     const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
     if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();onClose();}
-  }}>{menu.actions.map((action,i)=><Fragment key={i}>{action.separatorBefore&&<div role="separator" className="menu-separator"/>}<button role={action.checked!==undefined?(action.checkType==='checkbox'?'menuitemcheckbox':'menuitemradio'):'menuitem'} className={action.danger?'danger':undefined} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button></Fragment>)}</div>,document.body);
+  }}>{menu.actions.map((action,i)=><Fragment key={i}>{action.separatorBefore&&<div role="separator" className="menu-separator"/>}<button role={action.checked!==undefined?(action.checkType==='checkbox'?'menuitemcheckbox':'menuitemradio'):'menuitem'} className={action.danger?'danger':undefined} aria-checked={action.checked} disabled={action.disabled} data-tooltip={action.hint} onClick={()=>{onClose();action.run();}}>{action.icon?<Icon name={action.icon}/>:<span className="menu-icon-space"/>}<span>{action.label}</span>{action.checked&&<Icon name="check" size={14}/>}</button></Fragment>)}</div>,overlayContainer());
 }

@@ -17,6 +17,7 @@ export const ui = {
     pending:'Graphics information is not ready. Refresh to try again.',electron:'Electron',chromium:'Chromium',
     feature:(name:string)=>name.replaceAll('_',' '),
   },
+  navigation:{cardPopup:'Card preview'},
   layout: {
     pixels: (value: number) => `${value} pixels`,
     sideDock: { left: 'Left Side Dock', right: 'Right Side Dock' },
@@ -102,6 +103,8 @@ export const ui = {
   },
   common: {
     on:'On',off:'Off',
+    openInSameTab: 'Open in same tab',
+    openInPopup: 'Open in popup',
     openInNewTab: "Open in new tab",
     newCard: "New card",
     cancel: "Cancel",

@@ -1,4 +1,5 @@
 import {createContext,useContext,useEffect,useMemo,useState,useRef,type ReactNode} from 'react';
+import type {NavigationMode} from '../layout';
 import type {Snapshot,ViewResults,TagResult,TagValue} from '../shared';
 import {parseViewBlock,writeViewBlock,newViewBlock,validateRule,validateView,queryFields,positiveTags,resolveField,sameField,operators,OPERATORS,DEFAULT_QUERY_PREFERENCES,viewDisplayFields,viewPropertyTargets,type ViewBlock as Definition,type BlockView,type Rule,type FieldRef,type QueryField} from '../view-block';
 import {TextSearch} from '../core/search';
@@ -11,8 +12,8 @@ import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 const t=ui.views;
 function summary(rule?:Rule):string{if(!rule)return t.allCards;if('all'in rule)return rule.all.length?rule.all.map(r=>summary(r)).join(' · '):t.allCards;if('any'in rule)return t.any+': '+rule.any.map(r=>summary(r)).join(', ');if('not'in rule)return t.exclude+': '+summary(rule.not);return (rule.field==='tags'?'#'+rule.value:(typeof rule.field==='string'?rule.field:rule.field.join(' / '))+' '+(OPERATORS[rule.op]??rule.op)+' '+(rule.value??''))+(rule.field==='tags'&&rule.op==='notContains'?' ('+t.exclude+')':'');}
-export const ViewBlockContext=createContext<{snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}|null>(null);
-export function ViewBlockProvider({children,...value}:{children:ReactNode;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){return <ViewBlockContext.Provider value={value}>{children}</ViewBlockContext.Provider>;}
+export const ViewBlockContext=createContext<{snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}|null>(null);
+export function ViewBlockProvider({children,...value}:{children:ReactNode;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){return <ViewBlockContext.Provider value={value}>{children}</ViewBlockContext.Provider>;}
 function SearchChoice({label,value,choices,onChange,inline=false}:{inline?:boolean;label:string;value:string;choices:{id:string;name:string;detail?:string}[];onChange:(id:string)=>void}){
   const [open,setOpen]=useState(false),[search,setSearch]=useState(''),ref=useRef<HTMLDivElement>(null);
   const engine=useMemo(()=>{const engine=new TextSearch();for(const c of choices)engine.update({path:c.id,name:c.name,title:c.name,body:c.detail??''});return engine;},[choices]);
@@ -69,7 +70,7 @@ export function ViewBlock({source,onChange,onRemove}:{source:string;onChange?:(s
     {view?.filter&&(!('all'in view.filter)||view.filter.all.length>0)&&<div className="view-filter-summary"><button disabled={!onChange} onClick={e=>open('filter',e.currentTarget)}>{summary(view.filter)}</button></div>}
     {(parsed.error||checked.error||error&&!popup)&&<div className="view-error" role="alert"><strong>{t.error}</strong><p>{parsed.error||checked.error||error}</p>{onChange&&<button onClick={e=>open('source',e.currentTarget)}>{t.editSource}</button>}</div>}
     {block&&view&&!parsed.error&&!checked.error&&!error&&<div className="view-results" aria-busy={busy}>
-      <ViewResultContent view={view} result={result} columns={columns} group={group} snapshot={context.snapshot} editing={editing} onEditing={setEditing} onSave={saveProperty} onOpen={context.onOpen}/>
+      <ViewResultContent view={view} result={result} columns={columns} group={group} snapshot={context.snapshot} editing={editing} onEditing={setEditing} onSave={saveProperty} onOpen={context.onOpen} onPreview={context.onPreview} onNavigate={context.onNavigate}/>
       <div className="view-result-footer"><span role="status">{busy?t.loading:!result.total?t.empty:t.count(result.rows.length,result.total)}</span>{result.rows.length<result.total&&<button disabled={busy} onClick={()=>void more()}>{t.more}</button>}</div>
     </div>}
     {popup&&<PropertyPopover anchor={popup.anchor} align={popup.kind==='query'?'start':'end'} className="view-setup-popover" label={popup.kind==='source'?t.source:t[popup.kind as 'query']??t.options} onClose={()=>{setPopup(null);setDraft(null);setError('');}}><div className="view-popup" data-kind={popup.kind} key={popup.kind}>

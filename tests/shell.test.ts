@@ -4,9 +4,9 @@ import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Workspace} from '../src/core/workspace';
-import {pane,panes,openTab,navigateTab,splitPane,moveTab,closeTab,removePane,restoreLayout} from '../src/layout';
+import {pane,panes,openTab,navigateTab,tabDocument,tabHistory,travelTab,mapPaneDocuments,updatePane,splitPane,moveTab,closeTab,removePane,restoreLayout} from '../src/layout';
 
-test('tabs are unique within a pane, can share a file across splits, and survive layout restore',()=>{
+test('ordinary reopening reuses a tab, splits can share a file, and layout restores',()=>{
   const first=pane('board:');
   let layout=openTab(first,first.id,'card:a');
   layout=openTab(layout,first.id,'card:a');
@@ -77,7 +77,7 @@ test('workspace settings, sub-whiteboard files and root migration preserve ident
 
 test('new tabs stay in their group while explicit other-group navigation reuses or creates a split',()=>{
   const first=pane('board:'),same=navigateTab(first,first.id,'board:Ideas','same');
-  assert.deepEqual(panes(same.tree)[0].tabs,['board:Ideas']);assert.equal(same.active,first.id);
+  assert.equal(tabDocument(panes(same.tree)[0]),'board:Ideas');assert.deepEqual(panes(same.tree)[0].tabs,['board:']);assert.equal(same.active,first.id);
   const beside=navigateTab(same.tree,first.id,'card:a','other');
   assert.equal(panes(beside.tree).length,2);assert.equal(beside.tree.type==='split'&&beside.tree.axis,'row');
   const reused=navigateTab(beside.tree,first.id,'board:Other','other');
@@ -103,4 +103,30 @@ test('whiteboard creation saves the cursor placement with the new board and undo
   await undo.travel(true,c=>workspace.write(c));assert.equal(workspace.snapshot().boards.find(b=>b.folder==='Ideas')!.cards[0].x,420);
   await assert.rejects(()=>workspace.createFolder('','Invalid',{x:NaN,y:0}),/Invalid whiteboard position/);
   await assert.rejects(()=>fs.stat(join(root,'Invalid')),/ENOENT/);
+});
+
+
+test('each tab retains bounded navigation through revisits, splits, moves, rename and restore',()=>{
+  const start=pane('board:Ideas');let layout=navigateTab(start,start.id,'card:a','same').tree;
+  const original=start.active;
+  layout=openTab(layout,start.id,'board:Ideas');let current=panes(layout)[0];
+  assert.notEqual(current.active,original,'a reused document key cannot steal the earlier tab history');
+  const second=current.active;
+  layout=navigateTab(layout,start.id,'card:a','same').tree;
+  current=panes(layout)[0];assert.equal(current.tabs.length,2,'two independent tabs may visit the same document');
+  layout=travelTab(layout,start.id,-1);assert.equal(tabDocument(panes(layout)[0]),'board:Ideas');
+  layout=navigateTab(layout,start.id,'card:b','same').tree;
+  assert.deepEqual(tabHistory(panes(layout)[0]).entries,['board:Ideas','card:b'],'a new visit truncates only this tab’s forward stack');
+  layout=updatePane(layout,start.id,p=>({...p,active:original}));assert.equal(tabDocument(panes(layout)[0]),'card:a');
+  layout=travelTab(layout,start.id,-1);layout=travelTab(layout,start.id,1);assert.equal(tabDocument(panes(layout)[0]),'card:a');
+  const other=pane('board:Ideas');layout=splitPane(layout,start.id,'row',other);layout=moveTab(layout,start.id,other.id,original);
+  const moved=panes(layout)[1];assert.equal(tabDocument(moved),'card:a');assert.notEqual(moved.active,original,'moving preserves both histories even when identifiers collide');
+  assert.deepEqual(tabHistory(moved).entries,['board:Ideas','card:a']);assert.deepEqual(tabHistory(panes(layout)[0],second).entries,['board:Ideas','card:b']);
+  layout=updatePane(layout,other.id,p=>mapPaneDocuments(p,key=>key==='board:Ideas'?'board:Renamed':key));layout=travelTab(layout,other.id,-1);
+  assert.equal(tabDocument(panes(layout)[1]),'board:Renamed');assert.deepEqual(restoreLayout(JSON.stringify(layout)),layout);
+  layout=closeTab(layout,other.id,panes(layout)[1].active);assert.equal(Object.keys(panes(layout)[1].history??{}).length,0);
+  for(let i=0;i<120;i++)layout=navigateTab(layout,start.id,'card:'+i,'same').tree;
+  assert.equal(tabHistory(panes(layout)[0]).entries.length,100);
+  const broken=structuredClone(panes(layout)[0]);broken.history![broken.active].index=999;
+  assert.deepEqual(panes(restoreLayout(JSON.stringify(broken)))[0].tabs,['board:']);
 });

@@ -654,7 +654,7 @@ export class Workspace {
     const plan=compileView(source,view,[...this.tags.values()]);
     const total=Number(this.db.prepare('SELECT count(*) AS count FROM cards c WHERE '+plan.where).get(...plan.whereArgs)!.count);
     const rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order+' LIMIT 100 OFFSET ?').all(...plan.args,offset);
-    return {total,rows:rows.map(row=>{const {frontmatter,...card}=row;return {card:{...card,legacy:!!card.legacy} as unknown as import('../shared').CardInfo,properties:JSON.parse(String(frontmatter))};})};
+    return {total,rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));return {card:{...card,legacy:!!card.legacy,...(properties['card-color']!==undefined?{fillColor:properties['card-color']}: {})} as unknown as import('../shared').CardInfo,properties};})};
   }
   async saveTagBody(path:string,expected:string,body:string){
     if(!path.endsWith('.tag')||typeof body!=='string'||body.length>1000000)throw new Error(ui.tags.invalidTag);
@@ -710,7 +710,7 @@ export class Workspace {
       }
       const properties=JSON.parse(String(frontmatter)),metadata=searchProperties(properties);
       const snippet=searchExcerpt(preview.text+(metadata?'\n'+metadata:''),terms);
-      return {...card,legacy:!!card.legacy,properties,snippet,score:rank?.score??0,terms,previewImage:preview.image,
+      return {...card,legacy:!!card.legacy,...(properties['card-color']!==undefined?{fillColor:properties['card-color']}: {}),properties,snippet,score:rank?.score??0,terms,previewImage:preview.image,
         highlights:{name:searchHighlights(String(row.name),terms),path:searchHighlights(path,terms),snippet:searchHighlights(snippet,terms)}};
     }) as unknown as CardResult[];
   }

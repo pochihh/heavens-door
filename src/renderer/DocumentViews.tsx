@@ -18,8 +18,8 @@ import {CardTags} from './TagView';
 export {TagView} from './TagView';
 import { useConfirmation } from './Confirmation';
 
-export function NoteView({path,session,snapshot,active,memory,formatting,onActivate,onOpen,onViewChange}:{
-  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;formatting:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
+export function NoteView({path,session,snapshot,active,memory,formatting,suspended=false,onActivate,onOpen,onViewChange}:{
+  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;formatting:boolean;suspended?:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
 }) {
   const [loaded,setLoaded]=useState<Card|null>(null),[focus,setFocus]=useState<EditorFocus>();
   const container=useRef<HTMLDivElement>(null);
@@ -27,6 +27,8 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
   const draft=session.state.draft, info=snapshot.cards.find(c=>c.path===path);
   const editing=active&&draft?.card.path===path;
   const body=draft?.card.path===path?draft.body:loaded?.body??'';
+  const retained=useRef({editing:false,body:''});if(!suspended)retained.current={editing,body};
+  const shown=suspended?retained.current:{editing,body};
   useEffect(()=>{
     let live=true;
     void session.bridge.request<Card>({kind:'card',path}).then(card=>{if(live)setLoaded(card);}).catch(error=>{if(live)session.update({error:String(error)});});
@@ -52,7 +54,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
       const link=(e.target as HTMLElement).closest('a'),href=link?.getAttribute('href');
       if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
     }}>
-    {editing?<CardEditor afterTitle={tags} path={path} body={body} cards={snapshot.cards} onEdit={body=>session.edit(body)} autofocus focusPoint={focus}/>:
+    {shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={body=>{if(!suspended)session.edit(body);}} autofocus={!suspended} focusPoint={focus}/>:
       <TitleContent className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
@@ -62,8 +64,8 @@ export function NoteView({path,session,snapshot,active,memory,formatting,onActiv
     </details>
   </section>;
 }
-export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,session,active,memory,onActivate,onOpen,onNavigate,onCreate,onCreateBoard,onMigrate,onViewChange,onCycleInput}:{
-  reveal?:{placement:string;token:number};onRevealed:()=>void;onSelection:(selection:BoardSelection)=>void;onStyle:()=>void;board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onNavigate:(key:string,mode?:NavigationMode)=>void;onCreate:(x:number,y:number)=>void;onCreateBoard:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;onCycleInput:()=>void;
+export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,session,active,memory,onActivate,onOpen,onPreview,onNavigate,onCreate,onCreateBoard,onMigrate,onViewChange,onCycleInput}:{
+  reveal?:{placement:string;token:number};onRevealed:()=>void;onSelection:(selection:BoardSelection)=>void;onStyle:()=>void;board:Board;snapshot:Snapshot;session:Session;active:boolean;memory:ViewMemory;onActivate:()=>void;onOpen:(key:string)=>void;onPreview:(key:string)=>void;onNavigate:(key:string,mode?:NavigationMode)=>void;onCreate:(x:number,y:number)=>void;onCreateBoard:(x:number,y:number)=>void;onMigrate:()=>void;onViewChange:()=>void;onCycleInput:()=>void;
 }) {
   const confirm=useConfirmation();
   const [mentions,setMentions]=useState<Mention[]>([]);
@@ -73,7 +75,7 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
   },[session,snapshot.cards,board.path,board.showMentions,board.cards.length]);
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
-  return <Whiteboard renderTags={card=><CardTags card={card} snapshot={snapshot} session={session} onOpen={onOpen}/>} addTagActions={(card):MenuAction[]=>(snapshot.tags??[]).filter(t=>!card.tags?.includes(t.tag)).map<MenuAction>(t=>({label:t.tag,icon:'tag' as const,run:()=>{void session.setCardTag(card.path,card.revision,t.tag,true).catch(()=>undefined);}})).concat((snapshot.tags??[]).every(t=>card.tags?.includes(t.tag))?[{label:ui.tags.unavailable,disabled:true,icon:'tag' as const,run:()=>{}}]:[])} reveal={reveal} onRevealed={onRevealed} onOpenCard={(id,beside)=>onNavigate('card:'+id,beside?'other':'new')} edgeDefaults={snapshot.lastEdgeStyle} board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
+  return <Whiteboard renderTags={card=><CardTags card={card} snapshot={snapshot} session={session} onOpen={onOpen}/>} addTagActions={(card):MenuAction[]=>(snapshot.tags??[]).filter(t=>!card.tags?.includes(t.tag)).map<MenuAction>(t=>({label:t.tag,icon:'tag' as const,run:()=>{void session.setCardTag(card.path,card.revision,t.tag,true).catch(()=>undefined);}})).concat((snapshot.tags??[]).every(t=>card.tags?.includes(t.tag))?[{label:ui.tags.unavailable,disabled:true,icon:'tag' as const,run:()=>{}}]:[])} reveal={reveal} onRevealed={onRevealed} onOpenCard={(id,mode='new')=>mode==='popup'?onPreview('card:'+id):onNavigate('card:'+id,mode)} edgeDefaults={snapshot.lastEdgeStyle} board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
     boards={snapshot.boards} onOpenFolder={(folder,mode)=>onNavigate('board:'+folder,mode)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error(ui.errors.migrateRootFirst));}

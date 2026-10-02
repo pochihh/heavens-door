@@ -3,6 +3,7 @@ import {createPortal} from 'react-dom';
 import type {Board,CardInfo,TagField,TagValue} from '../shared';
 import {STATUS_GROUPS} from '../shared';
 import {fieldOptions,multipleChoices,propertyType,validateTagValue} from '../tags';
+import {overlayContainer} from './Overlays';
 import {Icon,Tool} from './Icons';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
@@ -31,7 +32,7 @@ export function PropertyPopover({anchor,label,onClose,children,align='start',cla
     e.stopPropagation();if(e.key==='Escape'){e.preventDefault();onClose(true);anchor.focus({preventScroll:true});}
     const options=[...ref.current!.querySelectorAll<HTMLButtonElement>('[role=option]:not(:disabled)')];
     if(options.length&&['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();const i=options.indexOf(document.activeElement as HTMLButtonElement);options[i<0?(e.key==='ArrowDown'?0:options.length-1):(i+(e.key==='ArrowDown'?1:-1)+options.length)%options.length]?.focus();}
-  }}>{children}</div>,document.body);
+  }}>{children}</div>,overlayContainer(anchor));
 }
 export function PropertyInput({field,value,cards,boards=[],disabled,onSave,onOpen,autoFocus=false,forceSave=false,onFinish}:{autoFocus?:boolean;forceSave?:boolean;onFinish?:()=>void;field:TagField;value:unknown;cards:CardInfo[];boards?:Board[];disabled?:boolean;onSave:(value:TagValue)=>Promise<unknown>;onOpen?:(key:string)=>void}){
   const {display:preferenceDisplay,onChange:changeDisplay}=useContext(DateDisplayContext);

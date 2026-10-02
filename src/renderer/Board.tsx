@@ -53,7 +53,7 @@ const Preview = memo(function Preview({ afterTitle,card, onOpen, cache, onReady,
   }} html={collapsed?summary:html||preview('',card.path)} />;
 });
 interface Props {
-  renderTags?:(card:CardInfo)=>React.ReactNode;addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,beside?:boolean)=>void;
+  renderTags?:(card:CardInfo)=>React.ReactNode;addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,mode?:import('../layout').NavigationMode|'popup')=>void;
   edgeDefaults?:EdgeStyle;
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
@@ -337,7 +337,7 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')}]:
-      [...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,run:()=>setMenu({anchor,placementId:p.id,label:ui.tags.add,x,y,actions:addTagActions(lookup.get(p.cardId)!)})}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.search.openCard,icon:'note' as const,run:()=>onOpenCard(p.cardId)},{label:ui.search.openBeside,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,true)}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
+      [...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,run:()=>setMenu({anchor,placementId:p.id,label:ui.tags.add,x,y,actions:addTagActions(lookup.get(p.cardId)!)})}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'note' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
       }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,danger:true,run:()=>removeReference(p)}]:[]),
       ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});

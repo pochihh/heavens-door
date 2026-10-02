@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {act} from 'react';
 import type {Snapshot,Bridge,ViewResults} from '../src/shared';
+import {tintColor} from '../src/colors';
 import {Session} from '../src/renderer/session';
 import {writeViewBlock,newViewBlock,parseViewBlock} from '../src/view-block';
 
@@ -43,14 +44,14 @@ test('compact subpanels and result editors preserve anchors, support status/date
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
- const snapshot:Snapshot={root:'/test',name:'Test',cards:[{id:'a',path:'A.md',name:'A',title:'Task A',revision:'r1',legacy:false}],boards:[],issues:[],historyAvailable:false,tags:['project','task'].map(tag=>({path:tag+'.tag',name:tag,tag,revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Doing'],done:['Done']}},{key:'Date',type:'date'},{key:'Location',type:'text'},{key:'Checked',type:'boolean'}]}))};
+ const snapshot:Snapshot={root:'/test',name:'Test',cards:[{id:'a',path:'A.md',name:'A',title:'Task A',fillColor:'#c9838a',revision:'r1',legacy:false}],boards:[],issues:[],historyAvailable:false,tags:['project','task'].map(tag=>({path:tag+'.tag',name:tag,tag,revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Doing'],done:['Done']}},{key:'Date',type:'date'},{key:'Location',type:'text'},{key:'Checked',type:'boolean'}]}))};
  const row:ViewResults['rows'][number]={card:snapshot.cards[0],properties:{tags:['project','task'],'project/Status':'Todo','task/Status':'Todo','project/Date':'2026-10-01','project/Location':'Here','task/Location':'There'}};
- let queries=0,opened=0;const writes:{key:string;value:unknown}[]=[];
+ let queries=0,opened=0,previewed=0;const writes:{key:string;value:unknown}[]=[];
  const session=new Session({request:async request=>{if(request.kind==='viewCards'){queries++;return {rows:[row],total:1};}throw new Error(request.kind);}} as Bridge);session.state.snapshot=snapshot;
  session.setViewProperty=async(_path,_revision,key,value)=>{writes.push({key,value});row.properties={...row.properties,...Object.fromEntries(['project','task'].map(tag=>[tag+'/'+key.split('/')[1],value]))};};
  const {createRoot}=await import('react-dom/client'),{ViewBlock,ViewBlockProvider}=await import('../src/renderer/ViewBlock');const root=createRoot(document.getElementById('root')!);
  const block=newViewBlock('project');block.views[0].fields=['file.title','project/Status','project/Date','project/Location','project/Checked'];let source=writeViewBlock('',block);
- const render=()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{opened++;}}><ViewBlock source={source} onChange={next=>{source=next;render();}}/></ViewBlockProvider>);
+ const render=()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{opened++;}} onPreview={()=>{previewed++;}}><ViewBlock source={source} onChange={next=>{source=next;render();}}/></ViewBlockProvider>);
  const settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});
  const click=async(selector:string)=>{const el=document.querySelector<HTMLElement>(selector);assert.ok(el,selector);await act(async()=>el.click());};
  const textClick=async(text:string)=>{const el=[...document.querySelectorAll<HTMLButtonElement>('.property-popover button')].find(el=>el.textContent===text);assert.ok(el,text);await act(async()=>el.click());};
@@ -63,6 +64,7 @@ test('compact subpanels and result editors preserve anchors, support status/date
   await textClick('Kanban');await settle();assert.equal(parseViewBlock(source).views[0].type,'kanban');await click('[aria-label=Back]');await click('.view-menu-list button:nth-child(3)');assert.ok(document.querySelector('[data-kind=group] [role=listbox]'));await escape();assert.equal(document.querySelector('.property-popover'),null);
   // Pointer down without a drag leaves the source unchanged; real movement uses the shared phantom.
   const card=()=>document.querySelector<HTMLElement>('[data-tag-column="Todo"] .view-result-card')!;
+  assert.equal(card().style.background,tintColor('#c9838a'));
   const pointer=(target:Element|Document,type:string,x:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:40}));
   document.elementFromPoint=()=>document.querySelector('[data-tag-column="Done"]');
   await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointerup',20);});assert.equal(writes.length,0);
@@ -76,6 +78,6 @@ test('compact subpanels and result editors preserve anchors, support status/date
   await click('.view-property input[type=checkbox]');await settle();assert.equal(row.properties['project/Checked'],true);assert.equal(row.properties['task/Checked'],true);
   row.properties['task/Status']='Done';await act(async()=>render());assert.equal(document.querySelectorAll('.view-result-card').length,2);
   await click('[data-tag-column=Todo] [aria-label="Edit Location"]');assert.equal(document.querySelectorAll('.view-property input[type=text]').length,1,'Only the clicked appearance of a merged card opens an editor');await act(async()=>document.querySelector<HTMLInputElement>('.view-property input[type=text]')!.blur());
-  await click('.view-card-title');assert.equal(opened,1);
+  await click('.view-card-title');assert.equal(previewed,1);assert.equal(opened,0);await click('.view-result-card');assert.equal(previewed,2);
  }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}
 });

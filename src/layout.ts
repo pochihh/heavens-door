@@ -1,6 +1,11 @@
 import { ui } from './text/ui';
 export const MAX_PANES=16,MAX_TABS=200;
-export interface Pane {type:'pane';id:string;tabs:string[];active:string}
+export interface TabHistory {entries:string[];index:number}
+export interface Pane {type:'pane';id:string;tabs:string[];active:string;history?:Record<string,TabHistory>}
+export function tabDocument(p:Pane,tab=p.active){const h=p.history?.[tab];return h?h.entries[h.index]:tab;}
+export function tabHistory(p:Pane,tab=p.active):TabHistory{return p.history?.[tab]??{entries:tab?[tab]:[],index:0};}
+export function travelTab(layout:Layout,id:string,offset:-1|1){return updatePane(layout,id,p=>{const h=tabHistory(p),index=h.index+offset;return index<0||index>=h.entries.length?p:{...p,history:{...p.history,[p.active]:{...h,index}}};});}
+export function mapPaneDocuments(p:Pane,map:(key:string)=>string):Pane{return {...p,tabs:p.tabs.map(map),active:map(p.active),...(p.history?{history:Object.fromEntries(Object.entries(p.history).map(([id,h])=>[map(id),{...h,entries:h.entries.map(map)}]))}:{})};}
 export interface Split {type:'split';id:string;axis:'row'|'column';ratio:number;first:Layout;second:Layout}
 export type Layout=Pane|Split;
 export function pane(document=''):Pane {return {type:'pane',id:crypto.randomUUID(),tabs:document?[document]:[],active:document};}
@@ -9,17 +14,17 @@ export function updatePane(layout:Layout,id:string,change:(pane:Pane)=>Layout):L
   if(layout.type==='pane')return layout.id===id?change(layout):layout;
   return {...layout,first:updatePane(layout.first,id,change),second:updatePane(layout.second,id,change)};
 }
-export function openTab(layout:Layout,id:string,key:string) {
-  return updatePane(layout,id,p=>!p.tabs.includes(key)&&p.tabs.length>=MAX_TABS?p:({...p,tabs:p.tabs.includes(key)?p.tabs:[...p.tabs,key],active:key}));
+export function openTab(layout:Layout,id:string,key:string,fresh=false) {
+  return updatePane(layout,id,p=>{const existing=!fresh&&p.tabs.find(tab=>tabDocument(p,tab)===key);if(existing)return {...p,active:existing};if(p.tabs.length>=MAX_TABS)return p;const tab=p.tabs.includes(key)?'tab:'+crypto.randomUUID():key;return {...p,tabs:[...p.tabs,tab],active:tab,...(tab!==key?{history:{...p.history,[tab]:{entries:[key],index:0}}}:{})};});
 }
 export type NavigationMode='same'|'new'|'other';
 export function navigateTab(layout:Layout,source:string,key:string,mode:NavigationMode,axis:'row'|'column'='row') {
   const groups=panes(layout),origin=groups.find(p=>p.id===source)??groups[0];
-  if(mode==='same')return {tree:updatePane(layout,origin.id,p=>({...p,tabs:p.tabs.includes(key)?p.tabs.filter(k=>k!==p.active||k===key):p.active?p.tabs.map(k=>k===p.active?key:k):[key],active:key})),active:origin.id};
+  if(mode==='same')return {tree:updatePane(layout,origin.id,p=>{if(!p.active)return {...p,tabs:[key],active:key};if(tabDocument(p)===key)return p;const h=tabHistory(p),entries=[...h.entries.slice(0,h.index+1),key].slice(-100);return {...p,history:{...p.history,[p.active]:{entries,index:entries.length-1}}};}),active:origin.id};
   const target=mode==='new'?origin:groups.find(p=>p.id!==origin.id);
   if(target){
-    if(!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS)throw new Error(ui.errors.tabLimit);
-    return {tree:openTab(layout,target.id,key),active:target.id};
+    if((mode==='new'||!target.tabs.some(tab=>tabDocument(target,tab)===key))&&target.tabs.length>=MAX_TABS)throw new Error(ui.errors.tabLimit);
+    return {tree:openTab(layout,target.id,key,mode==='new'),active:target.id};
   }
   if(groups.length>=MAX_PANES)throw new Error(ui.errors.splitLimit);
   const next=pane(key);return {tree:splitPane(layout,origin.id,axis,next),active:next.id};
@@ -31,7 +36,8 @@ export function activeAfterRemoval(tabs:string[],active:string,key:string):strin
 export function closeTab(layout:Layout,id:string,key:string) {
   return updatePane(layout,id,p=>{
     const tabs=p.tabs.filter(k=>k!==key);
-    return {...p,tabs,active:activeAfterRemoval(p.tabs,p.active,key)};
+    const history={...p.history};delete history[key];
+    return {...p,tabs,active:activeAfterRemoval(p.tabs,p.active,key),...(p.history?{history}:{})};
   });
 }
 export function splitPane(layout:Layout,id:string,axis:'row'|'column',next:Pane):Layout {
@@ -48,20 +54,18 @@ export function resizeSplit(layout:Layout,id:string,ratio:number):Layout {
   return layout.id===id?{...layout,ratio:Math.max(.15,Math.min(.85,ratio))}:{...layout,first:resizeSplit(layout.first,id,ratio),second:resizeSplit(layout.second,id,ratio)};
 }
 export function moveTab(layout:Layout,from:string,to:string,key:string,before?:string):Layout {
-  if(!panes(layout).some(p=>p.id===from&&p.tabs.includes(key))||from===to&&key===before)return layout;
-  const target=panes(layout).find(p=>p.id===to);if(!target||!target.tabs.includes(key)&&target.tabs.length>=MAX_TABS)return layout;
-  let next=closeTab(layout,from,key);
-  next=updatePane(next,to,p=>{
-    const tabs=p.tabs.filter(k=>k!==key),index=before?tabs.indexOf(before):-1;
-    tabs.splice(index<0?tabs.length:index,0,key);
-    return {...p,tabs,active:key};
+  const source=panes(layout).find(p=>p.id===from),target=panes(layout).find(p=>p.id===to);
+  if(!source?.tabs.includes(key)||!target||from===to&&key===before||from!==to&&target.tabs.length>=MAX_TABS)return layout;
+  const history=tabHistory(source,key),tab=from!==to&&target.tabs.includes(key)?'tab:'+crypto.randomUUID():key;
+  return updatePane(closeTab(layout,from,key),to,p=>{
+    const tabs=[...p.tabs],index=before?tabs.indexOf(before):-1;tabs.splice(index<0?tabs.length:index,0,tab);
+    return {...p,tabs,active:tab,...(source.history?.[key]||tab!==key?{history:{...p.history,[tab]:history}}:{})};
   });
-  return next;
 }
 export function restoreLayout(raw:string|null):Layout {
   const ids=new Set<string>();let count=0;
   const valid=(value:Layout,depth=0):boolean=>!!value&&++count<=31&&depth<16&&typeof value.id==='string'&&value.id.length<=100&&!ids.has(value.id)&&!!ids.add(value.id)&&(value.type==='pane'
-    ?Array.isArray(value.tabs)&&value.tabs.length<=MAX_TABS&&value.tabs.every(k=>typeof k==='string'&&k.length<=2048)&&new Set(value.tabs).size===value.tabs.length&&typeof value.active==='string'&&(value.active===''||value.tabs.includes(value.active))
+    ?Array.isArray(value.tabs)&&value.tabs.length<=MAX_TABS&&value.tabs.every(k=>typeof k==='string'&&k.length<=2048)&&new Set(value.tabs).size===value.tabs.length&&typeof value.active==='string'&&(value.active===''||value.tabs.includes(value.active))&&(value.history===undefined||!!value.history&&typeof value.history==='object'&&!Array.isArray(value.history)&&Object.entries(value.history).every(([tab,h])=>value.tabs.includes(tab)&&!!h&&Array.isArray(h.entries)&&h.entries.length>0&&h.entries.length<=100&&h.entries.every(k=>typeof k==='string'&&k.length<=2048)&&Number.isInteger(h.index)&&h.index>=0&&h.index<h.entries.length))
     :value.type==='split'&&['row','column'].includes(value.axis)&&Number.isFinite(value.ratio)&&value.ratio>=.15&&value.ratio<=.85&&valid(value.first,depth+1)&&valid(value.second,depth+1));
   try{const value=JSON.parse(raw??'null');if(valid(value)&&panes(value).length<=MAX_PANES)return value;}catch{/* start clean */}
   return pane('board:');

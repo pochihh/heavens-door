@@ -399,7 +399,7 @@ test('search reveal expands and selects a card without editing or zooming, and c
   window.door={request:async()=>({...card,body:'# Card C'}),assetUrl:(p:string)=>p} as unknown as typeof window.door;
   dom.window.HTMLElement.prototype.getBoundingClientRect=function(){return {x:0,y:0,left:0,top:0,right:1000,bottom:800,width:1000,height:800,toJSON(){}};};
   const root=createRoot(document.getElementById('root')!);
-  function Fixture({token}:{token:number}){const [b,setBoard]=useState(board);return <Whiteboard board={b} cards={[card]} initialCamera={{x:0,y:0,zoom:.5}} reveal={{placement:'p',token}} onRevealed={()=>reveals++} onOpen={()=>assert.fail('reveal must not edit')} onOpenCard={(id,beside)=>opened.push(id+(beside?':beside':''))} onCreate={()=>undefined} onSave={next=>{saved=next;setBoard(next);}}/>;}
+  function Fixture({token}:{token:number}){const [b,setBoard]=useState(board);return <Whiteboard board={b} cards={[card]} initialCamera={{x:0,y:0,zoom:.5}} reveal={{placement:'p',token}} onRevealed={()=>reveals++} onOpen={()=>assert.fail('reveal must not edit')} onOpenCard={(id,mode)=>opened.push(id+':'+mode)} onCreate={()=>undefined} onSave={next=>{saved=next;setBoard(next);}}/>;}
   try{
     await act(async()=>root.render(<Fixture token={1}/>));
     assert.equal(saved.cards[0].collapsed,false);assert.equal(reveals,1);
@@ -408,8 +408,8 @@ test('search reveal expands and selects a card without editing or zooming, and c
     assert.notEqual(document.querySelector<HTMLElement>('.board-world')!.style.transform,'translate(0px, 0px) scale(0.5)');
     await act(async()=>root.render(<Fixture token={2}/>));assert.equal(reveals,2);
     await act(async()=>cardElement.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100})));
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open card')!.click());assert.deepEqual(opened,['c']);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in same tab')!.click());assert.deepEqual(opened,['c:same']);
     await act(async()=>cardElement.querySelector<HTMLButtonElement>('.card-more')!.click());
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open beside')!.click());assert.deepEqual(opened,['c','c:beside']);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another Tab Group')!.click());assert.deepEqual(opened,['c:same','c:other']);
   }finally{await act(async()=>root.unmount());}
 });

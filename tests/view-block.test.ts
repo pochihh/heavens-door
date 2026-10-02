@@ -18,12 +18,13 @@ test('file-backed views use exact tags, typed indexed values, pinned merged keys
   for(const name of ['project','task']){const tag=getTag(name);await w.saveTag(tag.path,tag.revision,[{key:name==='project'?'Status':'status',type:'select',options:['Todo','Done']},{key:'Count',type:'number'},{key:'Reviewed',type:'boolean'},{key:'Date',type:'date'},{key:'Colors',type:'select',multiple:true,options:['Red','Blue']}],[]);}
   const child=getTag('project/child');await w.saveTag(child.path,child.revision,[],['project']);
   await w.createFolder('','Notes');
-  const records=[['A',{tags:['project'],'project/Status':'Todo','project/Count':0,'project/Reviewed':false,'project/Date':'2026-10-01','project/Colors':['Red']}],['B',{tags:['task'],'task/status':'Done','task/Count':4}],['Child',{tags:['project/child'],'project/Status':'Todo'}],['Empty',{}],['Wrong',{tags:['project'],'project/Count':'0','project/Reviewed':'false','project/Date':'bad'}],['Null',{tags:['project'],'project/Count':null,'project/Status':''}]] as const;
+  const records=[['A',{'card-color':'#c9838a',tags:['project'],'project/Status':'Todo','project/Count':0,'project/Reviewed':false,'project/Date':'2026-10-01','project/Colors':['Red']}],['B',{tags:['task'],'task/status':'Done','task/Count':4}],['Child',{tags:['project/child'],'project/Status':'Todo'}],['Empty',{}],['Wrong',{tags:['project'],'project/Count':'0','project/Reviewed':'false','project/Date':'bad'}],['Null',{tags:['project'],'project/Count':null,'project/Status':''}]] as const;
   for(const [name,props] of records){await w.create('Notes',name,0,0);const card=await w.card('Notes/'+name+'.md');await w.write([{path:card.path,expected:card.revision,content:'---\n'+stringify({'card-id':card.id,...props})+'---\n# '+name+'\n\nHello content.\n'}]);}
   const source=(where?:Rule,filter?:Rule)=>{const block=newViewBlock();block.query.where=where;block.views[0].filter=filter;return writeViewBlock('',block);};
   const names=(where?:Rule,filter?:Rule)=>w.viewCards(source(where,filter),'table').rows.map(r=>r.card.name).sort();
   const has=(tag:string):Rule=>({field:'tags',op:'contains',value:tag});
   assert.deepEqual(names(has('project')),['A','Null','Wrong']);
+  assert.equal(w.viewCards(source(has('project')),'table').rows.find(r=>r.card.name==='A')?.card.fillColor,'#c9838a');assert.equal(w.tagCards('project').find(r=>r.card.name==='A')?.card.fillColor,'#c9838a');
   assert.deepEqual(names({field:'tags',op:'notContains',value:'project'}),['B','Child','Empty']);
   assert.deepEqual(names({any:[has('project'),has('task')]},{field:['project/Status','task/status'],op:'eq',value:'Done'}),['B']);
   assert.deepEqual(names({field:'project/Count',op:'eq',value:0}),['A']);

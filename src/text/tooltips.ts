@@ -6,6 +6,7 @@ export const tooltips = {
     open:'Settings',hardwareAcceleration:'Use hardware acceleration after restarting the app',
     developer:'Developer tools and diagnostics',refreshGraphics:'Read the current graphics status',
   },
+  navigation:{back:'Go back',forward:'Go forward'},
   tabs: {
     close: (name: string) => `Close ${name}`,
     view: (name: string) => `${name} · Drag to move; right-click for layout options`,

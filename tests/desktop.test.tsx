@@ -9,13 +9,14 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'https://workspace.test',pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,sessionStorage:dom.window.sessionStorage,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','');};
   dom.window.Range.prototype.getClientRects=()=>[] as unknown as DOMRectList;
   dom.window.Range.prototype.getBoundingClientRect=()=>({x:0,y:0,top:0,left:0,bottom:0,right:0,width:0,height:0,toJSON(){}});
 
   const card:Card={id:'a',path:'Ideas/A.md',name:'A',body:'# First card\n\nOriginal text',revision:'r1',legacy:false};
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
   let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[{id:'ideas',cardId:'',folder:'Ideas',x:20,y:20,width:340,height:280}],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
-  const requests:string[]=[];
+  const requests:string[]=[];let rejectSave=false;
   window.door={appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
@@ -37,6 +38,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
       case 'query':return [];
       case 'preferences':snapshot={...snapshot,preferences:{...snapshot.preferences!,...request.patch}};return snapshot;
       case 'saveCard':{
+        if(rejectSave)throw new Error('External edit conflict');
         const before=card.body;card.body=request.body;card.revision='r2';snapshot={...snapshot,cards:[{...card}]};
         return {snapshot,edits:[{path:card.path,before,after:card.body}]};
       }
@@ -215,6 +217,35 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.ok(!JSON.stringify(snapshot.preferences!.documents).includes('board:Ideas'),'saved tabs follow board rename');
     await act(async()=>session.undo());await settle();
     assert.ok(document.querySelector('.active-pane .document-breadcrumb [aria-label="Rename Ideas"]'),'undo restores the breadcrumb and active tab');
+    await click('.note-pane [data-tab-key="card:a"] [role=tab]');
+    const originalEditor=document.querySelector('.active-pane .tiptap');
+    await click('.active-pane .document-toolbar [aria-label="Card actions"]');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in popup')!.click());await settle();
+    assert.ok(document.querySelector('dialog.card-popup[open] .tiptap'));
+    assert.equal(document.querySelector('.active-pane .tiptap'),originalEditor,'the background editor stays mounted');
+    await click('.card-popup [aria-label="Card actions"]');
+    assert.ok(document.querySelector('.card-popup .property-popover'),'nested menus remain inside the modal focus boundary');
+    await act(async()=>document.querySelector('.property-popover')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+    assert.ok(document.querySelector('dialog.card-popup[open]'));assert.equal(document.querySelector('.property-popover'),null);
+    rejectSave=true;
+    await act(async()=>session.edit('# First card\n\nPopup draft'));
+    await click('.card-popup [aria-label="Close dialog"]');
+    assert.ok(document.querySelector('dialog.card-popup[open]'),'failed save cannot dismiss the editor');
+    assert.match(document.querySelector('.card-popup-error')?.textContent??'',/External edit conflict/);assert.ok(session.state.draft?.dirty);
+    rejectSave=false;
+    await act(async()=>document.querySelector('.card-popup .tiptap')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+    await settle();assert.equal(document.querySelector('.card-popup'),null);assert.match(card.body,/Popup draft/);
+    assert.equal(document.querySelector('.active-pane .tiptap'),originalEditor);
+    await click('.active-pane .document-breadcrumb .breadcrumb-part button:last-of-type');
+    await click('.active-pane [aria-label="Go back"]');assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')?.textContent,'A.md');
+    await click('.active-pane [aria-label="Go forward"]');assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')?.textContent,'Workspace');
+    await click('.active-pane [aria-label="Go back"]');
+    await click('.active-pane .document-toolbar [aria-label="Card actions"]');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in popup')!.click());await settle();
+    const beforeTabs=document.querySelectorAll('.active-pane [role=tab]').length;
+    await click('.card-popup [aria-label="Open in new tab"]');
+    assert.equal(document.querySelector('.card-popup'),null);assert.equal(document.querySelectorAll('.active-pane [role=tab]').length,beforeTabs+1);
+    assert.equal(document.querySelector<HTMLButtonElement>('.active-pane [aria-label="Go back"]')?.disabled,true,'a new tab starts its own history');
     await act(async()=>{await session.flushPreferences();session.update({snapshot:null,draft:null});});
     await click('.welcome [aria-expanded]');
     assert.ok(document.querySelector('.workspace-start-manager .workspace-availability'),'workspace status is accessible without any open workspace');
