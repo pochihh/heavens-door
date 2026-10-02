@@ -1,3 +1,4 @@
+import type {QueryPreferences} from './view-block';
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
 export interface Card { tags?:string[]; fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'>;
@@ -29,7 +30,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
@@ -38,9 +39,10 @@ export const STATUS_GROUPS=['todo','inProgress','done'] as const;
 export type TagDateRange={start:string;end:string};
 export type TagValue=string|number|boolean|string[]|TagDateRange|null;
 export interface TagField {optional?:boolean;key:string;type:TagFieldType;label?:string;description?:string;options?:string[];multiple?:boolean;statusGroups?:Record<typeof STATUS_GROUPS[number],string[]>;default?:TagValue}
-export interface TagInfo { path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];propertiesCollapsed?:boolean;overrides:(Partial<TagField>&{key:string})[] }
+export interface TagInfo { body?:string; path:string;name:string;tag:string;revision:string;fields:TagField[];inherits:string[];propertiesCollapsed?:boolean;overrides:(Partial<TagField>&{key:string})[] }
 export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
+export interface ViewResults {rows:TagResult[];total:number}
 export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
@@ -75,6 +77,8 @@ export type Request =
   | { kind: 'saveBoard'; board: Board; expected: string }
   | { kind: 'query'; text: string }
   | { kind: 'queryCards'; query: CardQuery }
+  | { kind:'viewCards';source:string;view:string;offset?:number }
+  | { kind:'saveTagBody';path:string;expected:string;body:string }
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }
   | { kind: 'searchWorkspace'; text:string }
   | { kind: 'checkpoint'; label: string }

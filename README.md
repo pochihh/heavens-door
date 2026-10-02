@@ -72,7 +72,7 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 
 The **Main Dock** holds Whiteboard View, Card View and other content views in tabs and splits. **Left Side Dock** and **Right Side Dock** hold supporting Views. A **Workspace** is the local folder together with its settings and saved interface layout. See the [terminology guide](docs/ui-terminology.md) for definitions.
 
-The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Settings → Workspace → Reset side docks** restores defaults.
+The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Settings → Navigation → Reset layout** restores defaults.
 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
@@ -128,3 +128,9 @@ Open the Action Ribbon’s **Settings** button. **Performance → Hardware accel
 This device preference is stored in `app-settings.json` in Electron’s application user-data directory, outside every workspace and its Git history. Workspace appearance and layout remain in `.heavens-door/settings.json`.
 
 Expand **Developer → Graphics diagnostics** to inspect hardware acceleration in the running session, Chromium/Electron versions and graphics feature status. Diagnostics load only when opened or explicitly refreshed, with no background polling. A pending preference can differ from the running status until restart; On requests acceleration but the graphics driver may still fall back to software.
+
+### View blocks and feature settings
+
+Settings now has a searchable sidebar with separate feature pages. **Views and queries** controls merging equally named properties in pickers (On by default) and case-sensitive name matching (Off by default). Stored namespaced keys remain unchanged.
+
+Use the database icon in a card’s formatting toolbar to add a view block, or **Add view block** in a tag page. One file-backed YAML query can feed multiple named Table, List and Kanban views, each with its own additional filter. Results open their source cards and are read-only. See the [view-block file format and usage](docs/view-blocks.md).

@@ -1,3 +1,4 @@
+import {compileView} from './view-query';
 import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags,remapTagReferences} from './tags';
 import {validTag,tagsFrom,validateFields,resolveTag,validReferencePath} from '../tags';
 import type {TagField,TagValue,TagSearchResult,WorkspaceSearchResult} from '../shared';
@@ -40,11 +41,11 @@ export class Workspace {
   private pathMoves:{from:string;to:string}[]=[];
   constructor(readonly root: string, readonly cache: string) {
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 6) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=6;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 7) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=7;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT);
+      CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT,searchText TEXT);
       CREATE INDEX IF NOT EXISTS cards_folder ON cards(folder);
       CREATE INDEX IF NOT EXISTS card_identity ON cards(id);
       CREATE TABLE IF NOT EXISTS properties(path TEXT,field TEXT,value TEXT,PRIMARY KEY(path,field));
@@ -213,7 +214,7 @@ export class Workspace {
       if (!this.scanning) this.db.exec('BEGIN');
       try {
         this.removeIndex(path);
-        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'');
+        this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'',searchDocument(card.body).text);
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
         for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,target);}
         this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
@@ -636,6 +637,17 @@ export class Workspace {
   }
   searchWorkspace(text:string):WorkspaceSearchResult[] {
     return [...this.queryCards({text,limit:100}),...this.queryTags(text,[],100)].sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path)).slice(0,100);
+  }
+  viewCards(source:string,view:string,offset=0):import('../shared').ViewResults {
+    if(typeof source!=='string'||typeof view!=='string'||!Number.isInteger(offset)||offset<0||offset>100000)throw new Error(ui.errors.invalidQuery);
+    const plan=compileView(source,view,[...this.tags.values()]);
+    const total=Number(this.db.prepare('SELECT count(*) AS count FROM cards c WHERE '+plan.where).get(...plan.whereArgs)!.count);
+    const rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order+' LIMIT 100 OFFSET ?').all(...plan.args,offset);
+    return {total,rows:rows.map(row=>{const {frontmatter,...card}=row;return {card:{...card,legacy:!!card.legacy} as unknown as import('../shared').CardInfo,properties:JSON.parse(String(frontmatter))};})};
+  }
+  async saveTagBody(path:string,expected:string,body:string){
+    if(!path.endsWith('.tag')||typeof body!=='string'||body.length>1000000)throw new Error(ui.tags.invalidTag);
+    const {header}=splitNote(await this.read(path));return this.write([{path,expected,content:header+body}]);
   }
   queryCards(query:CardQuery):CardResult[] {
     if(!query||typeof query!=='object'||Array.isArray(query))throw new Error(ui.errors.invalidQuery);

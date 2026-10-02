@@ -54,9 +54,20 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   try {
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     await click('[aria-label="Settings"]');
-    assert.ok(document.querySelector('[role=dialog][aria-label="Settings"] [aria-label="Workspace"]'));
+    assert.ok(document.querySelector('[role=dialog][aria-label="Settings"] [role=tablist][aria-label="Settings features"]'));
+    await click('#settings-views');
+    assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Merge properties across tags"]')?.checked,true);
+    assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Case-sensitive property names"]')?.checked,false);
+    await click('[aria-label="Case-sensitive property names"]');
+    assert.deepEqual(snapshot.preferences?.query,{mergeProperties:true,caseSensitive:true});
+    await click('[aria-label="Merge properties across tags"]');
+    assert.deepEqual(snapshot.preferences?.query,{mergeProperties:false,caseSensitive:true});
+    assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Case-sensitive property names"]')?.disabled,true);
+    await click('#settings-performance');
     assert.ok(document.querySelector('[aria-label="Performance"] input[type=checkbox]'));
-    assert.equal(document.querySelector('details')?.open,false,'Developer diagnostics start closed');
+    assert.equal(document.querySelector('.developer-settings'),null,'Diagnostics are in their own feature tab');
+    await click('#settings-developer');
+    assert.equal(document.querySelector('.developer-settings')?.hasAttribute('open'),false,'Developer diagnostics start closed');
     await click('[aria-label="Close dialog"]');
     await click('[aria-label="Navigation device: Auto"]');
     assert.equal(snapshot.preferences?.whiteboardInput,'mouse');

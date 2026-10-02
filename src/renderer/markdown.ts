@@ -18,9 +18,9 @@ export function unsupported(body: string) {
   marked.walkTokens(marked.lexer(body),token => { if (token.type === 'html') html=true; });
   return html || /\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(body);
 }
-export function preview(body: string,path: string) {
+export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.
-  const tokens=extractAbsorbedBlankLines(marked.lexer(withCardTitle(body))) as Token[];
+  const tokens=extractAbsorbedBlankLines(marked.lexer(reservedTitle?withCardTitle(body):body)) as Token[];
   const first=tokens.findIndex(token=>token.type!=='space'),last=tokens.findLastIndex(token=>token.type!=='space');
   const rendered=tokens.map((token,index)=>{
     if(token.type!=='space')return token;
@@ -28,7 +28,7 @@ export function preview(body: string,path: string) {
     const lines=Math.max(0,separators-(index>first&&index<last?1:0));
     return {type:'html',raw:'',text:'<p><br></p>'.repeat(lines),block:true} as Token;
   });
-  return renderPreview(marked.parser(rendered),path);
+  return renderPreview(marked.parser(rendered),path,reservedTitle);
 }
 export function titlePreview(card:CardInfo) {
   const heading=document.createElement('h1');
@@ -36,13 +36,14 @@ export function titlePreview(card:CardInfo) {
   else heading.textContent=card.title??'';
   return renderPreview(heading.outerHTML,card.path);
 }
-function renderPreview(html:string,path:string) {
+function renderPreview(html:string,path:string,reservedTitle=true) {
   const clean=DOMPurify.sanitize(html,{ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
-  let title=template.content.firstElementChild;
+  if(reservedTitle){let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
   title.classList.add('card-title');
   if(!title.textContent?.trim()&&!title.querySelector('img')){title.classList.add('is-empty');title.setAttribute('aria-label',ui.editor.cardTitle);}
+  }
   // Match the editor's task structure so checkbox and text geometry do not shift on focus.
   for(const item of template.content.querySelectorAll('li')){
     const checkbox=item.querySelector<HTMLInputElement>(':scope > input[type=checkbox], :scope > p:first-child > input[type=checkbox]');

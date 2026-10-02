@@ -1,3 +1,6 @@
+import {ViewBlock} from './ViewBlock';
+import {viewFence,viewBlockRanges} from '../view-block';
+import {preview} from './markdown';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,useId,type ReactNode,type ButtonHTMLAttributes,type PointerEvent as ReactPointerEvent} from 'react';
 import {createPortal} from 'react-dom';
 import {DEFAULT_PALETTE,tintColor} from '../colors';
@@ -176,7 +179,17 @@ function TagPageProperties({tag,snapshot,session,onOpen}:{tag:TagInfo;snapshot:S
     <section className="tag-property-group tag-page-color"><Color label={ui.style.color} value={Object.hasOwn(colors,tag.tag)?colors[tag.tag]:''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>{const tagColors={...colors,...(color?{[tag.tag]:color.toLowerCase()}: {})};if(!color)delete tagColors[tag.tag];void session.run(async()=>{await session.flushPreferences();session.update({snapshot:await session.bridge.request<Snapshot>({kind:'preferences',patch:{tagColors}})});}).catch(()=>undefined);}}/></section></SchemaProperties>
   </div>;
 }
-export function TagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;memory:ViewMemory;onViewChange:()=>void}) {
+export function TagView(props:Parameters<typeof LegacyTagView>[0]){
+  const {tag,snapshot,session,onOpen}=props,body=tag.body??'',blocks=viewBlockRanges(body);
+  const save=(body:string)=>session.saveTagBody(tag.path,tag.revision,body);
+  const add=<button className="view-add-block" onClick={()=>void save(body+viewFence(tag.tag)).catch(()=>undefined)}><Icon name="plus" size={14}/>{ui.views.addBlock}</button>;
+  if(!blocks.length)return <div className="tag-view-container"><LegacyTagView {...props}/><div className="tag-view-add">{add}</div></div>;
+  return <section className="tag-view"><TagPageProperties tag={tag} snapshot={snapshot} session={session} onOpen={onOpen}/><h2 className="tag-views-heading">{ui.tags.views}</h2>{blocks.map((block,i)=><div key={i}>
+    <div className="prose" dangerouslySetInnerHTML={{__html:preview(body.slice(i?blocks[i-1].end:0,block.start),tag.path,false)}}/>
+    <ViewBlock source={block.source} onChange={source=>save(body.slice(0,block.start)+'```view-block\n'+source.trimEnd()+'\n```\n'+body.slice(block.end))} onRemove={()=>void save(body.slice(0,block.start)+body.slice(block.end)).catch(()=>undefined)}/>
+  </div>)}<div className="prose" dangerouslySetInnerHTML={{__html:preview(body.slice(blocks.at(-1)!.end),tag.path,false)}}/>{add}</section>;
+}
+function LegacyTagView({tag,snapshot,session,onOpen,memory,onViewChange}:{tag:TagInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;memory:ViewMemory;onViewChange:()=>void}) {
   const [rows,setRows]=useState<TagResult[]>([]),[view,setView]=useState<'table'|'list'|'kanban'>(memory.tagView??'table'),[group,setGroup]=useState(memory.tagGroup??''),[text,setText]=useState(''),[busy,setBusy]=useState(false),[more,setMore]=useState(false),[menu,setMenu]=useState<MenuState|null>(null);
   const generation=useRef(0),cancel=useRef<()=>void>(()=>{});
   const resolved=useMemo(()=>resolveTag(snapshot.tags??[],tag.tag),[snapshot.tags,tag.tag]);

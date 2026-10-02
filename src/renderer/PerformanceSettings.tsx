@@ -3,7 +3,7 @@ import type {AppSettings,GraphicsDiagnostics} from '../shared';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 
-export function PerformanceSettings() {
+export function PerformanceSettings({section}:{section?:'performance'|'developer'}) {
   const [settings,setSettings]=useState<AppSettings>(),[saving,setSaving]=useState(false),[error,setError]=useState('');
   const [diagnostics,setDiagnostics]=useState<GraphicsDiagnostics>(),[loading,setLoading]=useState(false),[diagnosticError,setDiagnosticError]=useState('');
   useEffect(()=>{
@@ -25,7 +25,7 @@ export function PerformanceSettings() {
     finally{setLoading(false);}
   }
   return <>
-    <section className="settings-section" aria-label={ui.settings.performance}>
+    {section!=='developer'&&<section className="settings-section" aria-label={ui.settings.performance}>
       <h3>{ui.settings.performance}</h3>
       <small>{ui.settings.deviceScope}</small>
       {settings?<>
@@ -35,8 +35,8 @@ export function PerformanceSettings() {
         {settings.warning&&<p role="alert">{settings.warning}</p>}
       </>:<small>{ui.settings.loading}</small>}
       {error&&<p role="alert">{error}</p>}
-    </section>
-    <details className="settings-section developer-settings" onToggle={e=>{if(e.currentTarget.open&&!diagnostics&&!loading)void refreshDiagnostics();}}>
+    </section>}
+    {section!=='performance'&&<details className="settings-section developer-settings" onToggle={e=>{if(e.currentTarget.open&&!diagnostics&&!loading)void refreshDiagnostics();}}>
       <summary data-tooltip={tooltips.settings.developer}>{ui.developer.title}</summary>
       <section aria-label={ui.developer.graphics}>
         <h3>{ui.developer.graphics}</h3>
@@ -53,6 +53,6 @@ export function PerformanceSettings() {
         </>}
         {diagnosticError&&<p role="alert">{diagnosticError}</p>}
       </section>
-    </details>
+    </details>}
   </>;
 }

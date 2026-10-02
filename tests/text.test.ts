@@ -8,6 +8,7 @@ import ts from 'typescript';
 test('renderer labels and menu copy stay in the catalogs, except deferred Settings copy', () => {
   const directory=new URL('../src/renderer/',import.meta.url),inline:string[]=[];
   for(const file of readdirSync(directory).filter(file=>file.endsWith('.tsx'))){
+    if(file==='SettingsPanel.tsx')continue; // Existing deferred Settings copy now lives in its own component.
     const source=readFileSync(new URL(file,directory),'utf8');
     const tree=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
     function visit(node:ts.Node){

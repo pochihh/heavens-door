@@ -3,11 +3,13 @@ import { tooltips } from '../text/tooltips';
 import { useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import {createPortal} from 'react-dom';
 import {TitleContent,titleSlot} from './TitleContent';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { EditorContent, useEditor, ReactNodeViewRenderer } from '@tiptap/react';
 import type { CardInfo } from '../shared';
 import { unsupported, preview } from './markdown';
 import { Icon, Tool } from './Icons';
 import { withCardTitle } from '../card-title';
+import { ViewBlockNode } from './ViewBlockNode';
+import { defaultViewSource } from './ViewBlock';
 import { cardMarkdown, extensions, titleMetadata } from './editor-schema';
 
 export interface EditorFocus { x: number; y: number; scrollTop: number }
@@ -19,7 +21,7 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
   const [initialContent]=useState(()=>withCardTitle(body));
   const [linkQuery,setLinkQuery]=useState('');
   const [slot]=useState(titleSlot),hasMetadata=!!afterTitle,metadataVisible=useRef(hasMetadata);metadataVisible.current=hasMetadata;
-  const configuredExtensions=useMemo(() => [...extensions(path),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
+  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(ViewBlockNode)),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
   const editor=useEditor({
     extensions:configuredExtensions,
     content:initialContent,contentType:'markdown',editable:!blocked,
@@ -50,6 +52,7 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
       <Tool icon="tasks" label={tooltips.editor.checklist} onClick={() => editor.chain().focus().toggleTaskList().run()}/>
       <Tool icon="quote" label={tooltips.editor.quote} onClick={() => editor.chain().focus().toggleBlockquote().run()}/>
       <Tool icon="code" label={tooltips.editor.codeBlock} onClick={() => editor.chain().focus().toggleCodeBlock().run()}/>
+      <Tool icon="database" label={tooltips.views.add} onClick={()=>editor.chain().focus().insertContent([{type:"codeBlock",attrs:{language:"view-block"},content:[{type:"text",text:defaultViewSource()}]},{type:"paragraph"}]).run()}/>
       <details className="link-picker"><summary data-tooltip={tooltips.editor.linkToAnotherCard}><Icon name="link" size={14}/>  {ui.editor.linkCard}</summary><div><input aria-label={ui.editor.findCardLabel} placeholder={ui.editor.findCardPlaceholder} value={linkQuery} onChange={e => setLinkQuery(e.target.value)}/><select aria-label={ui.editor.linkCardLabel} size={5} value="" onChange={e => {
         const card=cards.find(c => c.id === e.target.value);
         if (card) editor.chain().focus().insertContent({type:'text',text:card.name,marks:[{type:'link',attrs:{href:`card:${card.id}`}}]}).run();

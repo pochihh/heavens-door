@@ -152,6 +152,7 @@ export class Session {
   createTag(tag:string) {
     return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'createTag',tag});this.accept(result,ui.tags.newTag);return result.snapshot.tags!.find(t=>t.tag===tag)!;});
   }
+  saveTagBody(path:string,expected:string,body:string){return this.run(async()=>{await this.flush();this.accept(await this.bridge.request<Mutation>({kind:'saveTagBody',path,expected,body}),ui.tags.save);});}
   saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string,propertiesCollapsed?:boolean) {
     return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'saveTag',path,expected,fields,inherits,createParent,propertiesCollapsed});this.accept(result,ui.tags.save);return result.snapshot.tags!.find(t=>t.path===path)!;});
   }

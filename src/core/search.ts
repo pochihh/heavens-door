@@ -52,6 +52,7 @@ export function searchDocument(body:string) {
   let image:string|undefined;
   const local=(source:string)=>source&&!/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(source)&&/\.(png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i.test(source);
   const text=(token:Token):string=>{
+    if(token.type==='code'&&token.lang==='view-block')return '';
     if(token.type==='image'){if(!image&&local(token.href))image=token.href;return token.text;}
     if(token.type==='html'){
       const html=token.text.replace(/<!--[\s\S]*?-->/g,'').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'');

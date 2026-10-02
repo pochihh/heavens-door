@@ -1,7 +1,8 @@
 import { ui } from '../text/ui';
-import { Extension, type Editor } from '@tiptap/core';
+import { Extension, type Editor, type NodeViewRenderer } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import CodeBlock from '@tiptap/extension-code-block';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
 import Image from '@tiptap/extension-image';
@@ -35,9 +36,9 @@ export function cardMarkdown(editor:Editor){
 }
 
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
-export function extensions(path: string) {
+export function extensions(path: string,codeView?:NodeViewRenderer) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
-  return [CardTitle,StarterKit.configure({undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card']}}),Markdown,TaskList,TaskItem.configure({nested:true}),TableKit,Image.extend({
+  return [CardTitle,StarterKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TaskList,TaskItem.configure({nested:true}),TableKit,Image.extend({
     addNodeView() { return ({node}) => {
       const dom=document.createElement('img');
       const source=assetPath(path,String(node.attrs.src));
