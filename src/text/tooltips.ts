@@ -1,7 +1,7 @@
 // Tooltip copy. User-provided names and paths may be displayed directly; keep surrounding wording here.
 // Plain strings and typed formatters only; no rendering or application state.
 export const tooltips = {
-  views:{add:'Add view block',removeGroup:'Remove group',removeCondition:'Remove condition',options:'View options',addView:'Add view'},
+  views:{back:'Back',add:'Add view block',removeGroup:'Remove group',removeCondition:'Remove condition',options:'View options',addView:'Add view'},
   settings: {
     open:'Settings',hardwareAcceleration:'Use hardware acceleration after restarting the app',
     developer:'Developer tools and diagnostics',refreshGraphics:'Read the current graphics status',

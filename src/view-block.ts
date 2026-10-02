@@ -2,7 +2,7 @@ import {marked} from 'marked';
 import {viewText} from './text/views';
 import {parseDocument,LineCounter} from 'yaml';
 import type {TagInfo,TagField} from './shared';
-import {resolveTag,propertyType,multipleChoices,validTagDate} from './tags';
+import {resolveTag,propertyType,multipleChoices,validTagDate,tagsFrom} from './tags';
 
 export type FieldRef=string|string[];
 export type Rule={field:FieldRef;op:string;value?:unknown}|{all:Rule[]}|{any:Rule[]}|{not:Rule};
@@ -82,3 +82,23 @@ export function newViewBlock(tag?:string):ViewBlock {return {version:1,query:{fr
 export function viewFence(tag?:string){return '\n\n```view-block\n'+writeViewBlock('',newViewBlock(tag))+'```\n';}
 
 export function viewBlockRanges(body:string){let offset=0;const blocks:{start:number;end:number;source:string}[]=[];for(const token of marked.lexer(body)){const start=body.indexOf(token.raw,offset);if(start<0)continue;offset=start+token.raw.length;if(token.type==='code'&&token.lang==='view-block')blocks.push({start,end:offset,source:token.text});}return blocks;}
+
+// Display grouping follows preferences; saved query predicates keep their explicit keys.
+export function viewDisplayFields(refs:FieldRef[],tags:TagInfo[],prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES):QueryField[]{
+  const choices=queryFields(tags,tags.map(t=>t.tag),prefs),out:QueryField[]=[];
+  for(const key of refs.flatMap(fieldKeys)){
+    const f=choices.find(f=>f.keys.includes(key))??resolveField(key,tags);
+    if(!out.some(previous=>sameField(previous.keys,f.keys)))out.push(f);
+  }
+  return out;
+}
+export function viewPropertyTargets(key:string,tags:TagInfo[],properties:Record<string,unknown>,prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES){
+  const seed=resolveField(key,tags);if(!seed.definition)throw new Error(viewText.errors.chooseProperty);
+  const name=(name:string)=>prefs.caseSensitive?name:name.toLowerCase();
+  return tagsFrom(properties.tags).flatMap(tag=>{
+    const resolved=resolveTag(tags,tag);
+    const fields=resolved.fields.filter(f=>prefs.mergeProperties?name(f.key)===name(seed.definition!.key)&&propertyType(f.type)===seed.type&&multipleChoices(f)===multipleChoices(seed.definition!):f.propertyKey===key);
+    if(fields.length&&resolved.warnings.length)throw new Error(resolved.warnings.join('\n'));
+    return fields.map(field=>({tag,field}));
+  });
+}

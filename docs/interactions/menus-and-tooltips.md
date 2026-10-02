@@ -69,7 +69,7 @@ Removal actions (Delete, Remove and Clear) use normal text at rest and the theme
 
 ## Compact menu direction
 
-The current refinement follows the user's supplied Notion database-menu captures: short rows, a quiet surface, and one focused task per panel. This is a target for the next UI pass, not a claim that every existing popup already complies. The captured view settings, property visibility, layout and grouping panels are 290 px wide. Reuse that scale without importing Notion-only features.
+The current refinement follows the user's supplied Notion database-menu captures: short rows, a quiet surface, and one focused task per panel. View setup uses this pattern; older alternate menus still have the gaps listed below. The captured view settings, property visibility, layout and grouping panels are 290 px wide. Reuse that scale without importing Notion-only features.
 
 - Start action and view-setup menus around 290 px wide, with 6 px surface padding, 30–32 px rows, 13 px text, 16 px icons and the shared control radius. Allow long/localized labels and accessibility scaling to grow the surface within the viewport; do not shrink text to force a fit.
 - Use one row per setting: icon and label on the left; a short current value, switch or submenu chevron on the right. Keep padding, baselines and icon columns consistent across card, tag, view and Explorer menus.
@@ -79,7 +79,7 @@ The current refinement follows the user's supplied Notion database-menu captures
 - Close when the trigger scrolls away or disappears. Scrolling within the popup must keep it open. Portals/top-layer rendering prevent clipping but must not change the visual anchor to the app window or the whole view block.
 - Keep full settings navigation and destructive confirmations as their existing dialogs. Small view options and property editors remain local to the relevant control.
 
-**Proposal pending discussion:** View options opens a short menu containing Layout, Properties, Group, Rename and separated Duplicate/Remove actions. Each setting opens a focused subpanel in the same anchored surface with a Back control; returning restores the parent menu's focus and position. Property choices open on click, not merely hover. This avoids a tall combined form and cascading columns of menus. Simple choices apply immediately; creation and YAML editing retain explicit submit actions. Filter draft/commit behavior is unchanged in this documentation pass.
+**View setup:** View options opens a short menu containing Layout, Properties, Group, Rename and separated Duplicate/Remove actions. Each setting opens a focused subpanel in the same anchored surface with a Back control; returning restores the parent menu's focus and position. Property choices open on click, not merely hover. This avoids a tall combined form and cascading columns of menus. Simple choices apply immediately; creation and YAML editing retain explicit submit actions. Filter drafts save only through Done; Escape/outside click discard them.
 
 ## Current implementation gaps
 
@@ -87,7 +87,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, `Workspac
 
 | Area | Current behavior | Required correction |
 | --- | --- | --- |
-| View setup menus | View popups share a 600 px width and combine setup controls into one form. The earlier interactive mockup positions its popup against the view block. | Use content-specific sizing, the clicked control as anchor, and the compact menu structure agreed in discussion. |
+| View setup menus | 290 px options/subpanels share the clicked control as anchor; filters and YAML have content-specific widths. Document scrolling dismisses the popup while internal scrolling preserves it. | Continue applying this compact scale when adding new setup controls. |
 | Tooltip on menu opening | `ActionMenu` focuses the first item; tooltips now ignore focus events and retain the 450ms hover delay. | Still distinguish a newly mounted row under a stationary pointer from genuine movement. |
 | Duplicate labels | Only an explicit additional `hint` supplies a menu tooltip. | Detect genuine truncation if full-label tooltips are needed later. |
 | Tooltip position | The shared host places all tips below/above their owner. | Add menu-aware placement outside the menu. |
@@ -106,7 +106,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, `Workspac
 7. Repeat with a menu near each viewport edge, in a narrow window, and with long labels. No menu is clipped and no tooltip covers the actionable rows.
 8. Repeat in both themes and with reduced motion. Check Explorer, View tabs, Tab Group actions, workspace switching, and the card-link popover.
 9. Open View options in Table, List and Kanban, including in a narrow split: the popup stays visually attached to its trigger and contains no oversized empty form area.
-10. Open a long property list near each window edge: its content scrolls internally; scrolling the document dismisses it. Subpanels, if adopted, preserve their original anchor and restore focus on Back.
+10. Open a long property list near each window edge: its content scrolls internally; scrolling the document dismisses it. Subpanels preserve their original anchor and restore focus on Back.
 
 ## Confirmation dialogs
 

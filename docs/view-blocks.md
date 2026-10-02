@@ -1,6 +1,6 @@
 # View blocks
 
-View blocks work in Markdown cards and the Markdown body of `.tag` files. They store a query and named Table, List or Kanban views in a fenced `view-block`. Results reference source cards. The current implementation opens those references; the revised requirement is to edit source-card properties directly from results, as specified below. Opening or filtering a block still never changes a source card.
+View blocks work in Markdown cards and the Markdown body of `.tag` files. They store a query and named Table, List or Kanban views in a fenced `view-block`. Results reference source cards. Table, List and Kanban results edit source-card properties directly, as specified below. Opening or filtering a block still never changes a source card.
 
 ## Use in the app
 
@@ -74,22 +74,23 @@ Malformed YAML, unsupported versions, misspelled options/operators, unresolved p
 
 Results show loading, empty and failure states separately. Requests are cancelled logically when source/view/workspace changes, including pagination. The index returns 100 references per page plus an exact total; Load more explicitly grows the result set. Kanban groups the loaded page and shows that partial count in the footer. It keeps approximately two card heights of breathing room below its longest column.
 
-The implementation reuses the core SQLite index, fuzzy text search, theme tokens, popup placement, status colors and file-write/undo paths. The index now includes meaningful body text and rebuilds automatically when the cache version changes. No new runtime dependency or execution of user JavaScript is required. Gallery, Timeline and drag reordering of view tabs are deferred. Source-card property editing is now an accepted requirement for the next implementation pass, detailed below.
+The implementation reuses the core SQLite index, fuzzy text search, theme tokens, popup placement, status colors and file-write/undo paths. The index now includes meaningful body text and rebuilds automatically when the cache version changes. No new runtime dependency or execution of user JavaScript is required. Gallery, Timeline and drag reordering of view tabs are deferred. Source-card property editing reuses the same editors as Card View, detailed below.
 
-## Editable results — revised requirement
+## Editable results
 
-The earlier references-only limit is superseded. Property editing inside Table, List and Kanban results is the next implementation target; it is not implemented by this documentation update. Query evaluation remains read-only. A user's explicit property edit is a separate write to the referenced card's Markdown frontmatter. The block stores query and presentation only; it never stores a second copy of a card's values.
+The earlier references-only limit is superseded. Table, List and Kanban results support editing their visible properties. Query evaluation remains read-only. A user's explicit property edit is a separate write to the referenced card's Markdown frontmatter. The block stores query and presentation only; it never stores a second copy of a card's values.
 
 Reuse the same property editors as Card View: click a Status/Select pill for choices, click a date summary for the existing date/time/range popup, edit text/numbers without changing geometry, and use checkboxes for Boolean values. A property interaction must not open the card or start a drag; the title remains the explicit open action. Use only supported property types and existing tag definitions. Layout controls still configure the view, not source data.
 
 Each committed edit uses source-file revision checks, preserves unrelated frontmatter and Markdown, participates in the shared undo history, updates the rebuildable index and refreshes other appearances of that card. Never overwrite a newer external edit. Keep an invalid or failed edit visible with a local error. A successful edit may move or remove the card from the current filtered view; wait until the value is committed and the editor closes before applying that result change. Do not change the filter or silently restore the old value to keep the card visible.
 
-Merged display names do not determine the write target. `project/Status` and `task/Status` remain separate stored properties even if their displayed values are equal. Never discard their source identity when rendering editable results. Inherited fields retain their original namespace. A missing value is still missing: merely viewing a result must not add a property, copy a default or attach a tag.
+The current workspace merge setting determines editable property grouping. `project/Status` and `task/Status` remain separate stored properties even if their displayed values are equal. Never discard their source identity when rendering editable results. Inherited fields retain their original namespace. A missing value is still missing: merely viewing a result must not add a property, copy a default or attach a tag.
 
-### Choices pending discussion
+### Property merging and Kanban movement
 
-- **Merged editing:** recommend separate tagged values within one compact editor when a card has more than one matching property. If only one applies, edit it directly. Updating every matching key together is an alternative requiring an explicit decision.
-- **Kanban movement:** recommend that dropping a card in another column writes that column's grouping value as one undoable edit. Reuse the existing drag threshold/phantom and provide an equivalent keyboard/menu action. Ambiguous merged groupings must expose the actual target property rather than silently write several keys.
-- **Absent properties:** recommend allowing an explicit value edit to add a missing property only when its owning/resolving tag is already attached and the target key is unambiguous. Otherwise require choosing the tag/property; do not auto-tag a card just because it appeared in a query.
+- With **Merge properties across tags** on, one value editor updates every same-name, compatible field resolved through tags attached to that card, respecting **Case-sensitive property names**. The existing namespaced keys remain on disk. Inheritance retains the defining namespace; duplicate destinations are written once. All destinations validate before one atomic, undoable file write. Choice menus offer options accepted by every destination. Different property types or multiplicity stay separate.
+- With merging off, fields appear separately with their tag names and edits affect only the chosen key. Display/edit grouping responds to settings immediately; saved query/filter/sort bindings keep their explicit keys. If a previously merged Kanban grouping now resolves to several separate fields, choose one under **View options → Group**.
+- A column's property is its **Group** setting, normally Status. Dropping Todo → Done sets that property to Done. Cards can also move through their More menu. Pointer-down alone does nothing; movement starts after the shared drag threshold, uses the shared phantom, and Escape cancels. Unsupported destinations cannot accept a drop. The merge rules above apply to movement too.
+- An explicit edit can add a missing value only for a field belonging to a tag already attached to the card. Merely opening, focusing, cancelling or blurring an unchanged editor does not add fields, attach tags or copy defaults. When displayed values differ, choosing an option or explicitly confirming an input applies that value to every matching destination.
 
-The menu structure and density proposal is in [Menus and tooltips](interactions/menus-and-tooltips.md#compact-menu-direction). These changes do not require a new query schema or a centralized property schema.
+The menu structure and density contract is in [Menus and tooltips](interactions/menus-and-tooltips.md#compact-menu-direction). These changes do not require a new query schema or a centralized property schema.

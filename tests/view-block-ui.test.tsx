@@ -8,7 +8,7 @@ import {writeViewBlock,newViewBlock,parseViewBlock} from '../src/view-block';
 
 test('editable view blocks render without changing Markdown, commit group edits and preserve source through focus changes',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
- Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const snapshot:Snapshot={root:'/test',name:'Test',cards:[],boards:[],tags:[],issues:[],historyAvailable:false};let requests=0;
  const bridge={assetUrl:(s:string)=>s,request:async()=>{requests++;return {rows:[],total:0} satisfies ViewResults;}} as unknown as Bridge;window.door=bridge;
@@ -37,4 +37,45 @@ test('editable view blocks render without changing Markdown, commit group edits 
    await click('[role="option"][aria-selected="true"]');assert.ok(document.querySelector('.view-condition'));assert.equal(writes,1);
 
  }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+test('compact subpanels and result editors preserve anchors, support status/date edits and Kanban drop',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
+ const snapshot:Snapshot={root:'/test',name:'Test',cards:[{id:'a',path:'A.md',name:'A',title:'Task A',revision:'r1',legacy:false}],boards:[],issues:[],historyAvailable:false,tags:['project','task'].map(tag=>({path:tag+'.tag',name:tag,tag,revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Doing'],done:['Done']}},{key:'Date',type:'date'},{key:'Location',type:'text'},{key:'Checked',type:'boolean'}]}))};
+ const row:ViewResults['rows'][number]={card:snapshot.cards[0],properties:{tags:['project','task'],'project/Status':'Todo','task/Status':'Todo','project/Date':'2026-10-01','project/Location':'Here','task/Location':'There'}};
+ let queries=0,opened=0;const writes:{key:string;value:unknown}[]=[];
+ const session=new Session({request:async request=>{if(request.kind==='viewCards'){queries++;return {rows:[row],total:1};}throw new Error(request.kind);}} as Bridge);session.state.snapshot=snapshot;
+ session.setViewProperty=async(_path,_revision,key,value)=>{writes.push({key,value});row.properties={...row.properties,...Object.fromEntries(['project','task'].map(tag=>[tag+'/'+key.split('/')[1],value]))};};
+ const {createRoot}=await import('react-dom/client'),{ViewBlock,ViewBlockProvider}=await import('../src/renderer/ViewBlock');const root=createRoot(document.getElementById('root')!);
+ const block=newViewBlock('project');block.views[0].fields=['file.title','project/Status','project/Date','project/Location','project/Checked'];let source=writeViewBlock('',block);
+ const render=()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{opened++;}}><ViewBlock source={source} onChange={next=>{source=next;render();}}/></ViewBlockProvider>);
+ const settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});
+ const click=async(selector:string)=>{const el=document.querySelector<HTMLElement>(selector);assert.ok(el,selector);await act(async()=>el.click());};
+ const textClick=async(text:string)=>{const el=[...document.querySelectorAll<HTMLButtonElement>('.property-popover button')].find(el=>el.textContent===text);assert.ok(el,text);await act(async()=>el.click());};
+ const escape=async()=>act(async()=>document.querySelector('.property-popover')?.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ try{
+  await act(async()=>render());await settle();assert.equal(queries,1);
+  const options=document.querySelector<HTMLElement>('[aria-label="View options"]')!;options.getBoundingClientRect=()=>({left:700,right:730,top:200,bottom:230,width:30,height:30,x:700,y:200,toJSON(){}});
+  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,5);
+  await click('.view-menu-list button');assert.ok(document.querySelector('[data-kind=layout]'));assert.equal(document.querySelector<HTMLElement>('.property-popover')!.style.left,anchored);
+  await textClick('Kanban');await settle();assert.equal(parseViewBlock(source).views[0].type,'kanban');await click('[aria-label=Back]');await click('.view-menu-list button:nth-child(3)');assert.ok(document.querySelector('[data-kind=group] [role=listbox]'));await escape();assert.equal(document.querySelector('.property-popover'),null);
+  // Pointer down without a drag leaves the source unchanged; real movement uses the shared phantom.
+  const card=()=>document.querySelector<HTMLElement>('[data-tag-column="Todo"] .view-result-card')!;
+  const pointer=(target:Element|Document,type:string,x:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:40}));
+  document.elementFromPoint=()=>document.querySelector('[data-tag-column="Done"]');
+  await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointerup',20);});assert.equal(writes.length,0);
+  await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointermove',60);});assert.ok(document.querySelector('.drag-phantom'));await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(writes.length,0);assert.equal(document.querySelector('.drag-phantom'),null);
+  await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointermove',80);pointer(document,'pointerup',80);});await settle();assert.deepEqual(writes[0],{key:'project/Status',value:'Done'});assert.ok(document.querySelector('[data-tag-column="Done"] .view-result-card'));assert.equal(opened,0);
+  await click('[aria-label="Edit Status"]');await textClick('Todo');await settle();assert.equal(row.properties['task/Status'],'Todo');assert.equal(opened,0);
+  const count=writes.length;await click('[aria-label="Edit Location"]');await act(async()=>document.querySelector<HTMLInputElement>('.view-property input')!.blur());await settle();assert.equal(writes.length,count,'Opening and blurring mixed values never writes');
+  await click('[aria-label="Edit Location"]');await act(async()=>document.querySelector<HTMLInputElement>('.view-property input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.equal(row.properties['task/Location'],'Here','Explicit Enter applies the common value');
+  await click('[aria-label="Edit Date"]');assert.equal(document.querySelectorAll('.date-calendar [role=gridcell]').length,42);const before=queries;await act(async()=>document.querySelector<HTMLButtonElement>('[data-date="2026-10-02"]')!.click());assert.equal(queries,before,'The result query waits for the date draft to commit');await escape();await settle();assert.equal(writes.length,count+1);assert.equal(row.properties['project/Date'],'2026-10-01');
+  await click('[aria-label="Edit Date"]');await act(async()=>document.querySelector<HTMLButtonElement>('[data-date="2026-10-02"]')!.click());await act(async()=>document.querySelector<HTMLInputElement>('.date-input-row input')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));await settle();assert.equal(row.properties['task/Date'],'2026-10-02');
+  await click('.view-property input[type=checkbox]');await settle();assert.equal(row.properties['project/Checked'],true);assert.equal(row.properties['task/Checked'],true);
+  row.properties['task/Status']='Done';await act(async()=>render());assert.equal(document.querySelectorAll('.view-result-card').length,2);
+  await click('[data-tag-column=Todo] [aria-label="Edit Location"]');assert.equal(document.querySelectorAll('.view-property input[type=text]').length,1,'Only the clicked appearance of a merged card opens an editor');await act(async()=>document.querySelector<HTMLInputElement>('.view-property input[type=text]')!.blur());
+  await click('.view-card-title');assert.equal(opened,1);
+ }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}
 });

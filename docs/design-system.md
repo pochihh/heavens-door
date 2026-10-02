@@ -157,7 +157,7 @@ A tag page uses the card's property row and input components directly: a colored
 
 ## View blocks
 
-Shared Markdown view blocks use the same UI in cards and tag pages. Put a quiet Query summary above named view tabs; label it All views. Keep current-view Filter, Sort and View options on the tab toolbar, with readable filter chips immediately below. Conditions are compact property/comparison/value rows. Reveal Match all/any only for multiple conditions and nested groups only on request. Both levels use the same editor with explicit scope. Reuse existing menus, property controls and Status colors; view-tab drag reordering remains a follow-up. Multiple same-layout views are valid. Results reference source cards. Direct property editing is now required; the current block implementation still opens references only. See [View blocks](view-blocks.md) for the file format, editable-results target and remaining implementation boundaries.
+Shared Markdown view blocks use the same UI in cards and tag pages. Put a quiet Query summary above named view tabs; label it All views. Keep current-view Filter, Sort and View options on the tab toolbar, with readable filter chips immediately below. Conditions are compact property/comparison/value rows. Reveal Match all/any only for multiple conditions and nested groups only on request. Both levels use the same editor with explicit scope. Reuse existing menus, property controls and Status colors; view-tab drag reordering remains a follow-up. Multiple same-layout views are valid. Results reference source cards. Visible properties edit through the same controls as Card View; the title opens the source. See [View blocks](view-blocks.md) for the file format, editable-results contract and remaining implementation boundaries.
 
 
 ## Feature settings
@@ -167,8 +167,8 @@ Settings uses a two-column modal: a searchable feature sidebar and one scrolling
 View-filter groups place Remove group at the top right of their own header. Removal actions use the shared danger hover/focus style. Nested groups keep a thin indentation guide rather than repeated heavy boxes. See [view blocks](view-blocks.md) for the implemented query and missing-value contract.
 
 
-## Compact contextual menus — next UI pass
+## Compact contextual menus
 
 Follow the compact Notion-style direction in [Menus and tooltips](interactions/menus-and-tooltips.md#compact-menu-direction): approximately 290 px for setup menus, one setting per row, 13 px text, 16 px icons, restrained dividers and explicit theme tokens. Anchor to the clicked control, flip near edges and scroll long content internally. Window coordinates are only for placement constraints. Filter/YAML editors may be wider according to their content; never give all popups one large fixed width.
 
-The proposed View options structure separates Layout, Properties and Group into focused subpanels in the same anchored surface. The exact subpanel interaction remains under discussion. Direct editing of a result's Status, date/time and other properties is an accepted requirement, using the existing Card View editors and source-file undo path. The merged-property write target and Kanban drag behavior are still being discussed; do not implement implicit multi-property writes.
+View options separates Layout, Properties and Group into focused subpanels in the same anchored surface, with Back returning to the parent menu. Simple settings apply immediately; query/filter drafts and YAML retain explicit commits. Results edit through Card View controls and the source-file undo path. Merging follows the workspace setting: one edit applies to every compatible matching property on the card’s attached tags, retaining their distinct keys. Kanban Todo → Done writes the grouping property with the same rules, shared drag phantom and equivalent More-menu action.

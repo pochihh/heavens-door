@@ -71,3 +71,27 @@ test('YAML errors fail closed, view-local errors stay local, source comments and
   assert.equal(searchDocument('# Card\n\n'+raw).text.includes('version'),false);
   assert.equal(viewBlockRanges('```text\n'+raw+'```\n').length,0);
 });
+
+test('view edits honor merge settings, validate every attached destination and undo one source-file change',async t=>{
+  const dir=await fs.mkdtemp(join(tmpdir(),'heavens-view-edit-')),root=join(dir,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(dir,'cache'));
+  t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+  for(const name of ['project','task','child','unattached'])await w.createTag(name);
+  for(const name of ['project','task','unattached']){const tag=w.snapshot().tags!.find(t=>t.tag===name)!;await w.saveTag(tag.path,tag.revision,[{key:name==='task'?'status':'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:name==='project'?['Review']:[],done:['Done']}},{key:'Date',type:'date'}],[]);}
+  const child=w.snapshot().tags!.find(t=>t.tag==='child')!;await w.saveTag(child.path,child.revision,[],['project']);
+  await w.createFolder('','Notes');await w.create('Notes','A',0,0);let card=await w.card('Notes/A.md');
+  await w.write([{path:card.path,expected:card.revision,content:'---\n'+stringify({'card-id':card.id,tags:['project','task'],unrelated:'keep','project/Status':'Todo','task/status':'Todo'})+'---\n# A\n\nBody stays intact.\n'}]);
+  const before=await w.read(card.path),undo=new UndoHistory();card=await w.card(card.path);
+  const mutation=await w.setViewProperty(card.path,card.revision,'project/Status','Done');undo.record('Edit Status',mutation.edits);
+  assert.equal(mutation.edits.length,1);let props=w.cardProperties(card.path).properties;
+  assert.equal(props['project/Status'],'Done');assert.equal(props['task/status'],'Done');assert.equal(props['unattached/Status'],undefined);assert.equal(props.unrelated,'keep');assert.match(await w.read(card.path),/# A\n\nBody stays intact\.\n$/);
+  const view=newViewBlock();view.query.where={field:'task/status',op:'eq',value:'Done'};assert.equal(w.viewCards(writeViewBlock('',view),'table').total,1);
+  await assert.rejects(()=>w.setViewProperty(card.path,card.revision,'project/Status','Todo'),/External changes/);
+  await undo.travel(false,changes=>w.write(changes));assert.equal(await w.read(card.path),before);
+  card=await w.card(card.path);await assert.rejects(()=>w.setViewProperty(card.path,card.revision,'project/Status','Review'),/Invalid value/);assert.equal(await w.read(card.path),before,'No partial write when one option schema rejects');
+  await w.setPreferences({query:{mergeProperties:false,caseSensitive:false}});await w.setViewProperty(card.path,card.revision,'project/Status','Done');props=w.cardProperties(card.path).properties;assert.equal(props['project/Status'],'Done');assert.equal(props['task/status'],'Todo');
+  await w.setPreferences({query:{mergeProperties:true,caseSensitive:true}});card=await w.card(card.path);await w.setViewProperty(card.path,card.revision,'task/status','Done');assert.equal(w.cardProperties(card.path).properties['project/Status'],'Done');
+  card=await w.card(card.path);await w.setViewProperty(card.path,card.revision,'project/Status','Todo');assert.equal(w.cardProperties(card.path).properties['task/status'],'Done');
+  await w.setPreferences({query:{mergeProperties:true,caseSensitive:false}});card=await w.card(card.path);const range={start:'2026-10-01',end:'2026-10-03'};await w.setViewProperty(card.path,card.revision,'project/Date',range);props=w.cardProperties(card.path).properties;assert.deepEqual(props['project/Date'],range);assert.deepEqual(props['task/Date'],range);
+  card=await w.card(card.path);await w.write([{path:card.path,expected:card.revision,content:'---\n'+stringify({'card-id':card.id,tags:['child'],'project/Status':'Todo'})+'---\n# A\n'}]);card=await w.card(card.path);await w.setViewProperty(card.path,card.revision,'project/Status','Done');props=w.cardProperties(card.path).properties;assert.equal(props['project/Status'],'Done');assert.equal(props['child/Status'],undefined);assert.equal(props['task/status'],undefined);
+  const current=await w.read(card.path);card=await w.card(card.path);await assert.rejects(()=>w.setViewProperty(card.path,card.revision,'missing/Status','Todo'),/Unknown property/);assert.equal(await w.read(card.path),current);
+});

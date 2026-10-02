@@ -1,6 +1,7 @@
 import {compileView} from './view-query';
+import {viewPropertyTargets} from '../view-block';
 import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags,remapTagReferences} from './tags';
-import {validTag,tagsFrom,validateFields,resolveTag,validReferencePath} from '../tags';
+import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag,validReferencePath} from '../tags';
 import type {TagField,TagValue,TagSearchResult,WorkspaceSearchResult} from '../shared';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
@@ -393,6 +394,16 @@ export class Workspace {
     const cardRaw=await this.read(path);if(splitNote(cardRaw).front.has(tag+'/'+field.key))throw new Error(ui.tags.invalidFields);
     const card=editTagProperty(cardRaw,path,nextTags,tag,tag+'/'+field.key,value);
     return this.write([{path:definition.path,content,expected:tagExpected},{path,content:card,expected}]);
+  }
+  async setViewProperty(path:string,expected:string,key:string,value:TagValue){
+    if(!path.endsWith('.md')||typeof key!=='string'||!key||key.length>256)throw new Error(ui.errors.invalidQuery);
+    const raw=await this.read(path),{front,body}=splitNote(raw),targets=viewPropertyTargets(key,[...this.tags.values()],front.toJSON()??{},this.preferences.query);
+    if(!targets.length)throw new Error(ui.tags.notAttached);
+    // Validate every destination before writing; incompatible options cannot partially update a card.
+    for(const {field} of targets)validateTagValue(field,value);
+    for(const property of new Set(targets.map(t=>t.field.propertyKey)))front.set(property,value);
+    front.set('card-id',readCard(path,raw).id);
+    return this.write([{path,expected,content:'---\n'+front.toString()+'---\n'+body}]);
   }
   async setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {
     if(!path.endsWith('.md'))throw new Error(ui.tags.invalidTag);

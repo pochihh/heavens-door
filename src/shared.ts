@@ -68,6 +68,7 @@ export type Request =
   | { kind:'reorderCardTags';path:string;expected:string;tags:string[] }
   | { kind:'reorderTagProperties';path:string;expected:string;tag:string;keys:string[] }
   | { kind:'addTagProperty';path:string;expected:string;tag:string;tagExpected:string;field:TagField;value:TagValue }
+  | { kind:'setViewProperty';path:string;expected:string;key:string;value:TagValue }
   | { kind:'setTagProperty';path:string;expected:string;tag:string;key:string;value:TagValue }
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
   | { kind: 'renameBoard'; folder:string; name:string; expected:string }
