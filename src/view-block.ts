@@ -6,12 +6,12 @@ import {resolveTag,propertyType,multipleChoices,validTagDate,tagsFrom} from './t
 
 export type FieldRef=string|string[];
 export type Rule={field:FieldRef;op:string;value?:unknown}|{all:Rule[]}|{any:Rule[]}|{not:Rule};
-export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc'};order?:Record<string,string[]>}
+export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban'|'gallery'|'timeline';dateBy?:FieldRef;scale?:'day'|'week'|'month';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc'};order?:Record<string,string[]>}
 export interface ViewBlock {version:1;query:{from:'cards';where?:Rule};views:BlockView[]}
 export interface QueryPreferences {mergeProperties:boolean;caseSensitive:boolean}
 export const DEFAULT_QUERY_PREFERENCES:QueryPreferences={mergeProperties:true,caseSensitive:false};
 export interface QueryField {keys:string[];name:string;type:TagField['type']|'tags';tags:string[];definition?:TagField}
-export const FILE_FIELDS:QueryField[]=[{keys:['file.title'],name:viewText.fields.cardName,type:'text',tags:[]},{keys:['file.path'],name:viewText.fields.filePath,type:'text',tags:[]},{keys:['file.folder'],name:viewText.fields.folder,type:'text',tags:[]},{keys:['file.text'],name:viewText.fields.cardText,type:'text',tags:[]},{keys:['tags'],name:viewText.fields.tags,type:'tags',tags:[]}];
+export const FILE_FIELDS:QueryField[]=[{keys:['file.name'],name:viewText.fields.fileName,type:'text',tags:[]},{keys:['file.title'],name:viewText.fields.cardName,type:'text',tags:[]},{keys:['file.path'],name:viewText.fields.filePath,type:'text',tags:[]},{keys:['file.folder'],name:viewText.fields.folder,type:'text',tags:[]},{keys:['file.text'],name:viewText.fields.cardText,type:'text',tags:[]},{keys:['tags'],name:viewText.fields.tags,type:'tags',tags:[]}];
 export const OPERATORS:Record<string,string>=viewText.operators;
 export const fieldKeys=(ref:FieldRef)=>typeof ref==='string'?[ref]:ref;
 export const sameField=(a:FieldRef,b:FieldRef)=>JSON.stringify(fieldKeys(a))===JSON.stringify(fieldKeys(b));
@@ -56,11 +56,13 @@ export function validateRule(value:unknown,tags?:TagInfo[],depth=0,budget={left:
   }
 }
 export function validateView(value:unknown,tags?:TagInfo[]):asserts value is BlockView {
-  if(!record(value))throw new Error(viewText.errors.invalidView);keys(value,['id','name','type','filter','fields','groupBy','sort','order']);
-  if(typeof value.id!=='string'||!value.id||value.id.length>100||typeof value.name!=='string'||!value.name.trim()||value.name.length>100||!['table','list','kanban'].includes(String(value.type)))throw new Error(viewText.errors.requiredView);
+  if(!record(value))throw new Error(viewText.errors.invalidView);keys(value,['id','name','type','filter','fields','groupBy','sort','order','dateBy','scale']);
+  if(typeof value.id!=='string'||!value.id||value.id.length>100||typeof value.name!=='string'||!value.name.trim()||value.name.length>100||!['table','list','kanban','gallery','timeline'].includes(String(value.type)))throw new Error(viewText.errors.requiredView);
   if(value.filter!==undefined)validateRule(value.filter,tags);
   if(value.fields!==undefined){if(!Array.isArray(value.fields)||value.fields.length>40)throw new Error(viewText.errors.invalidProperties);for(const f of value.fields){field(f);if(tags)resolveField(f,tags);}}
   if(value.groupBy!==undefined){field(value.groupBy);if(tags)resolveField(value.groupBy,tags);}
+  if(value.dateBy!==undefined){field(value.dateBy);if(tags&&resolveField(value.dateBy,tags).type!=='date')throw new Error(viewText.chooseDate);}
+  if(value.scale!==undefined&&!['day','week','month'].includes(String(value.scale)))throw new Error(viewText.errors.invalidView);
   if(value.sort!==undefined&&value.sort!=='manual'){if(!record(value.sort))throw new Error(viewText.errors.invalidSort);keys(value.sort,['field','direction']);field(value.sort.field);if(!['asc','desc'].includes(String(value.sort.direction)))throw new Error(viewText.errors.invalidDirection);if(tags)resolveField(value.sort.field,tags);}
   if(value.order!==undefined){if(!record(value.order)||Object.keys(value.order).length>200)throw new Error(viewText.errors.invalidOrder);let count=0;for(const [column,ids] of Object.entries(value.order)){if(column.length>2048||!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!id||id.length>256)||new Set(ids).size!==ids.length||(count+=ids.length)>10000)throw new Error(viewText.errors.invalidOrder);}}
 }
@@ -119,4 +121,18 @@ export function replaceViewSource(body:string,index:number,source:string,next:st
   const block=viewBlockRanges(body)[index];if(!block||block.source.trim()!==source.trim())throw new Error(viewText.errors.viewChanged);
   if(next===null)return body.slice(0,block.start)+body.slice(block.end);
   return body.slice(0,block.start)+'```view-block\n'+next.trimEnd()+'\n```'+(body[block.end-1]==='\n'?'\n':'')+body.slice(block.end);
+}
+
+// Expand only explicit alternatives. Comparisons such as >, not and contains-text are not defaults.
+export function viewCreationChoices(block:ViewBlock,view:BlockView):Extract<Rule,{field:FieldRef}>[][] {
+  type Leaf=Extract<Rule,{field:FieldRef}>;
+  const expand=(rule?:Rule):Leaf[][]=>{
+    if(!rule||'not'in rule)return [[]];
+    if('any'in rule){const choices=rule.any.flatMap(expand);if(choices.length>64)throw new Error(viewText.errors.invalidCondition);return choices;}
+    if('all'in rule){let plans:Leaf[][]=[[]];for(const child of rule.all){const next=expand(child);if(plans.length*next.length>64)throw new Error(viewText.errors.invalidCondition);plans=plans.flatMap(a=>next.map(b=>[...a,...b]));}return plans;}
+    if(!(['eq','on'].includes(rule.op)||rule.field==='tags'&&rule.op==='contains'||rule.field==='file.folder'&&rule.op==='under'))return [[]];
+    return fieldKeys(rule.field).map(field=>[{...rule,field}]);
+  };
+  const choices=expand({all:[block.query.where??{all:[]},view.filter??{all:[]}]});
+  return [...new Map(choices.map(choice=>[JSON.stringify(choice),choice])).values()];
 }

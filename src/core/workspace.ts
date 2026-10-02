@@ -1,5 +1,6 @@
+import {moveCardLinks} from '../card-links';
 import {compileView} from './view-query';
-import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView} from '../view-block';
+import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView,viewCreationChoices,resolveField} from '../view-block';
 import {viewText} from '../text/views';
 import {readTag,editTag,editCardTag,editTagProperty,reorderTagProperties,reorderCardTags,remapTagReferences} from './tags';
 import {validTag,tagsFrom,validateFields,validateTagValue,resolveTag,validReferencePath} from '../tags';
@@ -478,15 +479,53 @@ export class Workspace {
     return this.snapshot();
   }
 
+  async createViewCard(owner:import('../shared').ViewCardMove['owner'],id:string,choice:number,column?:string,date?:TagValue){
+    if(!owner||typeof owner.path!=='string'||typeof id!=='string'||!['.md','.tag'].includes(extname(owner.path))||typeof owner.expected!=='string'||!Number.isInteger(owner.block)||owner.block< -1||typeof owner.source!=='string'||!Number.isInteger(choice)||choice<0||column!==undefined&&typeof column!=='string')throw new Error(ui.errors.invalidQuery);
+    const current=await this.read(owner.path);
+    if(revision(current)!==owner.expected)throw new Error(ui.errors.externalEdit(owner.path));
+    if(owner.block===-1){if(!owner.path.endsWith('.tag')||viewBlockRanges(splitNote(current).body).length)throw new Error(viewText.errors.viewChanged);}
+    else replaceViewSource(splitNote(current).body,owner.block,owner.source,owner.source);
+    const tags=[...this.tags.values()],plan=compileView(owner.source,id,tags),block=parseViewBlock(owner.source),rules=viewCreationChoices(block,plan.view)[choice];
+    if(!rules)throw new Error(viewText.errors.invalidCondition);
+    let folder:string|undefined,exactFolder:string|undefined,title='',stem=this.preferences.stem;
+    const attached=new Set<string>(),values=new Map<string,TagValue>();
+    for(const rule of rules){
+      const key=fieldKeys(rule.field)[0],value=rule.value;
+      if(key==='tags'){if(typeof value==='string')attached.add(value);continue;}
+      if(key==='file.folder'){
+        const next=String(value).replace(/\/$/,'');
+        if(rule.op==='eq'){if(exactFolder!==undefined&&exactFolder!==next)throw new Error(viewText.errors.invalidCondition);exactFolder=next;}
+        if(folder!==undefined&&folder&&next&&folder!==next&&!folder.startsWith(next+'/')&&!next.startsWith(folder+'/'))throw new Error(viewText.errors.invalidCondition);
+        if(folder===undefined||next.length>folder.length)folder=next;
+      }else if(key==='file.title')title=String(value);
+      else if(key==='file.name')stem=String(value).replace(/\.md$/,'');
+      else if(!key.startsWith('file.')){if(values.has(key)&&values.get(key)!==value)throw new Error(viewText.errors.invalidCondition);values.set(key,value as TagValue);}
+    }
+    if(exactFolder!==undefined&&folder!==exactFolder)throw new Error(viewText.errors.invalidCondition);
+    const contextKey=column!==undefined?fieldKeys(plan.view.groupBy??[])[0]:date!==undefined?fieldKeys(plan.view.dateBy??[])[0]:undefined;
+    if(column!==undefined&&plan.view.type!=='kanban'||date!==undefined&&plan.view.type!=='timeline'||(column!==undefined||date!==undefined)&&!contextKey)throw new Error(ui.errors.invalidQuery);
+    for(const key of [...values.keys(),...(contextKey?[contextKey]:[])]){
+      const field=resolveField(key,tags);if(!field.definition)throw new Error(viewText.errors.chooseProperty);
+      if(![...attached].some(tag=>resolveTag(tags,tag).fields.some(f=>f.propertyKey===key)))attached.add(key.slice(0,-field.definition.key.length-1));
+    }
+    const path=await this.newCardPath(folder??this.preferences.cardFolder??'Inbox',stem);
+    let raw=newNote();for(const tag of attached)raw=editCardTag(raw,path,tags,tag,true);
+    for(const [key,value] of values){const field=resolveField(key,tags).definition!;validateTagValue(field,value);const {front,body}=splitNote(raw);front.set(key,value);raw='---\n'+front.toString()+'---\n'+body;}
+    if(contextKey)raw=this.viewPropertyContent(raw,path,contextKey,column!==undefined?column||null:date!);
+    if(title)raw=editCard(raw,readCard(path,raw),'# '+title.replace(/[\r\n]+/g,' ')+'\n');
+    return this.write([{path,content:raw,expected:null}]);
+  }
+  private async newCardPath(folder:string,stem:string){
+    validateStem(stem);
+    const directory=folder?await this.path(folder):this.root;await fs.mkdir(directory,{recursive:true});
+    const names=new Set((await fs.readdir(directory)).map(n=>n.toLocaleLowerCase()));
+    let filename=stem+'.md',i=0;while(names.has(filename.toLocaleLowerCase()))filename=`${stem}_${++i}.md`;
+    return join(folder,filename);
+  }
   async create(folder: string, stem: string, x: number, y: number,place=true) {
     validateStem(stem);
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(ui.errors.invalidPosition);
-    if (folder) await fs.access(await this.path(folder));
-    const directory = folder ? await this.path(folder) : this.root;
-    const names = new Set((await fs.readdir(directory)).map(n => n.toLocaleLowerCase()));
-    let filename = stem + '.md', i = 0;
-    while (names.has(filename.toLocaleLowerCase())) filename = `${stem}_${++i}.md`;
-    const path = join(folder,filename), raw = newNote(), card = readCard(path,raw);
+    const path=await this.newCardPath(folder,stem),raw=newNote(),card=readCard(path,raw);
     if(!place)return this.write([{path,content:raw,expected:null}]);
     const boardPath=this.boardPath(folder);
     const board=structuredClone(this.boards.get(boardPath)??emptyBoard(boardPath));
@@ -581,6 +620,30 @@ export class Workspace {
     this.pathMoves.push({from,to});
     await this.scan();
     return {snapshot:this.snapshot(),edits:[],move:{from,to}};
+  }
+  async placeCard(id:string,expected:string,folder:string,boardExpected:string,x:number,y:number,mode:'move'|'reference',source?:string){
+    if(!['move','reference'].includes(mode)||!Number.isFinite(x)||!Number.isFinite(y)||!folder||source!==undefined&&typeof source!=='string')throw new Error(ui.errors.invalidQuery);
+    const info=this.snapshot().cards.find(c=>c.id===id),board=this.boards.get(this.boardPath(folder));
+    if(!info||!board)throw new Error(ui.errors.fileMissing);
+    if(info.revision!==expected||board.revision!==boardExpected)throw new Error(ui.errors.externalEdit(info.path));
+    const before=await this.read(info.path),card=readCard(info.path,before),moving=mode==='move'&&dirname(card.path)!==folder;
+    if(card.revision!==expected)throw new Error(ui.errors.externalEdit(card.path));
+    const path=moving?await this.newCardPath(folder,basename(card.path,'.md')):card.path,changes:Write[]=[],boards=new Map<string,Board>();
+    const destination=structuredClone(board),existing=destination.cards.find(p=>p.cardId===id);
+    if(existing){existing.x=x;existing.y=y;destination.cards=destination.cards.filter(p=>p!==existing).concat(existing);}
+    else {const original=this.boards.get(this.boardPath(source??dirname(card.path)))?.cards.find(p=>p.cardId===id);destination.cards.push({...original,id:randomUUID(),cardId:id,x,y,width:original?.width??340,height:original?.height??280});}
+    boards.set(destination.path,destination);
+    if(mode==='move'){
+      const home=dirname(card.path),origins=new Set([home,...(source?[source]:[])]);
+      for(const origin of origins){const original=this.boards.get(this.boardPath(origin));if(!original||original.path===board.path)continue;
+        const ids=new Set(original.cards.filter(p=>p.cardId===id).map(p=>p.id));if(!ids.size)continue;
+        boards.set(original.path,{...original,cards:original.cards.filter(p=>!ids.has(p.id)),edges:original.edges.filter(e=>!ids.has(e.from)&&!ids.has(e.to))});
+      }
+    }
+    if(moving)changes.push({path:card.path,content:null,expected},{path,content:editCard(before,card,moveCardLinks(card.body,card.path,path)),expected:null});
+    else if(card.legacy)changes.push({path:card.path,content:editCard(before,card,card.body),expected});
+    for(const next of boards.values())changes.push({path:next.path,expected:next.revision,content:writeBoard(next)});
+    return this.write(changes);
   }
   async renameCard(path:string,stem:string,expected:string):Promise<Mutation> {
     validateStem(stem);
@@ -691,7 +754,12 @@ export class Workspace {
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order+' LIMIT 100 OFFSET ?').all(...plan.args,offset);
       if(offset+rows.length<total)nextOffset=offset+rows.length;
     }
-    return {total,...(columns?{columns}:{}),...(nextOffset!==undefined?{nextOffset}:{}),rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));return {card:{...card,legacy:!!card.legacy,...(properties['card-color']!==undefined?{fillColor:properties['card-color']}: {})} as unknown as CardInfo,properties};})};
+    return {total,...(columns?{columns}:{}),...(nextOffset!==undefined?{nextOffset}:{}),rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));let preview:ReturnType<typeof searchDocument>|undefined;
+      if(plan.view.type==='gallery'){
+        const key=String(card.path);preview=this.searchPreviews.get(key);
+        if(!preview){preview=searchDocument(String(this.db.prepare('SELECT body FROM cards WHERE path=?').get(String(card.path))?.body??''));if(this.searchPreviews.size>=256)this.searchPreviews.delete(this.searchPreviews.keys().next().value!);this.searchPreviews.set(key,preview);}
+      }
+      return {card:{...card,legacy:!!card.legacy,...(properties['card-color']!==undefined?{fillColor:properties['card-color']}: {})} as unknown as CardInfo,properties,...(preview?{previewImage:preview.image,snippet:preview.text.slice(0,200)}:{})};})};
   }
   async moveViewCard(move:import('../shared').ViewCardMove){
     if(!move||typeof move!=='object'||!move.owner||!move.card||typeof move.owner.path!=='string'||!['.md','.tag'].includes(extname(move.owner.path))||typeof move.card.path!=='string'||!move.card.path.endsWith('.md')||typeof move.owner.expected!=='string'||typeof move.card.expected!=='string'||typeof move.owner.source!=='string'||typeof move.view!=='string'||!Number.isInteger(move.owner.block)||move.owner.block< -1||[move.from,move.to].some(v=>typeof v!=='string'||v.length>2048)||[move.before,move.after].some(v=>v!==undefined&&(typeof v!=='string'||!v||v.length>256)))throw new Error(ui.errors.invalidQuery);
@@ -704,7 +772,12 @@ export class Workspace {
     if([move.before,move.after].some(id=>id!==undefined&&(id===card.id||!target.includes(id))))throw new Error(viewText.errors.viewChanged);
     const moved=move.from!==move.to;
     const content=moved?this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.groupBy!)[0],move.to||null):cardRaw;
-    if(typeof view.sort!=='object'){
+    if(typeof view.sort==='object'){
+      // Freeze every current column before switching modes, including unloaded cards.
+      view.order={...view.order,...Object.fromEntries([...data.columns].map(([value,ids])=>[value,[...new Set([...ids,...(view.order&&Object.hasOwn(view.order,value)?view.order[value]:[])])]]))};
+    }
+    view.sort='manual';
+    {
       const saved=view.order&&Object.hasOwn(view.order,move.to)?view.order[move.to]:[];
       view.order=Object.fromEntries([...Object.entries(view.order??{}).map(([value,ids])=>[value,ids.filter(id=>id!==card.id)]),[move.to,moveCardId(saved,target,card.id,move.before,move.after)]]);
     }

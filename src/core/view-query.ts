@@ -9,7 +9,7 @@ export function compileView(source:string,id:string,tags:TagInfo[]){
   if(!view)throw new Error(viewText.errors.notFound);validateView(view,tags);
   if(block.query.where)validateRule(block.query.where,tags);
   const args:(string|number)[]=[],bind=(v:unknown)=>{args.push(typeof v==='boolean'?Number(v):v as string|number);return '?';};
-  const file=(key:string)=>({'file.title':"COALESCE(NULLIF(c.title,''),c.name)",'file.path':'c.path','file.folder':'c.folder','file.text':'c.searchText'}[key]);
+  const file=(key:string)=>({'file.name':'c.name','file.title':"COALESCE(NULLIF(c.title,''),c.name)",'file.path':'c.path','file.folder':'c.folder','file.text':'c.searchText'}[key]);
   function compare(column:string,op:string,value:unknown){
     if(op==='under'){const path=String(value).replace(/\/$/,'');return `(${column}=${bind(path)} OR substr(${column},1,length(${bind(path+'/')}))=${bind(path+'/')})`;}
     if(op==='contains'||op==='notContains')return `instr(lower(${column}),lower(${bind(value)})) ${op==='contains'?'>':'='} 0`;
@@ -39,8 +39,8 @@ export function compileView(source:string,id:string,tags:TagInfo[]){
   }
   function condition(rule?:Rule):string {if(!rule)return '1';if('all'in rule)return rule.all.length?'('+rule.all.map(condition).join(' AND ')+')':'1';if('any'in rule)return rule.any.length?'('+rule.any.map(condition).join(' OR ')+')':'0';if('not'in rule)return '(NOT '+condition(rule.not)+')';return leaf(rule);}
   const where=condition(block.query.where)+' AND '+condition(view.filter),whereArgs=[...args];
-  function sortValue(ref:FieldRef){return fieldKeys(ref).map(key=>file(key)||`(SELECT json_extract(p.value,'$') FROM properties p WHERE p.path=c.path AND p.field=${bind(key)})`);}
+  function sortValue(ref:FieldRef){return fieldKeys(ref).map(key=>file(key)||(key==='tags'?"(SELECT group_concat(value,char(31)) FROM (SELECT DISTINCT v.value FROM json_each(c.frontmatter,'$.tags') v WHERE v.type='text' ORDER BY v.value COLLATE NOCASE,v.value))":undefined)||`(SELECT json_extract(p.value,'$') FROM properties p WHERE p.path=c.path AND p.field=${bind(key)})`);}
   const sort=typeof view.sort==='object'?view.sort:undefined;
-  const sorts=sortValue(sort?.field??'file.title'),order=(sorts.length>1?'COALESCE('+sorts.join(',')+')':sorts[0])+' '+(sort?.direction==='desc'?'DESC':'ASC')+',c.path';
+  const sorts=sortValue(sort?.field??'file.name'),order=(sorts.length>1?'COALESCE('+sorts.join(',')+')':sorts[0])+' '+(sort?.direction==='desc'?'DESC':'ASC')+' NULLS LAST,c.name,c.path';
   return {where,whereArgs,order,args,view};
 }

@@ -121,3 +121,9 @@ Internal note creation and automatic placement are one revision-checked transact
 ## Edges and mention links
 
 Manual `edges` connect placement IDs and render as editable curves. Optional endpoint sides, arrowheads, stroke settings, label and label size are stored with each edge. Placement `strokeColor`, `strokeWidth` and `strokeStyle` remain readable legacy fields; card and whiteboard tile borders now come from the theme. A source card’s hidden `card-color` frontmatter supplies its shared fill (hex, or null for Theme). Placement `fillColor` remains the fill for whiteboard tiles and a legacy fallback for cards without shared color metadata. The layout accepts `showMentions`. Legacy `mentionStyle`, `canvasColor` and `gridColor` remain readable and round-trip, but the theme now controls those visuals. All fields are optional and validated; existing version-1 boards remain readable. Mention links themselves are derived from the card-link index and are never serialized into `edges`. See [interaction and Style View rules](interactions/edges-and-style.md).
+
+## Moving cards
+
+The root-level Inbox (configurable under General → New card folder) holds cards without a whiteboard. It remains an ordinary folder shown in File explorer. Dropping one of its cards onto a whiteboard moves the existing Markdown file there. Owned cards offer Move card or Add reference. Source/destination layouts and the file move use the normal revision-checked write journal and shared undo; stable card IDs keep other board references intact. Move removes edges attached to the removed source placement.
+
+Relative Markdown links and HTML image/link paths in the moved note are rebased. External URLs, card-ID links and code are retained. Incoming literal path/wiki links in other notes are not rewritten; use stable card-ID links for move-safe references. No workspace-wide link rewrite happens as a side effect of a drag.

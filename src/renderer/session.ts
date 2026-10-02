@@ -1,3 +1,4 @@
+import {moveCardLinks} from '../card-links';
 import {replaceViewSource,viewBlockRanges} from '../view-block';
 import { ui } from '../text/ui';
 import type { Board, Bridge, Card, Checkpoint, Mutation, Preferences, Snapshot, Deletion, TagField, TagValue } from '../shared';
@@ -150,6 +151,30 @@ export class Session {
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});
       this.update({draft:{card,body:card.body,dirty:false}});
+    });
+  }
+  createViewCard(owner:import('../shared').ViewCardMove['owner'],view:string,choice:number,column?:string,date?:import('../shared').TagValue){
+    return this.run(async()=>{
+      const before=this.state.snapshot?.cards.find(c=>c.path===owner.path)??this.state.snapshot?.tags?.find(t=>t.path===owner.path);
+      if(before?.revision!==owner.expected)throw new Error(ui.errors.externalEdit(owner.path));
+      await this.flush();
+      const current=this.state.snapshot?.cards.find(c=>c.path===owner.path)??this.state.snapshot?.tags?.find(t=>t.path===owner.path);
+      const result=await this.bridge.request<Mutation>({kind:'createViewCard',owner:{...owner,expected:current!.revision},view,choice,column,date});
+      this.accept(result,ui.history.createCard);
+      const created=result.edits.find(e=>e.before===null&&e.path.endsWith('.md'))!;
+      return result.snapshot.cards.find(c=>c.path===created.path)!;
+    });
+  }
+  placeCard(id:string,folder:string,x:number,y:number,mode:'move'|'reference',source?:string){
+    return this.run(async()=>{
+      await this.flush();
+      const card=this.state.snapshot?.cards.find(c=>c.id===id),board=this.state.snapshot?.boards.find(b=>b.folder===folder);
+      if(!card||!board)throw new Error(ui.errors.fileMissing);
+      const result=await this.bridge.request<Mutation>({kind:'placeCard',id,expected:card.revision,board:folder,boardExpected:board.revision,x,y,mode,source});
+      this.accept(result,mode==='move'?ui.views.moveCard:ui.views.addReference);
+      if(this.state.draft?.card.id===id){const updated=result.snapshot.cards.find(c=>c.id===id)!;const next=await this.bridge.request<Card>({kind:'card',path:updated.path}),draft=this.state.draft;
+        if(draft?.card.id===id)this.update({draft:{card:next,body:draft.dirty?moveCardLinks(draft.body,card.path,next.path):next.body,dirty:draft.dirty}});
+      }
     });
   }
   createTag(tag:string) {

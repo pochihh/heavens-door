@@ -1,3 +1,4 @@
+import type {CardDrop} from './card-drop';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
@@ -82,6 +83,17 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
   const [pulse,setPulse]=useState(0),[tabMenu,setTabMenu]=useState<MenuState|null>(null);
   const dismissTabMenu=useCallback(()=>setTabMenu(null),[]);
+  useEffect(()=>{
+    const drop=(event:Event)=>{
+      const d=(event as CustomEvent<CardDrop>).detail,card=snapshot.cards.find(c=>c.id===d.id);
+      if(!card||!snapshot.boards.some(b=>b.folder===d.folder))return;
+      const run=(mode:'move'|'reference')=>attempt(session.placeCard(d.id,d.folder,d.x,d.y,mode,d.source));
+      if(!snapshot.boards.some(b=>b.folder&&b.folder===parent(card.path)))run('move');
+      else setTabMenu({x:d.screenX,y:d.screenY,actions:[{label:ui.views.moveCard,icon:'folder',run:()=>run('move')},{label:ui.views.addReference,icon:'link',run:()=>run('reference')}]});
+    };
+    window.addEventListener('door:card-drop',drop);return()=>window.removeEventListener('door:card-drop',drop);
+  },[snapshot]);
+
   const memories=useRef(new Map<string,ViewMemory>(Object.entries(prefs.documents?.views??{}))),starredTarget=useRef<HTMLDivElement>(null);
   const seenMoves=useRef(snapshot.pathMoves?.length??0);
   useLayoutEffect(()=>{
@@ -194,8 +206,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     setModal(null);if(!folderPosition)open('board:'+path);
   }
   function createCard(folder:string,x?:number,y?:number,paneId=activeId){
-    if(!folder){createFolder('',x!==undefined&&y!==undefined?{x,y}:undefined);return;}
-    attempt((async()=>{await session.create(folder,prefs.stem,x??80,y??80,x!==undefined&&y!==undefined);const card=session.state.draft?.card;
+    attempt((async()=>{await session.create(folder||prefs.cardFolder||'Inbox',prefs.stem,x??80,y??80,!!folder&&x!==undefined&&y!==undefined);const card=session.state.draft?.card;
       if(card){const p=panes(layout).find(p=>p.id===paneId);if(x===undefined||y===undefined||(!p||tabDocument(p)!=='board:'+folder))open('card:'+card.id,paneId);}
     })());
   }
@@ -277,7 +288,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
           !info.exists?<p className="notice">{ui.errors.fileMissing}</p>:
-          board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
+          board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y})} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
       </ViewBlockProvider></div>

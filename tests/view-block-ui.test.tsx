@@ -25,7 +25,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
  const click=async(selector:string)=>{const element=document.querySelector<HTMLElement>(selector);assert.ok(element,selector);await act(async()=>element.click());};
  try{
    await act(async()=>render());await settle();assert.equal(writes,0);assert.equal(document.querySelectorAll('.view-block').length,1);assert.ok(document.querySelector('[data-node-view-content][hidden]'),'the YAML source must not render above the block');assert.ok(document.querySelector('pre')?.textContent?.includes('const x = 1;'));
-   await click('.view-toolbar button:nth-last-child(3)'); // Filter, before Sort and More
+   await click('.view-actions > button:first-child' ); // Filter, before Sort and More
    assert.ok(document.querySelector('.view-rule-group .view-group-heading [aria-label="Remove group"]'));
    await click('[aria-label="Remove group"]');assert.equal(document.querySelector('.view-rule-group'),null);
    await click('.view-popup-footer button');await settle();assert.equal(writes,1);assert.ok(body.includes('```view-block'));assert.ok(body.includes('const x = 1;'));const raw=body.split('```view-block\n')[1].split('```')[0];assert.deepEqual(parseViewBlock(raw).views[0].filter,{all:[]});
@@ -37,7 +37,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
    await click('[role="tab"]:last-child');await settle();assert.equal(document.querySelector('[role="alert"]'),null);assert.ok(document.querySelector('.view-list'));assert.equal(writes,1);
    const unknown=writeViewBlock('',{...newViewBlock(),views:[{id:'table',name:'Table',type:'table',filter:{field:'project/Typo',op:'eq',value:'value'}}]});
    await act(async()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={unknown} onChange={()=>{writes++;}}/></ViewBlockProvider>));await settle();
-   await click('.view-toolbar button:nth-last-child(3)');await click('[aria-label="Find a property…"]');
+   await click('.view-actions > button:first-child' );await click('[aria-label="Find a property…"]');
    await click('[role="option"][aria-selected="true"]');assert.ok(document.querySelector('.view-condition'));assert.equal(writes,1);
 
  }finally{await act(async()=>root.unmount());}
@@ -163,7 +163,7 @@ test('preview setup stays editable, configured properties stay available, and vi
   results={rows:[{card:snapshot.cards[1],properties:{tags:['project'],'project/priority':3,'project/Due':'2026-10-18','project/Status':'Todo'}}],total:1};snapshot.cards=[...snapshot.cards.map(c=>({...c,revision:c.id==='a'?'r2':c.revision}))];await act(async()=>render());await settle();
   await click('[aria-label="View options"]');await click('.view-menu-list button:nth-child(2)');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,false,'hidden properties remain available to enable');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,true);await escape();
   await click('.view-query-line button');assert.ok(document.querySelector('.view-condition'));await click('.view-popup-footer button');await settle();
-  await click('.view-toolbar > button');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await escape();
+  await click('.view-actions > button:first-child');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await escape();
   const strips=[...document.querySelectorAll<HTMLElement>('[data-tab-strip]')],rect=(left:number,top:number,width:number)=>({left,top,width,height:34,right:left+width,bottom:top+34,x:left,y:top,toJSON(){}});
   const original=dom.window.HTMLElement.prototype.getBoundingClientRect;
   dom.window.HTMLElement.prototype.getBoundingClientRect=function(){const strip=this.hasAttribute('data-tab-strip')?this:this.parentElement;if(!strip||!strips.includes(strip))return original.call(this);const top=strips.indexOf(strip)*100+40;if(this===strip)return rect(10,top,300);const siblings=[...strip.children].filter(e=>(e as HTMLElement).style.display!=='none');return rect(10+siblings.indexOf(this)*92,top,90);};

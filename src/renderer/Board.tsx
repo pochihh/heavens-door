@@ -1,3 +1,4 @@
+import {dropCardAt} from './card-drop';
 import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
@@ -279,7 +280,7 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
       // The last pointer event may arrive before React renders the last move.
       const next=movedBoard(g,e.clientX,e.clientY);
       if(g.type==='move')next.cards=[...next.cards.filter(p=>!g.ids.includes(p.id)),...next.cards.filter(p=>g.ids.includes(p.id))];
-      save(next, g.type === 'move' ? ui.history.moveCards : ui.history.resizeCard, g.board);
+      if(!(g.type==='move'&&g.ids.length===1&&!g.board.cards.find(p=>p.id===g.ids[0])?.folder&&dropCardAt(g.board.cards.find(p=>p.id===g.ids[0])!.cardId,e.clientX,e.clientY,board.folder)))save(next, g.type === 'move' ? ui.history.moveCards : ui.history.resizeCard, g.board);
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
@@ -382,7 +383,7 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <div className="canvas" data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
+    <div className="canvas" data-card-drop-folder={board.folder||undefined} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
@@ -406,7 +407,7 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
-          return <article key={p.id} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
+          return <article key={p.id} data-card-drop-folder={p.folder||undefined} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
             data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:tintColor(p.folder?p.fillColor:cardFill(savedCard,p)) }}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;

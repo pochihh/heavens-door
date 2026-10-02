@@ -53,7 +53,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     const internal=portable(folder).split('/').some(part=>part.startsWith('.')||part==='node_modules');
     return [
       {label:ui.common.newWhiteboard,icon:'map',disabled:internal,hint:internal?tooltips.explorer.internalFolder:undefined,run:()=>onFolder(folder)},
-      {label:ui.common.newCard,icon:'note',disabled:!folder||internal,hint:!folder?tooltips.whiteboard.rootWhiteboardsOnly:internal?tooltips.explorer.internalFolder:undefined,run:()=>onCard(folder)},
+      {label:ui.common.newCard,icon:'note',disabled:internal,hint:internal?tooltips.explorer.internalFolder:undefined,run:()=>onCard(folder)},
     ];
   };
   function actions(entry:Entry):MenuAction[] {
@@ -89,7 +89,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   function row(entry:Entry,depth=0,saved?:'starred'|'recent',physical=false):ReactNode {
     const key=entry.key,folder=entry.folder,expandedHere=folder!==undefined&&expanded.has(folder);
     const info=key?documentInfo(key,snapshot):null,icon=folder!==undefined?(physical?'folder':'map'):info?.icon??fileIcon(entry.path);
-    return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-key={key} style={{paddingLeft:8+depth*16}}
+    return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-key={key} data-card-drop-folder={key?.startsWith('board:')&&entry.folder?entry.folder:undefined} style={{paddingLeft:8+depth*16}}
       onContextMenu={e=>{e.preventDefault();show(actions(entry),e,true);}}
       onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();show(actions(entry),e);}}}>
       {!saved&&(folder!==undefined?<button className="tree-disclosure" data-tooltip={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-label={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-expanded={expandedHere} onClick={()=>toggle(folder)}><Icon name={expandedHere?'down':'chevron'} size={12}/></button>:<span className="tree-spacer"/>)}

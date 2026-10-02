@@ -30,7 +30,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { cardFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
@@ -44,7 +44,7 @@ export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
 export interface ViewResults {rows:TagResult[];total:number;columns?:{value:string;ids:string[];total:number}[];nextOffset?:number}
 export interface ViewCardMove {owner:{path:string;expected:string;block:number;source:string};view:string;card:{path:string;expected:string};from:string;to:string;before?:string;after?:string}
-export interface TagResult { card: CardInfo; properties: Record<string,unknown> }
+export interface TagResult { previewImage?:string;snippet?:string; card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
 export interface BoardMove { from:string; to:string }
@@ -80,6 +80,8 @@ export type Request =
   | { kind: 'query'; text: string }
   | { kind: 'queryCards'; query: CardQuery }
   | { kind:'moveViewCard';move:ViewCardMove }
+  | { kind:'createViewCard';owner:ViewCardMove['owner'];view:string;choice:number;column?:string;date?:TagValue }
+  | { kind:'placeCard';id:string;expected:string;board:string;boardExpected:string;x:number;y:number;mode:'move'|'reference';source?:string }
   | { kind:'viewCards';source:string;view:string;offset?:number }
   | { kind:'saveTagBody';path:string;expected:string;body:string }
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }

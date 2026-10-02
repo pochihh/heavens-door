@@ -1,3 +1,4 @@
+import {dropCardAt} from './card-drop';
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 export type SortAxis='vertical'|'horizontal';
@@ -34,7 +35,7 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
   return (event:ReactPointerEvent,key:string,fromStarred:boolean)=>{
     if(event.button!==0)return;
     cancel.current();
-    const source=event.currentTarget.closest<HTMLElement>('[data-file-key]')!,root=target.current;
+    const source=event.currentTarget.closest<HTMLElement>('[data-file-key]')!,root=target.current??(key.startsWith('card:')&&!reorderOnly?document.createElement('div'):null);
     if(!source||!root)return;
     const groups=[...root.querySelectorAll<HTMLElement>('[data-sort-group]')];
     let list=groups.find(group=>group.contains(source))??root;
@@ -107,7 +108,7 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;
       document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',keyboard,true);window.removeEventListener('blur',abort);cancel.current=()=>{};
       if(active){document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
-      if(save&&active)onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
+      if(save&&active&&!(key.startsWith('card:')&&dropCardAt(key.slice(5),x,y)))onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
     };
     const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update();finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};
     const abort=(event?:Event)=>{if(event?.type!=='pointercancel'||(event as PointerEvent).pointerId===pointer)finish(false);};
@@ -145,7 +146,7 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     const changed=hit!==target;let layoutChanged=changed;
     const beforeRects=new Map([...new Set([target,hit])].flatMap(column=>column?cards(column):[]).map(row=>[row,row.getBoundingClientRect()]));
     if(changed){target?.classList.remove('kanban-drop');reveal();conceal(source);target=hit;
-      if(target){target.classList.add('kanban-drop');for(const row of target.querySelectorAll<HTMLElement>('[data-card-id]'))if(row!==source&&row.dataset.cardId===id)conceal(row);target.append(slot);}else slot.remove();
+      if(target){target.classList.add('kanban-drop');for(const row of target.querySelectorAll<HTMLElement>('[data-card-id]'))if(row!==source&&row.dataset.cardId===id)conceal(row);target.insertBefore(slot,target.querySelector(':scope > [data-kanban-new]'));}else slot.remove();
     }
     if(target){
       const rows=cards(target);let before:HTMLElement|undefined;
@@ -159,7 +160,8 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
           before=rows[index];
         }
       }
-      if(slot.nextElementSibling!==before&&(before||slot!==target.lastElementChild)){target.insertBefore(slot,before??null);layoutChanged=true;}
+      const next=before??target.querySelector(':scope > [data-kanban-new]');
+      if(slot.nextElementSibling!==next){target.insertBefore(slot,next);layoutChanged=true;}
       const r=slot.getBoundingClientRect();
       phantom.style.left=r.left+'px';phantom.style.width=r.width+'px';
     }else{phantom.style.left=rect.left+x-start.x+'px';phantom.style.width=rect.width+'px';}

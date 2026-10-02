@@ -9,11 +9,12 @@ import {validateDateDisplay} from '../dates';
 import { ui } from '../text/ui';
 import {MODULE_IDS,validateDocks,validateDocuments} from '../layout';
 
-export const defaultPreferences = (): Preferences => ({ query:{...DEFAULT_QUERY_PREFERENCES},whiteboardInput:'auto',newSplitDirection:'row',explorerMode:'whiteboards', theme:'system', stem:'untitled', titlePlaceholder:DEFAULT_TITLE_PLACEHOLDER, starred:[], recent:[], icons:{} });
+export const defaultPreferences = (): Preferences => ({ cardFolder:'Inbox',query:{...DEFAULT_QUERY_PREFERENCES},whiteboardInput:'auto',newSplitDirection:'row',explorerMode:'whiteboards', theme:'system', stem:'untitled', titlePlaceholder:DEFAULT_TITLE_PLACEHOLDER, starred:[], recent:[], icons:{} });
 export function validatePreferences(value: unknown): Preferences {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid workspace settings');
   const p = value as Preferences;
   if (!['light','dark','system'].includes(p.theme) || typeof p.stem !== 'string' || p.stem.length > 120) throw new Error('Invalid appearance settings');
+  if(p.cardFolder!==undefined&&(typeof p.cardFolder!=='string'||!p.cardFolder.trim()||p.cardFolder.length>120||p.cardFolder.startsWith('.')||/[<>:"/\\|?*]/.test(p.cardFolder)||[...p.cardFolder].some(c=>c.charCodeAt(0)<32)||/[. ]$/.test(p.cardFolder)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p.cardFolder)))throw new Error('Invalid new card folder');
   if(p.titlePlaceholder!==undefined&&(typeof p.titlePlaceholder!=='string'||!p.titlePlaceholder.trim()||p.titlePlaceholder.length>120||/[\r\n]/.test(p.titlePlaceholder)))throw new Error('Invalid title placeholder');
   for (const list of [p.starred,p.recent]) if (!Array.isArray(list) || list.length > 1000 || list.some(x => typeof x !== 'string' || x.length > 2048)) throw new Error('Invalid saved navigation');
   if (!p.icons || typeof p.icons !== 'object' || Array.isArray(p.icons) || Object.keys(p.icons).length > 20000 || Object.entries(p.icons).some(([k,v]) => k.length > 2048 || typeof v !== 'string' || [...v].length > 16)) throw new Error('Invalid document icons');
@@ -30,7 +31,7 @@ export function validatePreferences(value: unknown): Preferences {
     if(!p.navigation||typeof p.navigation!=='object'||Array.isArray(p.navigation))throw new Error('Invalid module navigation');
     for(const [id,v] of Object.entries(p.navigation))if(!MODULE_IDS.includes(id as typeof MODULE_IDS[number])||!v||typeof v!=='object'||Array.isArray(v)||v.expanded!==undefined&&(!Array.isArray(v.expanded)||v.expanded.length>10000||v.expanded.some(p=>typeof p!=='string'||p.length>2048))||v.search!==undefined&&(typeof v.search!=='string'||v.search.length>2048)||v.scroll!==undefined&&(!Number.isFinite(v.scroll)||v.scroll<0))throw new Error('Invalid module navigation');
   }
-  return {query:p.query??{...DEFAULT_QUERY_PREFERENCES},dateDisplay:p.dateDisplay,tagColors:p.tagColors,palette:p.palette,whiteboardInput:p.whiteboardInput??'auto',newSplitDirection:p.newSplitDirection??'row',docks:p.docks,documents:p.documents,navigation:p.navigation,explorerMode:p.explorerMode??'whiteboards',theme:p.theme,stem:p.stem,titlePlaceholder:p.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
+  return {cardFolder:p.cardFolder??'Inbox',query:p.query??{...DEFAULT_QUERY_PREFERENCES},dateDisplay:p.dateDisplay,tagColors:p.tagColors,palette:p.palette,whiteboardInput:p.whiteboardInput??'auto',newSplitDirection:p.newSplitDirection??'row',docks:p.docks,documents:p.documents,navigation:p.navigation,explorerMode:p.explorerMode??'whiteboards',theme:p.theme,stem:p.stem,titlePlaceholder:p.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER,starred:p.starred,recent:p.recent.slice(0,30),icons:p.icons};
 }
 export async function readPreferences(root: string) {
   try {
