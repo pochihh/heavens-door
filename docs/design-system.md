@@ -1,6 +1,6 @@
 # Desktop design and interaction conventions
 
-This documents the current UI implementation, not a future product roadmap.
+This documents shared UI conventions and the current implementation. Proposed refinements and implementation gaps are explicitly marked.
 
 ## Reference and layout
 
@@ -157,7 +157,7 @@ A tag page uses the card's property row and input components directly: a colored
 
 ## View blocks
 
-Shared Markdown view blocks use the same UI in cards and tag pages. Put a quiet Query summary above named view tabs; label it All views. Keep current-view Filter, Sort and View options on the tab toolbar, with readable filter chips immediately below. Conditions are compact property/comparison/value rows. Reveal Match all/any only for multiple conditions and nested groups only on request. Both levels use the same editor with explicit scope. Reuse existing menus, property controls and Status colors; view-tab drag reordering remains a follow-up. Multiple same-layout views are valid. Results initially open references without editing source cards. See [View blocks](view-blocks.md) for the implemented file format, interaction design and remaining boundaries.
+Shared Markdown view blocks use the same UI in cards and tag pages. Put a quiet Query summary above named view tabs; label it All views. Keep current-view Filter, Sort and View options on the tab toolbar, with readable filter chips immediately below. Conditions are compact property/comparison/value rows. Reveal Match all/any only for multiple conditions and nested groups only on request. Both levels use the same editor with explicit scope. Reuse existing menus, property controls and Status colors; view-tab drag reordering remains a follow-up. Multiple same-layout views are valid. Results reference source cards. Direct property editing is now required; the current block implementation still opens references only. See [View blocks](view-blocks.md) for the file format, editable-results target and remaining implementation boundaries.
 
 
 ## Feature settings
@@ -165,3 +165,10 @@ Shared Markdown view blocks use the same UI in cards and tag pages. Put a quiet 
 Settings uses a two-column modal: a searchable feature sidebar and one scrolling settings page. Pages are General, Appearance, Navigation, Tags, Views and queries, Performance, and Developer. Keep the sidebar stable while content scrolls. Each setting has its name and short optional description on the left, and the control on the right; quiet separators divide rows. Use the existing pill toggle for Boolean settings, native selects for short enumerations, and theme surface/text tokens throughout. Keyboard users can move between feature tabs with arrows; Esc and outside click close the modal, with Tab kept inside it. Diagnostics belong only in Developer. Hardware acceleration remains device-wide, while query/property picker preferences are workspace-owned.
 
 View-filter groups place Remove group at the top right of their own header. Removal actions use the shared danger hover/focus style. Nested groups keep a thin indentation guide rather than repeated heavy boxes. See [view blocks](view-blocks.md) for the implemented query and missing-value contract.
+
+
+## Compact contextual menus — next UI pass
+
+Follow the compact Notion-style direction in [Menus and tooltips](interactions/menus-and-tooltips.md#compact-menu-direction): approximately 290 px for setup menus, one setting per row, 13 px text, 16 px icons, restrained dividers and explicit theme tokens. Anchor to the clicked control, flip near edges and scroll long content internally. Window coordinates are only for placement constraints. Filter/YAML editors may be wider according to their content; never give all popups one large fixed width.
+
+The proposed View options structure separates Layout, Properties and Group into focused subpanels in the same anchored surface. The exact subpanel interaction remains under discussion. Direct editing of a result's Status, date/time and other properties is an accepted requirement, using the existing Card View editors and source-file undo path. The merged-property write target and Kanban drag behavior are still being discussed; do not implement implicit multi-property writes.
