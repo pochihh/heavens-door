@@ -87,6 +87,15 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
   row.properties['task/Status']='Done';await act(async()=>render());await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('Kanban');await escape();await settle();assert.equal(document.querySelectorAll('.view-result-card').length,2);
   await click('[data-tag-column=Todo] [data-property="project/Location"]');assert.equal(previewed,2);assert.equal(document.querySelector('.view-property input'),null);
   await click('.view-card-title');assert.equal(previewed,3);assert.equal(opened,0);await click('.view-result-card');assert.equal(previewed,4);
+  await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('List');await escape();await settle();
+  assert.deepEqual([...document.querySelectorAll('.view-list th .view-column-heading>span:first-child')].map(el=>el.textContent),['Card name','Status','Date','Location','Checked']);
+  assert.equal(document.querySelectorAll('.view-list tbody tr:first-child td').length,5,'missing values still occupy their labeled column');
+  const beforeList=writes.length;await click('.view-list [data-property="project/Date"]');assert.equal(previewed,5);assert.equal(writes.length,beforeList);assert.equal(document.querySelector('.view-list input'),null);
+  await click('.view-list [aria-label="Ascending · Date"]');await settle();assert.deepEqual(parseViewBlock(source).views[0].sort,{field:['project/Date','task/Date'],direction:'asc'});
+  assert.equal(document.querySelector('.view-list th[aria-sort=ascending] .view-column-heading>span:first-child')?.textContent,'Date');
+  await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('Table');await escape();await settle();
+  assert.equal(document.querySelectorAll('.view-table th[scope=col]').length,5);assert.ok(document.querySelector('.view-table [aria-label="Edit Date"]'),'table cells retain inline editing');
+
 
  }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}
 });
