@@ -165,7 +165,7 @@ export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onVi
       <div className="timeline-calendar" aria-hidden="true">{calendar.map(({day,weekend},i)=>weekend&&<span key={day} style={{left:i*dayWidth,width:dayWidth}}/> )}</div>
       {todayX>=0&&todayX<width&&<div className="timeline-today-line" aria-hidden="true" style={{left:todayX}}/>}
       <div className="timeline-rows" ref={orderRoot} data-dragging={dragging}>{dated.map((row,index)=>{
-        const value=shownValue(row)!,g=geometry(value),outside=g.left<visibleLeft||g.left>=visibleRight;
+        const value=shownValue(row)!,g=geometry(value),outside=g.left+g.width<=visibleLeft||g.left>=visibleRight;
         const left=g.left,barWidth=Math.max(12,Math.min(width,g.left+g.width)-left),title=row.card.title||row.card.name;
         const slot=positions.get(row.card.id)??index;
         return <div className="timeline-row" style={{transform:slot===index?undefined:`translateY(${(slot-index)*38}px)`,visibility:dragged?.card.id===row.card.id?'hidden':undefined}} data-file-key={row.card.id} key={row.card.id}>

@@ -28,8 +28,9 @@ export function animateReorder(before:Map<HTMLElement,DOMRect>,axis:SortAxis,ani
   if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   for(const [row,r] of before){const next=row.getBoundingClientRect(),delta=axis==='vertical'?r.top-next.top:r.left-next.left;if(delta&&row.animate){const animation=row.animate([{transform:axis==='vertical'?`translateY(${delta}px)`:`translateX(${delta}px)`},{transform:'none'}],{duration:150,easing:'cubic-bezier(0.2,0,0,1)'});animations.set(row,animation);}}
 }
-export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(key:string,index:number|null,fromStarred:boolean,group?:string)=>void,axis:SortAxis='vertical',reorderOnly=false) {
+export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:string,index:number|null,fromStarred:boolean,group?:string)=>void,axis:SortAxis='vertical',reorderOnly=false,onDragging?:(active:boolean)=>void) {
   const cancel=useRef<()=>void>(()=>{}),onCommit=useRef(commit);onCommit.current=commit;
+  const dragging=useRef(onDragging);dragging.current=onDragging;
   useEffect(()=>()=>cancel.current(),[]);
   return (event:ReactPointerEvent,key:string,fromStarred:boolean)=>{
     if(event.button!==0)return;
@@ -61,6 +62,8 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       if(!source.isConnected){finish(false);return;}
       const coordinate=vertical?y:x,r=area.getBoundingClientRect(),inList=inside();
       const size=vertical?rect.height:rect.width,min=vertical?r.top:r.left,max=(vertical?r.bottom:r.right)-size;
+      const table=source.closest<HTMLElement>('.view-records');
+      if(table){const clip=table.getBoundingClientRect();phantom.style.clipPath=`inset(0 ${Math.max(0,rect.right-clip.right)}px 0 ${Math.max(0,clip.left-rect.left)}px)`;}
       phantom.style[vertical?'top':'left']=(inList||reorderOnly?Math.max(min,Math.min(max,coordinate-offset)):coordinate-offset)+'px';
       if(!reorderOnly)document.body.dataset.bookmarkDrop=inList?'star':fromStarred?'remove':'';
       if(inList){
@@ -93,9 +96,10 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       e.preventDefault();
       if(!active){
         active=true;phantom=createDragPhantom(source,rect);
-        placeholder=document.createElement('div');placeholder.className='sort-placeholder';placeholder.style.height=rect.height+'px';placeholder.style.width=rect.width+'px';
+        placeholder=document.createElement(source.tagName==='TR'?'tr':'div');placeholder.className='sort-placeholder';placeholder.style.height=rect.height+'px';placeholder.style.width=rect.width+'px';
+        if(source.tagName==='TR'){const cell=document.createElement('td');cell.colSpan=source.children.length;placeholder.appendChild(cell);}
         if(fromStarred)list.insertBefore(placeholder,source);
-        source.style.display='none';if(duplicate)duplicate.style.display='none';document.body.classList.add('list-dragging');frame=requestAnimationFrame(tick);
+        dragging.current?.(true);source.style.display='none';if(duplicate)duplicate.style.display='none';document.body.classList.add('list-dragging');frame=requestAnimationFrame(tick);
       }
       if(coordinate!==last)direction=coordinate-last;last=coordinate;update();
     };
@@ -106,7 +110,7 @@ export function useBookmarkDrag(target:RefObject<HTMLDivElement|null>,commit:(ke
       if(save&&active&&inside()&&placeholder?.parentElement===list)index=[...list.children].slice(0,[...list.children].indexOf(placeholder)).filter(el=>el instanceof HTMLElement&&el.dataset.fileKey&&el!==source&&el.dataset.fileKey!==key).length;
       cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;
       document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',keyboard,true);window.removeEventListener('blur',abort);cancel.current=()=>{};
-      if(active){document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
+      if(active){dragging.current?.(false);document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
       if(save&&active&&!(key.startsWith('card:')&&dropCardAt(key.slice(5),x,y)))onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
     };
     const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update();finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};

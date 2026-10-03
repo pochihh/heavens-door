@@ -107,7 +107,9 @@ test('Timeline cards drag in both axes, retain unscheduled drop previews, and ca
   }
   fail=true;await pointer(bar(),'pointerdown',200);await pointer(document,'pointerup',224,181);assert.match(document.querySelector('[role=alert]')!.textContent!,/Save failed/);assert.deepEqual(ids(),['A','C','B']);assert.equal(JSON.stringify(rows),snapshot);fail=false;
   const scroller=document.querySelector<HTMLElement>('.timeline-scroll')!;await act(async()=>{scroller.scrollLeft=30;scroller.dispatchEvent(new dom.window.Event('scroll'));await new Promise(resolve=>setTimeout(resolve,30));});
-  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null,'An offscreen start becomes an arrow even while its range intersects the viewport');assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('data-tooltip'),'A');
+  assert.ok(document.querySelector('[data-file-key=A] .timeline-bar'),'A partially visible bar stays a card even when its start is offscreen');assert.equal(document.querySelector('[data-file-key=A] .timeline-outside'),null);
+  await act(async()=>{scroller.scrollLeft=48;scroller.dispatchEvent(new dom.window.Event('scroll'));await new Promise(resolve=>setTimeout(resolve,30));});
+  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null,'Only the entire bar leaving the viewport turns it into an arrow');assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('data-tooltip'),'A');
   const grid=document.querySelector('.timeline-grid')!,position=scroller.scrollLeft;
   await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',350,280);assert.equal(scroller.scrollLeft,position+50);assert.equal(scroller.scrollTop,0);assert.ok(document.body.classList.contains('timeline-panning'));await pointer(document,'pointerup',350,280);assert.ok(!document.body.classList.contains('timeline-panning'));
   const ruler=document.querySelector('.timeline-days')!.textContent;

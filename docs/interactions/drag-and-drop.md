@@ -94,8 +94,14 @@ Move preserves `card-id`, relocates the Markdown file, removes the source placem
 
 Drag the card itself horizontally to reschedule, vertically to reorder, or diagonally to do both in one gesture. No separate side grips. The cursor is grab on hover and grabbing during movement. Keep a transparent row and draw only the moving bar, preserving its grab offset, free Y movement and canvas bounds below the ruler. Use the shared directional swap thresholds and 150ms neighbor animation to preview the insertion slot. The date preview follows X at the current scale. Release saves the date and full indexed row order in one undoable transaction and switches to Manual. Purely vertical moves preserve dates exactly. Alt+Up/Down on a focused card performs the same reorder. Keep vertical edge autoscroll in the surrounding page.
 
-Endpoint grips retain the east–west cursor and resize dates without reordering. Day scale uses 15-minute increments; horizontal movement converts a date-only value to a timed value. Names stay at the actual bar start. Do not shift names inward as the canvas pans; an offscreen start becomes a pinned arrow with the full name on hover.
+Endpoint grips retain the east–west cursor and resize dates without reordering. Day scale uses 15-minute increments; horizontal movement converts a date-only value to a timed value. Names stay at the actual bar start. Do not shift names inward as the canvas pans; a fully offscreen bar becomes a pinned arrow with the full name on hover.
 
 Empty canvas dragging pans horizontally with a hand cursor; it never reorders or reschedules. Rebase the rendered date buffer at its boundaries while preserving the date under the pointer. Escape restores the previous viewport.
 
 Unscheduled cards appear in a bottom collapse as wrapping, name-sized timeline bars. They use the shared measured phantom outside the timeline and the same moving bar and neighbor swap preview inside its tracks. Drop preserves both the previewed date/time and insertion row, attaching the defining tag and chosen property when absent through the standard atomic view mutation. Escape, blur, pointer cancellation or dropping outside writes nothing. New-card hover previews do not write; only release creates the card.
+
+## Table rows and canvas
+
+Grid and Compact Table use the shared hover/focus grip with grab/grabbing cursors and Alt+Up/Down. Lift after 5px, preserve the measured row and column widths, preview neighbor swaps at the shared thresholds, and clip the floating row to the horizontal viewport. The row stays below Grid headers. On drop, switch to Manual and save `order.rows` in the view owner; keep the rendered rows and scroll position during saving. Escape, blur, cancellation and invalid drops write nothing.
+
+Horizontal drags across displayed cells or empty table space pan the table. Ordinary clicks still open cards or property editors; active inputs and row grips are excluded from panning. Vertical movement remains page scrolling. Escape restores the previous horizontal position. Panning changes no files.

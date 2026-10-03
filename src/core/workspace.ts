@@ -739,11 +739,11 @@ export class Workspace {
     if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
     return {columns,total:rows.length,view,group};
   }
-  private timelineIds(source:string,id:string,plan:ReturnType<typeof compileView>){
+  private viewRowIds(source:string,id:string,plan:ReturnType<typeof compileView>){
     // Reconcile all indexed IDs so dragging a loaded row also preserves later query pages.
     const ids=this.db.prepare('SELECT c.id FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order).all(...plan.args).map(row=>String(row.id));
     if(plan.view.sort!=='manual')return ids;
-    const key=JSON.stringify([parseViewBlock(source).query,id,plan.view.filter,'timeline']);
+    const key=JSON.stringify([parseViewBlock(source).query,id,plan.view.filter,plan.view.type]);
     const tail=orderedCardIds([],ids,this.viewOrderTails.get(key)?.get('rows'));
     this.viewOrderTails.delete(key);this.viewOrderTails.set(key,new Map([['rows',tail]]));
     if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
@@ -759,8 +759,8 @@ export class Workspace {
       const ids=[...new Set(columns.flatMap(c=>c.ids))];
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c JOIN json_each(?) ids ON c.id=ids.value').all(JSON.stringify(ids));
       if(columns.some(c=>c.total>offset+100))nextOffset=offset+100;
-    }else if(plan.view.type==='timeline'&&plan.view.sort==='manual'){
-      const ordered=this.timelineIds(source,view,plan);total=ordered.length;
+    }else if(['table','list','timeline'].includes(plan.view.type)&&plan.view.sort==='manual'){
+      const ordered=this.viewRowIds(source,view,plan);total=ordered.length;
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM json_each(?) ids JOIN cards c ON c.id=ids.value ORDER BY ids.key').all(JSON.stringify(ordered.slice(offset,offset+100)));
       if(offset+rows.length<total)nextOffset=offset+rows.length;
     }else{
@@ -784,11 +784,11 @@ export class Workspace {
     const card=readCard(move.card.path,cardRaw),block=parseViewBlock(move.owner.source),view=block.views.find(v=>v.id===move.view);
     if(!view)throw new Error(ui.errors.invalidQuery);
     let content=cardRaw;
-    if(view.type==='timeline'){
-      if(move.from!=='rows'||move.to!=='rows'||!view.dateBy)throw new Error(ui.errors.invalidQuery);
-      const plan=compileView(move.owner.source,move.view,[...this.tags.values()]),ids=this.timelineIds(move.owner.source,move.view,plan);
+    if(['table','list','timeline'].includes(view.type)){
+      if(move.from!=='rows'||move.to!=='rows'||(view.type==='timeline'?!view.dateBy:move.date!==undefined))throw new Error(ui.errors.invalidQuery);
+      const plan=compileView(move.owner.source,move.view,[...this.tags.values()]),ids=this.viewRowIds(move.owner.source,move.view,plan);
       if(!ids.includes(card.id)||[move.before,move.after].some(id=>id!==undefined&&(id===card.id||!ids.includes(id))))throw new Error(viewText.errors.viewChanged);
-      if(move.date!==undefined)content=this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.dateBy)[0],move.date);
+      if(move.date!==undefined)content=this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.dateBy!)[0],move.date);
       // Keep hidden IDs for returning results; freeze the current sort before switching to manual.
       const saved=view.sort==='manual'?view.order?.rows??[]:[...ids,...(view.order?.rows??[])];
       view.order={...view.order,rows:moveCardId(saved,ids,card.id,move.before,move.after)};

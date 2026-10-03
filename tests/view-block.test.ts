@@ -197,3 +197,22 @@ test('Timeline drops save dates and complete row order in one undoable file tran
  const self=parseViewBlock(source);delete self.query.where;source=writeViewBlock(source,self);await w.saveCard('Query.md','# Query\n\n```view-block\n'+source+'```\n',(await w.card('Query.md')).revision);
  const own=await w.moveViewCard({owner:await owner(),view:'time',card:await card('Query.md'),from:'rows',to:'rows',before:'new',date:'2026-10-06'});await refresh();assert.equal(own.edits.length,1);assert.equal(w.cardProperties('Query.md').properties['project/Date'],'2026-10-06');assert.equal(parseViewBlock(source).views[0].order?.rows[0],'query');
 });
+
+test('Manual Table and Compact order stays in the view file, survives pagination and can be undone',async t=>{
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-table-order-')),root=join(dir,'notes');await fs.mkdir(root);await fs.mkdir(join(root,'Tasks'));
+ const w=await Workspace.open(root,join(dir,'cache'));t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+ await Promise.all(Array.from({length:105},(_,i)=>fs.writeFile(join(root,'Tasks',String(i).padStart(3,'0')+'.md'),'---\ncard-id: card-'+i+'\n---\n# Card '+i+'\n')));
+ const block=newViewBlock();block.query.where={field:'file.folder',op:'under',value:'Tasks'};block.views[0].sort={field:'file.name',direction:'desc'};
+ let source=writeViewBlock('',block);await fs.writeFile(join(root,'Query.md'),'---\ncard-id: query\n---\n```view-block\n'+source+'```\n');await w.scan();
+ const owner=async()=>({path:'Query.md',expected:(await w.card('Query.md')).revision,block:0,source}),card=async()=>({path:'Tasks/103.md',expected:(await w.card('Tasks/103.md')).revision});
+ const refresh=async()=>{source=viewBlockRanges((await w.card('Query.md')).body)[0].source;};
+ const initial=await w.read('Query.md'),originalCard=await w.read('Tasks/103.md'),undo=new UndoHistory();
+ const moved=await w.moveViewCard({owner:await owner(),view:'table',card:await card(),from:'rows',to:'rows',before:'card-104'});undo.record('Reorder',moved.edits);await refresh();
+ assert.equal(moved.edits.length,1);assert.equal(await w.read('Tasks/103.md'),originalCard);const view=parseViewBlock(source).views[0];assert.equal(view.sort,'manual');assert.equal(view.order?.rows.length,105);assert.deepEqual(w.viewCards(source,'table').rows.slice(0,3).map(r=>r.card.id),['card-103','card-104','card-102']);assert.equal(w.viewCards(source,'table',100).rows.at(-1)?.card.id,'card-0');
+ for(const type of ['table','list'] as const){const next=parseViewBlock(source);next.views[0]={...next.views[0],type,appearance:'compact'};assert.deepEqual(w.viewCards(writeViewBlock('',next),'table').rows.map(r=>r.card.id),w.viewCards(source,'table').rows.map(r=>r.card.id));}
+ await undo.travel(false,changes=>w.write(changes));await refresh();assert.equal(await w.read('Query.md'),initial);await undo.travel(true,changes=>w.write(changes));await refresh();
+ await fs.writeFile(join(root,'Tasks','000 new.md'),'---\ncard-id: arrival\n---\n# New\n');await w.refresh('Tasks/000 new.md');const saved=await w.read('Query.md');assert.equal(w.viewCards(source,'table',100).rows.at(-1)?.card.id,'arrival');assert.equal(await w.read('Query.md'),saved,'Refresh never writes order');
+ await assert.rejects(async()=>w.moveViewCard({owner:await owner(),view:'table',card:await card(),from:'rows',to:'rows',date:'2026-10-03'}),/Invalid/);
+ await assert.rejects(async()=>w.moveViewCard({owner:await owner(),view:'table',card:await card(),from:'rows',to:'rows',before:'missing'}),/changed/i);
+ assert.equal(await w.read('Query.md'),saved);
+});
