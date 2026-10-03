@@ -18,15 +18,16 @@ export function timelineDates(value:unknown){
 }
 export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChange,onEditing,busy}:{view:BlockView;rows:TagResult[];field?:QueryField;onSave:(row:TagResult,key:string,value:TagValue)=>Promise<void>;onOpen:(key:string)=>void;onCreate?:(anchor:HTMLElement,column?:string,date?:TagValue)=>void;onViewChange:(patch:Partial<BlockView>)=>void|Promise<void>;onEditing:(key:string|null)=>void;busy:boolean}){
   const {display}=useContext(DateDisplayContext),today=wallTime(new Date().toISOString(),display).slice(0,10);
-  const [anchor,setAnchor]=useState(today),[preview,setPreview]=useState<{id:string;value:TagValue;top?:number}|null>(null),[error,setError]=useState(''),[scaleMenu,setScaleMenu]=useState<HTMLElement|null>(null),[unscheduledMenu,setUnscheduledMenu]=useState<HTMLElement|null>(null);
+  const [anchor,setAnchor]=useState(today),[preview,setPreview]=useState<{id:string;value:TagValue;top?:number}|null>(null),[error,setError]=useState(''),[scaleMenu,setScaleMenu]=useState<HTMLElement|null>(null);
   const [windowRange,setWindowRange]=useState({left:0,width:0}),[hover,setHover]=useState<TagValue|null>(null),[localOrder,setLocalOrder]=useState<string[]|null>(null);
-  const orderRoot=useRef<HTMLDivElement>(null),gesture=useRef(false);
+  const orderRoot=useRef<HTMLDivElement>(null),gesture=useRef(false),panScroll=useRef<number|null>(null);
   const cancel=useRef<()=>void>(()=>{}),viewport=useRef<HTMLDivElement>(null);
   useEffect(()=>()=>cancel.current(),[]);
-  useEffect(()=>{cancel.current();setAnchor(today);setPreview(null);setHover(null);setUnscheduledMenu(null);setLocalOrder(null);setError('');},[view.id,view.scale,field?.keys.join('\0')]);
-  const scale=view.scale??'week',days=scale==='day'?3:scale==='week'?28:90,dayWidth=scale==='day'?576:scale==='week'?56:24;
+  useEffect(()=>{cancel.current();setAnchor(today);setPreview(null);setHover(null);setLocalOrder(null);setError('');},[view.id,view.scale,field?.keys.join('\0')]);
+  const scale=view.scale??'week',period=scale==='day'?3:scale==='week'?28:90,dayWidth=scale==='day'?576:scale==='week'?56:24;
+  const days=Math.max(period,Math.ceil(windowRange.width/dayWidth)*3);
   const start=shiftDay(anchor,-Math.floor(days/4)),origin=Date.parse(start+'T00:00:00Z'),width=days*dayWidth,step=scale==='day'?DAY/96:DAY;
-  useLayoutEffect(()=>{if(viewport.current)viewport.current.scrollLeft=Math.max(0,Math.floor(days/4)*dayWidth-viewport.current.clientWidth/4);},[anchor,scale,view.id]);
+  useLayoutEffect(()=>{const el=viewport.current;if(!el)return;el.scrollLeft=panScroll.current??Math.max(0,Math.floor(days/4)*dayWidth-el.clientWidth/4);panScroll.current=null;setWindowRange({left:el.scrollLeft,width:el.clientWidth});},[anchor,scale,view.id,days]);
   useLayoutEffect(()=>{
     const el=viewport.current;if(!el)return;
     let frame=0;const read=()=>setWindowRange({left:el.scrollLeft,width:el.clientWidth});
@@ -53,11 +54,41 @@ export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChang
   }
   const reorderDrag=useBookmarkDrag(orderRoot,(id,index)=>void reorder(id,index),'vertical',true);
   const geometry=(value:TagValue)=>{const dates=timelineDates(value)!;return {left:(epoch(dates.start)-origin)/DAY*dayWidth,width:Math.max(12,(epoch(dates.end)-epoch(dates.start)+(dates.end.length===10?DAY:0))/DAY*dayWidth)};};
+  const labelStyle=(left:number):React.CSSProperties=>{
+    const x=Math.max(left+7,visibleLeft+28);
+    return {left:x-left,maxWidth:Math.max(0,visibleRight-visibleLeft-56),transform:`translateX(min(0px, calc(${visibleRight-28-x}px - 100%)))`};
+  };
   const timeValue=(from:number,to?:number):TagValue=>{
     const draft=dateDraft('',display),part=(epoch:number)=>{const iso=new Date(epoch).toISOString();return {day:formatDay(iso.slice(0,10),display.format),time:iso.slice(11,19)};};
     return dateValue({...draft,start:part(from),end:part(to??from),range:to!==undefined,time:scale==='day'},display);
   };
   async function save(row:TagResult,value:TagValue){if(!field)return;setError('');onEditing('@timeline');setPreview({id:row.card.id,value});try{await onSave(row,field.keys[0],value);}catch(e){setError(String(e).replace(/^Error: /,''));}finally{setPreview(null);onEditing(null);}}
+  function pan(e:ReactPointerEvent<HTMLDivElement>){
+    if(e.button!==0||(e.target as Element).closest('button,[role="button"]'))return;
+    e.preventDefault();cancel.current();setHover(null);
+    const el=viewport.current!,x=e.clientX,pointer=e.pointerId,originalScroll=el.scrollLeft,originalAnchor=anchor;
+    let startScroll=originalScroll,currentAnchor=anchor,ended=false,moved=false;
+    const move=(event:PointerEvent)=>{
+      if(event.pointerId!==pointer||ended)return;
+      if(!moved&&Math.abs(event.clientX-x)<5)return;
+      moved=true;event.preventDefault();gesture.current=true;document.body.classList.add('timeline-panning');
+      let left=startScroll-(event.clientX-x);
+      // Rebase the date buffer at either edge without moving the date under the pointer.
+      const chunk=Math.max(1,Math.floor(days/3)),maximum=width-el.clientWidth;
+      const shift=left<0?Math.floor(left/(chunk*dayWidth))*chunk:left>maximum?Math.ceil((left-maximum)/(chunk*dayWidth))*chunk:0;
+      if(shift){startScroll-=shift*dayWidth;left-=shift*dayWidth;currentAnchor=shiftDay(currentAnchor,shift);panScroll.current=left;setAnchor(currentAnchor);}
+      el.scrollLeft=left;setWindowRange({left,width:el.clientWidth});
+    };
+    const finish=(restore=false)=>{
+      if(ended)return;ended=true;
+      if(restore&&moved){panScroll.current=currentAnchor===originalAnchor?null:originalScroll;setAnchor(originalAnchor);el.scrollLeft=originalScroll;setWindowRange({left:originalScroll,width:el.clientWidth});}
+      gesture.current=false;document.body.classList.remove('timeline-panning');cancel.current=()=>{};
+      document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);
+    };
+    const up=(event:PointerEvent)=>{if(event.pointerId===pointer){move(event);finish();}},abort=(event?:Event)=>{if(event?.type!=='pointercancel'||(event as PointerEvent).pointerId===pointer)finish(true);};
+    const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();finish(true);}};
+    cancel.current=abort;document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);
+  }
   function begin(e:ReactPointerEvent<HTMLElement>,row?:TagResult,mode:'move'|'start'|'end'='move'){
     if(busy||!field||e.button!==0)return;e.preventDefault();e.stopPropagation();cancel.current();setError('');
     const target=e.currentTarget,track=target.closest<HTMLElement>('.timeline-track')??viewport.current!.querySelector<HTMLElement>('.timeline-grid')!,r=track.getBoundingClientRect(),x=e.clientX,y=e.clientY,pointer=e.pointerId;
@@ -89,7 +120,7 @@ export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChang
     const finish=(event?:PointerEvent)=>{
       if(ended||event&&event.pointerId!==pointer)return;if(event)update(event);ended=true;
       document.removeEventListener('pointermove',update);document.removeEventListener('pointerup',finish);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);phantom?.remove();if(scheduling)target.style.removeProperty('visibility');gesture.current=false;setPreview(null);onEditing(null);
-      if(!event||invalid)return;if(scheduling&&!moved){onOpen('card:'+row!.card.id);return;}if(scheduling&&!inTrack(event))return;if(scheduling)setUnscheduledMenu(null);
+      if(!event||invalid)return;if(scheduling&&!moved){onOpen('card:'+row!.card.id);return;}if(scheduling&&!inTrack(event))return;
       const area=viewport.current?.getBoundingClientRect();if(area&&(event.clientX<area.left||event.clientX>area.right||event.clientY<area.top||event.clientY>area.bottom))return;
       if(row){if(moved&&JSON.stringify(original)!==JSON.stringify(latest))void save(row,latest);else if(!moved&&mode==='move')onOpen('card:'+row.card.id);}else onCreate?.(target,undefined,latest);
     };
@@ -98,12 +129,12 @@ export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChang
   }
   if(!field)return <p className="muted">{t.chooseDate}</p>;
   return <div className="timeline-view">
-    <div className="timeline-toolbar">{!!undated.length&&<button aria-haspopup="dialog" aria-expanded={!!unscheduledMenu} onClick={e=>setUnscheduledMenu(unscheduledMenu?null:e.currentTarget)}>{t.unscheduled} · {undated.length}</button>}<div className="toolbar-spacer"/>
+    <div className="timeline-toolbar"><div className="toolbar-spacer"/>
       <button className="timeline-scale" aria-label={t.scale} aria-haspopup="dialog" aria-expanded={!!scaleMenu} onClick={e=>setScaleMenu(scaleMenu?null:e.currentTarget)}>{t[scale]}<Icon name="down" size={12}/></button>
-      <Tool className="timeline-previous" icon="chevron" label={tooltips.views.previous} onClick={()=>setAnchor(shiftDay(anchor,-days))}/><button onClick={()=>{setAnchor(today);if(viewport.current)viewport.current.scrollLeft=Math.max(0,todayX-viewport.current.clientWidth/4);}}>{t.today}</button><Tool icon="chevron" label={tooltips.views.next} onClick={()=>setAnchor(shiftDay(anchor,days))}/>
+      <Tool className="timeline-previous" icon="chevron" label={tooltips.views.previous} onClick={()=>setAnchor(shiftDay(anchor,-period))}/><button onClick={()=>{setAnchor(today);if(viewport.current)viewport.current.scrollLeft=Math.max(0,todayX-viewport.current.clientWidth/4);}}>{t.today}</button><Tool icon="chevron" label={tooltips.views.next} onClick={()=>setAnchor(shiftDay(anchor,period))}/>
     </div>
     {scaleMenu&&<PropertyPopover anchor={scaleMenu} align="end" label={t.scale} className="timeline-scale-menu" onClose={()=>setScaleMenu(null)}><div className="view-menu-list" role="listbox" aria-label={t.scale}>{(['day','week','month'] as const).map(s=><button key={s} role="option" aria-selected={scale===s} onClick={()=>{setScaleMenu(null);onViewChange({scale:s});}}><span>{t[s]}</span>{scale===s&&<Icon name="check"/>}</button>)}</div></PropertyPopover>}
-    <div className="timeline-scroll" ref={viewport}><div className="timeline-grid" style={{width,'--timeline-day':dayWidth+'px'} as React.CSSProperties}>
+    <div className="timeline-scroll" ref={viewport}><div className="timeline-grid" onPointerDown={pan} style={{width,'--timeline-day':dayWidth+'px'} as React.CSSProperties}>
       <div className="timeline-heading" data-scale={scale}>
         <div className="timeline-months">{months.filter(month=>month.left+month.width>visibleLeft&&month.left<visibleRight).map((month,i)=><span key={month.left} style={{left:Math.max(visibleLeft+(i?160:0),month.left),width:Math.max(160,month.left+month.width-Math.max(visibleLeft,month.left))}}><span>{month.label}</span></span>)}</div>
         <div className="timeline-days">{calendar.map(({day,date,weekend},i)=><div key={day} className="timeline-day" data-preview={!!(preview?.id==='@new'||hover)&&(()=>{const dates=timelineDates(preview?.id==='@new'?preview.value:hover)!;return day>=wallTime(dates.start,display).slice(0,10)&&day<=wallTime(dates.end,display).slice(0,10);})()} data-weekend={weekend} style={{left:i*dayWidth,width:dayWidth}}>{scale==='day'?<><span className="timeline-day-label">{new Intl.DateTimeFormat(undefined,{weekday:'short',timeZone:'UTC'}).format(date)}<span className="date-number" aria-current={day===today?'date':undefined}>{date.getUTCDate()}</span></span><div className="timeline-hours">{[0,4,8,12,16,20].map(hour=><span key={hour}>{new Intl.DateTimeFormat(undefined,{hour:'numeric',hour12:display.timeFormat==='12',timeZone:'UTC'}).format(new Date(Date.UTC(2000,0,1,hour)))}</span>)}</div></>:<span className="timeline-day-number date-number" aria-current={day===today?'date':undefined}>{date.getUTCDate()}</span>}</div>)}</div>
@@ -113,26 +144,26 @@ export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChang
       <div className="timeline-rows" ref={orderRoot}>{dated.map((row,index)=>{
         const value=preview?.id===row.card.id?preview.value:valueOf(row)!,g=geometry(value),outside=g.left+g.width<=visibleLeft||g.left>=visibleRight;
         const left=Math.max(0,g.left),barWidth=Math.max(12,Math.min(width,g.left+g.width)-left),title=row.card.title||row.card.name;
-        return <div className="timeline-row" data-file-key={row.card.id} key={row.card.id}>
-          <div className="timeline-track">{outside?<button className="timeline-outside" style={{left:g.left<visibleLeft?visibleLeft+26:visibleRight-30}} title={title} aria-label={title} onClick={()=>setAnchor(wallTime(timelineDates(value)!.start,display).slice(0,10))}><Icon name={g.left<visibleLeft?'back':'forward'} size={14}/></button>:
+        return <div className="timeline-row" data-drag-transparent="true" style={{'--timeline-clip-left':visibleLeft+'px','--timeline-clip-right':Math.max(0,width-visibleRight)+'px'} as React.CSSProperties} data-file-key={row.card.id} key={row.card.id}>
+          <div className="timeline-track">{outside?<button className="timeline-outside" style={{left:g.left<visibleLeft?visibleLeft+26:visibleRight-52}} data-tooltip={title} aria-label={title} onClick={()=>setAnchor(wallTime(timelineDates(value)!.start,display).slice(0,10))}><Icon name={g.left<visibleLeft?'back':'forward'} size={14}/></button>:
             <div className="timeline-bar" data-dragging={preview?.id===row.card.id} style={{left,width:barWidth,background:tintColor(cardFill(row.card))}} role="button" tabIndex={0} aria-label={title+' · '+dateSummary(value,display)} onPointerDown={e=>begin(e,row)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onOpen('card:'+row.card.id);}}}>
               <button className="timeline-resize timeline-resize-start" aria-label={ui.tags.startDate} onPointerDown={e=>begin(e,row,'start')} onClick={e=>{if(e.detail===0)onOpen('card:'+row.card.id);}}/>
-              <span className="timeline-bar-label" style={{left:Math.max(7,visibleLeft-left+28),width:Math.max(0,Math.min(visibleRight-Math.max(left,visibleLeft)-16,Math.max(barWidth-16,240)))}}><Icon name="note" size={14}/><span>{title}</span></span>
+              <span className="timeline-bar-label" data-tooltip={title} style={labelStyle(left)}><Icon name="note" size={14}/><span>{title}</span></span>
               <button className="timeline-resize timeline-resize-end" aria-label={ui.tags.endDate} onPointerDown={e=>begin(e,row,'end')} onClick={e=>{if(e.detail===0)onOpen('card:'+row.card.id);}}/>
             </div>}
             {preview?.id===row.card.id&&<output className="timeline-feedback" style={{left:Math.max(visibleLeft,Math.min(visibleRight-250,g.left))}}>{dateSummary(value,display)}</output>}
           </div>
-          <Tool className="timeline-reorder" icon="grip" label={tooltips.views.reorder} style={{left:visibleLeft}} onPointerDown={e=>{e.stopPropagation();if(!busy)reorderDrag(e,row.card.id,true);}} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();void reorder(row.card.id,Math.max(0,Math.min(dated.length-1,index+(e.key==='ArrowDown'?1:-1))));}}}/>
+          {[visibleLeft,visibleRight-22].map((gripLeft,side)=><Tool key={side} className="timeline-reorder" icon="grip" label={tooltips.views.reorder} style={{left:gripLeft}} onPointerDown={e=>{e.stopPropagation();if(!busy)reorderDrag(e,row.card.id,true);}} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();void reorder(row.card.id,Math.max(0,Math.min(dated.length-1,index+(e.key==='ArrowDown'?1:-1))));}}}/>)}
         </div>;
       })}</div>
-      {preview&&undated.some(row=>row.card.id===preview.id)&&<div className="timeline-row timeline-schedule-preview" style={{position:'absolute',left:0,right:0,top:preview.top,pointerEvents:'none',zIndex:6}}><div className="timeline-track"><div className="timeline-bar timeline-ghost" style={geometry(preview.value)}><span className="timeline-bar-label">{undated.find(row=>row.card.id===preview.id)?.card.title}</span></div></div></div>}
+      {preview&&undated.some(row=>row.card.id===preview.id)&&<div className="timeline-row timeline-schedule-preview" style={{position:'absolute',left:0,right:0,top:preview.top,pointerEvents:'none',zIndex:6}}><div className="timeline-track"><div className="timeline-bar timeline-ghost" style={geometry(preview.value)}><span className="timeline-bar-label" style={labelStyle(geometry(preview.value).left)}>{undated.find(row=>row.card.id===preview.id)?.card.title}</span></div></div></div>}
       {onCreate&&<div className="timeline-row"><div className="timeline-track timeline-new-track" role="button" tabIndex={0} aria-label={t.newCard} onPointerDown={e=>begin(e)} onPointerMove={e=>{if(gesture.current)return;try{const rect=e.currentTarget.getBoundingClientRect();setHover(timeValue(origin+Math.floor((e.clientX-rect.left)/dayWidth*DAY/step)*step));}catch{/* A DST gap has no valid preview. */setHover(null);}}} onPointerLeave={()=>setHover(null)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();onCreate(e.currentTarget,undefined,anchor);}}}>
         <span className="timeline-new-label" style={{opacity:hover||preview?.id==='@new'?0:1}}><Icon name="plus" size={14}/>{t.newCard}</span>
         {(preview?.id==='@new'||hover)&&<div className="timeline-bar timeline-ghost" style={{...geometry(preview?.id==='@new'?preview.value:hover!),minWidth:scale==='day'?24:dayWidth}}><span className="timeline-bar-label">{preview?.id==='@new'?dateSummary(preview.value,display):''}</span></div>}
       </div></div>}
 
     </div></div>
-    {unscheduledMenu&&<PropertyPopover anchor={unscheduledMenu} label={t.unscheduled} className="timeline-unscheduled" onClose={()=>setUnscheduledMenu(null)}><div className="view-menu-list">{undated.map(row=><button key={row.card.id} onPointerDown={e=>begin(e,row)} onClick={e=>{if(e.detail===0)onOpen('card:'+row.card.id);}}><Icon name="note" size={14}/>{row.card.title||row.card.name}</button>)}</div></PropertyPopover>}
+    {!!undated.length&&<details className="timeline-unscheduled"><summary>{t.unscheduled} · {undated.length}</summary><div>{undated.map(row=><button className="timeline-unscheduled-card" key={row.card.id} style={{background:tintColor(cardFill(row.card))}} data-tooltip={row.card.title||row.card.name} onPointerDown={e=>begin(e,row)} onClick={e=>{if(e.detail===0)onOpen('card:'+row.card.id);}}><Icon name="note" size={14}/><span>{row.card.title||row.card.name}</span></button>)}</div></details>}
     {error&&<p className="change-removed" role="alert">{error}</p>}
   </div>;
 }

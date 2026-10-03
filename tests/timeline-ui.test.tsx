@@ -49,7 +49,7 @@ test('Day scheduling adds times; arrows track the viewport; row ordering never e
  const rows=[row('A',today),row('B',shiftDay(today,10)),row('C')],writes:{id:string;value:TagValue}[]=[],patches:unknown[]=[];
  let view:import('../src/view-block').BlockView={id:'day',name:'Timeline',type:'timeline',scale:'day',dateBy:key};
  const rect=(left:number,top:number,width:number,height:number)=>({left,top,right:left+width,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
- Object.defineProperty(dom.window.HTMLElement.prototype,'clientWidth',{get(){return this.classList.contains('timeline-scroll')?600:0;},configurable:true});
+ Object.defineProperty(dom.window.HTMLElement.prototype,'clientWidth',{get(){return this.classList.contains('timeline-scroll')?500:0;},configurable:true});
  dom.window.HTMLElement.prototype.getBoundingClientRect=function(){
   if(this.classList.contains('timeline-scroll'))return rect(100,20,600,300);
   if(this.classList.contains('timeline-heading'))return rect(100,20,1728,70);
@@ -62,18 +62,30 @@ test('Day scheduling adds times; arrows track the viewport; row ordering never e
  const bar=()=>document.querySelector<HTMLElement>('[data-file-key=A] .timeline-bar')!;
  try{
   await act(async()=>render());
-  assert.equal(document.querySelector('.timeline-outside')?.textContent,'');assert.equal(document.querySelector('.timeline-outside')?.getAttribute('title'),'B');
+  assert.equal(document.querySelectorAll('[data-file-key=A] .timeline-reorder').length,2,'Both viewport edges offer the same reorder grip');
+  assert.equal(document.querySelector('.timeline-scroll')!.nextElementSibling?.className,'timeline-unscheduled','Unscheduled is a bottom collapse outside the date canvas');
+  assert.equal(document.querySelector<HTMLDetailsElement>('.timeline-unscheduled')!.open,false);
+  assert.equal(document.querySelector('.timeline-outside')?.textContent,'');assert.equal(document.querySelector('.timeline-outside')?.getAttribute('data-tooltip'),'B');
   await pointer(bar(),'pointerdown',200);await pointer(document,'pointerup',224);assert.equal(writes.at(-1)?.value,today+'T01:00:00.000Z');
   await pointer(bar().querySelector('.timeline-resize-end')!,'pointerdown',300);await pointer(document,'pointerup',324);assert.deepEqual(writes.at(-1)?.value,{start:today+'T01:00:00.000Z',end:today+'T02:00:00.000Z'});
   const count=writes.length;
   await pointer(document.querySelector('.timeline-new-track')!,'pointermove',388,200);assert.ok(document.querySelector('.timeline-ghost'));assert.ok(document.querySelector('.timeline-day[data-preview=true]'));assert.equal(writes.length,count);
   await pointer(document.querySelector('.timeline-new-track')!,'pointerleave',388,200);
-  await act(async()=>document.querySelector<HTMLButtonElement>('.timeline-toolbar>button')!.click());
+  await act(async()=>document.querySelector<HTMLElement>('.timeline-unscheduled>summary')!.click());
+  assert.equal(document.querySelector<HTMLDetailsElement>('.timeline-unscheduled')!.open,true);
   await pointer(document.querySelector('.timeline-unscheduled button')!,'pointerdown',110,350);await pointer(document,'pointermove',388,150);assert.ok(document.querySelector('.timeline-ghost'));assert.equal(document.querySelector<HTMLElement>('.timeline-schedule-preview')!.style.top,'38px','schedule preview follows the visible hovered row');await pointer(document,'pointerup',388,150);assert.deepEqual(writes.at(-1),{id:'C',value:today+'T12:00:00.000Z'});
+  document.querySelector<HTMLElement>('.timeline-rows')!.style.backgroundColor='rgb(30, 30, 30)';
   const dates=JSON.stringify(rows.map(row=>row.properties));
-  await pointer(document.querySelector('[data-file-key=A] .timeline-reorder')!,'pointerdown',110,110);await pointer(document,'pointermove',110,170);assert.ok(document.querySelector('.drag-phantom'));assert.ok(document.querySelector('.sort-placeholder'));assert.equal(patches.length,0);await pointer(document,'pointerup',110,170);
+  await pointer(document.querySelector('[data-file-key=A] .timeline-reorder')!,'pointerdown',110,110);await pointer(document,'pointermove',110,170);assert.ok(document.querySelector('.drag-phantom'));assert.ok(['','transparent','rgba(0, 0, 0, 0)'].includes(document.querySelector<HTMLElement>('.drag-phantom')!.style.backgroundColor),'The dragged row must not obscure other bars or the calendar');assert.ok(document.querySelector('.sort-placeholder'));assert.equal(patches.length,0);await pointer(document,'pointerup',110,170);
   assert.equal(view.sort,'manual');assert.equal(view.order?.rows[1],'A');assert.equal(JSON.stringify(rows.map(row=>row.properties)),dates);
   const scroller=document.querySelector<HTMLElement>('.timeline-scroll')!;await act(async()=>{scroller.scrollLeft=600;scroller.dispatchEvent(new dom.window.Event('scroll'));await new Promise(resolve=>setTimeout(resolve,30));});
-  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null);assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('title'),'A');
+  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null);assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('data-tooltip'),'A');
+  const grid=document.querySelector('.timeline-grid')!,snapshot=JSON.stringify(rows),saved=patches.length,position=scroller.scrollLeft;
+  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',350,280);assert.equal(scroller.scrollLeft,position+50);assert.equal(scroller.scrollTop,0,'Canvas dragging is horizontal only');assert.ok(document.body.classList.contains('timeline-panning'));await pointer(document,'pointerup',350,280);assert.ok(!document.body.classList.contains('timeline-panning'));
+  const ruler=document.querySelector('.timeline-days')!.textContent;
+  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',4000,200);assert.notEqual(document.querySelector('.timeline-days')!.textContent,ruler,'Dragging beyond the buffer continues into earlier dates');assert.ok(scroller.scrollLeft>=0);await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(scroller.scrollLeft,position+50);assert.equal(document.querySelector('.timeline-days')!.textContent,ruler,'Escape restores the viewport after crossing the buffer');
+  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',-4000,200);assert.notEqual(document.querySelector('.timeline-days')!.textContent,ruler,'Future navigation also continues beyond the buffer');await act(async()=>window.dispatchEvent(new dom.window.Event('blur')));assert.equal(document.querySelector('.timeline-days')!.textContent,ruler);assert.equal(scroller.scrollLeft,position+50);
+  assert.equal(JSON.stringify(rows),snapshot,'Panning never edits source dates');assert.equal(patches.length,saved,'Panning does not save manual order');assert.ok(!document.body.classList.contains('timeline-panning'));
+
  }finally{await act(async()=>root.unmount());dom.window.close();}
 });
