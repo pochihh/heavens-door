@@ -164,3 +164,36 @@ test('named blocks, query property scope, date endpoints and manual timeline ord
  const {replaceViewSource}=await import('../src/view-block'),source=writeViewBlock('',block),body='Before\n\n```view-block\n'+source+'```\n\nAfter';
  const copied=replaceViewSource(body,0,source,writeViewBlock(source,{...block,name:'Copy'}),true);assert.equal(viewBlockRanges(copied).length,2);assert.equal(parseViewBlock(viewBlockRanges(copied)[1].source).name,'Copy');assert.ok(copied.endsWith('After'));
 });
+
+test('Timeline drops save dates and complete row order in one undoable file transaction',async t=>{
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-timeline-move-')),root=join(dir,'notes');await fs.mkdir(root);await fs.mkdir(join(root,'Tasks'));
+ const w=await Workspace.open(root,join(dir,'cache'));t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+ await w.createTag('project');const tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[{key:'Date',type:'date'},{key:'Unrelated',type:'number',default:10}],[]);
+ const put=(name:string,id:string,props:Record<string,unknown>={})=>fs.writeFile(join(root,'Tasks',name+'.md'),'---\n'+stringify({'card-id':id,...props})+'---\n# '+name+'\n');
+ await Promise.all(Array.from({length:105},(_,i)=>put(String(i).padStart(3,'0'),'card-'+i,{tags:['project'],'project/Date':'2026-10-03'})));
+ await put('Unscheduled','new');
+ const block=newViewBlock();block.query.where={field:'file.folder',op:'under',value:'Tasks'};block.views=[{id:'time',name:'Timeline',type:'timeline',dateBy:'project/Date',sort:{field:'file.name',direction:'asc'}}];
+ let source=writeViewBlock('',block);await fs.writeFile(join(root,'Query.md'),'---\ncard-id: query\n---\n# Query\n\n```view-block\n'+source+'```\n');await w.scan();
+ const owner=async()=>({path:'Query.md',expected:(await w.card('Query.md')).revision,block:0,source});
+ const card=async(path:string)=>({path,expected:(await w.card(path)).revision});
+ const refresh=async()=>{source=viewBlockRanges((await w.card('Query.md')).body)[0].source;};
+ const original=await w.read('Tasks/Unscheduled.md'),originalQuery=await w.read('Query.md'),undo=new UndoHistory();
+ const date={start:'2026-10-04T09:00:00.000Z',end:'2026-10-04T10:00:00.000Z'};
+ const moved=await w.moveViewCard({owner:await owner(),view:'time',card:await card('Tasks/Unscheduled.md'),from:'rows',to:'rows',before:'card-1',date});undo.record('Move',moved.edits);await refresh();
+ assert.equal(moved.edits.length,2);const view=parseViewBlock(source).views[0];assert.equal(view.sort,'manual');assert.equal(view.order?.rows.length,106,'Moving a loaded card retains every unloaded result');assert.deepEqual(view.order?.rows.slice(0,3),['card-0','new','card-1']);
+ const props=w.cardProperties('Tasks/Unscheduled.md').properties;assert.deepEqual(props.tags,['project']);assert.deepEqual(props['project/Date'],date);assert.equal(props['project/Unrelated'],undefined);
+ assert.deepEqual(w.viewCards(source,'time').rows.slice(0,3).map(r=>r.card.id),['card-0','new','card-1']);assert.equal(w.viewCards(source,'time',100).rows.at(-1)?.card.id,'card-104');
+ await undo.travel(false,changes=>w.write(changes));await refresh();assert.equal(await w.read('Tasks/Unscheduled.md'),original);assert.equal(await w.read('Query.md'),originalQuery);
+ await undo.travel(true,changes=>w.write(changes));await refresh();assert.deepEqual(w.cardProperties('Tasks/Unscheduled.md').properties['project/Date'],date);
+ const raw=await w.read('Tasks/000.md');const vertical=await w.moveViewCard({owner:await owner(),view:'time',card:await card('Tasks/000.md'),from:'rows',to:'rows',after:'card-1'});await refresh();assert.equal(vertical.edits.length,1);assert.equal(await w.read('Tasks/000.md'),raw,'A vertical drop must not rewrite date formatting or attach properties');
+ await put('000 arrival','arrival',{tags:['project'],'project/Date':'2026-10-03'});await w.refresh('Tasks/000 arrival.md');const before=await w.read('Query.md');assert.equal(w.viewCards(source,'time',100).rows.at(-1)?.card.id,'arrival');assert.equal(await w.read('Query.md'),before,'Query refresh does not eagerly rewrite the order');
+ await w.moveViewCard({owner:await owner(),view:'time',card:await card('Tasks/104.md'),from:'rows',to:'rows',before:'card-0'});await refresh();assert.ok(parseViewBlock(source).views[0].order?.rows.includes('arrival'));
+ const safe=await w.read('Query.md'),safeCard=await w.read('Tasks/000.md');
+ await assert.rejects(async()=>w.moveViewCard({owner:await owner(),view:'time',card:await card('Tasks/000.md'),from:'rows',to:'rows',date:'not a date'}),/Invalid value/);
+ await assert.rejects(async()=>w.moveViewCard({owner:await owner(),view:'time',card:await card('Tasks/000.md'),from:'rows',to:'rows',before:'missing',date:'2026-10-05'}),/changed/i);
+ await assert.rejects(async()=>w.moveViewCard({owner:await owner(),view:'time',card:{path:'Tasks/000.md',expected:'stale'},from:'rows',to:'rows',date:'2026-10-05'}),/External changes/);
+ assert.equal(await w.read('Query.md'),safe);assert.equal(await w.read('Tasks/000.md'),safeCard);
+ // A view may include its own owner card; date and order must still produce just one write.
+ const self=parseViewBlock(source);delete self.query.where;source=writeViewBlock(source,self);await w.saveCard('Query.md','# Query\n\n```view-block\n'+source+'```\n',(await w.card('Query.md')).revision);
+ const own=await w.moveViewCard({owner:await owner(),view:'time',card:await card('Query.md'),from:'rows',to:'rows',before:'new',date:'2026-10-06'});await refresh();assert.equal(own.edits.length,1);assert.equal(w.cardProperties('Query.md').properties['project/Date'],'2026-10-06');assert.equal(parseViewBlock(source).views[0].order?.rows[0],'query');
+});

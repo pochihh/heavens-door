@@ -93,13 +93,14 @@ export function ViewBlock({source,onChange,onRemove,onDuplicate,path,blockIndex=
     const keys=viewPropertyTargets(key,tags,row.properties,prefs,true).map(t=>t.field.propertyKey),card=context!.session.state.snapshot?.cards.find(c=>c.path===row.card.path)??row.card;
     setResult(old=>({...old,rows:old.rows.map(r=>r.card.path===row.card.path?{card,properties:{...r.properties,...Object.fromEntries(keys.map(k=>[k,value]))}}:r)}));
   }
-  async function moveCard(row:TagResult,from:string,to:string,position:{before?:string;after?:string}){
+  async function moveCard(row:TagResult,from:string,to:string,position:{before?:string;after?:string;date?:TagValue}){
     if(!path||!view)return;
     const owner=context!.snapshot.cards.find(c=>c.path===path)??tags.find(t=>t.path===path);if(!owner)return;
-    const previous=result,id=row.card.id,keys=from!==to&&group?viewPropertyTargets(group.keys[0],tags,row.properties,prefs,true).map(t=>t.field.propertyKey):[];
+    const previous=result,id=row.card.id,key=view.type==='timeline'&&position.date!==undefined?dateField?.keys[0]:from!==to?group?.keys[0]:undefined,value=view.type==='timeline'?position.date:to||null;
+    const keys=key?viewPropertyTargets(key,tags,row.properties,prefs,true).map(t=>t.field.propertyKey):[];
     // Keep the dropped slot visible while the file transaction and indexed refresh finish.
     generation.current++;
-    setResult({...result,rows:result.rows.map(r=>r.card.id===id?{...r,properties:{...r.properties,...Object.fromEntries(keys.map(key=>[key,to||null]))}}:r),columns:result.columns&&[...result.columns,...(result.columns.some(c=>c.value===to)?[]:[{value:to,ids:[],total:0}])].map(column=>{
+    setResult({...result,rows:result.rows.map(r=>r.card.id===id?{...r,properties:{...r.properties,...Object.fromEntries(keys.map(key=>[key,value]))}}:r),columns:result.columns&&[...result.columns,...(result.columns.some(c=>c.value===to)?[]:[{value:to,ids:[],total:0}])].map(column=>{
       const had=column.ids.includes(id),ids=column.ids.filter(key=>key!==id),target=column.value===to;
       return {...column,ids:target?moveCardId([],ids,id,position.before,position.after):from===to?column.ids:ids,total:column.total+(target&&!had?1:!target&&had&&from!==to?-1:0)};
     })});

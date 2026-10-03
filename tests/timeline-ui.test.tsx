@@ -12,7 +12,7 @@ test('Timeline click, move, resize, cancellation and range creation share the da
  dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const root=createRoot(document.getElementById('root')!),today=new Date().toISOString().slice(0,10),range={start:today,end:shiftDay(today,2)};
  const row:TagResult={card:{id:'a',path:'A.md',name:'A',title:'Task',revision:'r',legacy:false},properties:{'project/Date':range}},writes:TagValue[]=[],created:TagValue[]=[],opened:string[]=[];
- const render=()=>root.render(<DateDisplayContext.Provider value={{display:{...DEFAULT_DATE_DISPLAY,timeZone:'UTC'},onChange:async()=>{}}}><TimelineView view={{id:'time',name:'Timeline',type:'timeline',dateBy:'project/Date'}} rows={[row]} field={{keys:['project/Date'],name:'Date',type:'date',tags:['project']}} busy={false} onEditing={()=>{}} onSave={async(_row,key,value)=>{assert.equal(key,'project/Date');writes.push(value);row.properties[key]=value;render();}} onOpen={key=>opened.push(key)} onCreate={(_anchor,_column,date)=>{created.push(date!);}} onViewChange={()=>{}}/></DateDisplayContext.Provider>);
+ const render=()=>root.render(<DateDisplayContext.Provider value={{display:{...DEFAULT_DATE_DISPLAY,timeZone:'UTC'},onChange:async()=>{}}}><TimelineView view={{id:'time',name:'Timeline',type:'timeline',dateBy:'project/Date'}} rows={[row]} field={{keys:['project/Date'],name:'Date',type:'date',tags:['project']}} busy={false} onEditing={()=>{}} onSave={async(_row,key,value)=>{assert.equal(key,'project/Date');writes.push(value);row.properties[key]=value;render();}} onMove={async(_row,position)=>{if(position.date!==undefined){writes.push(position.date);row.properties['project/Date']=position.date;}render();}} onOpen={key=>opened.push(key)} onCreate={(_anchor,_column,date)=>{created.push(date!);}} onViewChange={()=>{}}/></DateDisplayContext.Provider>);
  const rect=(left:number,top:number,width:number,height:number)=>({left,top,right:left+width,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
  const setup=()=>{document.querySelector<HTMLElement>('.timeline-scroll')!.getBoundingClientRect=()=>rect(0,0,2200,500);document.querySelectorAll<HTMLElement>('.timeline-track').forEach(el=>el.getBoundingClientRect=()=>rect(180,50,1568,46));};
  const pointer=async(target:Element|Document,type:string,x:number,y=60)=>act(async()=>{target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));});
@@ -30,7 +30,7 @@ test('Timeline click, move, resize, cancellation and range creation share the da
   await act(async()=>document.querySelector('.property-popover')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
 
   await pointer(bar(),'pointerdown',600);await pointer(document,'pointerup',600);assert.deepEqual(opened,['card:a']);assert.equal(writes.length,0);
-  await pointer(bar(),'pointerdown',600);await pointer(document,'pointermove',656);assert.notEqual(bar().style.left,position);assert.equal(writes.length,0);await pointer(document,'pointerup',656);assert.deepEqual(writes.at(-1),{start:shiftDay(today,1),end:shiftDay(today,3)});assert.equal(opened.length,1);
+  await pointer(bar(),'pointerdown',600);await pointer(document,'pointermove',656);assert.notEqual(document.querySelector<HTMLElement>('.timeline-drag-preview .timeline-bar')!.style.left,position);assert.equal(writes.length,0);await pointer(document,'pointerup',656);assert.deepEqual(writes.at(-1),{start:shiftDay(today,1),end:shiftDay(today,3)});assert.equal(opened.length,1);
   setup();await pointer(bar().querySelector('button:last-child')!,'pointerdown',700);await pointer(document,'pointermove',756);await pointer(document,'pointerup',756);assert.deepEqual(writes.at(-1),{start:shiftDay(today,1),end:shiftDay(today,4)});assert.equal(opened.length,1);
   setup();const count=writes.length;await pointer(bar(),'pointerdown',600);await pointer(document,'pointermove',488);await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));await pointer(document,'pointerup',488);assert.equal(writes.length,count);
   setup();await pointer(bar(),'pointerdown',600);await pointer(document,'pointermove',2201);await pointer(document,'pointerup',2201);assert.equal(writes.length,count,'Dropping outside does not save');
@@ -39,53 +39,80 @@ test('Timeline click, move, resize, cancellation and range creation share the da
  }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
-test('Day scheduling adds times; arrows track the viewport; row ordering never edits dates',async()=>{
+test('Timeline cards drag in both axes, retain unscheduled drop previews, and cancel without writing',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,Node:dom.window.Node,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:true}),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
- const {createRoot}=await import('react-dom/client'),{TimelineView}=await import('../src/renderer/TimelineView'),{DateDisplayContext}=await import('../src/renderer/DateProperty');
+ const {createRoot}=await import('react-dom/client'),{TimelineView}=await import('../src/renderer/TimelineView'),{DateDisplayContext}=await import('../src/renderer/DateProperty'),{moveCardId}=await import('../src/view-block');
  const root=createRoot(document.getElementById('root')!),today=new Date().toISOString().slice(0,10),key='project/Date';
  const row=(id:string,value?:TagValue):TagResult=>({card:{id,path:id+'.md',name:id,title:id,revision:'r',legacy:false},properties:{[key]:value}});
  dom.window.HTMLElement.prototype.showPopover=function(){};
- const rows=[row('A',today),row('B',shiftDay(today,10)),row('C')],writes:{id:string;value:TagValue}[]=[],patches:unknown[]=[];
- let view:import('../src/view-block').BlockView={id:'day',name:'Timeline',type:'timeline',scale:'day',dateBy:key};
+ const rows=[row('A',today),row('B',shiftDay(today,10)),row('C')],writes:{id:string;value:TagValue}[]=[],moves:{id:string;before?:string;after?:string;date?:TagValue}[]=[],patches:unknown[]=[];
+ let view:import('../src/view-block').BlockView={id:'day',name:'Timeline',type:'timeline',scale:'day',dateBy:key},fail=false;
  const rect=(left:number,top:number,width:number,height:number)=>({left,top,right:left+width,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
  Object.defineProperty(dom.window.HTMLElement.prototype,'clientWidth',{get(){return this.classList.contains('timeline-scroll')?500:0;},configurable:true});
  dom.window.HTMLElement.prototype.getBoundingClientRect=function(){
-  if(this.classList.contains('timeline-scroll'))return rect(100,20,600,300);
-  if(this.classList.contains('timeline-heading'))return rect(100,20,1728,70);
-  if(this.classList.contains('timeline-rows'))return rect(100,100,1728,76);
-  if(this.classList.contains('timeline-row'))return rect(100,100+[...this.parentElement!.children].filter(el=>(el as HTMLElement).style.display!=='none').indexOf(this)*38,1728,38);
-  return rect(100,100,1728,38);
+  const scroll=document.querySelector<HTMLElement>('.timeline-scroll')?.scrollLeft??0,left=100-scroll;
+  if(this.classList.contains('timeline-scroll'))return rect(100,20,500,300);
+  if(this.classList.contains('timeline-heading'))return rect(left,20,1728,70);
+  if(this.classList.contains('timeline-rows'))return rect(left,90,1728,document.querySelectorAll('[data-file-key]').length*38);
+  if(this.classList.contains('timeline-row'))return rect(left,90+[...this.parentElement!.children].indexOf(this)*38,1728,38);
+  if(this.classList.contains('timeline-track'))return this.parentElement!.getBoundingClientRect();
+  if(this.classList.contains('timeline-bar')){const parent=this.parentElement!.getBoundingClientRect();return rect(parent.left+parseFloat(this.style.left),parent.top+2,parseFloat(this.style.width),34);}
+  if(this.classList.contains('timeline-unscheduled-card'))return rect(110,350,80,34);
+  return rect(left,20,1728,200);
  };
- const render=()=>root.render(<DateDisplayContext.Provider value={{display:{...DEFAULT_DATE_DISPLAY,timeZone:'UTC'},onChange:async()=>{}}}><TimelineView view={view} rows={rows} field={{keys:[key],name:'Date',type:'date',tags:['project']}} busy={false} onEditing={()=>{}} onSave={async(row,key,value)=>{writes.push({id:row.card.id,value});row.properties[key]=value;render();}} onOpen={()=>{}} onCreate={()=>{}} onViewChange={patch=>{patches.push(patch);view={...view,...patch};render();}}/></DateDisplayContext.Provider>);
- const pointer=(target:Element|Document,type:string,x:number,y=115)=>act(async()=>{target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));});
+ const render=()=>root.render(<DateDisplayContext.Provider value={{display:{...DEFAULT_DATE_DISPLAY,timeZone:'UTC'},onChange:async()=>{}}}><TimelineView view={view} rows={rows} field={{keys:[key],name:'Date',type:'date',tags:['project']}} busy={false} onEditing={()=>{}} onSave={async(row,key,value)=>{writes.push({id:row.card.id,value});row.properties[key]=value;render();}} onMove={async(row,position)=>{
+  if(fail)throw new Error('Save failed');
+  moves.push({id:row.card.id,...position});if(position.date!==undefined){writes.push({id:row.card.id,value:position.date});row.properties[key]=position.date;}
+  view={...view,sort:'manual',order:{rows:moveCardId(view.order?.rows??[],rows.map(r=>r.card.id),row.card.id,position.before,position.after)}};render();
+ }} onOpen={()=>{}} onCreate={()=>{}} onViewChange={patch=>{patches.push(patch);view={...view,...patch};render();}}/></DateDisplayContext.Provider>);
+ const pointer=(target:Element|Document,type:string,x:number,y=105)=>act(async()=>{target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));});
  const bar=()=>document.querySelector<HTMLElement>('[data-file-key=A] .timeline-bar')!;
+ const ids=()=>[...document.querySelectorAll<HTMLElement>('[data-file-key]')].map(el=>el.dataset.fileKey);
  try{
   await act(async()=>render());
-  assert.equal(document.querySelectorAll('[data-file-key=A] .timeline-reorder').length,2,'Both viewport edges offer the same reorder grip');
-  assert.equal(document.querySelector('.timeline-scroll')!.nextElementSibling?.className,'timeline-unscheduled','Unscheduled is a bottom collapse outside the date canvas');
+  assert.equal(document.querySelectorAll('.timeline-reorder').length,0,'The card itself is the two-axis drag target');
+  assert.equal(document.querySelector('.timeline-scroll')!.nextElementSibling?.className,'timeline-unscheduled');
   assert.equal(document.querySelector<HTMLDetailsElement>('.timeline-unscheduled')!.open,false);
-  assert.equal(document.querySelector('.timeline-outside')?.textContent,'');assert.equal(document.querySelector('.timeline-outside')?.getAttribute('data-tooltip'),'B');
-  await pointer(bar(),'pointerdown',200);await pointer(document,'pointerup',224);assert.equal(writes.at(-1)?.value,today+'T01:00:00.000Z');
-  await pointer(bar().querySelector('.timeline-resize-end')!,'pointerdown',300);await pointer(document,'pointerup',324);assert.deepEqual(writes.at(-1)?.value,{start:today+'T01:00:00.000Z',end:today+'T02:00:00.000Z'});
+  assert.equal(document.querySelector('.timeline-outside')?.getAttribute('data-tooltip'),'B');
+  assert.equal(document.querySelector('.timeline-bar-label')?.getAttribute('style'),null,'Names stay at their card start without viewport transforms');
+  await pointer(bar(),'pointerdown',200);await pointer(document,'pointermove',200,143);
+  assert.equal(document.querySelector<HTMLElement>('[data-file-key=B]')!.style.transform,'translateY(-38px)','Neighbors preview the insertion slot');
+  assert.equal(document.querySelector<HTMLElement>('.timeline-drag-preview')!.style.top,'38px');
+  assert.ok(!document.querySelector('.drag-phantom'),'Only the bar is painted over the calendar, not a full-width row');
+  await pointer(document,'pointerup',200,143);
+  assert.deepEqual(ids(),['B','A']);assert.equal(writes.length,0,'Pure vertical Day movement preserves all-day dates');assert.equal(moves.at(-1)?.date,undefined);assert.equal(view.sort,'manual');
+  // One diagonal gesture changes both row and time, retaining the live position until drop.
+  await pointer(bar(),'pointerdown',200,143);await pointer(document,'pointermove',224,105);
+  assert.equal(document.querySelector<HTMLElement>('.timeline-drag-preview')!.style.top,'0px');
+  assert.equal(document.querySelector<HTMLElement>('.timeline-drag-preview .timeline-bar')!.style.left,'24px');
+  await pointer(document,'pointerup',224,105);assert.deepEqual(ids(),['A','B']);assert.equal(writes.at(-1)?.value,today+'T01:00:00.000Z');assert.equal(moves.at(-1)?.before,'B');
+  await pointer(bar().querySelector('.timeline-resize-end')!,'pointerdown',148);await pointer(document,'pointerup',172);assert.deepEqual(writes.at(-1)?.value,{start:today+'T01:00:00.000Z',end:today+'T02:00:00.000Z'});
   const count=writes.length;
-  await pointer(document.querySelector('.timeline-new-track')!,'pointermove',388,200);assert.ok(document.querySelector('.timeline-ghost'));assert.ok(document.querySelector('.timeline-day[data-preview=true]'));assert.equal(writes.length,count);
-  await pointer(document.querySelector('.timeline-new-track')!,'pointerleave',388,200);
+  await pointer(document.querySelector('.timeline-new-track')!,'pointermove',388,200);assert.ok(document.querySelector('.timeline-ghost'));assert.ok(document.querySelector('.timeline-day[data-preview=true]'));assert.equal(writes.length,count);await pointer(document.querySelector('.timeline-new-track')!,'pointerleave',388,200);
   await act(async()=>document.querySelector<HTMLElement>('.timeline-unscheduled>summary')!.click());
-  assert.equal(document.querySelector<HTMLDetailsElement>('.timeline-unscheduled')!.open,true);
-  await pointer(document.querySelector('.timeline-unscheduled button')!,'pointerdown',110,350);await pointer(document,'pointermove',388,150);assert.ok(document.querySelector('.timeline-ghost'));assert.equal(document.querySelector<HTMLElement>('.timeline-schedule-preview')!.style.top,'38px','schedule preview follows the visible hovered row');await pointer(document,'pointerup',388,150);assert.deepEqual(writes.at(-1),{id:'C',value:today+'T12:00:00.000Z'});
-  document.querySelector<HTMLElement>('.timeline-rows')!.style.backgroundColor='rgb(30, 30, 30)';
-  const dates=JSON.stringify(rows.map(row=>row.properties));
-  await pointer(document.querySelector('[data-file-key=A] .timeline-reorder')!,'pointerdown',110,110);await pointer(document,'pointermove',110,170);assert.ok(document.querySelector('.drag-phantom'));assert.ok(['','transparent','rgba(0, 0, 0, 0)'].includes(document.querySelector<HTMLElement>('.drag-phantom')!.style.backgroundColor),'The dragged row must not obscure other bars or the calendar');assert.ok(document.querySelector('.sort-placeholder'));assert.equal(patches.length,0);await pointer(document,'pointerup',110,170);
-  assert.equal(view.sort,'manual');assert.equal(view.order?.rows[1],'A');assert.equal(JSON.stringify(rows.map(row=>row.properties)),dates);
-  const scroller=document.querySelector<HTMLElement>('.timeline-scroll')!;await act(async()=>{scroller.scrollLeft=600;scroller.dispatchEvent(new dom.window.Event('scroll'));await new Promise(resolve=>setTimeout(resolve,30));});
-  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null);assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('data-tooltip'),'A');
-  const grid=document.querySelector('.timeline-grid')!,snapshot=JSON.stringify(rows),saved=patches.length,position=scroller.scrollLeft;
-  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',350,280);assert.equal(scroller.scrollLeft,position+50);assert.equal(scroller.scrollTop,0,'Canvas dragging is horizontal only');assert.ok(document.body.classList.contains('timeline-panning'));await pointer(document,'pointerup',350,280);assert.ok(!document.body.classList.contains('timeline-panning'));
+  await pointer(document.querySelector('.timeline-unscheduled button')!,'pointerdown',120,363);await pointer(document,'pointermove',388,143);
+  assert.equal(document.querySelector<HTMLElement>('.timeline-drag-preview')!.style.top,'38px');
+  assert.equal(document.querySelector<HTMLElement>('.timeline-drag-preview .timeline-bar')!.style.left,'288px');
+  assert.equal(document.querySelector<HTMLElement>('[data-file-key=B]')!.style.transform,'translateY(38px)');
+  await pointer(document,'pointerup',388,143);assert.deepEqual(writes.at(-1),{id:'C',value:today+'T12:00:00.000Z'});assert.deepEqual(ids(),['A','C','B']);assert.equal(moves.at(-1)?.before,'B');assert.equal(document.querySelector('.timeline-unscheduled'),null);
+  const saved=moves.length,snapshot=JSON.stringify(rows),order=JSON.stringify(view.order);
+  for(const end of ['Escape','blur','pointercancel','outside']){
+    await pointer(bar(),'pointerdown',200);await pointer(document,'pointermove',224,181);
+    if(end==='Escape')await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    else if(end==='blur')await act(async()=>window.dispatchEvent(new dom.window.Event('blur')));
+    else if(end==='pointercancel')await pointer(document,'pointercancel',224,181);
+    else await pointer(document,'pointerup',700,181);
+    assert.equal(document.querySelector('.timeline-drag-preview'),null);assert.deepEqual(ids(),['A','C','B']);assert.equal(moves.length,saved);assert.equal(JSON.stringify(rows),snapshot);assert.equal(JSON.stringify(view.order),order);
+  }
+  fail=true;await pointer(bar(),'pointerdown',200);await pointer(document,'pointerup',224,181);assert.match(document.querySelector('[role=alert]')!.textContent!,/Save failed/);assert.deepEqual(ids(),['A','C','B']);assert.equal(JSON.stringify(rows),snapshot);fail=false;
+  const scroller=document.querySelector<HTMLElement>('.timeline-scroll')!;await act(async()=>{scroller.scrollLeft=30;scroller.dispatchEvent(new dom.window.Event('scroll'));await new Promise(resolve=>setTimeout(resolve,30));});
+  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null,'An offscreen start becomes an arrow even while its range intersects the viewport');assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('data-tooltip'),'A');
+  const grid=document.querySelector('.timeline-grid')!,position=scroller.scrollLeft;
+  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',350,280);assert.equal(scroller.scrollLeft,position+50);assert.equal(scroller.scrollTop,0);assert.ok(document.body.classList.contains('timeline-panning'));await pointer(document,'pointerup',350,280);assert.ok(!document.body.classList.contains('timeline-panning'));
   const ruler=document.querySelector('.timeline-days')!.textContent;
-  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',4000,200);assert.notEqual(document.querySelector('.timeline-days')!.textContent,ruler,'Dragging beyond the buffer continues into earlier dates');assert.ok(scroller.scrollLeft>=0);await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(scroller.scrollLeft,position+50);assert.equal(document.querySelector('.timeline-days')!.textContent,ruler,'Escape restores the viewport after crossing the buffer');
-  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',-4000,200);assert.notEqual(document.querySelector('.timeline-days')!.textContent,ruler,'Future navigation also continues beyond the buffer');await act(async()=>window.dispatchEvent(new dom.window.Event('blur')));assert.equal(document.querySelector('.timeline-days')!.textContent,ruler);assert.equal(scroller.scrollLeft,position+50);
-  assert.equal(JSON.stringify(rows),snapshot,'Panning never edits source dates');assert.equal(patches.length,saved,'Panning does not save manual order');assert.ok(!document.body.classList.contains('timeline-panning'));
-
+  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',4000,200);assert.notEqual(document.querySelector('.timeline-days')!.textContent,ruler);await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(scroller.scrollLeft,position+50);assert.equal(document.querySelector('.timeline-days')!.textContent,ruler);
+  await pointer(grid,'pointerdown',400,200);await pointer(document,'pointermove',-4000,200);await act(async()=>window.dispatchEvent(new dom.window.Event('blur')));assert.equal(document.querySelector('.timeline-days')!.textContent,ruler);assert.equal(scroller.scrollLeft,position+50);
+  assert.equal(JSON.stringify(rows),snapshot);assert.equal(patches.length,0);assert.equal(moves.length,saved);assert.ok(!document.body.classList.contains('timeline-panning'));
  }finally{await act(async()=>root.unmount());dom.window.close();}
 });

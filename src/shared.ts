@@ -43,7 +43,7 @@ export interface TagInfo { body?:string; path:string;name:string;tag:string;revi
 export interface ResolvedTagField extends TagField {propertyKey:string;sourceTag:string}
 export interface CardProperties {revision:string;properties:Record<string,unknown>}
 export interface ViewResults {scopeTags?:string[];rows:TagResult[];total:number;columns?:{value:string;ids:string[];total:number}[];nextOffset?:number}
-export interface ViewCardMove {owner:{path:string;expected:string;block:number;source:string};view:string;card:{path:string;expected:string};from:string;to:string;before?:string;after?:string}
+export interface ViewCardMove {owner:{path:string;expected:string;block:number;source:string};view:string;card:{path:string;expected:string};from:string;to:string;before?:string;after?:string;date?:TagValue}
 export interface TagResult { previewImage?:string;snippet?:string; card: CardInfo; properties: Record<string,unknown> }
 export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }

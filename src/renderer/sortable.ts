@@ -16,12 +16,9 @@ function freezeStyle(source:HTMLElement,clone:HTMLElement) {
 }
 export function createDragPhantom(source:HTMLElement,rect=source.getBoundingClientRect()) {
   const phantom=source.cloneNode(true) as HTMLElement;freezeStyle(source,phantom);
-  // Transparent canvas rows retain only their card fill; ordinary tabs need the backing surface.
-  if(!source.hasAttribute('data-drag-transparent')){
-    const fill=getComputedStyle(source).backgroundColor;let parent=source.parentElement,backing='transparent';
-    while(parent){backing=getComputedStyle(parent).backgroundColor;if(backing!=='transparent'&&!backing.endsWith(', 0)'))break;parent=parent.parentElement;}
-    phantom.style.backgroundColor=backing;phantom.style.backgroundImage=`linear-gradient(${fill},${fill})`;
-  }
+  const fill=getComputedStyle(source).backgroundColor;let parent=source.parentElement,backing='transparent';
+  while(parent){backing=getComputedStyle(parent).backgroundColor;if(backing!=='transparent'&&!backing.endsWith(', 0)'))break;parent=parent.parentElement;}
+  phantom.style.backgroundColor=backing;phantom.style.backgroundImage=`linear-gradient(${fill},${fill})`;
   Object.assign(phantom.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',zIndex:'1000',pointerEvents:'none',transition:'none'});
   phantom.classList.add('drag-phantom');phantom.setAttribute('aria-hidden','true');phantom.inert=true;(source.closest('dialog[open]')??document.body).appendChild(phantom);
   return phantom;

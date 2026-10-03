@@ -739,6 +739,16 @@ export class Workspace {
     if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
     return {columns,total:rows.length,view,group};
   }
+  private timelineIds(source:string,id:string,plan:ReturnType<typeof compileView>){
+    // Reconcile all indexed IDs so dragging a loaded row also preserves later query pages.
+    const ids=this.db.prepare('SELECT c.id FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order).all(...plan.args).map(row=>String(row.id));
+    if(plan.view.sort!=='manual')return ids;
+    const key=JSON.stringify([parseViewBlock(source).query,id,plan.view.filter,'timeline']);
+    const tail=orderedCardIds([],ids,this.viewOrderTails.get(key)?.get('rows'));
+    this.viewOrderTails.delete(key);this.viewOrderTails.set(key,new Map([['rows',tail]]));
+    if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
+    return orderedCardIds(plan.view.order?.rows??[],tail);
+  }
   viewCards(source:string,view:string,offset=0):import('../shared').ViewResults {
     if(typeof source!=='string'||typeof view!=='string'||!Number.isInteger(offset)||offset<0||offset>100000)throw new Error(ui.errors.invalidQuery);
     const plan=compileView(source,view,[...this.tags.values()]);
@@ -750,12 +760,7 @@ export class Workspace {
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c JOIN json_each(?) ids ON c.id=ids.value').all(JSON.stringify(ids));
       if(columns.some(c=>c.total>offset+100))nextOffset=offset+100;
     }else if(plan.view.type==='timeline'&&plan.view.sort==='manual'){
-      const ids=this.db.prepare('SELECT c.id FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order).all(...plan.args).map(row=>String(row.id));
-      const block=parseViewBlock(source),key=JSON.stringify([block.query,view,plan.view.filter,'timeline']);
-      const tail=orderedCardIds([],ids,this.viewOrderTails.get(key)?.get('rows'));
-      this.viewOrderTails.delete(key);this.viewOrderTails.set(key,new Map([['rows',tail]]));
-      if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
-      const ordered=orderedCardIds(plan.view.order?.rows??[],tail);total=ordered.length;
+      const ordered=this.timelineIds(source,view,plan);total=ordered.length;
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM json_each(?) ids JOIN cards c ON c.id=ids.value ORDER BY ids.key').all(JSON.stringify(ordered.slice(offset,offset+100)));
       if(offset+rows.length<total)nextOffset=offset+rows.length;
     }else{
@@ -776,28 +781,39 @@ export class Workspace {
     const raw=await this.read(move.owner.path),cardRaw=move.owner.path===move.card.path?raw:await this.read(move.card.path);
     if(revision(raw)!==move.owner.expected)throw new Error(ui.errors.externalEdit(move.owner.path));
     if(revision(cardRaw)!==move.card.expected)throw new Error(ui.errors.externalEdit(move.card.path));
-    const card=readCard(move.card.path,cardRaw),block=parseViewBlock(move.owner.source),data=this.kanbanColumns(move.owner.source,move.view),view=block.views.find(v=>v.id===move.view)!;
-    if(!data.columns.get(move.from)?.includes(card.id))throw new Error(viewText.errors.viewChanged);
-    const target=data.columns.get(move.to)??[];
-    if([move.before,move.after].some(id=>id!==undefined&&(id===card.id||!target.includes(id))))throw new Error(viewText.errors.viewChanged);
-    const moved=move.from!==move.to;
-    const content=moved?this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.groupBy!)[0],move.to||null):cardRaw;
-    if(typeof view.sort==='object'){
-      // Freeze every current column before switching modes, including unloaded cards.
-      view.order={...view.order,...Object.fromEntries([...data.columns].map(([value,ids])=>[value,[...new Set([...ids,...(view.order&&Object.hasOwn(view.order,value)?view.order[value]:[])])]]))};
-    }
-    view.sort='manual';
-    {
+    const card=readCard(move.card.path,cardRaw),block=parseViewBlock(move.owner.source),view=block.views.find(v=>v.id===move.view);
+    if(!view)throw new Error(ui.errors.invalidQuery);
+    let content=cardRaw;
+    if(view.type==='timeline'){
+      if(move.from!=='rows'||move.to!=='rows'||!view.dateBy)throw new Error(ui.errors.invalidQuery);
+      const plan=compileView(move.owner.source,move.view,[...this.tags.values()]),ids=this.timelineIds(move.owner.source,move.view,plan);
+      if(!ids.includes(card.id)||[move.before,move.after].some(id=>id!==undefined&&(id===card.id||!ids.includes(id))))throw new Error(viewText.errors.viewChanged);
+      if(move.date!==undefined)content=this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.dateBy)[0],move.date);
+      // Keep hidden IDs for returning results; freeze the current sort before switching to manual.
+      const saved=view.sort==='manual'?view.order?.rows??[]:[...ids,...(view.order?.rows??[])];
+      view.order={...view.order,rows:moveCardId(saved,ids,card.id,move.before,move.after)};
+    }else{
+      if(move.date!==undefined)throw new Error(ui.errors.invalidQuery);
+      const data=this.kanbanColumns(move.owner.source,move.view);
+      if(!data.columns.get(move.from)?.includes(card.id))throw new Error(viewText.errors.viewChanged);
+      const target=data.columns.get(move.to)??[];
+      if([move.before,move.after].some(id=>id!==undefined&&(id===card.id||!target.includes(id))))throw new Error(viewText.errors.viewChanged);
+      if(move.from!==move.to)content=this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.groupBy!)[0],move.to||null);
+      if(typeof view.sort==='object'){
+        // Freeze every current column before switching modes, including unloaded cards.
+        view.order={...view.order,...Object.fromEntries([...data.columns].map(([value,ids])=>[value,[...new Set([...ids,...(view.order&&Object.hasOwn(view.order,value)?view.order[value]:[])])]]))};
+      }
       const saved=view.order&&Object.hasOwn(view.order,move.to)?view.order[move.to]:[];
       view.order=Object.fromEntries([...Object.entries(view.order??{}).map(([value,ids])=>[value,ids.filter(id=>id!==card.id)]),[move.to,moveCardId(saved,target,card.id,move.before,move.after)]]);
     }
+    view.sort='manual';
     validateView(view,[...this.tags.values()]);const next=writeViewBlock(move.owner.source,block);parseViewBlock(next);
     const ownerContent=move.owner.path===card.path?content:raw,{header,body}=splitNote(ownerContent);
     let nextBody:string;
     if(move.owner.block===-1){if(!move.owner.path.endsWith('.tag')||viewBlockRanges(body).length)throw new Error(viewText.errors.viewChanged);nextBody=body+'\n\n```view-block\n'+next+'```\n';}
     else nextBody=replaceViewSource(body,move.owner.block,move.owner.source,next);
     const changes:Write[]=[{path:move.owner.path,expected:move.owner.expected,content:header+nextBody}];
-    if(moved&&move.owner.path!==card.path)changes.push({path:card.path,expected:move.card.expected,content});
+    if(content!==cardRaw&&move.owner.path!==card.path)changes.push({path:card.path,expected:move.card.expected,content});
     return this.write(changes);
   }
   async saveTagBody(path:string,expected:string,body:string){
