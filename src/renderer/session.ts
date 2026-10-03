@@ -180,14 +180,14 @@ export class Session {
   createTag(tag:string) {
     return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'createTag',tag});this.accept(result,ui.tags.newTag);return result.snapshot.tags!.find(t=>t.tag===tag)!;});
   }
-  saveViewBlock(path:string,expected:string,index:number,source:string,next:string|null){return this.run(async()=>{
+  saveViewBlock(path:string,expected:string,index:number,source:string,next:string|null,duplicate=false){return this.run(async()=>{
     if(this.state.snapshot?.cards.find(c=>c.path===path)?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
     await this.flush();
     const draft=this.state.draft;
-    if(draft?.card.path===path){this.edit(replaceViewSource(draft.body,index,source,next));await this.flush(ui.views.options);return;}
+    if(draft?.card.path===path){this.edit(replaceViewSource(draft.body,index,source,next,duplicate));await this.flush(ui.views.options);return;}
     const card=await this.bridge.request<Card>({kind:'card',path});
     if(card.revision!==this.state.snapshot?.cards.find(c=>c.path===path)?.revision)throw new Error(ui.errors.externalEdit(path));
-    const body=replaceViewSource(card.body,index,source,next);
+    const body=replaceViewSource(card.body,index,source,next,duplicate);
     if(body!==card.body)this.accept(await this.bridge.request<Mutation>({kind:'saveCard',path,body,expected:card.revision}),ui.views.options);
   });}
   saveTagBody(path:string,expected:string,body:string){return this.run(async()=>{await this.flush();this.accept(await this.bridge.request<Mutation>({kind:'saveTagBody',path,expected,body}),ui.tags.save);});}

@@ -6,9 +6,9 @@ import {resolveTag,propertyType,multipleChoices,validTagDate,tagsFrom} from './t
 
 export type FieldRef=string|string[];
 export type Rule={field:FieldRef;op:string;value?:unknown}|{all:Rule[]}|{any:Rule[]}|{not:Rule};
-export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban'|'gallery'|'timeline';appearance?:'grid'|'compact';dateBy?:FieldRef;scale?:'day'|'week'|'month';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc'};order?:Record<string,string[]>}
+export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban'|'gallery'|'timeline';appearance?:'grid'|'compact';dateBy?:FieldRef;scale?:'day'|'week'|'month';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc';part?:'start'|'end'};order?:Record<string,string[]>}
 export const tableAppearance=(view:BlockView)=>view.type==='list'?'compact':view.appearance??'grid';
-export interface ViewBlock {version:1;query:{from:'cards';where?:Rule};views:BlockView[]}
+export interface ViewBlock {version:1;name?:string;query:{from:'cards';where?:Rule};views:BlockView[]}
 export interface QueryPreferences {mergeProperties:boolean;caseSensitive:boolean}
 export const DEFAULT_QUERY_PREFERENCES:QueryPreferences={mergeProperties:true,caseSensitive:false};
 export interface QueryField {keys:string[];name:string;type:TagField['type']|'tags';tags:string[];definition?:TagField}
@@ -65,7 +65,7 @@ export function validateView(value:unknown,tags?:TagInfo[]):asserts value is Blo
   if(value.groupBy!==undefined){field(value.groupBy);if(tags)resolveField(value.groupBy,tags);}
   if(value.dateBy!==undefined){field(value.dateBy);if(tags&&resolveField(value.dateBy,tags).type!=='date')throw new Error(viewText.chooseDate);}
   if(value.scale!==undefined&&!['day','week','month'].includes(String(value.scale)))throw new Error(viewText.errors.invalidView);
-  if(value.sort!==undefined&&value.sort!=='manual'){if(!record(value.sort))throw new Error(viewText.errors.invalidSort);keys(value.sort,['field','direction']);field(value.sort.field);if(!['asc','desc'].includes(String(value.sort.direction)))throw new Error(viewText.errors.invalidDirection);if(tags)resolveField(value.sort.field,tags);}
+  if(value.sort!==undefined&&value.sort!=='manual'){if(!record(value.sort))throw new Error(viewText.errors.invalidSort);keys(value.sort,['field','direction','part']);field(value.sort.field);if(value.sort.part!==undefined&&(!['start','end'].includes(String(value.sort.part))||tags&&resolveField(value.sort.field,tags).type!=='date'))throw new Error(viewText.errors.invalidSort);if(!['asc','desc'].includes(String(value.sort.direction)))throw new Error(viewText.errors.invalidDirection);if(tags)resolveField(value.sort.field,tags);}
   if(value.order!==undefined){if(!record(value.order)||Object.keys(value.order).length>200)throw new Error(viewText.errors.invalidOrder);let count=0;for(const [column,ids] of Object.entries(value.order)){if(column.length>2048||!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!id||id.length>256)||new Set(ids).size!==ids.length||(count+=ids.length)>10000)throw new Error(viewText.errors.invalidOrder);}}
 }
 export function parseViewBlock(source:string):ViewBlock {
@@ -73,7 +73,7 @@ export function parseViewBlock(source:string):ViewBlock {
   const lineCounter=new LineCounter(),doc=parseDocument(source,{lineCounter,uniqueKeys:true});
   if(doc.errors.length)throw new Error(doc.errors[0].message);
   const data:unknown=doc.toJS({maxAliasCount:50});
-  if(!record(data))throw new Error(viewText.errors.mapping);keys(data,['version','query','views']);
+  if(!record(data))throw new Error(viewText.errors.mapping);keys(data,['version','name','query','views']);if(data.name!==undefined&&(typeof data.name!=='string'||!data.name.trim()||data.name.length>100))throw new Error(viewText.errors.invalidName);
   if(data.version!==1)throw new Error(viewText.errors.version);
   if(!record(data.query)||data.query.from!=='cards')throw new Error(viewText.errors.from);keys(data.query,['from','where']);
   if(data.query.where!==undefined)validateRule(data.query.where);
@@ -82,7 +82,7 @@ export function parseViewBlock(source:string):ViewBlock {
   const ids=new Set<string>();for(const view of data.views){if(!record(view)||typeof view.id!=='string'||!view.id||ids.has(view.id))throw new Error(viewText.errors.uniqueId);ids.add(view.id);}
   return data as unknown as ViewBlock;
 }
-export function writeViewBlock(source:string,next:ViewBlock){const doc=parseDocument(source),previous=doc.toJS()??{};for(const key of ['version','query','views'] as const)if(JSON.stringify(previous[key])!==JSON.stringify(next[key]))doc.set(key,next[key]);return doc.toString({lineWidth:0});}
+export function writeViewBlock(source:string,next:ViewBlock){const doc=parseDocument(source),previous=doc.toJS()??{};for(const key of ['version','name','query','views'] as const)if(JSON.stringify(previous[key])!==JSON.stringify(next[key])){if(next[key]===undefined)doc.delete(key);else doc.set(key,next[key]);}return doc.toString({lineWidth:0});}
 export function newViewBlock(tag?:string):ViewBlock {return {version:1,query:{from:'cards',where:{all:tag?[{field:'tags',op:'contains',value:tag}]:[]}},views:[{id:'table',name:viewText.table,type:'table',fields:['file.title']}]};}
 export function viewFence(tag?:string){return '\n\n```view-block\n'+writeViewBlock('',newViewBlock(tag))+'```\n';}
 
@@ -119,10 +119,10 @@ export function orderedCardIds(saved:readonly string[],current:readonly string[]
 export function moveCardId(saved:readonly string[],visible:readonly string[],id:string,before?:string,after?:string){
   const ids=[...new Set([...saved,...visible])].filter(key=>key!==id);let at=before?ids.indexOf(before):after&&ids.includes(after)?ids.indexOf(after)+1:ids.length;if(at<0)at=ids.length;ids.splice(at,0,id);return ids;
 }
-export function replaceViewSource(body:string,index:number,source:string,next:string|null){
+export function replaceViewSource(body:string,index:number,source:string,next:string|null,duplicate=false){
   const block=viewBlockRanges(body)[index];if(!block||block.source.trim()!==source.trim())throw new Error(viewText.errors.viewChanged);
   if(next===null)return body.slice(0,block.start)+body.slice(block.end);
-  return body.slice(0,block.start)+'```view-block\n'+next.trimEnd()+'\n```'+(body[block.end-1]==='\n'?'\n':'')+body.slice(block.end);
+  return body.slice(0,duplicate?block.end:block.start)+(duplicate?'\n\n':'')+'```view-block\n'+next.trimEnd()+'\n```'+(body[block.end-1]==='\n'?'\n':'')+body.slice(block.end);
 }
 
 // Expand only explicit alternatives. Comparisons such as >, not and contains-text are not defaults.

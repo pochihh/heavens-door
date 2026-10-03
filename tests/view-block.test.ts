@@ -147,3 +147,20 @@ test('Table appearances preserve query results and accept legacy List without re
   const legacy=source.replace('type: table','type: list'),parsed=parseViewBlock(legacy);validateView(parsed.views[0]);assert.equal(tableAppearance(parsed.views[0]),'compact');assert.equal(writeViewBlock(legacy,parsed),legacy);
   assert.throws(()=>validateView({...block.views[0],appearance:'unknown'}),/Invalid view/);
 });
+
+test('named blocks, query property scope, date endpoints and manual timeline order remain file-based',async t=>{
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-timeline-')),root=join(dir,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(dir,'cache'));t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+ await w.createTag('project');const tag=w.snapshot().tags![0];await w.saveTag(tag.path,tag.revision,[{key:'Date',type:'date'}],[]);await w.createFolder('','Tasks');
+ const values=[['A',{start:'2026-10-03',end:'2026-10-09'}],['B','2026-10-05'],['C',null]] as const;
+ for(const [name,value] of values){await w.create('Tasks',name,0,0);const card=await w.card('Tasks/'+name+'.md');await w.write([{path:card.path,expected:card.revision,content:'---\n'+stringify({'card-id':card.id,tags:['project'],'project/Date':value})+'---\n# '+name+'\n'}]);}
+ const block=newViewBlock();block.name='Project schedule';block.query.where={field:'file.folder',op:'under',value:'Tasks'};block.views[0]={id:'timeline',name:'Timeline',type:'timeline',dateBy:'project/Date',sort:{field:'project/Date',part:'end',direction:'asc'}};
+ const results=()=>w.viewCards(writeViewBlock('',block),'timeline');
+ assert.deepEqual(results().rows.map(r=>r.card.name),['B','A','C']);
+ block.views[0].sort={field:'project/Date',part:'start',direction:'asc'};assert.deepEqual(results().rows.map(r=>r.card.name),['A','B','C']);
+ block.views[0].filter={field:'file.name',op:'eq',value:'Missing'};assert.deepEqual(results().scopeTags,['project'],'the view filter cannot hide query property choices');delete block.views[0].filter;
+ const cards=results().rows;block.views[0].sort='manual';block.views[0].order={rows:[cards[1].card.id,cards[0].card.id]};assert.deepEqual(results().rows.map(r=>r.card.name),['B','A','C']);
+ await w.create('Tasks','D',0,0);assert.deepEqual(results().rows.map(r=>r.card.name),['B','A','C','D']);
+ assert.equal(parseViewBlock(writeViewBlock('',block)).name,'Project schedule');
+ const {replaceViewSource}=await import('../src/view-block'),source=writeViewBlock('',block),body='Before\n\n```view-block\n'+source+'```\n\nAfter';
+ const copied=replaceViewSource(body,0,source,writeViewBlock(source,{...block,name:'Copy'}),true);assert.equal(viewBlockRanges(copied).length,2);assert.equal(parseViewBlock(viewBlockRanges(copied)[1].source).name,'Copy');assert.ok(copied.endsWith('After'));
+});

@@ -38,9 +38,15 @@ export function compileView(source:string,id:string,tags:TagInfo[]){
     }).join(op==='empty'||op==='missing'?' AND ':' OR ')+')';
   }
   function condition(rule?:Rule):string {if(!rule)return '1';if('all'in rule)return rule.all.length?'('+rule.all.map(condition).join(' AND ')+')':'1';if('any'in rule)return rule.any.length?'('+rule.any.map(condition).join(' OR ')+')':'0';if('not'in rule)return '(NOT '+condition(rule.not)+')';return leaf(rule);}
-  const where=condition(block.query.where)+' AND '+condition(view.filter),whereArgs=[...args];
-  function sortValue(ref:FieldRef){return fieldKeys(ref).map(key=>file(key)||(key==='tags'?"(SELECT group_concat(value,char(31)) FROM (SELECT DISTINCT v.value FROM json_each(c.frontmatter,'$.tags') v WHERE v.type='text' ORDER BY v.value COLLATE NOCASE,v.value))":undefined)||`(SELECT json_extract(p.value,'$') FROM properties p WHERE p.path=c.path AND p.field=${bind(key)})`);}
+  const queryWhere=condition(block.query.where),queryArgs=[...args],where=queryWhere+' AND '+condition(view.filter),whereArgs=[...args];
   const sort=typeof view.sort==='object'?view.sort:undefined;
+  function sortValue(ref:FieldRef){return fieldKeys(ref).map(key=>{
+    const column=file(key);if(column)return column;
+    if(key==='tags')return "(SELECT group_concat(value,char(31)) FROM (SELECT DISTINCT v.value FROM json_each(c.frontmatter,'$.tags') v WHERE v.type='text' ORDER BY v.value COLLATE NOCASE,v.value))";
+    const date=resolveField(key,tags).type==='date',part=sort?.part??'start';
+    const value=date?`julianday(CASE WHEN json_type(p.value)='object' THEN COALESCE(json_extract(p.value,'$.${part}'),json_extract(p.value,'$.start')) ELSE json_extract(p.value,'$') END)`:"json_extract(p.value,'$')";
+    return `(SELECT ${value} FROM properties p WHERE p.path=c.path AND p.field=${bind(key)})`;
+  });}
   const sorts=sortValue(sort?.field??'file.name'),order=(sorts.length>1?'COALESCE('+sorts.join(',')+')':sorts[0])+' '+(sort?.direction==='desc'?'DESC':'ASC')+' NULLS LAST,c.name,c.path';
-  return {where,whereArgs,order,args,view};
+  return {where,whereArgs,queryWhere,queryArgs,order,args,view};
 }

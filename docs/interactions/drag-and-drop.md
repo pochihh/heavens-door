@@ -88,3 +88,10 @@ A drop saves both placement and any grouping-property change together. Escape, p
 Drag a card from File explorer, Starred or Recent onto a whiteboard canvas, tile or Whiteboard explorer row. A card in an ordinary folder such as Inbox moves into the destination folder. A card already owned by a whiteboard offers **Move card** and **Add reference** at the drop position. A single card dragged directly from one canvas can use the same destinations. A canvas drop converts the pointer through its camera; a tile/tree drop uses a default position. Cancel before release to write nothing.
 
 Move preserves `card-id`, relocates the Markdown file, removes the source placement and its attached edges, and adds or repositions the destination placement in one undoable transaction. Other board references remain valid. Add reference leaves the file where it is. A collision gets a free numbered filename rather than overwriting a note. See [whiteboards](../whiteboards.md#moving-cards) for link limitations.
+
+
+## Timeline rows
+
+Drag a bar horizontally to reschedule, or its endpoint using the east–west cursor to resize. Day scale uses 15-minute increments, including conversion of date-only values to timed values. The dedicated row grip uses `useBookmarkDrag` in vertical reorder-only mode with the same phantom, insertion slot, clamping, directional thresholds and neighbor animation as other lists. It cannot change dates; release switches this view to Manual. Alt+Up/Down performs the same reorder.
+
+Unscheduled cards use the shared measured phantom outside the timeline and a schedule ghost over its tracks. Drop assigns the hovered date/time, attaching the defining tag and chosen property when absent through the standard property mutation. Escape, blur, pointer cancellation or dropping outside writes nothing. New-card hover previews do not write; only release creates the card.

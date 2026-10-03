@@ -38,3 +38,42 @@ test('Timeline click, move, resize, cancellation and range creation share the da
   assert.equal(timelineDates({start:today,end:shiftDay(today,-1)}),null);assert.equal(timelineDates({start:today,end:today+'T12:00:00Z'}),null);
  }finally{await act(async()=>root.unmount());dom.window.close();}
 });
+
+test('Day scheduling adds times; arrows track the viewport; row ordering never edits dates',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,Node:dom.window.Node,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:true}),innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ const {createRoot}=await import('react-dom/client'),{TimelineView}=await import('../src/renderer/TimelineView'),{DateDisplayContext}=await import('../src/renderer/DateProperty');
+ const root=createRoot(document.getElementById('root')!),today=new Date().toISOString().slice(0,10),key='project/Date';
+ const row=(id:string,value?:TagValue):TagResult=>({card:{id,path:id+'.md',name:id,title:id,revision:'r',legacy:false},properties:{[key]:value}});
+ dom.window.HTMLElement.prototype.showPopover=function(){};
+ const rows=[row('A',today),row('B',shiftDay(today,10)),row('C')],writes:{id:string;value:TagValue}[]=[],patches:unknown[]=[];
+ let view:import('../src/view-block').BlockView={id:'day',name:'Timeline',type:'timeline',scale:'day',dateBy:key};
+ const rect=(left:number,top:number,width:number,height:number)=>({left,top,right:left+width,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
+ Object.defineProperty(dom.window.HTMLElement.prototype,'clientWidth',{get(){return this.classList.contains('timeline-scroll')?600:0;},configurable:true});
+ dom.window.HTMLElement.prototype.getBoundingClientRect=function(){
+  if(this.classList.contains('timeline-scroll'))return rect(100,20,600,300);
+  if(this.classList.contains('timeline-heading'))return rect(100,20,1728,70);
+  if(this.classList.contains('timeline-rows'))return rect(100,100,1728,76);
+  if(this.classList.contains('timeline-row'))return rect(100,100+[...this.parentElement!.children].filter(el=>(el as HTMLElement).style.display!=='none').indexOf(this)*38,1728,38);
+  return rect(100,100,1728,38);
+ };
+ const render=()=>root.render(<DateDisplayContext.Provider value={{display:{...DEFAULT_DATE_DISPLAY,timeZone:'UTC'},onChange:async()=>{}}}><TimelineView view={view} rows={rows} field={{keys:[key],name:'Date',type:'date',tags:['project']}} busy={false} onEditing={()=>{}} onSave={async(row,key,value)=>{writes.push({id:row.card.id,value});row.properties[key]=value;render();}} onOpen={()=>{}} onCreate={()=>{}} onViewChange={patch=>{patches.push(patch);view={...view,...patch};render();}}/></DateDisplayContext.Provider>);
+ const pointer=(target:Element|Document,type:string,x:number,y=115)=>act(async()=>{target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));});
+ const bar=()=>document.querySelector<HTMLElement>('[data-file-key=A] .timeline-bar')!;
+ try{
+  await act(async()=>render());
+  assert.equal(document.querySelector('.timeline-outside')?.textContent,'');assert.equal(document.querySelector('.timeline-outside')?.getAttribute('title'),'B');
+  await pointer(bar(),'pointerdown',200);await pointer(document,'pointerup',224);assert.equal(writes.at(-1)?.value,today+'T01:00:00.000Z');
+  await pointer(bar().querySelector('.timeline-resize-end')!,'pointerdown',300);await pointer(document,'pointerup',324);assert.deepEqual(writes.at(-1)?.value,{start:today+'T01:00:00.000Z',end:today+'T02:00:00.000Z'});
+  const count=writes.length;
+  await pointer(document.querySelector('.timeline-new-track')!,'pointermove',388,200);assert.ok(document.querySelector('.timeline-ghost'));assert.ok(document.querySelector('.timeline-day[data-preview=true]'));assert.equal(writes.length,count);
+  await pointer(document.querySelector('.timeline-new-track')!,'pointerleave',388,200);
+  await act(async()=>document.querySelector<HTMLButtonElement>('.timeline-toolbar>button')!.click());
+  await pointer(document.querySelector('.timeline-unscheduled button')!,'pointerdown',110,350);await pointer(document,'pointermove',388,150);assert.ok(document.querySelector('.timeline-ghost'));assert.equal(document.querySelector<HTMLElement>('.timeline-schedule-preview')!.style.top,'38px','schedule preview follows the visible hovered row');await pointer(document,'pointerup',388,150);assert.deepEqual(writes.at(-1),{id:'C',value:today+'T12:00:00.000Z'});
+  const dates=JSON.stringify(rows.map(row=>row.properties));
+  await pointer(document.querySelector('[data-file-key=A] .timeline-reorder')!,'pointerdown',110,110);await pointer(document,'pointermove',110,170);assert.ok(document.querySelector('.drag-phantom'));assert.ok(document.querySelector('.sort-placeholder'));assert.equal(patches.length,0);await pointer(document,'pointerup',110,170);
+  assert.equal(view.sort,'manual');assert.equal(view.order?.rows[1],'A');assert.equal(JSON.stringify(rows.map(row=>row.properties)),dates);
+  const scroller=document.querySelector<HTMLElement>('.timeline-scroll')!;await act(async()=>{scroller.scrollLeft=600;scroller.dispatchEvent(new dom.window.Event('scroll'));await new Promise(resolve=>setTimeout(resolve,30));});
+  assert.equal(document.querySelector('[data-file-key=A] .timeline-bar'),null);assert.equal(document.querySelector('[data-file-key=A] .timeline-outside')?.getAttribute('title'),'A');
+ }finally{await act(async()=>root.unmount());dom.window.close();}
+});

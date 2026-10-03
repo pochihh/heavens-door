@@ -39,6 +39,8 @@ test('editable view blocks render without changing Markdown, commit group edits 
    await act(async()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={unknown} onChange={()=>{writes++;}}/></ViewBlockProvider>));await settle();
    await click('[aria-label=Filter]' );await click('[aria-label="Find a property…"]');
    await click('[role="option"][aria-selected="true"]');assert.ok(document.querySelector('.view-condition'));assert.equal(writes,1);
+   await act(async()=>render());await settle();await click('[aria-label="View block options"]');assert.ok(document.querySelector('[data-kind=blockOptions]'));await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.view-menu-list button')].find(el=>el.textContent==='Duplicate block')!.click());await settle();assert.equal(body.split('```view-block').length-1,2,'duplicate inserts a second fence in the editor');assert.ok(body.includes('name: View block copy'));
+
 
  }finally{await act(async()=>root.unmount());}
 });
@@ -62,7 +64,7 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
  try{
   await act(async()=>render());await settle();assert.equal(queries,1);
   const options=document.querySelector<HTMLElement>('[aria-label="View options"]')!;options.getBoundingClientRect=()=>({left:700,right:730,top:200,bottom:230,width:30,height:30,x:700,y:200,toJSON(){}});
-  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,5);
+  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,4);
   await click('.view-menu-list button');assert.ok(document.querySelector('[data-kind=layout]'));assert.equal(document.querySelector<HTMLElement>('.property-popover')!.style.left,anchored);
   await textClick('Kanban');await settle();assert.equal(parseViewBlock(source).views[0].type,'kanban');await click('[aria-label=Back]');await click('.view-menu-list button:nth-child(3)');assert.ok(document.querySelector('[data-kind=group] [role=listbox]'));await escape();assert.equal(document.querySelector('.property-popover'),null);
   // Pointer down without a drag leaves the source unchanged; real movement uses the shared phantom.
@@ -90,7 +92,7 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
   await click('[aria-label="View options"]');await click('.view-menu-list button');assert.ok(![...document.querySelectorAll('.view-layout-choices button')].some(b=>b.textContent==='List'),'List is no longer a separate layout');await textClick('Table');await escape();await settle();
   await click('[aria-label="Compact mode"]');await settle();assert.equal(document.querySelector('[aria-label="Compact mode"]')?.getAttribute('aria-pressed'),'true');
   assert.equal(parseViewBlock(source).views[0].type,'table');assert.equal(parseViewBlock(source).views[0].appearance,'compact');
-  assert.equal(document.querySelector('.view-compact thead'),null);assert.equal(document.querySelector('.view-filter-summary'),null);assert.ok(!document.querySelector('.view-query-line')!.textContent!.includes('file.'));
+  assert.equal(document.querySelector('.view-compact thead'),null);assert.equal(document.querySelector('.view-filter-summary'),null);assert.ok(!document.querySelector('.view-block-heading')!.textContent!.includes('file.'));
   assert.equal(document.querySelectorAll('.view-compact tbody tr:first-child td').length,5,'missing values still occupy their aligned column');
   const beforeList=writes.length;await click('.view-compact [data-property="project/Date"]');assert.equal(previewed,5);assert.equal(writes.length,beforeList);assert.equal(document.querySelector('.view-compact input'),null);
   await click('[aria-label="Sort"]');await textClick('Date');await textClick('Ascending');await escape();await settle();assert.deepEqual(parseViewBlock(source).views[0].sort,{field:['project/Date','task/Date'],direction:'asc'});
@@ -158,7 +160,7 @@ test('preview setup stays editable, configured properties stay available, and vi
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const snapshot:Snapshot={root:'/test',name:'Test',cards:['owner','a'].map(id=>({id,path:id+'.md',name:id,revision:'r1',legacy:false})),boards:[],issues:[],historyAvailable:false,tags:[{path:'project.tag',name:'project',tag:'project',revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:[],done:['Done']}},{key:'priority',type:'number'},{key:'Due',type:'date'}]}]};
- let results:ViewResults={rows:[],total:0},writes=0;
+ let results:ViewResults={rows:[],total:0,scopeTags:['project']},writes=0;
  const session=new Session({assetUrl:(s:string)=>s,request:async()=>results} as unknown as Bridge);window.door=session.bridge;session.state.snapshot=snapshot;
  const {createRoot}=await import('react-dom/client'),{ViewBlockProvider}=await import('../src/renderer/ViewBlock'),{TitleContent}=await import('../src/renderer/TitleContent'),{preview}=await import('../src/renderer/markdown');
  const definition=newViewBlock();definition.query.where={field:'file.folder',op:'under',value:'Notes'};definition.views=[{id:'board',name:'Board',type:'kanban',groupBy:'project/Status',fields:['project/priority','project/Due']},{id:'table',name:'Table',type:'table'},{id:'list',name:'List',type:'list'}];let source=writeViewBlock('',definition);
@@ -169,12 +171,12 @@ test('preview setup stays editable, configured properties stay available, and vi
  const order=()=>parseViewBlock(source).views.map(v=>v.id);
  try{
   await act(async()=>render());await settle();
-  assert.equal(document.querySelector<HTMLButtonElement>('.view-query-line button')?.disabled,false);assert.ok(document.querySelector('.view-tabs > [aria-label="Add view"]'));
+  assert.equal(document.querySelector<HTMLButtonElement>('.view-query-button')?.disabled,false);assert.ok(document.querySelector('.view-tabs > [aria-label="Add view"]'));
   await click('[aria-label="View options"]');await click('.view-menu-list button:nth-child(2)');assert.equal(property('priority')?.checked,true);assert.equal(property('Due')?.checked,true,'configured fields appear even before any query results');await escape();
   results={rows:[{card:snapshot.cards[1],properties:{tags:['project'],'project/priority':3,'project/Due':'2026-10-18','project/Status':'Todo'}}],total:1};snapshot.cards=[...snapshot.cards.map(c=>({...c,revision:c.id==='a'?'r2':c.revision}))];await act(async()=>render());await settle();
   await click('[aria-label="View options"]');await click('.view-menu-list button:nth-child(2)');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,false,'hidden properties remain available to enable');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,true);await escape();
-  await click('.view-query-line button');assert.ok(document.querySelector('.view-condition'));await click('.view-popup-footer button');await settle();
-  await click('[aria-label=Filter]');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await escape();
+  await click('.view-query-button');assert.ok(document.querySelector('.view-condition'));await click('.view-popup-footer button');await settle();
+  await click('[aria-label=Filter]');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('.view-rule-actions button')].find(el=>el.textContent==='Add condition')!.click());await click('[aria-label="Find a property…"]');assert.ok([...document.querySelectorAll('[role=option]')].some(el=>el.textContent?.includes('priority')),'view filter offers query-scoped properties without repeating tags');await escape();
   const strips=[...document.querySelectorAll<HTMLElement>('[data-tab-strip]')],rect=(left:number,top:number,width:number)=>({left,top,width,height:34,right:left+width,bottom:top+34,x:left,y:top,toJSON(){}});
   const original=dom.window.HTMLElement.prototype.getBoundingClientRect;
   dom.window.HTMLElement.prototype.getBoundingClientRect=function(){const strip=this.hasAttribute('data-tab-strip')?this:this.parentElement;if(!strip||!strips.includes(strip))return original.call(this);const top=strips.indexOf(strip)*100+40;if(this===strip)return rect(10,top,300);const siblings=[...strip.children].filter(e=>(e as HTMLElement).style.display!=='none');return rect(10+siblings.indexOf(this)*92,top,90);};
@@ -193,6 +195,6 @@ test('preview setup stays editable, configured properties stay available, and vi
   const input=document.querySelector<HTMLInputElement>('.view-popup input')!;await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,'Renamed list');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});await act(async()=>document.querySelector('.view-popup form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));await settle();assert.equal(parseViewBlock(source).views.find(v=>v.id==='list')!.name,'Renamed list');
   await contextClick('list');await action('Duplicate view');await settle();assert.equal(parseViewBlock(source).views.length,4);assert.equal(parseViewBlock(source).views.at(-1)!.name,'Renamed list copy');
   await contextClick('list');await action('Delete view');await settle();assert.equal(parseViewBlock(source).views.some(v=>v.id==='list'),false);assert.equal(parseViewBlock(source).views.length,3,'delete applies to the clicked view, not the previously active copy');
-  while(source){const id=order()[0];await contextClick(id);await action('Delete view');await settle();}assert.equal(document.querySelector('.view-block'),null,'deleting the last view removes its block');
+  while(order().length>1){const id=order()[0];await contextClick(id);await action('Delete view');await settle();}await contextClick(order()[0]);assert.ok(![...document.querySelectorAll('.view-menu-list button')].some(el=>el.textContent==='Delete view'),'last-view deletion belongs to the block menu');await escape();await click('[aria-label="View block options"]');await action('Delete view block');await settle();assert.equal(document.querySelector('.view-block'),null);
  }finally{await act(async()=>root.unmount());session.dispose();}
 });

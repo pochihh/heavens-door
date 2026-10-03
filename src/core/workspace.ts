@@ -749,12 +749,22 @@ export class Workspace {
       const ids=[...new Set(columns.flatMap(c=>c.ids))];
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c JOIN json_each(?) ids ON c.id=ids.value').all(JSON.stringify(ids));
       if(columns.some(c=>c.total>offset+100))nextOffset=offset+100;
+    }else if(plan.view.type==='timeline'&&plan.view.sort==='manual'){
+      const ids=this.db.prepare('SELECT c.id FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order).all(...plan.args).map(row=>String(row.id));
+      const block=parseViewBlock(source),key=JSON.stringify([block.query,view,plan.view.filter,'timeline']);
+      const tail=orderedCardIds([],ids,this.viewOrderTails.get(key)?.get('rows'));
+      this.viewOrderTails.delete(key);this.viewOrderTails.set(key,new Map([['rows',tail]]));
+      if(this.viewOrderTails.size>20)this.viewOrderTails.delete(this.viewOrderTails.keys().next().value!);
+      const ordered=orderedCardIds(plan.view.order?.rows??[],tail);total=ordered.length;
+      rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM json_each(?) ids JOIN cards c ON c.id=ids.value ORDER BY ids.key').all(JSON.stringify(ordered.slice(offset,offset+100)));
+      if(offset+rows.length<total)nextOffset=offset+rows.length;
     }else{
       total=Number(this.db.prepare('SELECT count(*) AS count FROM cards c WHERE '+plan.where).get(...plan.whereArgs)!.count);
       rows=this.db.prepare('SELECT c.path,c.id,c.name,c.title,c.titleMarkdown,c.revision,c.legacy,c.frontmatter FROM cards c WHERE '+plan.where+' ORDER BY '+plan.order+' LIMIT 100 OFFSET ?').all(...plan.args,offset);
       if(offset+rows.length<total)nextOffset=offset+rows.length;
     }
-    return {total,...(columns?{columns}:{}),...(nextOffset!==undefined?{nextOffset}:{}),rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));let preview:ReturnType<typeof searchDocument>|undefined;
+    const scopeTags=this.db.prepare("SELECT DISTINCT v.value FROM cards c,json_each(c.frontmatter,'$.tags') v WHERE v.type='text' AND "+plan.queryWhere).all(...plan.queryArgs).map(row=>String(row.value));
+    return {total,scopeTags,...(columns?{columns}:{}),...(nextOffset!==undefined?{nextOffset}:{}),rows:rows.map(row=>{const {frontmatter,...card}=row,properties=JSON.parse(String(frontmatter));let preview:ReturnType<typeof searchDocument>|undefined;
       if(plan.view.type==='gallery'){
         const key=String(card.path);preview=this.searchPreviews.get(key);
         if(!preview){preview=searchDocument(String(this.db.prepare('SELECT body FROM cards WHERE path=?').get(String(card.path))?.body??''));if(this.searchPreviews.size>=256)this.searchPreviews.delete(this.searchPreviews.keys().next().value!);this.searchPreviews.set(key,preview);}
