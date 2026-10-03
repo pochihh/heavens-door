@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {stringify} from 'yaml';
 import {Workspace} from '../src/core/workspace';
-import {queryFields,parseViewBlock,writeViewBlock,newViewBlock,viewBlockRanges,type Rule} from '../src/view-block';
+import {queryFields,tableAppearance,validateView,parseViewBlock,writeViewBlock,newViewBlock,viewBlockRanges,type Rule} from '../src/view-block';
 import {compileView} from '../src/core/view-query';
 import {searchDocument} from '../src/core/search';
 import {Session} from '../src/renderer/session';
@@ -138,4 +138,12 @@ test('Kanban order is lazy, reconciles query pages and new arrivals, and moves m
   await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Empty.md'),from:emptyColumn,to:'__proto__'});await refresh();assert.deepEqual(ids('__proto__'),['empty']);assert.ok(Object.hasOwn(parseViewBlock(source).views[0].order!,'__proto__'));
   await w.moveViewCard({owner:await owner(),view:'board',card:await card('Notes/Empty.md'),from:'__proto__',to:'constructor'});await refresh();assert.deepEqual(ids('constructor'),['empty']);
   const started=performance.now();for(let i=0;i<20;i++)w.viewCards(source,'board');t.diagnostic(`Indexed Kanban query, ${w.viewCards(source,'board').total} cards: ${((performance.now()-started)/20).toFixed(2)} ms average`);
+});
+
+
+test('Table appearances preserve query results and accept legacy List without rewriting it',()=>{
+  const block=newViewBlock();block.views[0].fields=['file.title','file.name'];const source=writeViewBlock('',block),compiled=compileView(source,'table',[]);
+  for(const appearance of ['grid','compact'] as const){block.views[0].appearance=appearance;validateView(block.views[0]);assert.equal(tableAppearance(parseViewBlock(writeViewBlock('',block)).views[0]),appearance);assert.deepEqual(compileView(writeViewBlock('',block),'table',[]).where,compiled.where);}
+  const legacy=source.replace('type: table','type: list'),parsed=parseViewBlock(legacy);validateView(parsed.views[0]);assert.equal(tableAppearance(parsed.views[0]),'compact');assert.equal(writeViewBlock(legacy,parsed),legacy);
+  assert.throws(()=>validateView({...block.views[0],appearance:'unknown'}),/Invalid view/);
 });

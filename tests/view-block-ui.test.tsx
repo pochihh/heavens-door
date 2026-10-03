@@ -34,7 +34,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
    const broken=writeViewBlock('',{...newViewBlock(),views:[{id:'broken',name:'Broken',type:'table'},{id:'good',name:'Good',type:'list'}]}).replace('name: Broken','name: {unexpected: value}');
    await act(async()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={broken} onChange={()=>{writes++;}}/></ViewBlockProvider>));await settle();
    assert.match(document.querySelector('[role="alert"]')?.textContent??'',/supported layout/);assert.equal(writes,1);
-   await click('[role="tab"]:last-child');await settle();assert.equal(document.querySelector('[role="alert"]'),null);assert.ok(document.querySelector('.view-list'));assert.equal(writes,1);
+   await click('[role="tab"]:last-child');await settle();assert.equal(document.querySelector('[role="alert"]'),null);assert.ok(document.querySelector('.view-compact'));assert.equal(writes,1);
    const unknown=writeViewBlock('',{...newViewBlock(),views:[{id:'table',name:'Table',type:'table',filter:{field:'project/Typo',op:'eq',value:'value'}}]});
    await act(async()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={unknown} onChange={()=>{writes++;}}/></ViewBlockProvider>));await settle();
    await click('.view-actions > button:first-child' );await click('[aria-label="Find a property…"]');
@@ -62,7 +62,7 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
  try{
   await act(async()=>render());await settle();assert.equal(queries,1);
   const options=document.querySelector<HTMLElement>('[aria-label="View options"]')!;options.getBoundingClientRect=()=>({left:700,right:730,top:200,bottom:230,width:30,height:30,x:700,y:200,toJSON(){}});
-  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,5);
+  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,6);
   await click('.view-menu-list button');assert.ok(document.querySelector('[data-kind=layout]'));assert.equal(document.querySelector<HTMLElement>('.property-popover')!.style.left,anchored);
   await textClick('Kanban');await settle();assert.equal(parseViewBlock(source).views[0].type,'kanban');await click('[aria-label=Back]');await click('.view-menu-list button:nth-child(3)');assert.ok(document.querySelector('[data-kind=group] [role=listbox]'));await escape();assert.equal(document.querySelector('.property-popover'),null);
   // Pointer down without a drag leaves the source unchanged; real movement uses the shared phantom.
@@ -87,14 +87,16 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
   row.properties['task/Status']='Done';await act(async()=>render());await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('Kanban');await escape();await settle();assert.equal(document.querySelectorAll('.view-result-card').length,2);
   await click('[data-tag-column=Todo] [data-property="project/Location"]');assert.equal(previewed,2);assert.equal(document.querySelector('.view-property input'),null);
   await click('.view-card-title');assert.equal(previewed,3);assert.equal(opened,0);await click('.view-result-card');assert.equal(previewed,4);
-  await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('List');await escape();await settle();
-  assert.deepEqual([...document.querySelectorAll('.view-list th .view-column-heading>span:first-child')].map(el=>el.textContent),['Card name','Status','Date','Location','Checked']);
-  assert.equal(document.querySelectorAll('.view-list tbody tr:first-child td').length,5,'missing values still occupy their labeled column');
-  const beforeList=writes.length;await click('.view-list [data-property="project/Date"]');assert.equal(previewed,5);assert.equal(writes.length,beforeList);assert.equal(document.querySelector('.view-list input'),null);
-  await click('.view-list [aria-label="Ascending · Date"]');await settle();assert.deepEqual(parseViewBlock(source).views[0].sort,{field:['project/Date','task/Date'],direction:'asc'});
-  assert.equal(document.querySelector('.view-list th[aria-sort=ascending] .view-column-heading>span:first-child')?.textContent,'Date');
-  await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('Table');await escape();await settle();
-  assert.equal(document.querySelectorAll('.view-table th[scope=col]').length,5);assert.ok(document.querySelector('.view-table [aria-label="Edit Date"]'),'table cells retain inline editing');
+  await click('[aria-label="View options"]');await click('.view-menu-list button');assert.ok(![...document.querySelectorAll('.view-layout-choices button')].some(b=>b.textContent==='List'),'List is no longer a separate layout');await textClick('Table');await escape();await settle();
+  await click('[aria-label="View options"]');await click('[aria-label="Appearance"]');await textClick('Compact');await escape();await settle();
+  assert.equal(parseViewBlock(source).views[0].type,'table');assert.equal(parseViewBlock(source).views[0].appearance,'compact');
+  assert.equal(document.querySelector('.view-compact thead'),null);
+  assert.equal(document.querySelectorAll('.view-compact tbody tr:first-child td').length,5,'missing values still occupy their aligned column');
+  const beforeList=writes.length;await click('.view-compact [data-property="project/Date"]');assert.equal(previewed,5);assert.equal(writes.length,beforeList);assert.equal(document.querySelector('.view-compact input'),null);
+  await click('[aria-label="Sort"]');await textClick('Date');await textClick('Ascending');await escape();await settle();assert.deepEqual(parseViewBlock(source).views[0].sort,{field:['project/Date','task/Date'],direction:'asc'});
+  await click('[aria-label="View options"]');await click('[aria-label="Appearance"]');await textClick('Grid');await escape();await settle();
+  assert.equal(document.querySelector('.view-table th[aria-sort=ascending] .view-column-heading>span:first-of-type')?.textContent,'Date');
+  assert.equal(document.querySelectorAll('.view-table th[scope=col]').length,5);assert.ok(document.querySelector('.view-table [aria-label="Edit Date"]'),'Grid cells retain inline editing');
 
 
  }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}

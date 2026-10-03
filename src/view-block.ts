@@ -6,7 +6,8 @@ import {resolveTag,propertyType,multipleChoices,validTagDate,tagsFrom} from './t
 
 export type FieldRef=string|string[];
 export type Rule={field:FieldRef;op:string;value?:unknown}|{all:Rule[]}|{any:Rule[]}|{not:Rule};
-export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban'|'gallery'|'timeline';dateBy?:FieldRef;scale?:'day'|'week'|'month';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc'};order?:Record<string,string[]>}
+export interface BlockView {id:string;name:string;type:'table'|'list'|'kanban'|'gallery'|'timeline';appearance?:'grid'|'compact';dateBy?:FieldRef;scale?:'day'|'week'|'month';filter?:Rule;fields?:FieldRef[];groupBy?:FieldRef;sort?:'manual'|{field:FieldRef;direction:'asc'|'desc'};order?:Record<string,string[]>}
+export const tableAppearance=(view:BlockView)=>view.type==='list'?'compact':view.appearance??'grid';
 export interface ViewBlock {version:1;query:{from:'cards';where?:Rule};views:BlockView[]}
 export interface QueryPreferences {mergeProperties:boolean;caseSensitive:boolean}
 export const DEFAULT_QUERY_PREFERENCES:QueryPreferences={mergeProperties:true,caseSensitive:false};
@@ -56,8 +57,9 @@ export function validateRule(value:unknown,tags?:TagInfo[],depth=0,budget={left:
   }
 }
 export function validateView(value:unknown,tags?:TagInfo[]):asserts value is BlockView {
-  if(!record(value))throw new Error(viewText.errors.invalidView);keys(value,['id','name','type','filter','fields','groupBy','sort','order','dateBy','scale']);
+  if(!record(value))throw new Error(viewText.errors.invalidView);keys(value,['id','name','type','filter','fields','groupBy','sort','order','dateBy','scale','appearance']);
   if(typeof value.id!=='string'||!value.id||value.id.length>100||typeof value.name!=='string'||!value.name.trim()||value.name.length>100||!['table','list','kanban','gallery','timeline'].includes(String(value.type)))throw new Error(viewText.errors.requiredView);
+  if(value.appearance!==undefined&&(typeof value.appearance!=='string'||!['grid','compact'].includes(value.appearance)))throw new Error(viewText.errors.invalidView);
   if(value.filter!==undefined)validateRule(value.filter,tags);
   if(value.fields!==undefined){if(!Array.isArray(value.fields)||value.fields.length>40)throw new Error(viewText.errors.invalidProperties);for(const f of value.fields){field(f);if(tags)resolveField(f,tags);}}
   if(value.groupBy!==undefined){field(value.groupBy);if(tags)resolveField(value.groupBy,tags);}

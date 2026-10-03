@@ -7,8 +7,9 @@ import {DEFAULT_DATE_DISPLAY,shiftDay} from '../src/dates';
 
 test('Timeline click, move, resize, cancellation and range creation share the date file values',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
- Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,IS_REACT_ACT_ENVIRONMENT:true});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,innerWidth:1200,innerHeight:900,Node:dom.window.Node,IS_REACT_ACT_ENVIRONMENT:true});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
  const {createRoot}=await import('react-dom/client'),{TimelineView,timelineDates}=await import('../src/renderer/TimelineView'),{DateDisplayContext}=await import('../src/renderer/DateProperty');
+ dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const root=createRoot(document.getElementById('root')!),today=new Date().toISOString().slice(0,10),range={start:today,end:shiftDay(today,2)};
  const row:TagResult={card:{id:'a',path:'A.md',name:'A',title:'Task',revision:'r',legacy:false},properties:{'project/Date':range}},writes:TagValue[]=[],created:TagValue[]=[],opened:string[]=[];
  const render=()=>root.render(<DateDisplayContext.Provider value={{display:{...DEFAULT_DATE_DISPLAY,timeZone:'UTC'},onChange:async()=>{}}}><TimelineView view={{id:'time',name:'Timeline',type:'timeline',dateBy:'project/Date'}} rows={[row]} field={{keys:['project/Date'],name:'Date',type:'date',tags:['project']}} busy={false} onEditing={()=>{}} onSave={async(_row,key,value)=>{assert.equal(key,'project/Date');writes.push(value);row.properties[key]=value;render();}} onOpen={key=>opened.push(key)} onCreate={(_anchor,_column,date)=>{created.push(date!);}} onViewChange={()=>{}}/></DateDisplayContext.Provider>);
@@ -18,6 +19,16 @@ test('Timeline click, move, resize, cancellation and range creation share the da
  const bar=()=>document.querySelector<HTMLElement>('.timeline-bar')!;
  try{
   await act(async()=>render());setup();const position=bar().style.left;
+  assert.equal(document.querySelector('.timeline-name'),null,'The card title lives on the timeline bar, not in a duplicate fixed column');
+  assert.equal(document.querySelector('.timeline-bar-label')?.textContent,'Task');
+  assert.equal(document.querySelector('.timeline-day-number[aria-current=date]')?.textContent,String(new Date(today+'T00:00:00Z').getUTCDate()));
+  assert.ok(document.querySelector('.timeline-today-line'));
+  assert.equal(document.querySelectorAll('.timeline-day-number').length,28);
+  assert.equal(document.querySelectorAll('.timeline-toolbar select').length,0,'The scale menu uses the shared anchored popover');
+  await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Time scale"]')!.click());
+  assert.equal(document.querySelector('[role=option][aria-selected=true]')?.textContent,'Week');
+  await act(async()=>document.querySelector('.property-popover')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+
   await pointer(bar(),'pointerdown',600);await pointer(document,'pointerup',600);assert.deepEqual(opened,['card:a']);assert.equal(writes.length,0);
   await pointer(bar(),'pointerdown',600);await pointer(document,'pointermove',656);assert.notEqual(bar().style.left,position);assert.equal(writes.length,0);await pointer(document,'pointerup',656);assert.deepEqual(writes.at(-1),{start:shiftDay(today,1),end:shiftDay(today,3)});assert.equal(opened.length,1);
   setup();await pointer(bar().querySelector('button:last-child')!,'pointerdown',700);await pointer(document,'pointermove',756);await pointer(document,'pointerup',756);assert.deepEqual(writes.at(-1),{start:shiftDay(today,1),end:shiftDay(today,4)});assert.equal(opened.length,1);
