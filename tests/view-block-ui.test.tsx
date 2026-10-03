@@ -25,7 +25,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
  const click=async(selector:string)=>{const element=document.querySelector<HTMLElement>(selector);assert.ok(element,selector);await act(async()=>element.click());};
  try{
    await act(async()=>render());await settle();assert.equal(writes,0);assert.equal(document.querySelectorAll('.view-block').length,1);assert.ok(document.querySelector('[data-node-view-content][hidden]'),'the YAML source must not render above the block');assert.ok(document.querySelector('pre')?.textContent?.includes('const x = 1;'));
-   await click('.view-actions > button:first-child' ); // Filter, before Sort and More
+   await click('[aria-label=Filter]' ); // Filter, before Sort and More
    assert.ok(document.querySelector('.view-rule-group .view-group-heading [aria-label="Remove group"]'));
    await click('[aria-label="Remove group"]');assert.equal(document.querySelector('.view-rule-group'),null);
    await click('.view-popup-footer button');await settle();assert.equal(writes,1);assert.ok(body.includes('```view-block'));assert.ok(body.includes('const x = 1;'));const raw=body.split('```view-block\n')[1].split('```')[0];assert.deepEqual(parseViewBlock(raw).views[0].filter,{all:[]});
@@ -37,7 +37,7 @@ test('editable view blocks render without changing Markdown, commit group edits 
    await click('[role="tab"]:last-child');await settle();assert.equal(document.querySelector('[role="alert"]'),null);assert.ok(document.querySelector('.view-compact'));assert.equal(writes,1);
    const unknown=writeViewBlock('',{...newViewBlock(),views:[{id:'table',name:'Table',type:'table',filter:{field:'project/Typo',op:'eq',value:'value'}}]});
    await act(async()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={unknown} onChange={()=>{writes++;}}/></ViewBlockProvider>));await settle();
-   await click('.view-actions > button:first-child' );await click('[aria-label="Find a property…"]');
+   await click('[aria-label=Filter]' );await click('[aria-label="Find a property…"]');
    await click('[role="option"][aria-selected="true"]');assert.ok(document.querySelector('.view-condition'));assert.equal(writes,1);
 
  }finally{await act(async()=>root.unmount());}
@@ -62,7 +62,7 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
  try{
   await act(async()=>render());await settle();assert.equal(queries,1);
   const options=document.querySelector<HTMLElement>('[aria-label="View options"]')!;options.getBoundingClientRect=()=>({left:700,right:730,top:200,bottom:230,width:30,height:30,x:700,y:200,toJSON(){}});
-  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,6);
+  await click('[aria-label="View options"]');const anchored=document.querySelector<HTMLElement>('.property-popover')!.style.left;assert.equal(document.querySelectorAll('.view-menu-list button').length,5);
   await click('.view-menu-list button');assert.ok(document.querySelector('[data-kind=layout]'));assert.equal(document.querySelector<HTMLElement>('.property-popover')!.style.left,anchored);
   await textClick('Kanban');await settle();assert.equal(parseViewBlock(source).views[0].type,'kanban');await click('[aria-label=Back]');await click('.view-menu-list button:nth-child(3)');assert.ok(document.querySelector('[data-kind=group] [role=listbox]'));await escape();assert.equal(document.querySelector('.property-popover'),null);
   // Pointer down without a drag leaves the source unchanged; real movement uses the shared phantom.
@@ -88,13 +88,13 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
   await click('[data-tag-column=Todo] [data-property="project/Location"]');assert.equal(previewed,2);assert.equal(document.querySelector('.view-property input'),null);
   await click('.view-card-title');assert.equal(previewed,3);assert.equal(opened,0);await click('.view-result-card');assert.equal(previewed,4);
   await click('[aria-label="View options"]');await click('.view-menu-list button');assert.ok(![...document.querySelectorAll('.view-layout-choices button')].some(b=>b.textContent==='List'),'List is no longer a separate layout');await textClick('Table');await escape();await settle();
-  await click('[aria-label="View options"]');await click('[aria-label="Appearance"]');await textClick('Compact');await escape();await settle();
+  await click('[aria-label="Compact mode"]');await settle();assert.equal(document.querySelector('[aria-label="Compact mode"]')?.getAttribute('aria-pressed'),'true');
   assert.equal(parseViewBlock(source).views[0].type,'table');assert.equal(parseViewBlock(source).views[0].appearance,'compact');
-  assert.equal(document.querySelector('.view-compact thead'),null);
+  assert.equal(document.querySelector('.view-compact thead'),null);assert.equal(document.querySelector('.view-filter-summary'),null);assert.ok(!document.querySelector('.view-query-line')!.textContent!.includes('file.'));
   assert.equal(document.querySelectorAll('.view-compact tbody tr:first-child td').length,5,'missing values still occupy their aligned column');
   const beforeList=writes.length;await click('.view-compact [data-property="project/Date"]');assert.equal(previewed,5);assert.equal(writes.length,beforeList);assert.equal(document.querySelector('.view-compact input'),null);
   await click('[aria-label="Sort"]');await textClick('Date');await textClick('Ascending');await escape();await settle();assert.deepEqual(parseViewBlock(source).views[0].sort,{field:['project/Date','task/Date'],direction:'asc'});
-  await click('[aria-label="View options"]');await click('[aria-label="Appearance"]');await textClick('Grid');await escape();await settle();
+  await click('[aria-label="Compact mode"]');await settle();assert.equal(document.querySelector('[aria-label="Compact mode"]')?.getAttribute('aria-pressed'),'false');
   assert.equal(document.querySelector('.view-table th[aria-sort=ascending] .view-column-heading>span:first-of-type')?.textContent,'Date');
   assert.equal(document.querySelectorAll('.view-table th[scope=col]').length,5);assert.ok(document.querySelector('.view-table [aria-label="Edit Date"]'),'Grid cells retain inline editing');
 
@@ -174,7 +174,7 @@ test('preview setup stays editable, configured properties stay available, and vi
   results={rows:[{card:snapshot.cards[1],properties:{tags:['project'],'project/priority':3,'project/Due':'2026-10-18','project/Status':'Todo'}}],total:1};snapshot.cards=[...snapshot.cards.map(c=>({...c,revision:c.id==='a'?'r2':c.revision}))];await act(async()=>render());await settle();
   await click('[aria-label="View options"]');await click('.view-menu-list button:nth-child(2)');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,false,'hidden properties remain available to enable');await act(async()=>property('priority')!.click());await settle();assert.equal(property('priority')?.checked,true);await escape();
   await click('.view-query-line button');assert.ok(document.querySelector('.view-condition'));await click('.view-popup-footer button');await settle();
-  await click('.view-actions > button:first-child');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await escape();
+  await click('[aria-label=Filter]');assert.equal(document.querySelector('.view-popup')?.getAttribute('data-kind'),'filter');await escape();
   const strips=[...document.querySelectorAll<HTMLElement>('[data-tab-strip]')],rect=(left:number,top:number,width:number)=>({left,top,width,height:34,right:left+width,bottom:top+34,x:left,y:top,toJSON(){}});
   const original=dom.window.HTMLElement.prototype.getBoundingClientRect;
   dom.window.HTMLElement.prototype.getBoundingClientRect=function(){const strip=this.hasAttribute('data-tab-strip')?this:this.parentElement;if(!strip||!strips.includes(strip))return original.call(this);const top=strips.indexOf(strip)*100+40;if(this===strip)return rect(10,top,300);const siblings=[...strip.children].filter(e=>(e as HTMLElement).style.display!=='none');return rect(10+siblings.indexOf(this)*92,top,90);};

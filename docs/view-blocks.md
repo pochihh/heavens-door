@@ -68,7 +68,7 @@ Property suggestions come from positively selected tags and their inherited fiel
 
 ## UI and validation
 
-Use compact theme-aware controls. Query sits above the view tabs; current-view filter summaries sit below. Preserve nested Boolean meaning in summaries. A group’s Remove control belongs in its top-right corner, with the shared destructive hover/focus color. Its sibling conditions stay intact. Do not add explanatory Filter footers or empty-condition filler. Esc and outside click dismiss the popup without saving drafts; Done validates and saves.
+Use compact theme-aware controls. Query sits above the view tabs; a funnel button opens the current-view filter. Query and filter expressions appear only inside their editors. Keep nested Boolean groups explicit inside those editors. A group’s Remove control belongs in its top-right corner, with the shared destructive hover/focus color. Its sibling conditions stay intact. Do not add explanatory Filter footers or empty-condition filler. Esc and outside click dismiss the popup without saving drafts; Done validates and saves.
 
 Malformed YAML, unsupported versions, misspelled options/operators, unresolved property keys and incompatible types show an error inside the affected block. YAML syntax errors include the parser’s source location. Semantic errors identify the offending property/option. The raw source remains editable through **Edit YAML**. An error in one view leaves other views usable; a shared-query error affects all views. Unknown keys are never ignored to run a broader query. Invalid source values simply fail typed comparisons; per-card diagnostic counts and typo correction suggestions remain follow-up work.
 
@@ -117,7 +117,7 @@ The development-machine benchmark (`npm run benchmark`) with 10,000 cards measur
 
 ## Table appearances
 
-Use `type: table` with optional `appearance: grid | compact`; omitted appearance means Grid. The appearance changes presentation only. Existing `type: list` views remain valid and display as Compact without rewriting files on open. Choosing an appearance explicitly saves `type: table` and the selected appearance. New view menus offer Table, Kanban, Gallery and Timeline.
+Use `type: table` with optional `appearance: grid | compact`; omitted appearance means Grid. The toolbar’s Compact mode toggle changes presentation only; Table uses a List icon in view tabs. Existing `type: list` views remain valid and display as Compact without rewriting files on open. Toggling Compact mode next to Filter saves `type: table` and the selected appearance. New view menus offer Table, Kanban, Gallery and Timeline.
 
 ## Gallery, Timeline and creation
 

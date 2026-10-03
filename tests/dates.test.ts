@@ -13,6 +13,9 @@ test('date popup calendar, formats and timezone edits preserve portable values',
   assert.equal(dateSummary('2026-09-30',la),'09/30/2026');assert.equal(dateSummary('2026-09-30',taipei),'09/30/2026');
   assert.equal(dateSummary('2026-09-30T00:00:00Z',{...la,timeZone:'UTC'}),'09/30/2026 12:00 AM');
   assert.equal(dateSummary('2026-09-30T12:00:00Z',{...la,timeZone:'UTC'}),'09/30/2026 12:00 PM');
+  assert.equal(dateSummary({start:'2026-10-03',end:'2026-10-03'},la),'10/03/2026');
+  assert.equal(dateSummary({start:'2026-10-03T09:00:00Z',end:'2026-10-03T09:00:00Z'},{...la,timeZone:'UTC'}),'10/03/2026 9:00 AM');
+  assert.equal(dateSummary({start:'2026-10-03T09:00:00Z',end:'2026-10-03T11:00:00Z'},{...la,timeZone:'UTC'}),'10/03/2026 9:00 AM → 11:00 AM');
   const draft=dateDraft('2026-03-08',la);draft.time=true;draft.start.time='2:30 AM';assert.throws(()=>dateValue(draft,la),/does not exist/);
   draft.start.time='3:30 AM';assert.equal(dateValue(draft,la),'2026-03-08T10:30:00.000Z');
   const overlap='2026-11-01T01:30:00-08:00';assert.equal(dateValue(dateDraft(overlap,la),la,overlap),overlap,'Repeated time must retain its original occurrence');

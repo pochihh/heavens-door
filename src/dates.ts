@@ -62,4 +62,4 @@ export function dateValue(draft:DateDraft,display:DateDisplay,original?:unknown)
   if(!draft.start.day.trim()&&!draft.range)return null;
   const start=encode(draft.start,previous?.start);return draft.range?{start,end:encode(draft.end,previous?.end)}:start;
 }
-export function dateSummary(value:unknown,display:DateDisplay){const draft=dateDraft(value,display),format=(part:DateDraft['start'])=>part.day+(draft.time?' '+part.time:'');return draft.start.day?format(draft.start)+(draft.range?' → '+format(draft.end):''):'';}
+export function dateSummary(value:unknown,display:DateDisplay){const draft=dateDraft(value,display),format=(part:DateDraft['start'])=>part.day+(draft.time?' '+part.time:'');const start=format(draft.start),end=format(draft.end);return draft.start.day?start+(draft.range&&start!==end?' → '+(draft.time&&draft.start.day===draft.end.day?draft.end.time:end):''):'';}

@@ -37,7 +37,7 @@ export function DateProperty({draft,display,onDisplayChange,onChange,onCommit}:{
           if(move){e.preventDefault();navigate(shiftDay(day,move));}
           if(e.key==='Home'||e.key==='End'){e.preventDefault();const weekday=new Date(day+'T12:00:00Z').getUTCDay();navigate(shiftDay(day,e.key==='Home'?-weekday:6-weekday));}
           if(e.key==='PageUp'||e.key==='PageDown'){e.preventDefault();navigate(shiftMonth(day,(e.key==='PageUp'?-1:1)*(e.shiftKey?12:1)));}
-        }}>{Number(day.slice(-2))}</button>;
+        }}><span className="date-number" aria-current={day===today?'date':undefined}>{Number(day.slice(-2))}</span></button>;
       })}</div>)}
     </div>
     <div className="date-options">

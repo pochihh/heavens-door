@@ -64,7 +64,7 @@ export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChang
   }
   if(!field)return <p className="muted">{t.chooseDate}</p>;
   return <div className="timeline-view">
-    <div className="timeline-toolbar"><strong>{new Intl.DateTimeFormat(undefined,{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(anchor+'T00:00:00Z'))}</strong><div className="toolbar-spacer"/>
+    <div className="timeline-toolbar"><div className="toolbar-spacer"/>
       <button className="timeline-scale" aria-label={t.scale} aria-haspopup="dialog" aria-expanded={!!scaleMenu} onClick={e=>setScaleMenu(scaleMenu?null:e.currentTarget)}>{t[scale]}<Icon name="down" size={12}/></button>
       <Tool className="timeline-previous" icon="chevron" label={tooltips.views.previous} onClick={()=>setAnchor(shiftDay(anchor,-days))}/><button onClick={()=>{setAnchor(today);if(viewport.current)viewport.current.scrollLeft=Math.max(0,todayX-viewport.current.clientWidth/4);}}>{t.today}</button><Tool icon="chevron" label={tooltips.views.next} onClick={()=>setAnchor(shiftDay(anchor,days))}/>
     </div>
@@ -72,7 +72,7 @@ export function TimelineView({view,rows,field,onSave,onOpen,onCreate,onViewChang
     <div className="timeline-scroll" ref={viewport}><div className="timeline-grid" style={{width,'--timeline-day':dayWidth+'px'} as React.CSSProperties}>
       <div className="timeline-heading" data-scale={scale}>
         <div className="timeline-months">{months.map(month=><span key={month.left} style={{left:month.left,width:month.width}}><span>{month.label}</span></span>)}</div>
-        <div className="timeline-days">{calendar.map(({day,date,weekend},i)=><div key={day} className="timeline-day" data-weekend={weekend} style={{left:i*dayWidth,width:dayWidth}}>{scale==='day'?<><span>{new Intl.DateTimeFormat(undefined,{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}).format(date)}</span><div className="timeline-hours">{[0,4,8,12,16,20].map(hour=><span key={hour}>{new Intl.DateTimeFormat(undefined,{hour:'numeric',hour12:display.timeFormat==='12',timeZone:'UTC'}).format(new Date(Date.UTC(2000,0,1,hour)))}</span>)}</div></>:<span className="timeline-day-number" aria-current={day===today?'date':undefined}>{date.getUTCDate()}</span>}</div>)}</div>
+        <div className="timeline-days">{calendar.map(({day,date,weekend},i)=><div key={day} className="timeline-day" data-weekend={weekend} style={{left:i*dayWidth,width:dayWidth}}>{scale==='day'?<><span className="timeline-day-label">{new Intl.DateTimeFormat(undefined,{weekday:'short',timeZone:'UTC'}).format(date)}<span className="date-number" aria-current={day===today?'date':undefined}>{date.getUTCDate()}</span></span><div className="timeline-hours">{[0,4,8,12,16,20].map(hour=><span key={hour}>{new Intl.DateTimeFormat(undefined,{hour:'numeric',hour12:display.timeFormat==='12',timeZone:'UTC'}).format(new Date(Date.UTC(2000,0,1,hour)))}</span>)}</div></>:<span className="timeline-day-number date-number" aria-current={day===today?'date':undefined}>{date.getUTCDate()}</span>}</div>)}</div>
       </div>
       <div className="timeline-calendar" aria-hidden="true">{calendar.map(({day,weekend},i)=>weekend&&<span key={day} style={{left:i*dayWidth,width:dayWidth}}/> )}</div>
       {todayX>=0&&todayX<width&&<div className="timeline-today-line" aria-hidden="true" style={{left:todayX}}/>}
