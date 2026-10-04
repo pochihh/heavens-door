@@ -1,10 +1,12 @@
 import {NodeSelection,Selection} from '@tiptap/pm/state';
 import {ui} from '../text/ui';
-import {useCallback,useContext,useEffect,useRef,useState,type CSSProperties} from 'react';
+import {useCallback,useContext,useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {NodeViewWrapper,type NodeViewProps} from '@tiptap/react';
+import {createPortal} from 'react-dom';
+import {trackEditorOverlay} from './editor-overlay';
 import {assetPath} from './markdown';
 import {PropertyPopover} from './PropertyValue';
-import {ActionMenu,type MenuState} from './Overlays';
+import {ActionMenu,overlayContainer,type MenuState} from './Overlays';
 import {Tool} from './Icons';
 import {copyImage} from './editor-images';
 import {ImageCrop} from './ImageCrop';
@@ -14,12 +16,12 @@ import {ViewBlockContext} from './ViewBlock';
 
 export function EditorImage(props:{path:string}&NodeViewProps){
   const {node,editor,getPos}=props,layout=imageLayout(node);
-  const ref=useRef<HTMLDivElement>(null),[anchor,setAnchor]=useState<HTMLElement|null>(null);
+  const ref=useRef<HTMLDivElement>(null),toolbar=useRef<HTMLDivElement>(null),[hovered,setHovered]=useState(false),[anchor,setAnchor]=useState<HTMLElement|null>(null);
   useEffect(()=>{
     const outside=(event:PointerEvent)=>{
       if(!(editor.state.selection instanceof NodeSelection)||editor.state.selection.from!==getPos())return;
       const target=event.target as HTMLElement;
-      if(target.closest('[data-image-item],.image-row-options,[role=menu],.image-crop-dialog,.property-popover,.editor-block-controls,.editor-selection-tools'))return;
+      if(target.closest('[data-image-item],.image-row-toolbar,[role=menu],.image-crop-dialog,.property-popover,.editor-block-controls,.editor-selection-tools'))return;
       // Blank space in the image row must not let ProseMirror select the atom again.
       if(ref.current?.contains(target)){event.preventDefault();event.stopPropagation();}
       const position=editor.state.doc.resolve(Math.min(editor.state.doc.content.size,(getPos()??0)+node.nodeSize));
@@ -28,11 +30,33 @@ export function EditorImage(props:{path:string}&NodeViewProps){
     };
     document.addEventListener('pointerdown',outside,true);return()=>document.removeEventListener('pointerdown',outside,true);
   },[editor,getPos,node.nodeSize]);
+  useEffect(()=>{
+    if(layout?.kind!=='row')return;
+    const hover=(event:PointerEvent)=>{
+      if(event.buttons)return;
+      const r=ref.current!.getBoundingClientRect(),target=event.target as Node;
+      setHovered(!!toolbar.current?.contains(target)||(event.clientX>=r.left-64&&event.clientX<=r.right+10&&event.clientY>=r.top-8&&event.clientY<=r.bottom+10));
+    };
+    document.addEventListener('pointermove',hover);return()=>document.removeEventListener('pointermove',hover);
+  },[layout?.kind]);
+  useLayoutEffect(()=>{
+    const tools=toolbar.current;if(!tools)return;
+    return trackEditorOverlay(ref.current!,()=>{
+      const r=ref.current!.getBoundingClientRect(),area=editor.view.dom.getBoundingClientRect(),clip=editor.view.dom.closest('.editor-body')?.getBoundingClientRect(),viewport=editor.view.dom.closest('.canvas')?.getBoundingClientRect();
+      tools.dataset.compact='false';tools.dataset.compact=String(r.height<tools.scrollHeight+32);
+      tools.style.left=Math.max(4,area.left-12-tools.offsetWidth)+'px';tools.style.top=r.top+28+'px';
+      tools.style.visibility=(!clip||r.top+28>=clip.top&&r.top+28<clip.bottom)&&(!viewport||r.top+28>=viewport.top&&r.top+28<viewport.bottom&&area.left>=viewport.left&&area.left<viewport.right)?'visible':'hidden';
+    });
+  },[hovered,anchor,node,editor,props.selected]);
   if(!layout)return null;
   const save=(value:ImageLayout)=>{const pos=getPos();if(pos===undefined)return;editor.view.dispatch(editor.state.tr.replaceWith(pos,pos+node.nodeSize,editor.schema.nodes.htmlBlock.create({source:imageHtml(value)})));};
   const items=layout.kind==='row'?layout.images:[layout];
   return <NodeViewWrapper ref={ref} className={'editor-image-layout '+(layout.kind==='row'?'is-row':'is-single')} data-image-position={getPos()} contentEditable={false}>
-    {layout.kind==='row'&&<Tool icon="more" label={ui.editorTools.imageRowOptions} className="image-row-options" onClick={e=>setAnchor(anchor?null:e.currentTarget)}/>}
+    {layout.kind==='row'&&(hovered||anchor||props.selected)&&createPortal(<div ref={toolbar} className="image-row-toolbar" role="toolbar" aria-label={ui.editorTools.imageRowOptions} onPointerDown={e=>{e.preventDefault();e.stopPropagation();}}>
+      <Tool icon="image" label={ui.editorTools.addImage} onClick={()=>save({...layout,images:[...layout.images,{kind:'placeholder'}]})}/><span className="image-toolbar-divider"/>
+      {(['flex-start','center','space-between'] as const).map(value=><Tool key={value} icon={value==='flex-start'?'imageLeft':value==='center'?'imageCenter':'imageBetween'} label={'Justify: '+({'flex-start':'start',center:'center','space-between':'space between'} as const)[value]} aria-pressed={layout.justify===value} onClick={()=>save({...layout,justify:value})}/>)}
+      <span className="image-toolbar-divider"/><Tool icon="more" label={ui.editorTools.imageRowOptions} className="image-row-more" onClick={e=>setAnchor(anchor?null:e.currentTarget)}/>
+    </div>,overlayContainer(ref.current??editor.view.dom))}
     <div className="image-layout-content" style={layout.kind==='row'?{display:'flex',gap:layout.gap,justifyContent:layout.justify,alignItems:layout.alignItems,flexWrap:layout.wrap as CSSProperties['flexWrap']}:{}}>
       {items.map((item,index)=><ImageItemView key={index} item={item} index={index} {...props} inRow={layout.kind==='row'} onChange={next=>save(layout.kind==='row'?{...layout,images:items.map((v,i)=>i===index?next:v)}:next)} onDuplicate={()=>{if(layout.kind==='row')save({...layout,images:items.flatMap((v,i)=>i===index?[v,structuredClone(v)]:[v])});else {const pos=getPos();if(pos!==undefined)editor.commands.insertContentAt(pos+node.nodeSize,node.toJSON());}}} onRemove={()=>{if(layout.kind==='row'&&items.length>1)save({...layout,images:items.filter((_,i)=>i!==index)});else props.deleteNode();}} onRow={()=>save(row([rowPicture(item),{kind:'placeholder'}]))} onExtract={layout.kind==='row'?()=>{const pos=getPos();if(pos===undefined)return;const remaining=items.filter((_,i)=>i!==index),html=(v:ImageLayout)=>editor.schema.nodes.htmlBlock.create({source:imageHtml(v)});editor.view.dispatch(editor.state.tr.replaceWith(pos,pos+node.nodeSize,[...(remaining.length?[html({...layout,images:remaining})]:[]),html(item)]));}:undefined}/>)}
     </div>
@@ -67,7 +91,7 @@ function ImageItemView({item,index,inRow,onChange,onRemove,onDuplicate,onRow,onE
   const align=item.kind==='single'?item.alignment:'left',cropScale=item.kind==='single'&&item.crop&&(width||measured)?(width||measured)/parseFloat(item.width):1;
   return <div ref={ref} data-image-item={index} className={'editor-image '+(selected&&!inRow?'selected ':'')+(item.kind==='placeholder'?'image-placeholder':'')} style={{width:width??(item.kind==='single'?item.width:inRow?'160px':'100%'),maxWidth:'100%',flex:'0 0 auto',marginLeft:!inRow&&(align==='center'||align==='right')?'auto':undefined,marginRight:!inRow&&(align==='center'||align==='left')?'auto':undefined}} onContextMenu={e=>{e.preventDefault();e.stopPropagation();openMenu(ref.current!);}} onDragOver={e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();}} onDrop={e=>{const image=[...e.dataTransfer.files].find(f=>f.type.startsWith('image/'));if(image){e.preventDefault();e.stopPropagation();upload(image);}}}>
     <input type="file" ref={file} hidden accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml" onChange={e=>{const chosen=e.target.files?.[0];e.target.value='';if(chosen)upload(chosen);}}/>
-    {item.kind==='single'?<><div className="image-media"><div className="image-clip" style={item.crop?{overflow:'hidden',height:item.crop.height*cropScale,borderRadius:item.crop.shape==='circle'?'50%':4}:undefined} onPointerDown={e=>{if(getPos()!==undefined)cancel.current=dragImage(e,editor,getPos()!,index);}}><img src={source?window.door.assetUrl(source):undefined} alt={item.alt??''} draggable={false} onError={()=>setError('Image unavailable. Use Find image file in More.')} style={item.crop?{width:item.crop.imgWidth*cropScale,maxWidth:'none',height:'auto',marginLeft:-item.crop.offsetX*cropScale,marginTop:-item.crop.offsetY*cropScale}:undefined}/></div>
+    {item.kind==='single'?<><div className="image-media" data-shape={item.crop?.shape??'rectangle'}><div className="image-clip" style={item.crop?{overflow:'hidden',height:item.crop.height*cropScale,borderRadius:item.crop.shape==='circle'?'50%':4}:undefined} onPointerDown={e=>{if(getPos()!==undefined)cancel.current=dragImage(e,editor,getPos()!,index);}}><img src={source?window.door.assetUrl(source):undefined} alt={item.alt??''} draggable={false} onError={()=>setError('Image unavailable. Use Find image file in More.')} style={item.crop?{width:item.crop.imgWidth*cropScale,maxWidth:'none',height:'auto',marginLeft:-item.crop.offsetX*cropScale,marginTop:-item.crop.offsetY*cropScale}:undefined}/></div>
       <div className="image-toolbar" role="toolbar" aria-label={ui.editorTools.imageControls}>{!small&&<>{(['left','center','right'] as const).map(value=><Tool key={value} icon={({left:'imageLeft',center:'imageCenter',right:'imageRight'} as const)[value]} label={'Align '+value} aria-pressed={item.alignment===value} onClick={()=>onChange({...item,alignment:value})}/>)}<span className="image-toolbar-divider"/><Tool icon="caption" label={item.caption!==undefined&&!item.captionHidden?'Hide caption':'Show caption'} aria-pressed={item.caption!==undefined&&!item.captionHidden} onClick={()=>{const visible=item.caption!==undefined&&!item.captionHidden;onChange({...item,caption:item.caption??'',captionHidden:visible});if(!visible)requestAnimationFrame(()=>ref.current?.querySelector<HTMLInputElement>('.image-caption')?.focus());}}/><Tool icon="crop" label={ui.editorTools.cropImage} onClick={()=>setCrop(true)}/><Tool icon="sync" label={ui.editorTools.replaceImage} onClick={e=>{setDraft('');setPopup({kind:'replace',anchor:e.currentTarget});}}/><span className="image-toolbar-divider"/></>}<Tool icon="more" label={ui.editorTools.imageOptions} onClick={e=>openMenu(e.currentTarget)}/></div>
       <button className="image-resize" aria-label={ui.editorTools.resizeImage} onKeyDown={e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const w=Math.max(40,(ref.current?.offsetWidth??320)+(e.key==='ArrowLeft'?-10:10));onChange(resized(item,w,ref.current?.offsetWidth??w));}}} onPointerDown={e=>{
         if(e.button!==0)return;e.preventDefault();e.stopPropagation();cancel.current();const element=ref.current!,r=element.getBoundingClientRect(),scale=r.width/element.offsetWidth,x=e.clientX,start=element.offsetWidth,pointer=e.pointerId;let next=start;

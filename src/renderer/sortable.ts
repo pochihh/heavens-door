@@ -23,10 +23,10 @@ export function createDragPhantom(source:HTMLElement,rect=source.getBoundingClie
   phantom.classList.add('drag-phantom');phantom.setAttribute('aria-hidden','true');phantom.inert=true;(source.closest('dialog[open]')??document.body).appendChild(phantom);
   return phantom;
 }
-export function animateReorder(before:Map<HTMLElement,DOMRect>,axis:SortAxis,animations:Map<HTMLElement,Animation>) {
+export function animateReorder(before:Map<HTMLElement,DOMRect>,axis:SortAxis|'both',animations:Map<HTMLElement,Animation>) {
   animations.forEach(a=>a.cancel());animations.clear();
   if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  for(const [row,r] of before){const next=row.getBoundingClientRect(),delta=axis==='vertical'?r.top-next.top:r.left-next.left;if(delta&&row.animate){const animation=row.animate([{transform:axis==='vertical'?`translateY(${delta}px)`:`translateX(${delta}px)`},{transform:'none'}],{duration:150,easing:'cubic-bezier(0.2,0,0,1)'});animations.set(row,animation);}}
+  for(const [row,r] of before){const next=row.getBoundingClientRect(),x=axis==='vertical'?0:r.left-next.left,y=axis==='horizontal'?0:r.top-next.top;if((x||y)&&row.animate){const animation=row.animate([{transform:`translate(${x}px,${y}px)`},{transform:'none'}],{duration:150,easing:'cubic-bezier(0.2,0,0,1)'});animations.set(row,animation);}}
 }
 export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:string,index:number|null,fromStarred:boolean,group?:string)=>void,axis:SortAxis='vertical',reorderOnly=false,onDragging?:(active:boolean)=>void) {
   const cancel=useRef<()=>void>(()=>{}),onCommit=useRef(commit);onCommit.current=commit;

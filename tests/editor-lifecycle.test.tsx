@@ -9,7 +9,7 @@ import { createRoot } from 'react-dom/client';
 
 test('opening and switching formatted cards never writes content or uses a destroyed editor',async () => {
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true}); windows.push(dom);
-  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
   window.door={assetUrl:path => `heavens-asset://vault/${path}`} as typeof window.door;
   const {CardEditor}=await import('../src/renderer/Editor');
@@ -138,5 +138,84 @@ test('image selection clears beside the image inside a popup and blank card spac
     await act(async()=>document.querySelector('.editor-body')!.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0,clientY:100})));
     assert.equal(editor.state.doc.childCount,size+1,'clicking the existing empty last line must not add another one');
     assert.ok(edits.length);
+  }finally{await act(async()=>root.unmount());}
+});
+
+test('row toolbox edits portable layout and editor controls follow canvas transforms without a render',async()=>{
+  const dom=new JSDOM('<!doctype html><div class="canvas"><div class="board-world"><div id="root"></div></div></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {CardEditor}=await import('../src/renderer/Editor'),{imageHtml,imageLayout,row}=await import('../src/renderer/image-layout');
+  const content=row([{kind:'single',src:'circle.png',width:'240px',alignment:'left',crop:{shape:'circle',imgWidth:400,height:240,offsetX:0,offsetY:0}},{kind:'single',src:'rectangle.png',width:'200px',alignment:'left'}]);
+  const root=createRoot(document.getElementById('root')!);const edits:string[]=[];
+  try{
+    await act(async()=>root.render(<CardEditor path="row.md" body={'# Images\n\n'+imageHtml(content)+'\n\nEnd'} cards={[]} canvas onEdit={body=>edits.push(body)}/>));
+    const element=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor},editor=element.editor;
+    let x=100,y=100;
+    const rect=(left:number,top:number,width:number,height:number)=>new dom.window.DOMRect(left,top,width,height);
+    element.getBoundingClientRect=()=>rect(x,y,500,600);Object.defineProperty(element,'offsetWidth',{value:500});
+    document.querySelector('.editor-body')!.getBoundingClientRect=()=>rect(0,0,1000,1000);
+    document.querySelector('.canvas')!.getBoundingClientRect=()=>rect(0,0,1000,1000);
+    const imageRow=document.querySelector<HTMLElement>('.editor-image-layout')!;imageRow.getBoundingClientRect=()=>rect(x,y+60,500,300);
+    const last=element.lastElementChild!;last.getBoundingClientRect=()=>rect(x,y+400,500,26);
+    await act(async()=>editor.commands.setTextSelection(editor.state.doc.content.size-1));
+    const grip=document.querySelector<HTMLElement>('.editor-block-controls')!,before={left:parseFloat(grip.style.left),top:parseFloat(grip.style.top)};
+    await act(async()=>document.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:150,clientY:180})));
+    const toolbar=document.querySelector<HTMLElement>('.image-row-toolbar')!;assert.ok(toolbar);
+    const toolLeft=parseFloat(toolbar.style.left),toolTop=parseFloat(toolbar.style.top);
+    x+=80;y+=40;
+    await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform='translate(80px,40px)';await Promise.resolve();});
+    assert.equal(parseFloat(grip.style.left),before.left+80);assert.equal(parseFloat(grip.style.top),before.top+40);
+    assert.equal(parseFloat(toolbar.style.left),toolLeft+80);assert.equal(parseFloat(toolbar.style.top),toolTop+40);
+    assert.equal(edits.length,0,'navigation never writes card content');
+    await act(async()=>toolbar.querySelector<HTMLButtonElement>('[aria-label="Justify: space between"]')!.click());
+    assert.match(edits.at(-1)!,/justify-content: space-between/);
+    await act(async()=>document.querySelector<HTMLButtonElement>('.image-row-toolbar [aria-label="Add image"]')!.click());
+    const node=editor.state.doc.child(1),layout=imageLayout(node)!;
+    assert.equal(layout.kind,'row');if(layout.kind==='row')assert.deepEqual(layout.images.at(-1),{kind:'placeholder'});
+    assert.deepEqual([...document.querySelectorAll('.image-media')].map(el=>el.getAttribute('data-shape')),['circle','rectangle']);
+    const {createDragPhantom}=await import('../src/renderer/sortable');
+    const phantom=createDragPhantom(document.querySelectorAll<HTMLElement>('[data-image-item]')[1]);
+    assert.equal(phantom.querySelector('.image-media')?.getAttribute('data-shape'),'rectangle','a frozen drag preview retains its own crop shape');phantom.remove();
+  }finally{await act(async()=>root.unmount());}
+});
+
+test('image drops use the whole row, preview without saving, and preserve crop data on drop or cancel',async()=>{
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,DOMRect:dom.window.DOMRect,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {CardEditor}=await import('../src/renderer/Editor'),{imageHtml,imageLayout,row}=await import('../src/renderer/image-layout'),{dragImage}=await import('../src/renderer/image-drag');
+  const image={kind:'single' as const,src:'circle.png',width:'240px',alignment:'left' as const,crop:{shape:'circle' as const,imgWidth:400,height:240,offsetX:0,offsetY:0}},plain={kind:'single' as const,src:'rectangle.png',width:'200px',alignment:'left' as const};
+  const body='# Images\n\n'+imageHtml(row([image,plain]))+'\n\n'+imageHtml({...plain,src:'moving.png'})+'\n\nEnd';
+  const root=createRoot(document.getElementById('root')!);let edits=0;
+  try{
+    await act(async()=>root.render(<CardEditor path="drop.md" body={body} cards={[]} onEdit={()=>edits++}/>));
+    const element=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor},editor=element.editor;
+    const blocks=[...document.querySelectorAll<HTMLElement>('[data-image-position]')],pictures=[...element.querySelectorAll<HTMLElement>('[data-image-item]')];
+    blocks[0].getBoundingClientRect=()=>new DOMRect(100,100,800,250);blocks[1].getBoundingClientRect=()=>new DOMRect(100,450,800,150);
+    pictures[0].getBoundingClientRect=()=>new DOMRect(100,100,240,240);pictures[1].getBoundingClientRect=()=>new DOMRect(350,100,200,100);pictures[2].getBoundingClientRect=()=>new DOMRect(100,450,200,100);
+    const begin=()=>dragImage({button:0,clientX:150,clientY:480,currentTarget:pictures[2].querySelector('.image-clip'),preventDefault(){},stopPropagation(){}} as unknown as Parameters<typeof dragImage>[0],editor,Number(blocks[1].dataset.imagePosition),0);
+    const move=(x:number,y:number)=>document.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,cancelable:true,clientX:x,clientY:y}));
+    let cancel:()=>void=()=>{};
+    await act(async()=>{cancel=begin();move(800,200);});
+    assert.ok(blocks[0].querySelector('.image-drop-slot'),'empty space far to the right of the images must accept the drop');
+    assert.equal(editor.state.doc.childCount,4);assert.equal(edits,0,'preview cannot save or change the document');
+    await act(async()=>cancel());
+    assert.equal(document.querySelector('.image-drop-slot,.drag-phantom'),null);assert.equal(edits,0);assert.equal(blocks[0].style.minHeight,'');
+    await act(async()=>{begin();move(345,200);});
+    assert.ok(blocks[0].querySelector('.image-drop-slot'),'space between images also accepts the drop');
+    await act(async()=>document.dispatchEvent(new dom.window.MouseEvent('pointerup',{bubbles:true,clientX:345,clientY:200})));
+    const result=imageLayout(editor.state.doc.child(1));assert.equal(result?.kind,'row');
+    if(result?.kind==='row'){assert.deepEqual(result.images.map(i=>i.kind==='single'?i.src:''),['circle.png','moving.png','rectangle.png']);assert.deepEqual(result.images[0],{...image,alt:''});}
+    assert.equal(editor.state.doc.childCount,3);assert.equal(document.querySelector('.image-drop-slot,.drag-phantom'),null);
+    const reordered=document.querySelector<HTMLElement>('[data-image-position]')!,items=[...reordered.querySelectorAll<HTMLElement>('[data-image-item]')];
+    reordered.getBoundingClientRect=()=>new DOMRect(100,100,800,250);items.forEach((el,i)=>{el.getBoundingClientRect=()=>new DOMRect(100+i*250,100,200,200);});
+    await act(async()=>{dragImage({button:0,clientX:150,clientY:150,currentTarget:items[0].querySelector('.image-clip'),preventDefault(){},stopPropagation(){}} as unknown as Parameters<typeof dragImage>[0],editor,Number(reordered.dataset.imagePosition),0);move(850,220);});
+    assert.equal(items[0].style.display,'none','same-row moves replace the source with the insertion slot');
+    await act(async()=>document.dispatchEvent(new dom.window.MouseEvent('pointerup',{bubbles:true,clientX:850,clientY:220})));
+    const sorted=imageLayout(editor.state.doc.child(1));if(sorted?.kind==='row')assert.deepEqual(sorted.images.map(i=>i.kind==='single'?i.src:''),['moving.png','rectangle.png','circle.png']);else assert.fail('must remain a row');
+
   }finally{await act(async()=>root.unmount());}
 });

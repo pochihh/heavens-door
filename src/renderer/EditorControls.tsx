@@ -1,3 +1,4 @@
+import {trackEditorOverlay} from './editor-overlay';
 import {EditorSymbols} from './EditorSymbols';
 import {imageHtml} from './image-layout';
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
@@ -31,17 +32,25 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
       const found=blocks.filter(b=>domFor(b)?.contains(target)).at(-1);
       if(found)setBlock(found);
     };
-    const scroll=()=>{if(!dragging.current)update(n=>n+1);};
-    editor.on('transaction',changed);editor.on('blur',changed);editor.on('focus',changed);editor.view.dom.addEventListener('pointermove',hover);document.addEventListener('scroll',scroll,true);window.addEventListener('resize',scroll);
-    return()=>{editor.off('transaction',changed);editor.off('blur',changed);editor.off('focus',changed);editor.view.dom.removeEventListener('pointermove',hover);document.removeEventListener('scroll',scroll,true);window.removeEventListener('resize',scroll);cancel.current();};
+    editor.on('transaction',changed);editor.on('blur',changed);editor.on('focus',changed);editor.view.dom.addEventListener('pointermove',hover);
+    return()=>{editor.off('transaction',changed);editor.off('blur',changed);editor.off('focus',changed);editor.view.dom.removeEventListener('pointermove',hover);cancel.current();};
   },[editor]);
   useLayoutEffect(()=>{
-    const target=block&&domFor(block),handle=controls.current;
-    if(target&&handle){const area=editor.view.dom.getBoundingClientRect(),clip=editor.view.dom.closest('.editor-body')?.getBoundingClientRect();const line=target.matches('li')?target.querySelector('p')??target:target;const first=line.getBoundingClientRect(),lineHeight=parseFloat(getComputedStyle(line).lineHeight)||24;const center=first.top+Math.min(first.height,lineHeight*zoom)/2;handle.style.left=Math.max(4,area.left-(canvas?24:46))+'px';handle.style.top=(center-13)+'px';handle.style.visibility=(!clip||center>=clip.top&&center<clip.bottom)?'visible':'hidden';}
-    const el=bubble.current;if(!el)return;
-    const selection=window.getSelection();if(!selection?.rangeCount)return;
-    const rect=selection.getRangeAt(0).getBoundingClientRect(),size=el.getBoundingClientRect();
-    el.style.left=Math.max(8,Math.min(innerWidth-size.width-8,rect.left+(rect.width-size.width)/2))+'px';el.style.top=Math.max(8,rect.top-size.height-8)+'px';
+    if(!block&&!bubble.current)return;
+    return trackEditorOverlay(editor.view.dom,()=>{
+      const target=block&&domFor(block),handle=controls.current;
+      if(target&&handle){
+        const area=editor.view.dom.getBoundingClientRect(),clip=editor.view.dom.closest('.editor-body')?.getBoundingClientRect(),viewport=editor.view.dom.closest('.canvas')?.getBoundingClientRect();
+        const scale=canvas&&editor.view.dom.offsetWidth?area.width/editor.view.dom.offsetWidth:zoom;
+        const line=target.matches('li')?target.querySelector('p')??target:target,first=line.getBoundingClientRect(),lineHeight=parseFloat(getComputedStyle(line).lineHeight)||24;
+        const center=first.top+Math.min(first.height,lineHeight*scale)/2;
+        handle.style.left=Math.max(4,area.left-(canvas?24:46))+'px';handle.style.top=(center-13)+'px';
+        handle.style.visibility=(!canvas||scale>=.65)&&(!clip||center>=clip.top&&center<clip.bottom)&&(!viewport||center>=viewport.top&&center<viewport.bottom&&area.left>=viewport.left&&area.left<viewport.right)?'visible':'hidden';
+      }
+      const el=bubble.current,selection=window.getSelection();if(!el||!selection?.rangeCount)return;
+      const rect=selection.getRangeAt(0).getBoundingClientRect(),size=el.getBoundingClientRect();
+      el.style.left=Math.max(8,Math.min(innerWidth-size.width-8,rect.left+(rect.width-size.width)/2))+'px';el.style.top=Math.max(8,rect.top-size.height-8)+'px';
+    });
   },[block,revision,zoom,canvas]);
   const apply=(next:JSONContent|null)=>{if(!next)return;try{editor.schema.nodeFromJSON(next).check();}catch{return;}action(ui.editor.moveBlock,()=>editor.commands.setContent(next));};
   function move(key:'up'|'down'|'indent'|'outdent'){
