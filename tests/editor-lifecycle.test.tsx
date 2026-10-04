@@ -114,3 +114,29 @@ test('a rendering failure shows a recoverable draft and a working Reload action'
     document.querySelector<HTMLButtonElement>('.primary')!.click();assert.equal(reloads,1);
   } finally {await act(async () => root.unmount());session.dispose();}
 });
+
+
+test('image selection clears beside the image inside a popup and blank card space appends one paragraph',async()=>{
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {CardEditor}=await import('../src/renderer/Editor'),{NodeSelection}=await import('@tiptap/pm/state');
+  const root=createRoot(document.getElementById('root')!);const edits:string[]=[];
+  try{
+    await act(async()=>root.render(<div role="dialog"><CardEditor path="test.md" body={'# Test\n\n<img src="image.png" width="220">\n\n<img src="second.png" width="180">\n\nEnd'} cards={[]} canvas onEdit={body=>edits.push(body)}/></div>));
+    const element=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor},editor=element.editor;
+    const image=document.querySelector<HTMLElement>('.editor-image-layout')!;
+    assert.ok(image);
+    await act(async()=>editor.commands.setNodeSelection(Number(image.dataset.imagePosition)));
+    assert.ok(document.querySelector('.editor-image.selected .image-media'));
+    await act(async()=>image.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,cancelable:true,button:0})));
+    assert.equal(editor.state.selection instanceof NodeSelection,false,'clicking beside an image must clear selection, also in a card dialog');
+    const size=editor.state.doc.childCount;
+    await act(async()=>document.querySelector('.editor-body')!.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0,clientY:100})));
+    assert.equal(editor.state.doc.childCount,size+1);assert.equal(editor.state.doc.lastChild?.type.name,'paragraph');
+    await act(async()=>document.querySelector('.editor-body')!.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true,button:0,clientY:100})));
+    assert.equal(editor.state.doc.childCount,size+1,'clicking the existing empty last line must not add another one');
+    assert.ok(edits.length);
+  }finally{await act(async()=>root.unmount());}
+});

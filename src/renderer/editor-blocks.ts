@@ -16,27 +16,41 @@ export function editorBlocks(doc:PMNode){
 }
 const at=(doc:JSONContent,path:number[])=>path.reduce((node,i)=>node.content![i],doc);
 const prefix=(a:number[],b:number[])=>a.length<=b.length&&a.every((v,i)=>v===b[i]);
-export function moveEditorBlock(document:JSONContent,source:number[],target:number[],edge:'before'|'after',nest=false):JSONContent|null{
-  if(!source.length||!source[0]||!target.length||!target[0]||prefix(source,target))return null;
-  const doc=structuredClone(document),moving=at(doc,source),destination=at(doc,target),origin=at(doc,source.slice(0,-1));
-  if(!moving||!destination)return null;
-  if(isItem(moving)&&isItem(destination)&&moving.type!==destination.type)return null;
-  if(nest&&(!isItem(moving)||!isItem(destination)))return null;
-  const rootTarget=doc.content![target[0]];
-  origin.content!.splice(source.at(-1)!,1);
-  // Prune empty list containers, retaining each item's own paragraphs and descendants.
-  for(let depth=source.length-1;depth>0;depth--){const path=source.slice(0,depth),node=at(doc,path);if(!isList(node)||node.content?.length)break;at(doc,path.slice(0,-1)).content!.splice(path.at(-1)!,1);}
-  if(isItem(moving)&&isItem(destination)){
+// A selection moves complete blocks. Selecting a parent also carries its descendants.
+export function selectedEditorBlocks(doc:PMNode,selection:{from:number;to:number},anchor:EditorBlock){
+  if(selection.from===selection.to)return [anchor];
+  const selected=editorBlocks(doc).filter(block=>{
+    const node=doc.nodeAt(block.from)!;
+    let ownEnd=block.to;
+    if(block.item)node.forEach((child,offset)=>{if(isList({type:child.type.name}))ownEnd=Math.min(ownEnd,block.from+1+offset);});
+    return selection.from<ownEnd-1&&selection.to>block.from+1;
+  }).filter((block,_,all)=>!all.some(parent=>parent!==block&&prefix(parent.path,block.path)));
+  return selected.some(block=>prefix(block.path,anchor.path))?selected:[anchor];
+}
+export function moveEditorBlock(document:JSONContent,source:number[],target:number[],edge:'before'|'after',nest=false){
+  return moveEditorBlocks(document,[source],target,edge,nest);
+}
+export function moveEditorBlocks(document:JSONContent,sources:number[][],target:number[],edge:'before'|'after',nest=false):JSONContent|null{
+  const paths=sources.filter((path,i)=>!sources.some((parent,j)=>j!==i&&prefix(parent,path)&&(parent.length<path.length||j<i)))
+    .sort((a,b)=>{for(let i=0;i<Math.min(a.length,b.length);i++)if(a[i]!==b[i])return a[i]-b[i];return a.length-b.length;});
+  if(!paths.length||!target[0]||paths.some(path=>!path[0]||prefix(path,target)||(target.length===1&&prefix(target,path))))return null;
+  const doc=structuredClone(document),destination=at(doc,target),rootTarget=doc.content![target[0]],targetParent=at(doc,target.slice(0,-1));
+  const moving=paths.map(path=>({node:at(doc,path),parent:at(doc,path.slice(0,-1))}));
+  if(!destination||moving.some(m=>!m.node))return null;
+  const items=moving.every(m=>isItem(m.node));
+  if(items&&isItem(destination)&&moving.some(m=>m.node.type!==destination.type))return null;
+  if(nest&&(!items||!isItem(destination)))return null;
+  for(const {node,parent} of moving)parent.content!.splice(parent.content!.indexOf(node),1);
+  const prune=(node:JSONContent)=>{node.content?.forEach(prune);if(node.content)node.content=node.content.filter(child=>!isList(child)||!!child.content?.length);};prune(doc);
+  if(items&&isItem(destination)){
     if(nest){
-      let list=destination.content?.at(-1);if(!list||list.type!==origin.type){list={type:origin.type,attrs:origin.attrs,content:[]};destination.content??=[];destination.content.push(list);}list.content!.push(moving);
-    }else{
-      const find=(node:JSONContent):JSONContent|undefined=>node.content?.includes(destination)?node:node.content?.map(find).find(Boolean);
-      const parent=find(doc);if(!parent)return null;parent.content!.splice(parent.content!.indexOf(destination)+(edge==='after'?1:0),0,moving);
-    }
+      for(const {node,parent} of moving){let list=destination.content?.at(-1);if(!list||list.type!==parent.type){list={type:parent.type,attrs:parent.attrs,content:[]};destination.content??=[];destination.content.push(list);}list.content!.push(node);}
+    }else targetParent.content!.splice(targetParent.content!.indexOf(destination)+(edge==='after'?1:0),0,...moving.map(m=>m.node));
   }else{
     const index=doc.content!.indexOf(rootTarget);if(index<0)return null;
-    const block=isItem(moving)?{type:origin.type,attrs:origin.attrs,content:[moving]}:moving;
-    doc.content!.splice(index+(edge==='after'?1:0),0,block);
+    const blocks:JSONContent[]=[];let previous:JSONContent|undefined;
+    for(const {node,parent} of moving){if(isItem(node)){if(previous===parent)blocks.at(-1)!.content!.push(node);else blocks.push({type:parent.type,attrs:parent.attrs,content:[node]});previous=parent;}else{blocks.push(node);previous=undefined;}}
+    doc.content!.splice(index+(edge==='after'?1:0),0,...blocks);
   }
   return JSON.stringify(doc)===JSON.stringify(document)?null:doc;
 }

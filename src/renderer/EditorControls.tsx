@@ -14,7 +14,7 @@ import {PropertyPopover} from './PropertyValue';
 import {Color} from './StyleView';
 import {defaultViewSource} from './ViewBlock';
 import {createDragPhantom} from './sortable';
-import {editorBlocks,moveEditorBlock,changeEditorBlock,type EditorBlock} from './editor-blocks';
+import {editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
 export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}:{editor:Editor;cards:CardInfo[];onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
@@ -37,7 +37,7 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
   },[editor]);
   useLayoutEffect(()=>{
     const target=block&&domFor(block),handle=controls.current;
-    if(target&&handle){const area=editor.view.dom.getBoundingClientRect(),clip=editor.view.dom.closest('.editor-body')?.getBoundingClientRect();const line=target.matches('li')?target.querySelector('p')??target:target;const first=line.getBoundingClientRect(),lineHeight=parseFloat(getComputedStyle(line).lineHeight)||24;const center=first.top+Math.min(first.height,lineHeight*zoom)/2;handle.style.left=Math.max(4,area.left+block.depth*24*zoom-(canvas&&zoom<1.1?24:46))+'px';handle.style.top=(center-13)+'px';handle.style.visibility=(!clip||center>=clip.top&&center<clip.bottom)?'visible':'hidden';}
+    if(target&&handle){const area=editor.view.dom.getBoundingClientRect(),clip=editor.view.dom.closest('.editor-body')?.getBoundingClientRect();const line=target.matches('li')?target.querySelector('p')??target:target;const first=line.getBoundingClientRect(),lineHeight=parseFloat(getComputedStyle(line).lineHeight)||24;const center=first.top+Math.min(first.height,lineHeight*zoom)/2;handle.style.left=Math.max(4,area.left-(canvas?24:46))+'px';handle.style.top=(center-13)+'px';handle.style.visibility=(!clip||center>=clip.top&&center<clip.bottom)?'visible':'hidden';}
     const el=bubble.current;if(!el)return;
     const selection=window.getSelection();if(!selection?.rangeCount)return;
     const rect=selection.getRangeAt(0).getBoundingClientRect(),size=el.getBoundingClientRect();
@@ -61,7 +61,7 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
   const add=(node:JSONContent)=>{setMenu(null);const position=block?(addAbove.current?block.from:block.to):editor.state.doc.content.size;action(ui.editor.addBlock,()=>editor.chain().focus().insertContentAt(position,node).run());};
   return createPortal(<>
     {block&&(!canvas||zoom>=.65)&&<div ref={controls} className="editor-block-controls" contentEditable={false}>
-      <Tool hidden={canvas&&zoom<1.1} icon="plus" label={ui.editor.addBlock} onClick={e=>{addAbove.current=e.altKey;const r=e.currentTarget.getBoundingClientRect();setMenu({anchor:e.currentTarget,x:r.left,y:r.bottom,label:ui.editor.addBlock,actions:[
+      <Tool hidden={canvas} icon="plus" label={ui.editor.addBlock} onClick={e=>{addAbove.current=e.altKey;const r=e.currentTarget.getBoundingClientRect();setMenu({anchor:e.currentTarget,x:r.left,y:r.bottom,label:ui.editor.addBlock,actions:[
         {label:ui.editor.text,icon:'format',run:()=>add({type:'paragraph'})},
         {label:tooltips.editor.heading,icon:'h1',run:()=>add({type:'heading',attrs:{level:2}})},
         {label:tooltips.editor.bulletList,icon:'list',run:()=>add({type:'bulletList',content:[{type:'listItem',content:[{type:'paragraph'}]}]})},
@@ -77,37 +77,42 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
       <Tool icon="grip" className="editor-block-grip" label={ui.editor.dragBlock} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();move(e.key==='ArrowUp'?'up':e.key==='ArrowDown'?'down':e.key==='ArrowRight'?'indent':'outdent');}}} onClick={e=>openBlockMenu(e.currentTarget)} onContextMenu={e=>{e.preventDefault();openBlockMenu(e.currentTarget);}} onPointerDown={event=>{
         if(event.button!==0)return;event.preventDefault();event.stopPropagation();cancel.current();setMenu(null);setPopup(null);
         const source=domFor(block);if(!source)return;
-        const before=editor.state.doc,blocks=editorBlocks(before),rect=source.getBoundingClientRect(),pointer=event.pointerId,startX=event.clientX,startY=event.clientY,offsetY=startY-rect.top,offsetX=startX-rect.left;
+        const before=editor.state.doc,blocks=editorBlocks(before),sources=selectedEditorBlocks(before,editor.state.selection,block),paths=sources.map(b=>b.path),elements=sources.map(domFor).filter((el):el is HTMLElement=>!!el);
+        const rects=elements.map(el=>el.getBoundingClientRect()),rect=new DOMRect(Math.min(...rects.map(r=>r.left)),Math.min(...rects.map(r=>r.top)),Math.max(...rects.map(r=>r.right))-Math.min(...rects.map(r=>r.left)),Math.max(...rects.map(r=>r.bottom))-Math.min(...rects.map(r=>r.top)));
+        const pointer=event.pointerId,startX=event.clientX,startY=event.clientY,offsetY=startY-rect.top,offsetX=startX-rect.left;
+        const allItems=sources.every(b=>b.item),targets:EditorBlock[]=allItems?blocks:[];
+        if(!allItems)before.forEach((node,from,index)=>{if(index)targets.push({path:[index],from,to:from+node.nodeSize,depth:0,item:false});});
         let phantom:HTMLElement|null=null,marker:HTMLElement|null=null,choice:{target:EditorBlock;edge:'before'|'after';nest:boolean}|null=null,active=false,frame=0,lastPointer:PointerEvent|null=null;
         const transformed=new Set<HTMLElement>();
         const reset=()=>{transformed.forEach(el=>{el.style.transition='none';el.style.removeProperty('transform');});transformed.clear();};
         const movePointer=(e:PointerEvent)=>{
           lastPointer=e;if(e.pointerId!==pointer)return;if(!active&&Math.hypot(e.clientX-startX,e.clientY-startY)<5)return;e.preventDefault();
-          if(!active){active=true;dragging.current=true;phantom=createDragPhantom(source,rect);source.style.opacity='.2';marker=document.createElement('div');marker.className='editor-block-drop';overlayContainer(source).append(marker);document.body.classList.add('list-dragging');frame=requestAnimationFrame(autoScroll);}
+          if(!active){active=true;dragging.current=true;phantom=document.createElement('div');Object.assign(phantom.style,{position:'fixed',width:rect.width+'px',height:rect.height+'px',pointerEvents:'none',zIndex:'1000'});phantom.className='editor-block-phantom';overlayContainer(source).append(phantom);
+            elements.forEach((el,i)=>{const copy=createDragPhantom(el,rects[i]);Object.assign(copy.style,{position:'absolute',left:(rects[i].left-rect.left)+'px',top:(rects[i].top-rect.top)+'px',background:'transparent'});phantom!.append(copy);el.style.opacity='.2';});marker=document.createElement('div');marker.className='editor-block-drop';overlayContainer(source).append(marker);document.body.classList.add('list-dragging');frame=requestAnimationFrame(autoScroll);}
           if(!editor.state.doc.eq(before)){finish(false);return;}
           reset();phantom!.style.left=e.clientX-offsetX+'px';phantom!.style.top=e.clientY-offsetY+'px';
           const area=editor.view.dom.getBoundingClientRect();choice=null;marker!.hidden=true;
           if(e.clientX<area.left-55||e.clientX>area.right+30||e.clientY<area.top||e.clientY>area.bottom)return;
-          const eligible=blocks.filter(b=>!(block.path.length<=b.path.length&&block.path.every((v,i)=>v===b.path[i])));
+          const eligible=targets.filter(b=>!paths.some(path=>path.length<=b.path.length&&path.every((v,i)=>v===b.path[i])));
           // Use real block boundaries, never the animated phantom or displaced preview.
           // Horizontal movement selects hierarchy depth; staying in the gutter keeps siblings.
-          const depth=Math.max(0,block.depth+Math.round((e.clientX-startX)/(24*zoom)));
+          const depth=Math.max(0,Math.min(...sources.map(b=>b.depth))+Math.round((e.clientX-startX)/(24*zoom)));
           const candidates=eligible.flatMap(target=>{const r=domFor(target)?.getBoundingClientRect();return r?(['before','after'] as const).map(edge=>({target,edge,r,y:edge==='before'?r.top:r.bottom})):[];});
           candidates.sort((a,b)=>Math.abs(e.clientY-a.y)+Math.abs(a.target.depth-depth)*12-Math.abs(e.clientY-b.y)-Math.abs(b.target.depth-depth)*12);
           const candidate=candidates[0];if(!candidate)return;
           let target=candidate.target,r=candidate.r;
-          while(block.item&&target.item&&target.depth>depth){const parent=eligible.find(b=>b.path.length===target.path.length-2&&b.path.every((v,i)=>v===target.path[i]));if(!parent)break;target=parent;r=domFor(target)!.getBoundingClientRect();}
-          const edge=candidate.edge,nest=block.item&&target.item&&depth>target.depth&&edge==='after';
-          if(!moveEditorBlock(editor.getJSON(),block.path,target.path,edge,nest))return;
+          while(allItems&&target.item&&target.depth>depth){const parent=eligible.find(b=>b.path.length===target.path.length-2&&b.path.every((v,i)=>v===target.path[i]));if(!parent)break;target=parent;r=domFor(target)!.getBoundingClientRect();}
+          const edge=candidate.edge,nest=allItems&&target.item&&depth>target.depth&&edge==='after';
+          if(!moveEditorBlocks(editor.getJSON(),paths,target.path,edge,nest))return;
           choice={target,edge,nest};marker!.hidden=false;Object.assign(marker!.style,{left:r.left+(nest?24:0)+'px',top:(edge==='before'?r.top:r.bottom)+'px',width:Math.max(30,r.width-(nest?24:0))+'px'});
           // Preview displacement without rearranging ProseMirror's managed DOM.
-          if(!nest&&target.path.length===block.path.length&&target.path.slice(0,-1).every((v,i)=>v===block.path[i])){
-            const from=block.path.at(-1)!,to=target.path.at(-1)!+(edge==='after'?1:0);
-            for(const b of blocks){if(b.path.length!==block.path.length||!b.path.slice(0,-1).every((v,i)=>v===block.path[i]))continue;const index=b.path.at(-1)!,el=domFor(b);if(el&&((to>from&&index>from&&index<to)||(to<from&&index>=to&&index<from))){el.style.transform=`translateY(${to>from?-rect.height:rect.height}px)`;el.style.transition='transform 150ms';transformed.add(el);}}
+          if(!nest&&sources.every(b=>b.path.length===target.path.length&&b.path.slice(0,-1).every((v,i)=>v===target.path[i]))){
+            const first=Math.min(...sources.map(b=>b.path.at(-1)!)),last=Math.max(...sources.map(b=>b.path.at(-1)!)),to=target.path.at(-1)!+(edge==='after'?1:0);
+            for(const b of blocks){if(b.path.length!==block.path.length||!b.path.slice(0,-1).every((v,i)=>v===block.path[i]))continue;const index=b.path.at(-1)!,el=domFor(b);if(el&&((to>last&&index>last&&index<to)||(to<first&&index>=to&&index<first))){el.style.transform=`translateY(${to>last?-rect.height/zoom:rect.height/zoom}px)`;el.style.transition='transform 150ms';transformed.add(el);}}
           }
         };
         const autoScroll=()=>{if(!active)return;const scroll=editor.view.dom.closest('.editor-body');if(scroll&&lastPointer){const clip=scroll.getBoundingClientRect(),before=scroll.scrollTop;if(lastPointer.clientY<clip.top+28)scroll.scrollTop-=8;else if(lastPointer.clientY>clip.bottom-28)scroll.scrollTop+=8;if(before!==scroll.scrollTop)movePointer(lastPointer);}if(active)frame=requestAnimationFrame(autoScroll);};
-        const finish=(save:boolean)=>{cancelAnimationFrame(frame);document.removeEventListener('pointermove',movePointer);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);reset();source.style.removeProperty('opacity');phantom?.remove();marker?.remove();document.body.classList.remove('list-dragging');dragging.current=false;cancel.current=()=>{};if(active){const suppress=(event:MouseEvent)=>{event.preventDefault();event.stopPropagation();};document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}active=false;if(save&&choice&&editor.state.doc.eq(before))apply(moveEditorBlock(editor.getJSON(),block.path,choice.target.path,choice.edge,choice.nest));};
+        const finish=(save:boolean)=>{cancelAnimationFrame(frame);document.removeEventListener('pointermove',movePointer);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);reset();elements.forEach(el=>el.style.removeProperty('opacity'));phantom?.remove();marker?.remove();document.body.classList.remove('list-dragging');dragging.current=false;cancel.current=()=>{};if(active){const suppress=(event:MouseEvent)=>{event.preventDefault();event.stopPropagation();};document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}active=false;if(save&&choice&&editor.state.doc.eq(before))apply(moveEditorBlocks(editor.getJSON(),paths,choice.target.path,choice.edge,choice.nest));};
         const up=(e:PointerEvent)=>{if(e.pointerId===pointer)finish(true);},abort=()=>finish(false),key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();abort();}};
         cancel.current=abort;document.addEventListener('pointermove',movePointer);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);
       }}/>

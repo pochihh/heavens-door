@@ -19,7 +19,7 @@ import {HtmlContent} from './HtmlContent';
 import { ViewBlockNode } from './ViewBlockNode';
 import { cardMarkdown, extensions, titleMetadata } from './editor-schema';
 
-export interface EditorFocus { x: number; y: number; scrollTop: number }
+export interface EditorFocus { x: number; y: number; scrollTop: number; append?:boolean }
 interface Props { afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
 // Changing files remounts the editor: effects must never touch a destroyed instance.
 export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
@@ -70,6 +70,11 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
     if (!editor || editor.isDestroyed || !autofocus || blocked) return;
     const scroll=editor.view.dom.closest('.editor-body');
     if (scroll && focusPoint) scroll.scrollTop=focusPoint.scrollTop;
+    if(focusPoint?.append){
+      const last=editor.state.doc.lastChild;
+      if(last?.type.name!=='paragraph'||last.content.size)editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph'});
+      editor.commands.focus('end',{scrollIntoView:false});return;
+    }
     const position=focusPoint ? editor.view.posAtCoords({left:focusPoint.x,top:focusPoint.y})?.pos : undefined;
     editor.commands.focus(position ?? (focusPoint ? 'end' : 'start'),{scrollIntoView:false});
   },[editor,autofocus,blocked,focusPoint]);
@@ -80,7 +85,14 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
     {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}
     <EditorCommands editor={editor}/>
     <EditorControls zoom={zoom} canvas={canvas} editor={editor} cards={cards} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
-    <EditorContent editor={editor} className="prose editor-body" />
+    <EditorContent editor={editor} className="prose editor-body" onPointerDownCapture={event=>{
+      if(!canvas||event.button!==0||event.defaultPrevented||(event.target as HTMLElement).closest('button,a,input,[contenteditable=false]'))return;
+      const last=editor.view.dom.lastElementChild;if(!last||event.clientY<=last.getBoundingClientRect().bottom)return;
+      event.preventDefault();event.stopPropagation();
+      if(editor.state.doc.lastChild?.type.name!=='paragraph'||editor.state.doc.lastChild.content.size)editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph'});
+      editor.commands.focus('end',{scrollIntoView:false});
+    }}/>
+
     {afterTitle&&createPortal(afterTitle,slot)}
   </>;
 }

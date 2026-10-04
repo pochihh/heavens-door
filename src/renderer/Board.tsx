@@ -24,8 +24,8 @@ export function isVisible(p: Placement, camera: Camera, width: number, height: n
   return (p.x + p.width) * camera.zoom + camera.x > -margin && p.x * camera.zoom + camera.x < width + margin &&
     (p.y + footprint) * camera.zoom + camera.y > -margin && p.y * camera.zoom + camera.y < height + margin;
 }
-const Preview = memo(function Preview({ afterTitle,card, onOpen, cache, onReady, collapsed=false }: {
-  afterTitle?:ReactNode;card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, string>; onReady:()=>void;
+const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=false }: {
+  card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, string>; onReady:()=>void;
 }) {
   const key = `${card.path}:${card.revision}`;
   const [content,setContent]=useState({key,html:cache.get(key)??''});
@@ -48,13 +48,13 @@ const Preview = memo(function Preview({ afterTitle,card, onOpen, cache, onReady,
   }, [card.path, card.revision, key, cache, collapsed]);
   const summary=useMemo(()=>collapsed?titlePreview(card):'',[collapsed,card.title,card.titleMarkdown,card.path]);
   useLayoutEffect(()=>{if(ready||collapsed)onReady();},[html,ready,collapsed,onReady]);
-  return <TitleContent path={card.path} afterTitle={collapsed?undefined:afterTitle} data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
+  return <TitleContent path={card.path} data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href');
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
   }} html={collapsed?summary:html||preview('',card.path)} />;
 });
 interface Props {
-  renderTags?:(card:CardInfo)=>React.ReactNode;addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,mode?:import('../layout').NavigationMode|'popup')=>void;
+  addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,mode?:import('../layout').NavigationMode|'popup')=>void;
   edgeDefaults?:EdgeStyle;
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
@@ -75,7 +75,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
+export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -229,12 +229,14 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
       e.preventDefault(); e.stopPropagation(); return;
     }
     if(!selected.includes(id))setSelectedEdges([]);
-    const body=(e.target as HTMLElement).closest<HTMLElement>('.card-preview');
+    const element=e.currentTarget,body=element.querySelector<HTMLElement>('.card-preview,.card-editor .editor-body');
+    const last=body?.querySelector('.tiptap')?.lastElementChild??body?.lastElementChild;
+    const append=!!last&&e.clientY>last.getBoundingClientRect().bottom&&!(e.target as HTMLElement).closest('.card-drag-strip,.card-top-row');
     onFinish?.();
     const ids = selected.includes(id) ? selected : [id];
     setSelected(ids); begin(e, 'move', ids);
     // Like obsidian-whiteboard: a press is a pending drag; edit only on a quiet release.
-    if(body&&selected.length<2)gesture.current!.editOnClick={id,focus:{x:e.clientX,y:e.clientY,scrollTop:body.scrollTop}};
+    if(body&&selected.length<2)gesture.current!.editOnClick={id,focus:{x:e.clientX,y:e.clientY,scrollTop:body.scrollTop,append}};
   }
   function selectRegion(g: Gesture, x: number, y: number) {
     const left = Math.min(g.x, x) - g.rect.left, top = Math.min(g.y, y) - g.rect.top;
@@ -423,7 +425,7 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
                 const rect=e.currentTarget.getBoundingClientRect();openMenu(p,e.currentTarget,rect.right,rect.bottom+4);
               }}/>
             </div>
-            {!p.folder && <div className="card-actions"><Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
+            {!p.folder && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
             {p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
@@ -435,9 +437,9 @@ export const Whiteboard = memo(function Whiteboard({ renderTags,addTagActions,re
                   {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id} style={{background:tintColor(child.folder?child.fillColor:cardFill(lookup.get(child.cardId),child))}}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
-                <CardEditor canvas zoom={view.zoom} afterTitle={card?.tags?.length?renderTags?.(card):undefined} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
+                <CardEditor canvas zoom={view.zoom} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
                 {cardDetails}
-              </div> : card ? <Preview afterTitle={card.tags?.length?renderTags?.(card):undefined} card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
+              </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
               <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
             </>}
           </article>;
