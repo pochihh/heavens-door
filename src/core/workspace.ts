@@ -18,7 +18,7 @@ import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
 import { TextSearch, searchExcerpt, searchDocument, searchHighlights, searchProperties } from './search';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
-import { COLLAPSED_CARD_HEIGHT, placementHeight, edgeStyle } from '../shared';
+import { COLLAPSED_CARD_HEIGHT, DEFAULT_WHITEBOARD_NAME, placementHeight, edgeStyle } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
 
 const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
@@ -301,14 +301,21 @@ export class Workspace {
     this.preferences=await writePreferences(this.root,this.preferences,patch);
     return this.snapshot();
   }
-  async createFolder(parent: string, name: string, position?:{x:number;y:number}) {
+  async createFolder(parent: string, name?: string, position?:{x:number;y:number}) {
     if(position!==undefined&&(!position||!Number.isFinite(position.x)||!Number.isFinite(position.y)))throw new Error(ui.errors.invalidWhiteboardPosition);
     const container=position?this.allBoards().find(b=>b.folder===parent):undefined;
     if(position&&!container)throw new Error(ui.errors.parentWhiteboardMissing);
+    const automatic=name===undefined;
+    name??=this.preferences.whiteboardName??DEFAULT_WHITEBOARD_NAME;
     if (!name || name.startsWith('.') || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || [...name].some(c => c.charCodeAt(0)<32) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) throw new Error(ui.errors.invalidFolderName);
-    if (parent) await fs.access(await this.path(parent));
-    const path=join(parent,name);
-    await fs.mkdir(await this.path(path));
+    const directory=parent?await this.path(parent):this.root,names=new Set((await fs.readdir(directory)).map(n=>n.toLocaleLowerCase())),stem=name;
+    let suffix=1,path:string;
+    while(true){
+      if(automatic&&names.has(name.toLocaleLowerCase())){name=stem+' '+(++suffix);continue;}
+      if(Buffer.byteLength(name+'.whiteboard')>255)throw new Error(ui.errors.longWhiteboardName);
+      path=join(parent,name);
+      try{await fs.mkdir(await this.path(path));break;}catch(error){if(!automatic||(error as NodeJS.ErrnoException).code!=='EEXIST')throw error;names.add(name.toLocaleLowerCase());}
+    }
     this.folders.add(path);
     const board=emptyBoard(join(path,name+'.whiteboard'));
     const changes:Write[]=[{path:board.path,content:writeBoard(board),expected:null}];

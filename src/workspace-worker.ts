@@ -54,7 +54,7 @@ async function dispatch(request: Request) {
   workspace.assertReady();
   switch (request.kind) {
     case 'preferences': return workspace.setPreferences(request.patch);
-    case 'createFolder': string(request.parent); string(request.name); return workspace.createFolder(request.parent,request.name,request.position);
+    case 'createFolder': string(request.parent); if(request.name!==undefined)string(request.name); return workspace.createFolder(request.parent,request.name,request.position);
     case 'migrateRoot': return workspace.migrateRoot();
     case 'tagCards': string(request.tag); return workspace.tagCards(request.tag,request.text,request.offset);
     case 'createTag': string(request.tag);return workspace.createTag(request.tag);

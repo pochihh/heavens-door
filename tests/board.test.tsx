@@ -337,6 +337,11 @@ test('canvas menu captures board coordinates, preserves right-drag panning and r
   try{
     await act(async()=>render(board));
     const canvas=document.querySelector<HTMLElement>('.canvas')!;canvas.getBoundingClientRect=()=>({left:40,top:30,width:1000,height:600} as DOMRect);
+    const empty=document.querySelector<HTMLButtonElement>('.canvas-empty button')!;
+    empty.getBoundingClientRect=()=>({left:490,top:310,width:100,height:40} as DOMRect);
+    await act(async()=>empty.click());
+    assert.deepEqual(created.pop(),['card',1030,440],'first card is centered at the button after pan and zoom');
+
     const pointer=(type:string,x=300,y=200)=>canvas.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:2,clientX:x,clientY:y}));
     const context=()=>canvas.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,button:2,clientX:300,clientY:200}));
     await act(async()=>{pointer('pointerdown');context();});assert.equal(document.querySelector('[role=menu]'),null,'press-time contextmenu waits for quiet release');
@@ -350,6 +355,9 @@ test('canvas menu captures board coordinates, preserves right-drag panning and r
     await act(async()=>{pointer('pointerdown');pointer('pointerup');});
     await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null);
     await act(async()=>render({...board,folder:'',path:'Workspace.whiteboard'}));
+    await act(async()=>empty.click());
+    assert.deepEqual(created.pop(),['card',920,300],'root board tile is centered using the camera after panning');
+
     await act(async()=>{pointer('pointerdown');pointer('pointerup');});assert.equal(document.querySelector<HTMLButtonElement>('[role=menuitem]')!.disabled,true,'mother whiteboard cannot contain cards');
     await act(async()=>document.body.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null,'outside click dismisses canvas menu');
   }finally{await act(async()=>root.unmount());}

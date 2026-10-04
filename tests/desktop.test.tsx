@@ -57,6 +57,9 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     await click('[aria-label="Settings"]');
     assert.ok(document.querySelector('[role=dialog][aria-label="Settings"] [role=tablist][aria-label="Settings features"]'));
+    await click('#settings-whiteboard');
+    assert.equal(document.querySelector<HTMLInputElement>('[aria-label="New whiteboard name"]')?.value,'A new board');
+    assert.ok(document.querySelector('[aria-label="Navigation device"]'));
     await click('#settings-views');
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Merge properties across tags"]')?.checked,true);
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Case-sensitive property names"]')?.checked,false);

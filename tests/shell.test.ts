@@ -130,3 +130,26 @@ test('each tab retains bounded navigation through revisits, splits, moves, renam
   const broken=structuredClone(panes(layout)[0]);broken.history![broken.active].index=999;
   assert.deepEqual(panes(restoreLayout(JSON.stringify(broken)))[0].tabs,['board:']);
 });
+
+
+test('automatic whiteboard names use workspace settings and preserve existing entries',async t=>{
+  const directory=await fs.mkdtemp(join(tmpdir(),'heavens-door-new-board-')),root=join(directory,'Workspace');await fs.mkdir(root);
+  let workspace=await Workspace.open(root,join(directory,'cache'));
+  t.after(async()=>{workspace.close();await fs.rm(directory,{recursive:true,force:true});});
+  const created=await workspace.createFolder('',undefined,{x:125,y:-50});
+  assert.ok(created.snapshot.boards.some(b=>b.folder==='A new board'));
+  assert.deepEqual(created.snapshot.boards.find(b=>!b.folder)!.cards.map(p=>[p.folder,p.x,p.y]),[['A new board',125,-50]]);
+  await workspace.createFolder('');
+  assert.ok(workspace.snapshot().boards.some(b=>b.folder==='A new board 2'));
+  await workspace.setPreferences({whiteboardName:'Ideas'});
+  await fs.writeFile(join(root,'A new board','ideas'),'existing file');
+  const nested=await workspace.createFolder('A new board',undefined,{x:10,y:20});
+  assert.ok(nested.snapshot.boards.some(b=>b.folder===join('A new board','Ideas 2')));
+  assert.equal(await fs.readFile(join(root,'A new board','ideas'),'utf8'),'existing file');
+  await assert.rejects(()=>workspace.createFolder('A new board','Ideas 2'),/EEXIST/);
+  for(const whiteboardName of ['', '../Outside', 'CON', 'bad/name'])await assert.rejects(()=>workspace.setPreferences({whiteboardName}),/Invalid new whiteboard name/);
+  workspace.close();workspace=await Workspace.open(root,join(directory,'cache'));
+  assert.equal(workspace.snapshot().preferences?.whiteboardName,'Ideas');
+  await workspace.createFolder('');
+  assert.ok(workspace.snapshot().boards.some(b=>b.folder==='Ideas'));
+});
