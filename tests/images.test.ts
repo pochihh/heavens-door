@@ -27,3 +27,19 @@ test('HTML link rewrites change actual references without touching other attribu
   const result=rewriteHtmlLinks(source,path=>path==='old.png'?'new.png':path);
   assert.equal(result,'<img title="Example > src=old.png" data-src="old.png" src = "new.png"> <!-- <img src="old.png"> --> <a href="new.png">Read</a>');
 });
+
+test('image destination settings and imported paths stay recoverable without guessing duplicate names',async()=>{
+  const {resolveImage}=await import('../src/core/images'),{writePreferences,defaultPreferences}=await import('../src/core/preferences'),{DEFAULT_EDITOR_SETTINGS}=await import('../src/editor-settings');
+  const root=await fs.mkdtemp(join(tmpdir(),'heavens-images-'));
+  try{
+    await fs.mkdir(join(root,'Ideas'));await fs.writeFile(join(root,'Ideas/Card.md'),'# Card');
+    await writePreferences(root,defaultPreferences(),{editor:{...DEFAULT_EDITOR_SETTINGS,imageLocation:'workspace',imageFolder:'Assets/Images'}});
+    const image=await importImage(root,'Ideas/Card.md','figure.png','image/png',Uint8Array.from([1,2,3]));
+    assert.match(image.src,/^\.\.\/Assets\/Images\/figure-/);assert.equal((await resolveImage(root,'Ideas/Card.md',image.src))[0],image.src);
+    const basename=image.src.split('/').at(-1)!;assert.deepEqual(await resolveImage(root,'Ideas/Card.md','Assets/Images/'+basename),[image.src]);
+    assert.deepEqual(await resolveImage(root,'Ideas/Card.md',basename),[image.src]);
+    await fs.mkdir(join(root,'Other'));await fs.copyFile(join(root,'Ideas',image.src),join(root,'Other',basename));
+    assert.equal((await resolveImage(root,'Ideas/Card.md',basename)).length,2);
+    await assert.rejects(writePreferences(root,defaultPreferences(),{editor:{...DEFAULT_EDITOR_SETTINGS,imageFolder:'../escape'}}));
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});

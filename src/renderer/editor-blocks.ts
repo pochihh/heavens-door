@@ -40,3 +40,20 @@ export function moveEditorBlock(document:JSONContent,source:number[],target:numb
   }
   return JSON.stringify(doc)===JSON.stringify(document)?null:doc;
 }
+export function changeEditorBlock(document:JSONContent,path:number[],kind:string):JSONContent|null{
+  if(!path[0])return null;
+  const doc=structuredClone(document),node=at(doc,path),parent=at(doc,path.slice(0,-1)),index=path.at(-1)!;
+  if(kind==='delete'){parent.content!.splice(index,1);for(let depth=path.length-1;depth>0;depth--){const p=path.slice(0,depth),value=at(doc,p);if(!isList(value)||value.content?.length)break;at(doc,p.slice(0,-1)).content!.splice(p.at(-1)!,1);}return doc;}
+  if(kind==='duplicate'){parent.content!.splice(index+1,0,structuredClone(node));return doc;}
+  const content=isItem(node)?node.content??[]:[node],first=content[0];
+  if(!first||!['paragraph','heading'].includes(first.type??''))return null;
+  const inline=first.content,paragraph:JSONContent={type:'paragraph',content:inline};
+  const asList=['bulletList','orderedList','taskList'].includes(kind);
+  const convertLists=(value:JSONContent):JSONContent=>isList(value)?{type:kind,content:value.content?.map(child=>({...child,type:kind==='taskList'?'taskItem':'listItem',attrs:kind==='taskList'?{checked:child.attrs?.checked??false}:undefined,content:child.content?.map(convertLists)}))}:value;
+  const next:JSONContent[]=asList?[{type:kind,content:[{type:kind==='taskList'?'taskItem':'listItem',...(kind==='taskList'?{attrs:{checked:node.attrs?.checked??false}}:{}),content:[paragraph,...content.slice(1).map(convertLists)]}]}]:[{type:kind.startsWith('heading')?'heading':kind==='codeBlock'?'codeBlock':'paragraph',...(kind.startsWith('heading')?{attrs:{level:Number(kind.slice(-1))}}:{}),content:kind==='codeBlock'?inline?.map(n=>({...n,marks:undefined})):inline},...content.slice(1)];
+  if(isItem(node)){
+    const grand=at(doc,path.slice(0,-2)),listIndex=path.at(-2)!,before=parent.content!.slice(0,index),after=parent.content!.slice(index+1);
+    grand.content!.splice(listIndex,1,...before.length?[{...parent,content:before}]:[],...next,...after.length?[{...parent,content:after}]:[]);
+  }else parent.content!.splice(index,1,...next);
+  return doc;
+}

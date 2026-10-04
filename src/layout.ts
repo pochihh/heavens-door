@@ -77,7 +77,7 @@ export type DockSide='left'|'right';
 export interface PanelGroup {id:string;tabs:ModuleId[];active:ModuleId;weight:number}
 export interface Dock {collapsed:boolean;width:number;groups:PanelGroup[]}
 export interface Docks {version:1;left:Dock;right:Dock;closed?:Partial<Record<ModuleId,{side:DockSide;group:string;index:number;weight:number}>>}
-export interface ViewMemory {camera?:{x:number;y:number;zoom:number};scroll?:number;tagView?:'table'|'list'|'kanban';tagGroup?:string}
+export interface ViewMemory {source?:boolean;camera?:{x:number;y:number;zoom:number};scroll?:number;tagView?:'table'|'list'|'kanban';tagGroup?:string}
 export interface DocumentsLayout {tree:Layout;active:string;views:Record<string,ViewMemory>;formatting:string[]}
 export interface NavigationMemory {expanded?:string[];search?:string;scroll?:number}
 export function defaultDocks():Docks {
@@ -172,7 +172,7 @@ export function validateDocuments(value:unknown):DocumentsLayout {
   const d=value as DocumentsLayout,tree=restoreLayout(JSON.stringify(d.tree));
   if(JSON.stringify(tree)!==JSON.stringify(d.tree)||!panes(tree).some(p=>p.id===d.active)||!d.views||typeof d.views!=='object'||Array.isArray(d.views)||Object.keys(d.views).length>3200||!Array.isArray(d.formatting)||d.formatting.some(id=>typeof id!=='string')||d.formatting.length>16)throw new Error(ui.errors.invalidMainDockLayout);
   for(const [key,v] of Object.entries(d.views)){
-    if(key.length>2300||!v||typeof v!=='object'||Array.isArray(v)||v.scroll!==undefined&&(!Number.isFinite(v.scroll)||v.scroll<0)||v.camera!==undefined&&(!v.camera||typeof v.camera!=='object'||![v.camera.x,v.camera.y,v.camera.zoom].every(Number.isFinite)||v.camera.zoom<.2||v.camera.zoom>3)||v.tagView!==undefined&&!['table','list','kanban'].includes(v.tagView)||v.tagGroup!==undefined&&(typeof v.tagGroup!=='string'||v.tagGroup.length>2048))throw new Error(ui.errors.invalidDocumentView);
+    if(key.length>2300||!v||typeof v!=='object'||Array.isArray(v)||v.source!==undefined&&typeof v.source!=='boolean'||v.scroll!==undefined&&(!Number.isFinite(v.scroll)||v.scroll<0)||v.camera!==undefined&&(!v.camera||typeof v.camera!=='object'||![v.camera.x,v.camera.y,v.camera.zoom].every(Number.isFinite)||v.camera.zoom<.2||v.camera.zoom>3)||v.tagView!==undefined&&!['table','list','kanban'].includes(v.tagView)||v.tagGroup!==undefined&&(typeof v.tagGroup!=='string'||v.tagGroup.length>2048))throw new Error(ui.errors.invalidDocumentView);
   }
   return d;
 }

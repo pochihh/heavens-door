@@ -1,6 +1,10 @@
+import {ViewBlockContext} from './ViewBlock';
+import {DEFAULT_EDITOR_SETTINGS} from '../editor-settings';
+import {EditorCommands} from './EditorCommands';
+import {imageLayout,imageHtml} from './image-layout';
 import {copyImage} from './editor-images';
 import { ui } from '../text/ui';
-import { useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useContext, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import {createPortal} from 'react-dom';
 import {TitleContent,titleSlot} from './TitleContent';
 import { EditorContent, useEditor, ReactNodeViewRenderer } from '@tiptap/react';
@@ -16,10 +20,11 @@ import { ViewBlockNode } from './ViewBlockNode';
 import { cardMarkdown, extensions, titleMetadata } from './editor-schema';
 
 export interface EditorFocus { x: number; y: number; scrollTop: number }
-interface Props { afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus }
+interface Props { afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
 // Changing files remounts the editor: effects must never touch a destroyed instance.
 export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
-function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPoint}:Props) {
+function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
+  const context=useContext(ViewBlockContext),settings=context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS;
   const blocked=unsupported(body);
   const [initialContent]=useState(()=>withCardTitle(body));
   const [imageError,setImageError]=useState(''),imageInput=useRef<HTMLInputElement>(null),actionLabel=useRef<string|undefined>(undefined),imageHandler=useRef<(files:File[],position?:number)=>void>(()=>{});
@@ -33,8 +38,9 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
     },handleDrop:(view,event)=>{
       const files=[...event.dataTransfer?.files??[]].filter(file=>file.type.startsWith('image/'));if(!files.length)return false;event.preventDefault();imageHandler.current(files,view.posAtCoords({left:event.clientX,top:event.clientY})?.pos);return true;
     },handleDOMEvents:{copy:(view,event)=>{
-      const selection=view.state.selection;if(!(selection instanceof NodeSelection)||selection.node.type.name!=='image')return false;
-      const source=assetPath(path,String(selection.node.attrs.src));if(!source)return false;event.preventDefault();void copyImage(source).catch(error=>setImageError(String(error)));return true;
+      const selection=view.state.selection;if(!(selection instanceof NodeSelection)||!imageLayout(selection.node))return false;
+      const item=imageLayout(selection.node);if(item?.kind!=='single')return false;
+      const source=assetPath(path,item.src);if(!source)return false;event.preventDefault();void copyImage(source,item.crop,parseFloat(item.width)).catch(error=>setImageError(String(error)));return true;
     }}},
     onUpdate:({editor}) => onEdit(cardMarkdown(editor),actionLabel.current),
   });
@@ -49,7 +55,7 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
         if(editor.isDestroyed)return;
         const at=key.getState(editor.state) as number;
         actionLabel.current=ui.editor.insertImage;
-        try{editor.chain().focus().insertContentAt(at,{type:'image',attrs:{...image,html:true}}).run();}finally{actionLabel.current=undefined;}
+        try{editor.chain().focus().insertContentAt(at,{type:'htmlBlock',attrs:{source:imageHtml({kind:'single',...image,width:settings.imageWidth,alignment:settings.imageAlignment})}}).run();}finally{actionLabel.current=undefined;}
       }
     }catch(error){if(!editor.isDestroyed)setImageError(String(error));}
     finally{if(!editor.isDestroyed)editor.unregisterPlugin(key);}
@@ -72,7 +78,8 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
   return <>
     <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml" multiple hidden onChange={e=>{const files=[...e.target.files??[]];e.target.value='';void insertImages(files);}}/>
     {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}
-    <EditorControls editor={editor} cards={cards} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
+    <EditorCommands editor={editor}/>
+    <EditorControls zoom={zoom} canvas={canvas} editor={editor} cards={cards} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
     <EditorContent editor={editor} className="prose editor-body" />
     {afterTitle&&createPortal(afterTitle,slot)}
   </>;

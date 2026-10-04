@@ -17,7 +17,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
   let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[{id:'ideas',cardId:'',folder:'Ideas',x:20,y:20,width:340,height:280}],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];let rejectSave=false;
-  window.door={importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
+  window.door={resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
       case 'listFiles':return request.path===''?[{name:'Ideas',path:'Ideas',kind:'folder'},{name:'assets',path:'assets',kind:'folder'}]:request.path==='assets'?[{name:'photo.jpg',path:'assets/photo.jpg',kind:'file'}]:[{name:'A.md',path:'Ideas/A.md',kind:'file'}];
@@ -148,6 +148,18 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
     assert.equal(document.querySelectorAll('.workspace [role=tab]').length,2,'reopening a card reuses its tab');
     assert.equal(document.querySelectorAll('.tiptap').length,1);
+    await act(async()=>document.querySelector('.tiptap')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:' ',code:'Space',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true})));
+    await click('[aria-label="plus minus"]');
+    assert.match(session.state.draft!.body,/±/,'symbol picker inserts literal Unicode into the saved Markdown');
+    await act(async()=>session.run(()=>session.flush()));await settle();
+    const symbolBody=session.state.draft!.body,savesBeforeMode=requests.filter(kind=>kind==='saveCard').length;
+    await click('.active-pane .document-toolbar [aria-label="Card actions"]');
+    await click('[role=menuitemcheckbox]');
+    assert.equal(document.querySelector<HTMLTextAreaElement>('[aria-label="Markdown source"]')?.value,symbolBody);
+    await click('.active-pane .document-toolbar [aria-label="Card actions"]');
+    await click('[role=menuitemcheckbox]');
+    assert.equal(document.querySelector('[aria-label="Markdown source"]'),null);
+    assert.equal(requests.filter(kind=>kind==='saveCard').length,savesBeforeMode,'changing editor mode alone never rewrites the file');
     await click('[data-tooltip="Open the current file beside this Tab Group"]');
     assert.equal(document.querySelectorAll('.note-pane').length,2);
     assert.equal(document.querySelectorAll('.workspace [role=tab][aria-selected=true]').length,2);

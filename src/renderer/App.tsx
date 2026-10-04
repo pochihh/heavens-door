@@ -72,6 +72,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [boardSelection,setBoardSelection]=useState<BoardSelection>();
   const [popup,setPopup]=useState<{key:string;pane:string;previousCard?:string}>();
   const [searchOpen,setSearchOpen]=useState(false);
+  useEffect(()=>{const search=()=>setSearchOpen(true);window.addEventListener('editor:search',search);return()=>window.removeEventListener('editor:search',search);},[]);
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!document.querySelector('dialog[open]')&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
   const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
@@ -280,7 +281,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <div className="tab-navigation"><Tool icon="back" label={tooltips.navigation.back} disabled={history.index===0} onClick={()=>travel(p,-1)}/><Tool icon="forward" label={tooltips.navigation.forward} disabled={history.index>=history.entries.length-1} onClick={()=>travel(p,1)}/></div>
         <div className="toolbar-spacer"/>
         {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
-        {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.common.openInPopup,icon:'note',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
+        {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.editorTools.sourceMode,icon:'source',checked:!!memory.source,checkType:'checkbox',run:()=>{memory.source=!memory.source;rememberViews();setTabMenu(null);if(!focused)focusPane(p);}},{label:ui.common.openInPopup,icon:'note',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
         <Tool icon="star" className={prefs.starred.includes(documentKey)?'is-starred':''} label={prefs.starred.includes(documentKey)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(documentKey)}/>
 
       </div>}

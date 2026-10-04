@@ -3,6 +3,8 @@ import type { Bridge, Snapshot, WindowAction } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
+  resolveImage:(notePath,source)=>ipcRenderer.invoke('image:resolve',notePath,source),
+  importImageLink:(notePath,url)=>ipcRenderer.invoke('image:link',notePath,url),
   importImage:(path,name,type,data)=>ipcRenderer.invoke('image:import',path,name,type,data),
   imageData:path=>ipcRenderer.invoke('image:read',path),
   copyImage:png=>ipcRenderer.invoke('image:copy',png),

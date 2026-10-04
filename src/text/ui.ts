@@ -1,7 +1,9 @@
+import {editorText} from './editor';
 import {viewText} from './views';
 // App-authored UI copy. Settings copy, user content, and native/dependency-owned labels are excluded.
 // Plain strings and typed formatters only; no rendering or application state.
 export const ui = {
+  editorTools:editorText,
   views:viewText,
   settings: {
     title:'Settings',workspace:'Workspace',performance:'Performance',hardwareAcceleration:'Hardware acceleration',

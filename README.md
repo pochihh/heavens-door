@@ -134,3 +134,5 @@ Expand **Developer → Graphics diagnostics** to inspect hardware acceleration i
 Settings now has a searchable sidebar with separate feature pages. **Views and queries** controls merging equally named properties in pickers (On by default) and case-sensitive name matching (Off by default). Stored namespaced keys remain unchanged.
 
 Use **Add block → Add view block** beside a card content block, or **Add view block** in a tag page. One file-backed YAML query can feed multiple named Table, Kanban, Gallery and Timeline views, each with its own additional filter. Results open their source cards; Table cells and Kanban/Timeline moves can edit source properties. See the [view-block file format and usage](docs/view-blocks.md).
+
+The card editor supports source mode, contextual block moves and styling, configurable slash commands, symbols/emoji, and portable HTML image layouts with captions, crops and rows. See [Editor storage and controls](docs/editor.md).

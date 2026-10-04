@@ -7,7 +7,7 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {readAppSettings,writeHardwareAcceleration} from './app-settings';
 import {WorkspaceRegistry} from './core/registry';
-import {importImage,MAX_IMAGE_BYTES} from './core/images';
+import {importImage,resolveImage,MAX_IMAGE_BYTES} from './core/images';
 import {workspacePath} from './core/files';
 import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, GraphicsDiagnostics } from './shared';
 
@@ -116,6 +116,17 @@ void app.whenReady().then(async()=>{
     if(!workspace)throw new Error(ui.errors.workspaceIsNotRegistered);
     if(workspace.status!=='available')throw new Error(ui.workspace.cannotOpen(workspace.name,ui.workspace.status[workspace.status]));
     return open(d,workspace.root);
+  });
+  ipcMain.handle('image:resolve',(event,notePath:string,source:string)=>{const d=trusted(event);if(!d.host)throw new Error(ui.errors.unknownWorkspace);return resolveImage(d.host.root,notePath,source);});
+  ipcMain.handle('image:link',async(event,notePath:unknown,url:unknown)=>{
+    const d=trusted(event);if(!d.host||typeof notePath!=='string'||typeof url!=='string'||url.length>4096)throw new Error('Invalid image link');
+    if(!/^https?:\/\//i.test(url)){const matches=await resolveImage(d.host.root,notePath,url);if(matches.length!==1)throw new Error(matches.length?'Several files match. Use a full relative path.':'Image file not found.');return {src:matches[0],alt:''};}
+    const address=new URL(url);if(address.username||address.password)throw new Error('Use an image URL without credentials.');
+    const response=await net.fetch(address.href,{signal:AbortSignal.timeout(30000)});if(!response.ok)throw new Error('Image download failed.');
+    const type=response.headers.get('content-type')?.split(';')[0]??'';if(!type.startsWith('image/'))throw new Error('The link does not point to an image.');
+    const reader=response.body?.getReader();if(!reader)throw new Error('Empty image response.');const chunks:Uint8Array[]=[];let size=0;
+    try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>MAX_IMAGE_BYTES)throw new Error('Choose an image smaller than 25 MB.');chunks.push(value);}}finally{await reader.cancel();}
+    return importImage(d.host.root,notePath,decodeURIComponent(address.pathname.split('/').pop()||'image'),type,Buffer.concat(chunks));
   });
   ipcMain.handle('image:import',async(event,path:string,name:string,type:string,data:Uint8Array)=>{
     const d=trusted(event);if(!d.host)throw new Error(ui.errors.unknownWorkspace);

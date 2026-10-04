@@ -8,13 +8,15 @@ Text color and highlighting use inline HTML:
 A <span style="color: #ca533f; background-color: #fff0ad">colored thought</span>.
 ```
 
-New images are copied to `_assets/` beside the note, with a readable name and a collision-resistant suffix. Insertion writes a relative HTML reference:
+By default, new images are copied to `_assets/` beside the note, with a readable name and a collision-resistant suffix. Insertion writes a relative HTML reference inside a readable layout wrapper:
 
 ```html
-<img src="_assets/diagram-41a8fb2c.png" alt="Control diagram" width="320">
+<div data-better-edit-image="filled" style="width: 100%; margin-left: auto; margin-right: auto">
+  <img src="_assets/diagram-41a8fb2c.png" alt="Control diagram" style="width: 100%; height: auto">
+</div>
 ```
 
-Existing Markdown images remain Markdown until an image-specific change needs HTML attributes. Resizing stores width and keeps the original asset. Descriptions use `alt`; captions can be ordinary text below the image. Imports accept PNG, JPEG, GIF, WebP, AVIF and SVG, up to 25 MB each. Undoing insertion or removing an image removes the note reference, retaining the asset for recovery and other references. No automatic asset deletion occurs.
+Existing Markdown images remain Markdown until an image-specific change needs HTML attributes. Resizing stores width and keeps the original asset. Descriptions use `alt`; captions use readable paragraph text inside the HTML image wrapper. Imports accept PNG, JPEG, GIF, WebP, AVIF and SVG, up to 25 MB each. Undoing insertion or removing an image removes the note reference, retaining the asset for recovery and other references. No automatic asset deletion occurs.
 
 General HTML blocks and inline fragments retain their source through unrelated edits. Use their Edit HTML button for source changes. The preview suppresses scripts, embedded browsing contexts, forms and remote resource loads; source is preserved. This is document markup support, not JavaScript execution. Unrecognized Markdown extensions such as wiki links, footnotes and math still use the existing protected preview.
 
@@ -24,21 +26,22 @@ There is no bulk migration. Existing files remain usable externally, and unknown
 
 ## Better Edit migration
 
-The compatibility reference is the `obsidian-better-edit` plugin's image schema, controls, and documented feature list. Keep ordinary Markdown/HTML as the storage contract. The following table separates the current foundation from the remaining migration work.
+The Better Edit migration now includes standalone images, non-destructive crops, image rows and placeholders, contextual block editing, selection styling, configurable slash commands, and Unicode symbol/emoji insertion. These use the current editor and file-saving pipeline rather than importing Obsidian's CodeMirror integration. There is no bulk conversion of existing notes.
 
-| Area | Current support | Migration target |
-| --- | --- | --- |
-| Image insertion | Local paste, drop and file picker; relative HTML references | Placeholders with Upload and Link; configurable attachment destination and defaults |
-| Single-image editing | Resize, alt text, original size, duplicate, remove | Left/center/right alignment, inline caption with hide/show, replacement preserving layout, rectangular and circular crop |
-| Image controls | Compact image-anchored More menu; separate alt-text popup | Better Edit hover toolbar for alignment, caption, crop, replace and More; More-only below 220 px |
-| Image copying | Decoded original pixels, including SVG rasterization | Copy image copies the visible crop as PNG; Copy original image and Copy HTML remain separate actions |
-| Image rows | Existing HTML renders and is retained through other edits | Create rows by dragging images together; reorder, transfer and extract items; placeholders; justify, alignment, wrapping and gap controls |
-| Paths | New files use relative paths; card moves and whiteboard renames update HTML references | Resolve imported Obsidian shortest/vault-relative paths before offering a migration; never guess between duplicate filenames |
-| Block editing | Reorder blocks and individual list subtrees, indent/outdent, add blocks | Duplicate/delete/Turn into, insert above, and broader Markdown compatibility |
-| Selection styling | Floating toolbar and HTML text/highlight colors | Complete inline strike/code/link controls; keep block conversion in the block menu |
-| Slash commands | Add-block menu | Searchable slash menu, configurable templates/order, application commands replacing Obsidian-specific command IDs |
-| Symbols | Existing document icon picker is separate | Editor insertion of real Unicode symbols/emoji with shared search and keyboard controls |
+Row-to-row merging and exporting a crop as a new file were not supported by the reference plugin and remain outside this migration. Copying the visible crop is available. Obsidian-specific executable command IDs are replaced with the app's own supported commands. Math, wiki links and footnotes retain the existing protected rich preview; Source mode permits editing their Markdown.
 
-For the next image pass, reuse the plugin's non-destructive crop geometry and portable inline-CSS representation with adapters for the current editor. Preserve the original asset. A hidden caption retains its text. Image replacement keeps the caption and alignment; crop behavior must account for the new image's dimensions. Existing `data-better-edit-image` and `data-better-edit-image-row` source must remain intact unless the user changes that image/layout. Older one-wrapper crops and current nested crop wrappers both need coverage.
+## Contextual tools and source mode
 
-Image row dragging is a separate interaction from moving the entire HTML block. Reuse the app's pointer drag preview, insertion marker and cancellation behavior; do not introduce a second native drag system. Row-to-row merging was not supported by Better Edit and is not part of parity. Exporting a crop as a new file was also deferred there; copying its visible pixels is the first export path here.
+Card pages and card popups offer **Source mode** in their More menu. It edits the Markdown body, including the title and raw HTML, through the same draft, revision checks and undo/save pipeline. Tag frontmatter remains managed by the property UI. A page remembers its source-mode choice with its workspace view preferences; popup state is local to that popup. Switching modes alone never writes a card.
+
+The block grip opens Duplicate, Delete, Turn into, and move/indent actions. Option-click Add to insert above. List-item moves carry their descendants. Moving horizontally while dragging selects the nesting depth; dropping into one's own descendants is rejected. Text selections expose bold, italic, strike, inline code, links, text color and highlighting. Block conversions are in the block menu.
+
+Type `/` on a fresh paragraph to search commands with the shared bilingual fuzzy engine, use arrows to choose, Enter to insert, and Escape to dismiss. **Settings → Editor** controls command availability/order and Markdown/HTML templates. `{{cursor}}` marks the insertion point. Application commands can open workspace search or save a checkpoint. Symbols and emoji are available in the block menu, slash menu, or Ctrl+Shift+Space; these insert normal Unicode characters.
+
+## Image controls and layouts
+
+Images have a hover toolbar for alignment, caption, crop, replacement and More. Under 220 screen pixels, the toolbar shows More only. Captions edit directly below the image; hiding a caption retains its text. Replacement keeps width, alignment and caption, resetting the crop for the new image. Copy image produces PNG pixels of the visible crop, including transparent circular corners; Copy original image and Copy HTML are separate actions. Animated sources copy their first decoded frame.
+
+Paste, file drop, Upload, and image placeholders all use the same local asset importer. Linking an HTTP(S) image downloads a local copy; linking a local path reuses the asset. Settings → Editor configures the attachment folder, whether it is beside each card or at the workspace root, default image width and alignment. Writes use relative paths and never overwrite existing assets. Missing imported Obsidian images can be resolved with **Find image file**: explicit relative paths take precedence, then workspace-relative paths, then exact filename matches. Multiple filename matches require a choice.
+
+Drag images sideways onto another image to form a row. Drag within a row to reorder, between rows to transfer, or to a block boundary to extract. Row controls include gap, alignment, justification, wrapping, placeholders, copy HTML, duplicate and removal. The existing inline-CSS `data-better-edit-image` / `data-better-edit-image-row` formats remain the storage contract, including older one-wrapper crops. Crop geometry and Unicode symbol data are adapted from Better Edit; editor behavior uses the app's existing React/pointer controls.

@@ -18,3 +18,16 @@ test('block moves retain list subtrees and nesting, reject descendant drops and 
   const root=moveEditorBlock(doc,[1,0],[2],'after')!;
   assert.equal(root.content!.at(-1)!.type,'bulletList');assert.equal(root.content!.at(-1)!.content![0].content![0].content![0].text,'Parent');
 });
+
+test('converting one list item keeps its descendants and surrounding siblings',async()=>{
+  const {changeEditorBlock}=await import('../src/renderer/editor-blocks');
+  const converted=changeEditorBlock(doc,[1,0],'taskList')!;
+  assert.equal(converted.content![1].type,'taskList');
+  assert.equal(converted.content![1].content![0].content![1].type,'taskList');
+  assert.equal(converted.content![2].type,'bulletList');
+  assert.equal(converted.content![2].content![0].content![0].content![0].text,'Sibling');
+  const heading=changeEditorBlock(doc,[1,0],'heading2')!;
+  assert.equal(heading.content![1].type,'heading');
+  assert.equal(heading.content![2].content![0].content![0].content![0].text,'Child');
+  assert.equal(changeEditorBlock(doc,[0],'delete'),null);
+});

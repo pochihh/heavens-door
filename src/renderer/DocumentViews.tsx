@@ -54,7 +54,7 @@ export function NoteView({path,session,snapshot,active,memory,suspended=false,on
       const link=(e.target as HTMLElement).closest('a'),href=link?.getAttribute('href');
       if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
     }}>
-    {shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
+    {memory.source?<textarea className="editor-body card-source" aria-label={ui.editorTools.markdownSource} spellCheck={false} value={shown.body} readOnly={suspended||!shown.editing} onFocus={()=>{if(!editing)onActivate();}} onChange={e=>{if(!suspended)session.edit(e.target.value);}}/>:shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
       <TitleContent path={path} className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}

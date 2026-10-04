@@ -212,3 +212,16 @@ test('Better Edit image rows and non-destructive crops retain their portable HTM
     assert.ok(html.includes('border-radius: 50%'));assert.ok(html.includes('margin-left: -80px'));assert.ok(html.includes('display: flex'));
   }finally{editor.destroy();}
 });
+
+test('portable image rows, hidden captions and crop geometry survive save and reopen',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  const {imageHtml,parseImageLayout,row}=await import('../src/renderer/image-layout'),{resizeCropRect}=await import('../src/renderer/crop-geometry'),{extensions}=await import('../src/renderer/editor-schema');
+  const layout=row([{kind:'single',src:'assets/a & b.png',width:'240px',alignment:'center',alt:'A < B',caption:'hidden & readable',captionHidden:true,crop:{offsetX:20,offsetY:30,height:240,imgWidth:600,shape:'circle'}},{kind:'placeholder'}]);
+  const html=imageHtml(layout),parsed=parseImageLayout(html);assert.deepEqual(parsed,{...layout,images:[{...layout.images[0],alignment:'left'},layout.images[1]]});
+  const editor=new Editor({extensions:extensions('card.md'),content:'# Images\n\n'+html,contentType:'markdown'});
+  try{editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph',content:[{type:'text',text:'Other edit'}]});assert.ok(editor.getMarkdown().includes(html));}finally{editor.destroy();}
+  const crop=resizeCropRect({x:20,y:20,w:100,h:100},-30,-30,'nw',1,{w:500,h:500});assert.equal(crop.x+crop.w,120);assert.equal(crop.y+crop.h,120);
+  const legacy='<div data-better-edit-image="filled" style="width: 100px; overflow: hidden; height: 80px"><img src="a.png" style="width: 200px; margin-left: -10px; margin-top: -20px"></div>';
+  assert.deepEqual((parseImageLayout(legacy) as {crop:unknown}).crop,{offsetX:10,offsetY:20,height:80,imgWidth:200});
+});
