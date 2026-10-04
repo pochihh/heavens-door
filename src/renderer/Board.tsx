@@ -207,6 +207,8 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
   }
   function capture(e: PointerEvent) {
     const target = e.target as HTMLElement;
+    // React portals still bubble through the board; floating editor controls are not canvas presses.
+    if(!e.currentTarget.contains(target))return;
     rightPress.current=e.button===2;
     if (target.closest('.edge-layer,.edge-handles')) return;
     if (target.closest('.canvas-controls,.canvas-empty button,.card-editor') || editable(target)) return;

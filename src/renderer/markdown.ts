@@ -1,3 +1,4 @@
+import {parseImageLayout,imageHtml} from './image-layout';
 import { ui } from '../text/ui';
 import { marked, type Token } from 'marked';
 import { extractAbsorbedBlankLines } from '@tiptap/markdown';
@@ -59,6 +60,22 @@ function renderPreview(html:string,path:string,reservedTitle=true) {
       content.prepend(paragraph);
     }
     item.replaceChildren(label,content);
+  }
+  // Image previews share the editor's block spacing and wrapping captions.
+  // This only changes rendered DOM, never the portable HTML stored in the card.
+  for(const block of template.content.querySelectorAll<HTMLElement>('[data-better-edit-image-row], [data-better-edit-image]')){
+    if(block.parentElement?.closest('[data-better-edit-image-row]'))continue;
+    const layout=parseImageLayout(block.outerHTML);if(!layout)continue;
+    const wrapper=document.createElement('div'),content=document.createElement('div');
+    wrapper.className='editor-image-layout '+(layout.kind==='row'?'is-row':'is-single');
+    content.innerHTML=imageHtml(layout);
+    const body=layout.kind==='row'?content.firstElementChild as HTMLElement:content;
+    body.classList.add('image-layout-content');
+    for(const item of body.querySelectorAll<HTMLElement>('[data-better-edit-image="filled"]')){
+      item.classList.add('editor-image');
+      const caption=item.querySelector('p');if(caption){const hidden=caption.style.display==='none';caption.removeAttribute('style');caption.className='image-caption';if(hidden)caption.style.display='none';}
+    }
+    wrapper.append(body);block.replaceWith(wrapper);
   }
   for (const image of template.content.querySelectorAll('img')) {
     const source=image.getAttribute('src') ?? '';

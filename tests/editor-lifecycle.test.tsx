@@ -219,3 +219,45 @@ test('image drops use the whole row, preview without saving, and preserve crop d
 
   }finally{await act(async()=>root.unmount());}
 });
+
+test('floating block grips and row tools remain interactive inside a whiteboard',async()=>{
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,DOMRect:dom.window.DOMRect,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+  document.elementFromPoint=()=>null;
+  dom.window.Range.prototype.getClientRects=()=>[] as unknown as DOMRectList;dom.window.Range.prototype.getBoundingClientRect=()=>new DOMRect(0,0,0,0);
+  const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react'),{imageHtml,row,imageLayout}=await import('../src/renderer/image-layout');
+  const card={id:'image-card',path:'images.md',name:'Images',revision:'r',legacy:false,body:'# Images\n\nAlpha\n\nBeta\n\n'+imageHtml(row([{kind:'single',src:'a.png',width:'180px',alignment:'left',caption:'A long caption that wraps across several lines.'}]))};
+  window.door={assetUrl:(path:string)=>`heavens-asset://vault/${path}`,request:async()=>card} as unknown as typeof window.door;
+  const board={path:'board.whiteboard',folder:'',name:'Board',revision:'r',cards:[{id:'p',cardId:card.id,x:0,y:0,width:500,height:600}],edges:[]};let finishes=0,saves=0;
+  function Fixture(){const [draft,setDraft]=useState<{card:typeof card;body:string}|null>(null);return <Whiteboard board={board} cards={[card]} draft={draft} initialCamera={{x:0,y:0,zoom:1}} onOpen={()=>setDraft({card,body:card.body})} onEdit={body=>setDraft(d=>d&&{...d,body})} onFinish={()=>{finishes++;setDraft(null);}} onSave={()=>{saves++;}} onCreate={()=>assert.fail('no new cards')}/>;}
+  const root=createRoot(document.getElementById('root')!);
+  const pointer=(target:EventTarget,type:string,x:number,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));
+  try{
+    await act(async()=>root.render(<Fixture/>));
+    const preview=document.querySelector('.card-preview')!;
+    assert.equal(preview.querySelector('.image-caption')?.textContent,'A long caption that wraps across several lines.');
+    assert.ok(preview.querySelector('.editor-image-layout .image-layout-content .editor-image'));
+    await act(async()=>{pointer(preview,'pointerdown',150,150);pointer(preview,'pointerup',150,150);});
+    const element=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor},editor=element.editor;
+    element.getBoundingClientRect=()=>new DOMRect(100,100,500,500);Object.defineProperty(element,'offsetWidth',{value:500});
+    document.querySelector('.canvas')!.getBoundingClientRect=()=>new DOMRect(0,0,1000,900);document.querySelector('.editor-body')!.getBoundingClientRect=()=>new DOMRect(80,80,540,560);
+    [...element.children].forEach((el,i)=>{el.getBoundingClientRect=()=>new DOMRect(100,100+i*60,500,40);});
+    const beta=editor.state.doc.child(0).nodeSize+editor.state.doc.child(1).nodeSize;
+    await act(async()=>editor.commands.setTextSelection(beta+1));
+    const grip=document.querySelector('.editor-block-grip')!,before=finishes;
+    await act(async()=>pointer(grip,'pointerdown',85,225));
+    assert.equal(finishes,before,'portaled grip presses must not finish editing');assert.equal(document.querySelector('.tiptap'),element);
+    await act(async()=>{pointer(document,'pointermove',110,161);pointer(document,'pointerup',110,161);});
+    assert.equal(editor.state.doc.child(1).textContent,'Beta');assert.equal(editor.state.doc.child(2).textContent,'Alpha');assert.equal(saves,0,'editor drag does not move the whiteboard card');
+    await new Promise(resolve=>setTimeout(resolve,1));
+    const image=element.querySelector<HTMLElement>('[data-image-position]')!;image.getBoundingClientRect=()=>new DOMRect(100,280,500,300);
+    await act(async()=>editor.commands.setNodeSelection(Number(image.dataset.imagePosition)));
+    const center=document.querySelector<HTMLButtonElement>('.image-row-toolbar [aria-label="Justify: center"]')!;
+    await act(async()=>{pointer(center,'pointerdown',70,380);pointer(center,'pointerup',70,380);center.click();});
+    assert.equal(finishes,before);assert.equal(document.querySelector('.tiptap'),element);
+    const layout=imageLayout(editor.state.doc.nodeAt(Number(element.querySelector<HTMLElement>('[data-image-position]')!.dataset.imagePosition))!);assert.equal(layout?.kind,'row');if(layout?.kind==='row')assert.equal(layout.justify,'center');
+    assert.equal(element.querySelector('.image-caption')?.tagName,'TEXTAREA','editable captions wrap like their preview');
+  }finally{await act(async()=>root.unmount());}
+});
