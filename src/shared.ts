@@ -99,6 +99,9 @@ export interface AppSettings {hardwareAcceleration:boolean;restartRequired:boole
 export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features:Record<string,string>|null;electron:string;chromium:string}
 export type WindowAction = 'close' | 'reload';
 export interface Bridge {
+  importImage(notePath:string,name:string,type:string,data:Uint8Array):Promise<{src:string;alt:string}>;
+  imageData(path:string):Promise<Uint8Array>;
+  copyImage(png:Uint8Array):Promise<void>;
   appSettings():Promise<AppSettings>;
   setHardwareAcceleration(enabled:boolean):Promise<AppSettings>;
   onAppSettingsChange(callback:()=>void):()=>void;

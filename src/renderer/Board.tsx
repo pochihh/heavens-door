@@ -63,7 +63,7 @@ interface Props {
   onRename?:(id:string,stem:string)=>Promise<void>;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
   onOpen: (path: string) => void; onCreate: (x: number, y: number) => void; onCreateBoard?:(x:number,y:number)=>void;
-  draft?: { card: Card; body: string } | null; onEdit?: (body: string) => void; onFinish?: () => void; cardDetails?: ReactNode;
+  draft?: { card: Card; body: string } | null; onEdit?: (body: string,label?:string) => void; onFinish?: () => void; cardDetails?: ReactNode;
 }
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;

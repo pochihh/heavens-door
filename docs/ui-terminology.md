@@ -66,7 +66,7 @@ All tabs use the same phantom and insertion-preview behavior as Starred/Recent, 
 `.heavens-door/settings.json` is readable, validated JSON and currently contains both Workspace settings and the saved Workspace layout:
 
 - `docks`: Side Dock View placement, active tabs, Tab Group proportions, dock widths and collapsed states. Optional `closed` entries remember each closed View’s side, group, tab index and group weight so it can be reopened; each registered View exists exactly once, open or closed.
-- `documents`: the most recently saved Main Dock layout, open tabs, active Tab Group, saved scroll positions/board cameras/tag presentations, and formatting-control visibility.
+- `documents`: the most recently saved Main Dock layout, open tabs, active Tab Group, saved scroll positions/board cameras/tag presentations. The legacy `formatting` array is retained empty for compatibility.
 - `navigation`: each navigation View's expanded folders, search query and scroll position.
 - Existing appearance, filename defaults, Starred, Recent and document icons.
 

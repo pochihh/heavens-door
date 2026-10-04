@@ -98,6 +98,10 @@ export class Session {
     clearTimeout(this.checkpointTimer);
     if (result.snapshot.historyAvailable) this.checkpointTimer=setTimeout(() => { void this.checkpoint(ui.history.automaticCheckpoint).catch(() => undefined); },5*60*1000);
   }
+  editAction(body:string,label:string){
+    this.edit(body);
+    return this.run(()=>this.flush(label));
+  }
   edit(body: string) {
     const draft=this.state.draft;
     if (!draft || body === draft.body) return;

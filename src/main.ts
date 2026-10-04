@@ -1,5 +1,5 @@
 import { ui } from './text/ui';
-import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell, clipboard, nativeImage, ClipboardItem } from 'electron';
 import { Worker } from 'node:worker_threads';
 import { join, resolve, sep, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -7,6 +7,7 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {readAppSettings,writeHardwareAcceleration} from './app-settings';
 import {WorkspaceRegistry} from './core/registry';
+import {importImage,MAX_IMAGE_BYTES} from './core/images';
 import {workspacePath} from './core/files';
 import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, GraphicsDiagnostics } from './shared';
 
@@ -115,6 +116,23 @@ void app.whenReady().then(async()=>{
     if(!workspace)throw new Error(ui.errors.workspaceIsNotRegistered);
     if(workspace.status!=='available')throw new Error(ui.workspace.cannotOpen(workspace.name,ui.workspace.status[workspace.status]));
     return open(d,workspace.root);
+  });
+  ipcMain.handle('image:import',async(event,path:string,name:string,type:string,data:Uint8Array)=>{
+    const d=trusted(event);if(!d.host)throw new Error(ui.errors.unknownWorkspace);
+    return importImage(d.host.root,path,name,type,data);
+  });
+  ipcMain.handle('image:read',async(event,path:unknown)=>{
+    const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error(ui.errors.invalidWorkspaceFile);
+    const file=await workspacePath(d.host.root,path),stat=await fs.stat(file);
+    if(!stat.isFile()||stat.size>MAX_IMAGE_BYTES||!['.png','.jpg','.jpeg','.gif','.webp','.avif','.svg'].includes(extname(file).toLowerCase()))throw new Error('Choose an image smaller than 25 MB.');
+    return new Uint8Array(await fs.readFile(file));
+  });
+  ipcMain.handle('image:copy',async(event,png:unknown)=>{
+    trusted(event);
+    if(!(png instanceof Uint8Array)||!png.byteLength||png.byteLength>160*1024*1024)throw new Error('This image is too large to copy.');
+    const image=nativeImage.createFromBuffer(Buffer.from(png));
+    if(image.isEmpty())throw new Error('This image could not be copied.');
+    await clipboard.write([new ClipboardItem({'image/png':new Blob([new Uint8Array(image.toPNG())],{type:'image/png'})})]);
   });
   ipcMain.handle('workspace:reveal',async(event,path:unknown)=>{
     const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error(ui.errors.invalidWorkspaceFile);

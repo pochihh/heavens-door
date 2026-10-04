@@ -3,6 +3,9 @@ import type { Bridge, Snapshot, WindowAction } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
+  importImage:(path,name,type,data)=>ipcRenderer.invoke('image:import',path,name,type,data),
+  imageData:path=>ipcRenderer.invoke('image:read',path),
+  copyImage:png=>ipcRenderer.invoke('image:copy',png),
   appSettings:()=>ipcRenderer.invoke('app:settings'),
   setHardwareAcceleration:enabled=>ipcRenderer.invoke('app:hardware-acceleration',enabled),
   onAppSettingsChange:callback=>{const listener=()=>callback();ipcRenderer.on('app:settings-change',listener);return()=>ipcRenderer.removeListener('app:settings-change',listener);},

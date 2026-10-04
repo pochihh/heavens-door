@@ -1,4 +1,4 @@
-import {moveCardLinks} from '../card-links';
+import {moveCardLinks,rewriteHtmlLinks} from '../card-links';
 import {compileView} from './view-query';
 import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView,viewCreationChoices,resolveField} from '../view-block';
 import {viewText} from '../text/views';
@@ -588,7 +588,7 @@ export class Workspace {
         return next===relative(dirname(path),target).split(sep).map(encodeURIComponent).join('/')?href:next+tail;
       };
       let body=card.body;
-      marked.walkTokens(marked.lexer(body),token=>{if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}});
+      marked.walkTokens(marked.lexer(body),token=>{if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}else if(token.type==='html')body=body.replace(token.raw,rewriteHtmlLinks(token.raw,rewrite));});
       body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(all,lead,href)=>{const next=rewrite(href);return next===href?all:lead+'<'+next+'>';});
       const after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remapFilePath(value,from,to));
       if(after!==before)edits.push({path,before,after});

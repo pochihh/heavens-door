@@ -78,6 +78,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   }
   function viewActions():MenuAction[] {
     return [
+      ...(module==='whiteboards'?creations(''):[]),
       {label:ui.explorer.refreshExplorer,icon:'sync',run:()=>attempt(module==='files'?refresh():session.refresh())},
       ...(module==='whiteboards'||module==='files'?[{label:ui.explorer.collapseFolders,icon:'collapse' as const,run:()=>setExpanded(()=>new Set(['']))}]:[]),
     ];
@@ -120,7 +121,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
       <section className="recent"><div className="section-title" data-tooltip={tooltips.explorer.recent}><Icon name="clock" size={13}/><strong>{ui.explorer.recent}</strong></div><div className="saved-files">{prefs.recent.map(key=>row(entryFor(key),0,'recent'))}</div></section>
     </div>:<div className="file-tree" ref={scroller} role="navigation" tabIndex={0} aria-label={module==='files'?ui.explorer.workspaceFiles:module==='whiteboards'?ui.explorer.workspaceWhiteboards:module==='tags'?ui.explorer.workspaceTags:ui.explorer.searchResults} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)} onContextMenu={e=>{if(!(e.target as Element).closest('.tree-row')){e.preventDefault();show(viewActions(),e,true);}}}
       onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10'))){e.preventDefault();show(viewActions(),e);}}}>
-      {module==='tags'?<><NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>{snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path)))}</>:module==='whiteboards'?boardBranch(''):fileBranch({path:'',folder:'',name:snapshot.name})}
+      {module==='tags'?<><NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>{snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path)))}</>:module==='whiteboards'?tree.get('')?.folders.map(folder=>boardBranch(folder)):fileBranch({path:'',folder:'',name:snapshot.name})}
     </div>}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
   </div>;

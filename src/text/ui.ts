@@ -357,6 +357,9 @@ export const ui = {
     fileLocation: "File location",
   },
   editor: {
+    text:"Text",html:"HTML",textColor:"Text color",highlight:"Highlight",addBlock:"Add block",moveBlock:"Move block",dragBlock:"Drag block · Alt+arrow keys to move or indent",moveUp:"Move up",moveDown:"Move down",indent:"Indent",outdent:"Outdent",
+    duplicateImage:"Duplicate image",removeImage:"Remove image",imageOptions:"Image options",resizeImage:"Resize image",copyImage:"Copy image",originalImageSize:"Original size",imageDescription:"Image description",insertImage:"Insert image",
+    editHtml:"Edit HTML",htmlSource:"HTML source",
     cardContent: "Card content",
     unsupportedMarkdown: "This card uses Markdown features that this editor cannot preserve. Open the original file in another editor to make changes.",
     formatting: "Formatting",

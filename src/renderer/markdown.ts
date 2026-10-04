@@ -8,15 +8,15 @@ import { withCardTitle } from '../card-title';
 export function assetPath(notePath: string, source: string) {
   if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(source)) return '';
   const parts=notePath.replaceAll('\\','/').split('/').slice(0,-1);
-  for (const part of decodeURIComponent(source).split('/')) {
+  let decoded:string;try{decoded=decodeURIComponent(source);}catch{return '';}
+  for (const part of decoded.split('/')) {
     if (part === '..') parts.pop(); else if (part && part !== '.') parts.push(part);
   }
   return parts.join('/');
 }
 export function unsupported(body: string) {
-  let html=false;
-  marked.walkTokens(marked.lexer(body),token => { if (token.type === 'html') html=true; });
-  return html || /\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(body);
+  let text=body;marked.walkTokens(marked.lexer(body),token=>{if(['html','code','codespan'].includes(token.type))text=text.replace(token.raw,'');});
+  return /\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(text);
 }
 export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.
@@ -36,8 +36,9 @@ export function titlePreview(card:CardInfo) {
   else heading.textContent=card.title??'';
   return renderPreview(heading.outerHTML,card.path);
 }
+export function previewHtml(html:string,path:string){return renderPreview(html,path,false).replace(/<input\b/g,'<input disabled');}
 function renderPreview(html:string,path:string,reservedTitle=true) {
-  const clean=DOMPurify.sanitize(html,{ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|[^:]*$)/i});
+  const clean=DOMPurify.sanitize(html,{FORBID_TAGS:['script','style','iframe','object','embed','form','button','textarea','select','video','audio','source','link','meta'],ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
   if(reservedTitle){let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
@@ -63,7 +64,8 @@ function renderPreview(html:string,path:string,reservedTitle=true) {
     const source=image.getAttribute('src') ?? '';
     const local=assetPath(path,source);
     if (local) image.src=window.door.assetUrl(local); else image.removeAttribute('src');
-    image.loading='lazy';
+    image.removeAttribute('srcset');image.loading='lazy';
   }
+  for(const element of template.content.querySelectorAll<HTMLElement>('[style]')){for(const property of [...element.style]){if(/url\s*\(|expression\s*\(|@import/i.test(element.style.getPropertyValue(property)))element.style.removeProperty(property);}}
   return template.innerHTML;
 }

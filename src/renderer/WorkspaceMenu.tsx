@@ -8,8 +8,9 @@ import {ActionMenu,type MenuState} from './Overlays';
 export function WorkspaceMenu({snapshot,session,onManage}:{snapshot:Snapshot;session:Session;onManage:()=>void}){
   const [menu,setMenu]=useState<MenuState|null>(null),close=useCallback(()=>setMenu(null),[]);
   return <><button className="workspace-switcher" aria-label={ui.workspace.switchWorkspace(snapshot.name)} aria-haspopup="menu" aria-expanded={!!menu} data-tooltip={tooltips.workspace.switchWorkspace(snapshot.root)} onClick={async e=>{
-    const rect=e.currentTarget.getBoundingClientRect();
-    try{const registered=await window.door.listWorkspaces();setMenu({above:true,label:ui.workspace.workspaceMenu,x:rect.left,y:rect.top,actions:[
+    if(menu){setMenu(null);return;}
+    const anchor=e.currentTarget,rect=anchor.getBoundingClientRect();
+    try{const registered=await window.door.listWorkspaces();setMenu({anchor,label:ui.workspace.workspaceMenu,x:rect.left,y:rect.bottom,actions:[
       ...registered.map(w=>({label:w.status==='available'?w.name:w.name+' · '+ui.workspace.status[w.status],disabled:w.status!=='available',checked:w.root===snapshot.root,hint:w.root,run:()=>{if(w.root!==snapshot.root)void session.open(false,w.root).catch(()=>undefined);}})),
       {label:ui.workspace.manage,icon:'database',separatorBefore:true,run:onManage},
     ]});}catch(error){session.update({error:String(error)});}

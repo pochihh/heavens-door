@@ -1,3 +1,4 @@
+import {cardFill,tintColor} from '../colors';
 import type {CardDrop} from './card-drop';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
@@ -76,7 +77,6 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
   const left=!docks.left.collapsed&&!!docks.left.groups.length,right=!docks.right.collapsed&&!!docks.right.groups.length;
-  const [formatting,setFormatting]=useState(new Set(prefs.documents?.formatting??[]));
   const [modal,setModal]=useState<'settings'|'folder'|'icon'|'migration'|'workspaces'|null>(null);
   const [folderPosition,setFolderPosition]=useState<{x:number;y:number}>();
   const [folderParent,setFolderParent]=useState(''),[folderName,setFolderName]=useState('');
@@ -125,10 +125,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const documentState=useRef<()=>DocumentsLayout>(()=>({tree:layout,active:active.id,views:{},formatting:[]}));
   documentState.current=()=>{
     const keys=new Set(panes(layout).flatMap(p=>p.tabs.flatMap(key=>tabHistory(p,key).entries.map(doc=>p.id+':'+doc))));
-    return {tree:layout,active:active.id,views:Object.fromEntries([...memories.current].filter(([key])=>keys.has(key)).slice(-3200)),formatting:[...formatting].filter(id=>panes(layout).some(p=>p.id===id))};
+    return {tree:layout,active:active.id,views:Object.fromEntries([...memories.current].filter(([key])=>keys.has(key)).slice(-3200)),formatting:[]};
   };
   const rememberViews=useCallback(()=>session.schedulePreferences({documents:documentState.current()},snapshot.root),[snapshot.root]);
-  useEffect(()=>{rememberViews();},[layout,activeId,formatting,rememberViews]);
+  useEffect(()=>{rememberViews();},[layout,activeId,rememberViews]);
   const incomingDocks=JSON.stringify(prefs.docks),knownDocks=useRef(incomingDocks);
   useEffect(()=>{if(incomingDocks!==knownDocks.current){knownDocks.current=incomingDocks;if(prefs.docks&&!session.hasPendingPreferences('docks'))setDocks(prefs.docks);}},[incomingDocks,prefs.docks]);
   useEffect(()=>{if(!prefs.docks)session.schedulePreferences({docks},snapshot.root);},[]);
@@ -261,7 +261,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     let memory=memories.current.get(memoryKey);if(!memory){memory={};memories.current.set(memoryKey,memory);}
     const board=info?.kind==='board'?snapshot.boards.find(b=>b.folder===info.id):undefined;
     const tag=info?.kind==='tag'?snapshot.tags?.find(t=>t.path===info.id):undefined;
-    return <section className={'note-pane '+(focused?'active-pane':'')} data-pane={p.id} data-active={focused&&!popup} aria-label={ui.layout.mainDockTabGroup} onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
+    return <section className={'note-pane '+(focused?'active-pane':'')} style={{'--document-fill':info?.kind==='card'?tintColor(cardFill(snapshot.cards.find(c=>c.id===info.id))):undefined} as CSSProperties} data-pane={p.id} data-active={focused&&!popup} aria-label={ui.layout.mainDockTabGroup} onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
       <div className="tab-strip">
         <div className="tab-list" role="tablist" aria-label={ui.layout.openFiles} data-tab-strip data-tab-family="main" data-tab-group={p.id}>
           {p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return <div className={'tab '+(p.active===key?'active-tab':'')} key={key} data-tab-key={key} onContextMenu={e=>{e.preventDefault();showTabMenu(key,e.clientX,e.clientY);}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();showTabMenu(key,r.left,r.bottom);}}}>
@@ -280,7 +280,6 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <div className="tab-navigation"><Tool icon="back" label={tooltips.navigation.back} disabled={history.index===0} onClick={()=>travel(p,-1)}/><Tool icon="forward" label={tooltips.navigation.forward} disabled={history.index>=history.entries.length-1} onClick={()=>travel(p,1)}/></div>
         <div className="toolbar-spacer"/>
         {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id)}/>{!!info.id&&<Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
-        {info.kind==='card'&&<Tool icon="format" label={tooltips.editor.toggleFormatting} aria-pressed={formatting.has(p.id)} className={formatting.has(p.id)?'selected':''} onClick={()=>setFormatting(current=>{const next=new Set(current);if(next.has(p.id))next.delete(p.id);else next.add(p.id);return next;})}/>}
         {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.common.openInPopup,icon:'note',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
         <Tool icon="star" className={prefs.starred.includes(documentKey)?'is-starred':''} label={prefs.starred.includes(documentKey)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(documentKey)}/>
 
@@ -290,7 +289,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
           !info.exists?<p className="notice">{ui.errors.fileMissing}</p>:
           board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y})} onCreateBoard={(x,y)=>createFolder(info.id,{x,y})} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
-          info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} formatting={formatting.has(p.id)} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
+          info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
       </ViewBlockProvider></div>
       {focused&&<div className="pane-focus-flash" key={pulse}/>}
     </section>;
@@ -315,10 +314,11 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     if(module==='agent')return <div className="agent-empty">{ui.agent.disconnected}</div>;
     return <Explorer key={module} module={module} starredTarget={starredTarget} snapshot={snapshot} prefs={prefs} activeKey={tabDocument(active)} session={session} onOpen={open} onSplit={openBeside} onFolder={createFolder} onCard={createCard} onIcon={editIcon} onPrefs={changePrefs}/>;
   }
-  return <DateDisplayContext value={{display:prefs.dateDisplay??DEFAULT_DATE_DISPLAY,onChange:dateDisplay=>session.run(async()=>{await session.flushPreferences();session.update({snapshot:await window.door.request<Snapshot>({kind:'preferences',patch:{dateDisplay}})});})}}><div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} inert={state.status===ui.status.openingWorkspace||state.status===ui.status.changingHistory} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
+  return <DateDisplayContext value={{display:prefs.dateDisplay??DEFAULT_DATE_DISPLAY,onChange:dateDisplay=>session.run(async()=>{await session.flushPreferences();session.update({snapshot:await window.door.request<Snapshot>({kind:'preferences',patch:{dateDisplay}})});})}}><div className={'app platform-'+window.door.platform+(tabs.drag?' docking':'')} data-left-open={left} inert={state.status===ui.status.openingWorkspace||state.status===ui.status.changingHistory} style={{'--card-title-placeholder':JSON.stringify(prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER),'--sidebar-width':docks.left.width+'px','--dock-width':docks.right.width+'px'} as CSSProperties}>
     <header className="window-toolbar">
       <div className="traffic-light-space"/>
       <Tool icon="left" label={left?tooltips.layout.collapseLeftSideDock:tooltips.layout.expandLeftSideDock} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
+      <WorkspaceMenu snapshot={snapshot} session={session} onManage={()=>setModal('workspaces')}/>
       <div className="window-drag-space"/>
       <Tool icon="search" label={tooltips.workspace.search} onClick={()=>setSearchOpen(true)}/>
       <Tool icon="right" label={right?tooltips.layout.collapseRightSideDock:tooltips.layout.expandRightSideDock} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
@@ -336,7 +336,6 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <SideDock side="right" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
     </div>
     <footer className="statusbar">
-      <WorkspaceMenu snapshot={snapshot} session={session} onManage={()=>setModal('workspaces')}/>
       <div className="toolbar-spacer"/>
       <span data-tooltip={tooltips.status.syncOff}><Icon name="sync" size={13}/>{ui.status.syncOff}</span>
       <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>

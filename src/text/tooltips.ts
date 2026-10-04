@@ -96,7 +96,6 @@ export const tooltips = {
     expandRightSideDock: "Expand Right Side Dock",
   },
   editor: {
-    toggleFormatting: "Toggle formatting controls",
     bold: "Bold",
     italic: "Italic",
     heading: "Heading",

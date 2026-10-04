@@ -211,7 +211,7 @@ test('whiteboard rename moves assets intact, remaps references and preferences, 
   const bytes=Buffer.from([0,255,128,10,60,0]);await fs.writeFile(join(f.root,'Ideas/image.png'),bytes);
   await w.scan();const card=await w.card('Ideas/imported.md');
   await w.create('Other','reader',0,0);const reader=await w.card('Other/reader.md');
-  await w.saveCard(reader.path,'[Card](../Ideas/imported.md) ![Image](../Ideas/image.png)',reader.revision);
+  await w.saveCard(reader.path,'[Card](../Ideas/imported.md) ![Image](../Ideas/image.png)\n\n<img src = "../Ideas/image.png" alt="HTML" width="320">',reader.revision);
   const mother=w.snapshot().boards.find(b=>!b.folder)!;mother.cards.find(p=>p.folder==='Ideas')!.x=780;await w.saveBoard(mother,mother.revision);
   const {pane}=await import('../src/layout'),group=pane('board:Ideas');
   await w.setPreferences({starred:['board:Ideas','board:Ideas/Child','card:'+card.id],documents:{tree:group,active:group.id,views:{[group.id+':board:Ideas']:{camera:{x:4,y:7,zoom:.4}}},formatting:[]}});
@@ -220,6 +220,7 @@ test('whiteboard rename moves assets intact, remaps references and preferences, 
   assert.deepEqual(await fs.readFile(join(f.root,'Research/image.png')),bytes);
   assert.equal((await w.card('Research/imported.md')).body,card.body,'local attachment and H1 remain unchanged');
   assert.match((await w.card(reader.path)).body,/\.\.\/Research\/image.png/);
+  assert.ok((await w.card(reader.path)).body.includes('src = "../Research/image.png"'));
   assert.ok(w.snapshot().boards.some(b=>b.path==='Research/Research.whiteboard'));
   assert.equal(w.snapshot().boards.find(b=>!b.folder)!.cards.find(p=>p.folder==='Research')!.x,780);
   const savedTree=w.snapshot().preferences?.documents?.tree;assert.equal(savedTree?.type==='pane'&&savedTree.active,'board:Research');

@@ -20,10 +20,19 @@ export function moveCardLinks(body:string,from:string,to:string){
     if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){
       if(token.type==='link')marked.walkTokens(token.tokens??[],child=>{if(child.type==='image')next=next.replace(child.raw,child.raw.replace(']('+child.href,']('+rewrite(child.href)).replace('](<'+child.href+'>','](<'+rewrite(child.href)+'>'));});
       const href=rewrite(token.href);next=next.replace(']('+token.href,']('+href).replace('](<'+token.href+'>','](<'+href+'>');
-    }else if(token.type==='html'&&!token.raw.startsWith('<!--'))next=token.raw.replace(/\b(src|href)=(['"])(.*?)\2/gi,(all,key,quote,href)=>key+'='+quote+rewrite(href)+quote);
+    }else if(token.type==='html')next=rewriteHtmlLinks(token.raw,rewrite);
     else if(token.type==='def')next=token.raw.replace(token.href,rewrite(token.href));
     if(next!==token.raw)edits.push({start,end:cursor,text:next});
   });
   for(const edit of edits.reverse())body=body.slice(0,edit.start)+edit.text+body.slice(edit.end);
   return body;
+}
+
+export function rewriteHtmlLinks(html:string,rewrite:(href:string)=>string){
+  return html.replace(/<!--[\s\S]*?-->|<(?:[^>"']|"[^"]*"|'[^']*')+>/g,tag=>tag.startsWith('<!--')?tag:tag.replace(/(\s+)([^\s"'<>/=]+)(\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/g,(all,space,key,separator,value)=>{
+    if(!/^(src|href)$/i.test(key))return all;
+    const quoted=/^["']/.test(value),href=quoted?value.slice(1,-1):value,next=rewrite(href.replaceAll('&amp;','&'));
+    if(next===href.replaceAll('&amp;','&'))return all;
+    const quote=quoted?value[0]:'"';return space+key+separator+quote+next.replaceAll('&','&amp;').replaceAll(quote,quote==='"'?'&quot;':'&#39;')+quote;
+  }));
 }

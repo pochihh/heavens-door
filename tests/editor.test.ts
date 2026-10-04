@@ -22,7 +22,7 @@ test('formatted editing retains headings, tasks, tables, local images and card l
   assert.ok(editor.getMarkdown().includes('[x] Completed'));
   const html=preview('[Card](card:stable-id)\n\n<img src="x" onerror="alert(1)">\n\n[Bad](javascript:alert(1))','note.md');
   assert.match(html,/href="card:stable-id"/); assert.doesNotMatch(html,/onerror|javascript:/);
-  assert.equal(unsupported('<div>Custom block</div>'),true);
+  assert.equal(unsupported('<div>Custom block</div>'),false);
   assert.equal(unsupported('[[Obsidian link]]'),true);
   editor.destroy();
 });
@@ -154,4 +154,61 @@ test('deleting the final blank line survives focus, saving and reopening',async(
     }finally{editor.destroy();}
   }
 
+});
+
+test('HTML colors and image dimensions survive editing and reopening without converting ordinary images',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema');
+  const {unsupported}=await import('../src/renderer/markdown');
+  const body='# Color study\n\nA <span style="color: #cc3322; background-color: #ffee99">**bold** and *warm*</span> thought.\n\n<img src="_assets/picture.png" alt="A &amp; B" width="320">\n\n![Old image](_assets/old.png)';
+  assert.equal(unsupported(body),false);
+  assert.equal(unsupported('<span style="position: fixed">unsafe</span>'),false);
+  assert.equal(unsupported('<img src="x" onerror="alert(1)">'),false);
+  const editor=new Editor({extensions:extensions('Ideas/note.md'),content:body,contentType:'markdown'});
+  try{
+    const first=editor.getJSON();assert.ok(JSON.stringify(first).includes('textColors'));assert.ok(JSON.stringify(first).includes('bold'));
+    editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph',content:[{type:'text',text:'After edit'}]});
+    const saved=cardMarkdown(editor);assert.match(saved,/width="320"/);assert.match(saved,/!\[Old image\]/);assert.match(saved,/background-color: #ffee99/);
+    const reopened=new Editor({extensions:extensions('Ideas/note.md'),content:saved,contentType:'markdown'});
+    try{assert.deepEqual(reopened.getJSON(),editor.getJSON());}finally{reopened.destroy();}
+  }finally{editor.destroy();}
+});
+
+test('custom block and inline HTML remain verbatim source fragments across unrelated Markdown edits',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema');
+  const {previewHtml}=await import('../src/renderer/markdown');
+  const block='<details data-custom="kept"><summary>More</summary><div class="user-class"><em>HTML</em></div></details>',inline='<sup data-custom="kept">2</sup>',script='<script>alert("never")</script>';
+  const editor=new Editor({extensions:extensions('note.md'),content:`# Mixed\n\nA formula x${inline}.\n\n${block}\n\n${script}\n\nTail`,contentType:'markdown'});
+  try{
+    editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph',content:[{type:'text',text:'New text'}]});
+    const saved=cardMarkdown(editor);for(const raw of [block,inline,script])assert.ok(saved.includes(raw),saved);
+    const reopened=new Editor({extensions:extensions('note.md'),content:saved,contentType:'markdown'});
+    try{assert.deepEqual(reopened.getJSON(),editor.getJSON());}finally{reopened.destroy();}
+    assert.doesNotMatch(previewHtml(script+'<img src="x" onerror="bad()">','note.md'),/<script|onerror/);
+  }finally{editor.destroy();}
+});
+
+test('Better Edit image rows and non-destructive crops retain their portable HTML',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema'),{previewHtml}=await import('../src/renderer/markdown');
+  const crop='<div data-better-edit-image="filled" style="width: 240px; max-width: 100%; margin: 0 auto;">\n  <div style="overflow: hidden; height: 240px; border-radius: 50%;">\n    <img src="_assets/photo.png" alt="A photo" style="width: 400px; max-width: none; margin-left: -80px; margin-top: -80px; display: block;" />\n  </div>\n  <p style="font-size: 0.85em; color: #888; margin: 4px 0 0;">Caption &amp; detail</p>\n</div>';
+  const row='<div data-better-edit-image-row style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; justify-content: center;">\n'+crop+'\n<div data-better-edit-image="placeholder" style="width: 160px;">Add an image</div>\n</div>';
+  const editor=new Editor({extensions:extensions('Research/note.md'),content:'# Images\n\n'+row+'\n\nTail',contentType:'markdown'});
+  try{
+    editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph',content:[{type:'text',text:'Unrelated edit'}]});
+    assert.ok(cardMarkdown(editor).includes(row),'keep source, crop offsets, caption, row and placeholder unchanged');
+    const html=previewHtml(row,'Research/note.md'),template=document.createElement('template');template.innerHTML=html;
+    assert.equal(template.content.querySelector('img')?.getAttribute('src'),'heavens-asset://vault/Research/_assets/photo.png');
+    assert.ok(html.includes('border-radius: 50%'));assert.ok(html.includes('margin-left: -80px'));assert.ok(html.includes('display: flex'));
+  }finally{editor.destroy();}
 });

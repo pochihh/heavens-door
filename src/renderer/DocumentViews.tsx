@@ -18,8 +18,8 @@ import {CardTags} from './TagView';
 export {TagView} from './TagView';
 import { useConfirmation } from './Confirmation';
 
-export function NoteView({path,session,snapshot,active,memory,formatting,suspended=false,onActivate,onOpen,onViewChange}:{
-  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;formatting:boolean;suspended?:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
+export function NoteView({path,session,snapshot,active,memory,suspended=false,onActivate,onOpen,onViewChange}:{
+  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;suspended?:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
 }) {
   const [loaded,setLoaded]=useState<Card|null>(null),[focus,setFocus]=useState<EditorFocus>();
   const container=useRef<HTMLDivElement>(null);
@@ -45,7 +45,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,suspend
     return()=>{live=false;};
   },[info?.id,snapshot,session]);
   const tags=info?<CardTags card={info} snapshot={snapshot} session={session} onOpen={onOpen}/>:undefined;
-  return <section className={'document-editor '+(formatting?'show-formatting':'')} ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
+  return <section className="document-editor" ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
     onPointerDown={e=>{
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
       setFocus({x:e.clientX,y:e.clientY,scrollTop:memory.scroll??0});onActivate();
@@ -54,7 +54,7 @@ export function NoteView({path,session,snapshot,active,memory,formatting,suspend
       const link=(e.target as HTMLElement).closest('a'),href=link?.getAttribute('href');
       if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
     }}>
-    {shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={body=>{if(!suspended)session.edit(body);}} autofocus={!suspended} focusPoint={focus}/>:
+    {shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
       <TitleContent path={path} className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
@@ -85,7 +85,7 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
     onReference={id=>onOpen('card:'+id)} onRename={(id,stem)=>session.renameCard(id,stem)}
     onDelete={(base,placements,edges)=>session.deleteSelection(base,placements,edges,names=>confirm({title:ui.card.deleteTitle(names.length),message:ui.card.confirmDelete(names),accept:ui.card.deleteTitle(names.length),danger:true}))}
     onCreate={onCreate} onCreateBoard={onCreateBoard}
-    draft={active?session.state.draft:null} onEdit={body=>session.edit(body)}
+    draft={active?session.state.draft:null} onEdit={(body,label)=>{if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;
 }
 export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapshot:Snapshot;memory:ViewMemory;onViewChange:()=>void}) {
