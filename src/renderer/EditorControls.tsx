@@ -29,7 +29,13 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
     const hover=(event:PointerEvent)=>{
       if(dragging.current||event.buttons||popupOpen.current)return;
       const blocks=editorBlocks(editor.state.doc),target=event.target as Node;
-      const found=blocks.filter(b=>domFor(b)?.contains(target)).at(-1);
+      let found=blocks.filter(b=>domFor(b)?.contains(target)).at(-1);
+      if(found?.item){
+        // The path to the shared gutter crosses ancestor list padding. Keep the
+        // deepest item on this row, even when the pointer is left of its text.
+        const path=found.path;
+        found=blocks.filter(b=>path.every((v,i)=>b.path[i]===v)).filter(b=>{const r=domFor(b)?.getBoundingClientRect();return r&&event.clientY>=r.top&&event.clientY<r.bottom;}).at(-1)??found;
+      }
       if(found)setBlock(found);
     };
     editor.on('transaction',changed);editor.on('blur',changed);editor.on('focus',changed);editor.view.dom.addEventListener('pointermove',hover);

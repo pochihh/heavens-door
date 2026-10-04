@@ -185,6 +185,7 @@ test('image drops use the whole row, preview without saving, and preserve crop d
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,DOMRect:dom.window.DOMRect,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  dom.window.Range.prototype.getClientRects=()=>[] as unknown as DOMRectList;dom.window.Range.prototype.getBoundingClientRect=()=>new DOMRect(0,0,0,0);
   window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
   const {CardEditor}=await import('../src/renderer/Editor'),{imageHtml,imageLayout,row}=await import('../src/renderer/image-layout'),{dragImage}=await import('../src/renderer/image-drag');
   const image={kind:'single' as const,src:'circle.png',width:'240px',alignment:'left' as const,crop:{shape:'circle' as const,imgWidth:400,height:240,offsetX:0,offsetY:0}},plain={kind:'single' as const,src:'rectangle.png',width:'200px',alignment:'left' as const};
@@ -259,5 +260,43 @@ test('floating block grips and row tools remain interactive inside a whiteboard'
     assert.equal(finishes,before);assert.equal(document.querySelector('.tiptap'),element);
     const layout=imageLayout(editor.state.doc.nodeAt(Number(element.querySelector<HTMLElement>('[data-image-position]')!.dataset.imagePosition))!);assert.equal(layout?.kind,'row');if(layout?.kind==='row')assert.equal(layout.justify,'center');
     assert.equal(element.querySelector('.image-caption')?.tagName,'TEXTAREA','editable captions wrap like their preview');
+  }finally{await act(async()=>root.unmount());}
+});
+
+test('child list handles stay on their row across parent padding and move only selected children',async()=>{
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,DOMRect:dom.window.DOMRect,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  dom.window.Range.prototype.getClientRects=()=>[] as unknown as DOMRectList;dom.window.Range.prototype.getBoundingClientRect=()=>new DOMRect(0,0,0,0);
+  window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
+  const {CardEditor}=await import('../src/renderer/Editor'),{editorBlocks}=await import('../src/renderer/editor-blocks');
+  const root=createRoot(document.getElementById('root')!);
+  const pointer=(target:EventTarget,type:string,x:number,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));
+  try{
+    for(const canvas of [false,true]){
+      await act(async()=>root.render(<CardEditor path={`children-${canvas}.md`} body={'# Title\n\n- Parent\n  - Child one\n  - Child two\n    - Grandchild\n- Sibling\n\nEnd'} cards={[]} canvas={canvas} onEdit={()=>{}}/>));
+      const element=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor},editor=element.editor;
+      element.getBoundingClientRect=()=>new DOMRect(100,100,500,400);Object.defineProperty(element,'offsetWidth',{value:500});
+      document.querySelector('.editor-body')!.getBoundingClientRect=()=>new DOMRect(60,80,560,500);
+      const blocks=editorBlocks(editor.state.doc),items=blocks.filter(b=>b.item);
+      items.forEach((b,i)=>{const el=editor.view.nodeDOM(b.from) as HTMLElement,top=180+i*40;el.getBoundingClientRect=()=>new DOMRect(124+b.depth*24,top,476-b.depth*24,i===0?146:i===2?66:26);el.querySelector('p')!.getBoundingClientRect=()=>new DOMRect(124+b.depth*24,top,476-b.depth*24,26);});
+      element.lastElementChild!.getBoundingClientRect=()=>new DOMRect(100,400,500,26);
+      const parent=editor.view.nodeDOM(items[0].from) as HTMLElement;
+      for(const child of items.filter(b=>b.depth>0)){
+        const el=editor.view.nodeDOM(child.from) as HTMLElement,y=el.getBoundingClientRect().top+13;
+        await act(async()=>pointer(el.querySelector('p')!,'pointermove',200,y));
+        const controls=document.querySelector<HTMLElement>('.editor-block-controls')!,top=controls.style.top,left=controls.style.left;
+        await act(async()=>pointer(parent,'pointermove',125,y));
+        assert.equal(controls.style.top,top,'crossing the parent padding toward the aligned handle must keep the child');
+        assert.equal(controls.style.left,left,'nested handles share the same gutter');
+      }
+      const childOne=items[1],childTwo=items[2],gripX=85;
+      await act(async()=>editor.commands.setTextSelection({from:childOne.from+2,to:childTwo.from+2+'Child two'.length}));
+      await act(async()=>pointer(parent,'pointermove',125,233));
+      await act(async()=>pointer(document.querySelector('.editor-block-grip')!,'pointerdown',gripX,233));
+      await act(async()=>{pointer(document,'pointermove',gripX,427);pointer(document,'pointerup',gripX,427);});
+      assert.deepEqual([...editor.view.dom.children].map(el=>el.textContent),['Title','ParentSibling','End','Child oneChild twoGrandchild'],'only selected children move; their parent stays and their own descendants travel with them');
+      assert.ok([...editor.view.dom.querySelectorAll('p')].every(p=>p.textContent),'a move must not add blank paragraphs');
+    }
   }finally{await act(async()=>root.unmount());}
 });
