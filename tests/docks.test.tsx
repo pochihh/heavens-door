@@ -18,14 +18,14 @@ test('module layouts keep every module once, persist per workspace, and registra
   const initial=defaultDocks();
   let layout=moveModule(initial,{module:'files'},{side:'right',group:'tools',position:'tab',beforeTab:'history'});
   assert.equal(findModule(layout,'files').side,'right');assert.equal(layout.right.collapsed,false);
-  assert.deepEqual(layout.right.groups[0].tabs,['style','agent','files','history']);
+  assert.deepEqual(layout.right.groups[0].tabs,['calendar','style','agent','files','history']);
   assert.deepEqual(moveModule(layout,{module:'files'},{side:'right',group:'tools',position:'tab',beforeTab:'files'}),layout);
   layout=moveModule(layout,{module:'files'},{side:'right',group:'tools',position:'after'});
   assert.equal(layout.right.groups.length,2);assert.deepEqual(layout.right.groups[1].tabs,['files']);
   layout=moveModule(layout,{group:'saved'},{side:'right',group:'tools',position:'before'});
   assert.equal(findModule(layout,'bookmarks').side,'right');assert.equal(layout.left.groups.length,1);
   layout=moveModule(layout,{group:'tools'},{side:'left',group:'navigation',position:'tab'});
-  assert.deepEqual(findModule(layout,'agent').group.tabs,['whiteboards','tags','search','style','agent','history']);
+  assert.deepEqual(findModule(layout,'agent').group.tabs,['whiteboards','tags','search','calendar','style','agent','history']);
   layout=resizeGroups(layout,'right',0,.7);assert.ok(Math.abs(layout.right.groups[0].weight/(layout.right.groups[0].weight+layout.right.groups[1].weight)-.7)<1e-10);
   layout.right.collapsed=true;layout=revealModule(layout,'files');assert.equal(layout.right.collapsed,false);assert.equal(findModule(layout,'files').group.active,'files');
   assert.deepEqual(validateDocks(layout),layout);assert.equal(initial.left.groups.length,2,'layout operations do not mutate their input');

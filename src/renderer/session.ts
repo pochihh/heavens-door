@@ -147,6 +147,20 @@ export class Session {
       }
     });
   }
+  createFromTemplate(template:string,folder:string,stem:string){return this.run(async()=>{
+    await this.flush();await this.flushPreferences();
+    const result=await this.bridge.request<Mutation>({kind:'createFromTemplate',template,folder,stem});this.accept(result,ui.journal.createdFromTemplate);
+    return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
+  });}
+  createTemplate(){return this.run(async()=>{
+    await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation>({kind:'createTemplate'});this.accept(result,ui.journal.createTemplate);
+    return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
+  });}
+  openJournal(date:string,period:import('../journal').JournalPeriod){return this.run(async()=>{
+    await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation&{path:string}>({kind:'openJournal',date,period});
+    if(result.edits.length)this.accept(result,ui.journal.createJournal);
+    return this.bridge.request<Card>({kind:'card',path:result.path});
+  });}
   create(folder: string,stem: string,x:number,y:number,place=true) {
     return this.run(async () => {
       await this.flush();

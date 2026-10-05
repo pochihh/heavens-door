@@ -30,4 +30,8 @@ test('the desktop worker accepts automatic whiteboard names and preserves reques
   const nested=await call<Mutation>({kind:'createFolder',parent:'A new board',position:{x:20,y:30}});
   assert.ok(nested.snapshot.boards.some(b=>b.folder===join('A new board','Ideas')));
   await assert.rejects(call({kind:'createFolder',parent:'',name:42 as never}),/Invalid request value/);
+  const journal=await call<Mutation&{path:string}>({kind:'openJournal',date:'2026-10-05',period:'daily'});assert.equal(journal.path,'Journal/2026/10/2026-10-05.md');
+  assert.equal((await call<Mutation>({kind:'openJournal',date:'2026-10-05',period:'daily'})).edits.length,0);
+  assert.equal((await call<unknown[]>({kind:'journalEntries',year:2026})).length,1);
+  await assert.rejects(call({kind:'openJournal',date:'../escape',period:'daily'}),/Invalid journal date/);
 });

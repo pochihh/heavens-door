@@ -396,3 +396,28 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .card-popup-toolbar button,.card-popup-toolbar button:hover,.note-pane>.document-toolbar button,.note-pane>.document-toolbar button:hover,.card-tags .property-label,.card-tags .property-label:hover,.card-tags .property-value-button,.card-tags .property-value-button:hover,.card-tags .tag-add-property>button,.card-tags .tag-add-property>button:hover{background:transparent}
 
 .image-drop-slot{flex:0 0 auto;max-width:100%;box-sizing:border-box;border:1px solid var(--accent);background:var(--selected);border-radius:6px;pointer-events:none}.image-row-drop{outline:1px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:4px;border-radius:4px}
+
+/* The journal uses the shared date marker and theme surfaces. */
+.journal-calendar{padding:10px 12px;display:flex;flex-direction:column;min-height:0;height:100%;font-size:13px;--journal-ink:#468763}
+.journal-calendar button{background:transparent;color:var(--text);border:0;box-shadow:none}
+.journal-calendar button:hover{background:var(--hover)}
+.journal-mode{display:flex;gap:2px;margin-bottom:8px;flex-shrink:0}
+.journal-mode button{padding:4px 8px;font-size:12px;color:var(--muted);border-radius:5px}
+.journal-mode button[aria-pressed=true]{background:var(--hover);color:var(--text)}
+.journal-heading{display:flex;align-items:center;gap:2px;min-height:32px;flex-shrink:0}
+.journal-heading strong{flex:1;min-width:0;font-size:14px}.journal-heading>button{font-size:11px;padding:3px}.journal-heading .tool{width:23px;height:25px;padding:4px}
+.journal-weekdays,.journal-week{display:grid;grid-template-columns:22px repeat(7,minmax(0,1fr));gap:2px;align-items:center}
+.journal-weekdays{color:var(--muted);font-size:9px;text-align:center;min-height:25px;flex-shrink:0}
+.journal-days{overflow:auto;min-height:0;scrollbar-width:thin}.journal-week{min-height:36px}.journal-week>button{min-width:0;border-radius:5px;padding:0;height:34px;position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.journal-week>button[data-outside=true]{color:var(--muted);opacity:.45}.journal-week>button[aria-selected=true]{box-shadow:inset 0 0 0 1px var(--accent)}.journal-week>button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.journal-week .journal-week-link{font-size:9px;color:var(--muted);height:25px}.journal-week-link[data-exists=true]{font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.journal-week .date-number{font-size:12px;width:22px;height:22px}.journal-dots{font-size:10px;line-height:5px;position:absolute;bottom:1px;color:var(--muted);letter-spacing:1px}
+.journal-heatmap{flex:1}.journal-heatmap .journal-week{min-height:26px}.journal-heatmap .journal-week>button:not(.journal-week-link){height:auto;aspect-ratio:1;max-height:32px;margin:1px;border-radius:4px;min-height:16px}.journal-heatmap button[data-level],.journal-legend i{background:var(--hover)}
+.journal-heatmap button[data-level="1"],.journal-legend [data-level="1"]{background:color-mix(in srgb,var(--journal-ink) 25%,var(--surface))}.journal-heatmap button[data-level="2"],.journal-legend [data-level="2"]{background:color-mix(in srgb,var(--journal-ink) 50%,var(--surface))}.journal-heatmap button[data-level="3"],.journal-legend [data-level="3"]{background:color-mix(in srgb,var(--journal-ink) 75%,var(--surface))}.journal-heatmap button[data-level="4"],.journal-legend [data-level="4"]{background:var(--journal-ink)}
+.journal-heatmap .date-number{width:12px;height:12px}.journal-heatmap button:hover{outline:1px solid var(--muted)}.journal-heatmap button[data-outside=true]{visibility:hidden}
+.journal-legend{display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:var(--muted);padding:10px 0;flex-shrink:0}.journal-legend i{width:11px;height:11px;border-radius:2px}
+.journal-open-today{padding:7px 4px;margin-top:8px;font-size:12px;text-align:left;flex-shrink:0}
+.template-dialog{width:480px;max-width:calc(100vw - 32px);max-height:calc(100vh - 48px);padding:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.template-dialog::backdrop{background:#0006}.template-dialog form{padding:12px 18px 18px;display:grid;gap:10px}.template-dialog input{width:100%;min-width:0}.template-list{max-height:230px;overflow:auto;display:flex;flex-direction:column;gap:2px}.template-list button{display:flex;align-items:center;gap:7px;text-align:left;padding:7px 8px;background:transparent}.template-list button[aria-selected=true]{background:var(--selected)}.template-list button span{flex:1}.template-list small{max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}.template-actions{display:flex;justify-content:space-between}.template-actions button{display:flex;align-items:center;gap:5px;background:transparent;font-size:12px;color:var(--muted)}.template-dialog label{display:grid;grid-template-columns:70px 1fr;align-items:center;font-size:12px;gap:8px}.template-dialog [role=alert]{font-size:12px;color:var(--danger)}
+.journal-days:not(.journal-heatmap){padding-bottom:2px}
+.journal-month-label{padding:10px 0 5px 25px;color:var(--muted);font-size:11px;font-weight:500}

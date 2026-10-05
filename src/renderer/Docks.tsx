@@ -6,7 +6,7 @@ import {Icon,type IconName} from './Icons';
 import {ActionMenu,type MenuState} from './Overlays';
 import type {TabDrag} from './tab-drag';
 export const modules:Record<ModuleId,{title:string;icon:IconName}>={
-  whiteboards:{title:ui.layout.whiteboardExplorer,icon:'map'},files:{title:ui.layout.fileExplorer,icon:'folder'},bookmarks:{title:ui.layout.starredRecent,icon:'star'},tags:{title:ui.layout.tags,icon:'tag'},search:{title:ui.layout.search,icon:'search'},agent:{title:ui.layout.agentConsole,icon:'agent'},history:{title:ui.layout.history,icon:'branch'},style:{title:ui.layout.style,icon:'art'},
+  calendar:{title:ui.journal.calendar,icon:'calendar'},whiteboards:{title:ui.layout.whiteboardExplorer,icon:'map'},files:{title:ui.layout.fileExplorer,icon:'folder'},bookmarks:{title:ui.layout.starredRecent,icon:'star'},tags:{title:ui.layout.tags,icon:'tag'},search:{title:ui.layout.search,icon:'search'},agent:{title:ui.layout.agentConsole,icon:'agent'},history:{title:ui.layout.history,icon:'branch'},style:{title:ui.layout.style,icon:'art'},
 };
 export {MODULE_IDS};
 function revealActiveTabs(dock:HTMLElement|null){

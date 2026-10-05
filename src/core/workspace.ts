@@ -1,3 +1,6 @@
+import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,expandTemplate,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
+import {wallTime,DEFAULT_DATE_DISPLAY} from '../dates';
+import {visit} from 'yaml';
 import {moveCardLinks,rewriteHtmlLinks} from '../card-links';
 import {compileView} from './view-query';
 import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView,viewCreationChoices,resolveField} from '../view-block';
@@ -52,6 +55,7 @@ export class Workspace {
       CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT,searchText TEXT);
       CREATE INDEX IF NOT EXISTS cards_folder ON cards(folder);
       CREATE INDEX IF NOT EXISTS card_identity ON cards(id);
+      CREATE INDEX IF NOT EXISTS journal_identity ON cards(json_extract(frontmatter,'$.journal.date'),json_extract(frontmatter,'$.journal.period'));
       CREATE TABLE IF NOT EXISTS properties(path TEXT,field TEXT,value TEXT,PRIMARY KEY(path,field));
       CREATE INDEX IF NOT EXISTS property_value ON properties(field,value,path);
       CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT);
@@ -521,6 +525,51 @@ export class Workspace {
     if(contextKey)raw=this.viewPropertyContent(raw,path,contextKey,column!==undefined?column||null:date!);
     if(title)raw=editCard(raw,readCard(path,raw),'# '+title.replace(/[\r\n]+/g,' ')+'\n');
     return this.write([{path,content:raw,expected:null}]);
+  }
+  private journalWordCounts=new Map<string,{revision:string;words:number}>();
+  journalEntries(year:number):JournalEntry[] {
+    if(!Number.isInteger(year)||year<1001||year>9997)throw new Error(ui.journal.invalidDate);
+    const settings=this.preferences.journal??DEFAULT_JOURNAL,days=journalDays(year),paths=new Map<string,{date:string;period:JournalPeriod}>();
+    for(const day of days){paths.set(journalPath(settings,day,'daily'),{date:day,period:'daily'});const week=journalWeek(day);paths.set(journalPath(settings,week,'weekly'),{date:week,period:'weekly'});}
+    const rows=this.db.prepare(`SELECT path,id,searchText,revision,json_extract(frontmatter,'$.journal.date') AS date,json_extract(frontmatter,'$.journal.period') AS period FROM cards WHERE (json_extract(frontmatter,'$.journal.date') BETWEEN ? AND ?) OR path IN (${[...paths].map(()=>'?').join(',')})`).all(days[0],days.at(-1)!,...paths.keys());
+    const segments=new Intl.Segmenter(undefined,{granularity:'word'}),entries:JournalEntry[]=[];
+    for(const row of rows){
+      const path=String(row.path),identity=typeof row.date==='string'&&validJournalDay(row.date)&&['daily','weekly'].includes(String(row.period))?{date:row.date,period:row.period as JournalPeriod}:paths.get(path);
+      if(!identity)continue;
+      let count=this.journalWordCounts.get(path);if(count?.revision!==row.revision){count={revision:String(row.revision),words:[...segments.segment(String(row.searchText))].filter(s=>s.isWordLike).length};this.journalWordCounts.set(path,count);}
+      entries.push({...identity,path,id:String(row.id),words:count.words});
+    }
+    return entries;
+  }
+  private async templateContent(template:string,path:string,title:string,day:string,period?:JournalPeriod){
+    const raw=template?await this.read(template):'# {{title}}\n',parts=splitNote(raw),time=wallTime(new Date().toISOString(),this.preferences.dateDisplay??DEFAULT_DATE_DISPLAY).slice(11,19);
+    // Substitute YAML scalar values structurally, so titles containing quotes remain data.
+    visit(parts.front,{Scalar(_key,node){if(typeof node.value==='string')node.value=expandTemplate(node.value,title,day,time);}});
+    parts.front.set('card-id',randomUUID());parts.front.delete('journal');
+    if(period)parts.front.set('journal',{date:day,period});
+    const body=expandTemplate(parts.body,title,day,time);
+    return '---\n'+parts.front.toString()+'---\n'+(template?moveCardLinks(body,template,path):body);
+  }
+  async createFromTemplate(template:string,folder:string,stem:string){
+    if(!validNotePath(template)||!template.endsWith('.md')||!validNotePath(folder))throw new Error(ui.errors.invalidWorkspacePath);
+    const path=await this.newCardPath(folder,stem),raw=await this.templateContent(template,path,basename(path,'.md'),journalToday(this.preferences.dateDisplay));
+    return this.write([{path,content:raw,expected:null}]);
+  }
+  async createTemplate(){
+    const folder=(this.preferences.templates??DEFAULT_TEMPLATES).folder,path=await this.newCardPath(folder,'New template');
+    return this.write([{path,content:newNote()+'# {{title}}\n\n{{date}}\n\n',expected:null}]);
+  }
+  async openJournal(date:string,period:JournalPeriod){
+    if(!validJournalDay(date)||!['daily','weekly'].includes(period))throw new Error(ui.journal.invalidDate);
+    const day=period==='weekly'?journalWeek(date):date,entries=this.db.prepare(`SELECT path FROM cards WHERE json_extract(frontmatter,'$.journal.date')=? AND json_extract(frontmatter,'$.journal.period')=?`).all(day,period) as {path:string}[];
+    if(entries.length>1)throw new Error(ui.journal.duplicate(entries.map(e=>e.path)));
+    if(entries.length)return {snapshot:this.snapshot(),edits:[],path:entries[0].path};
+    const settings=this.preferences.journal??DEFAULT_JOURNAL,path=journalPath(settings,day,period),existing=await this.raw(path);
+    // Never replace a conventional existing date note. It can be opened without migration.
+    if(existing!==null){const identity=splitNote(existing).front.toJSON()?.journal;if(identity&&(identity.date!==day||identity.period!==period))throw new Error(ui.journal.pathConflict(path));readCard(path,existing);return {snapshot:this.snapshot(),edits:[],path};}
+    const template=period==='daily'?settings.dailyTemplate:settings.weeklyTemplate,raw=await this.templateContent(template,path,basename(path,'.md'),day,period);
+    await fs.mkdir(dirname(await this.path(path)),{recursive:true});
+    return {...await this.write([{path,content:raw,expected:null}]),path};
   }
   private async newCardPath(folder:string,stem:string){
     validateStem(stem);

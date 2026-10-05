@@ -71,7 +71,7 @@ export function restoreLayout(raw:string|null):Layout {
   return pane('board:');
 }
 
-export const MODULE_IDS=['whiteboards','files','bookmarks','tags','search','agent','history','style'] as const;
+export const MODULE_IDS=['whiteboards','files','bookmarks','tags','search','agent','history','style','calendar'] as const;
 export type ModuleId=typeof MODULE_IDS[number];
 export type DockSide='left'|'right';
 export interface PanelGroup {id:string;tabs:ModuleId[];active:ModuleId;weight:number}
@@ -81,7 +81,7 @@ export interface ViewMemory {source?:boolean;camera?:{x:number;y:number;zoom:num
 export interface DocumentsLayout {tree:Layout;active:string;views:Record<string,ViewMemory>;formatting:string[]}
 export interface NavigationMemory {expanded?:string[];search?:string;scroll?:number}
 export function defaultDocks():Docks {
-  return {version:1,left:{collapsed:false,width:232,groups:[{id:'navigation',tabs:['whiteboards','files','tags','search'],active:'whiteboards',weight:62},{id:'saved',tabs:['bookmarks'],active:'bookmarks',weight:38}]},right:{collapsed:true,width:280,groups:[{id:'tools',tabs:['style','agent','history'],active:'style',weight:1}]}};
+  return {version:1,left:{collapsed:false,width:232,groups:[{id:'navigation',tabs:['whiteboards','files','tags','search'],active:'whiteboards',weight:62},{id:'saved',tabs:['bookmarks'],active:'bookmarks',weight:38}]},right:{collapsed:true,width:280,groups:[{id:'tools',tabs:['calendar','style','agent','history'],active:'calendar',weight:1}]}};
 }
 export function validateDocks(value:unknown):Docks {
   if(!value||typeof value!=='object'||(value as Docks).version!==1)throw new Error(ui.errors.invalidDockLayout);
@@ -102,10 +102,10 @@ export function validateDocks(value:unknown):Docks {
       modules.add(module);
     }
   }
-  if(modules.size===MODULE_IDS.length-1&&!modules.has('style')){
+  const added=MODULE_IDS.filter(id=>!modules.has(id));
+  if(added.length&&added.every(id=>id==='style'||id==='calendar')){
     const next=structuredClone(docks);
-    if(next.right.groups.length)next.right.groups[0].tabs.push('style');
-    else next.closed={...next.closed,style:{side:'right',group:'styles',index:0,weight:1}};
+    for(const id of added){if(next.right.groups.length)next.right.groups[0].tabs.push(id);else next.closed={...next.closed,[id]:{side:'right',group:id,index:0,weight:1}};}
     return next;
   }
   if(modules.size!==MODULE_IDS.length)throw new Error(ui.errors.missingWorkspaceView);

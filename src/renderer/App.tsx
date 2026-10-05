@@ -1,3 +1,5 @@
+import {CalendarView} from './CalendarView';
+import {TemplateDialog} from './TemplateDialog';
 import {cardFill,tintColor} from '../colors';
 import type {CardDrop} from './card-drop';
 import { ui } from '../text/ui';
@@ -304,7 +306,9 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="split-child" style={{flex:1-node.ratio}}>{renderLayout(node.second,top&&node.axis==='row',first&&node.axis==='column',last)}</div>
     </div>;
   }
+  const [templateOpen,setTemplateOpen]=useState(false);
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
+    if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={open} onChange={patch=>changePrefs(()=>patch)}/>;
     if(module==='style'){
       const board=snapshot.boards.find(b=>'board:'+b.folder===tabDocument(active)),card=snapshot.cards.find(c=>'card:'+c.id===tabDocument(active));
       return <StyleView board={board} card={card} cardInfos={snapshot.cards} palette={prefs.palette} selection={boardSelection?.path===board?.path?boardSelection:undefined} session={session} onPalette={palette=>session.run(async()=>{
@@ -322,6 +326,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <Tool icon="left" label={left?tooltips.layout.collapseLeftSideDock:tooltips.layout.expandLeftSideDock} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
       <WorkspaceMenu snapshot={snapshot} session={session} onManage={()=>setModal('workspaces')}/>
       <div className="window-drag-space"/>
+      <Tool icon="copy" label={ui.journal.newFromTemplate} onClick={()=>setTemplateOpen(true)}/>
       <Tool icon="search" label={tooltips.workspace.search} onClick={()=>setSearchOpen(true)}/>
       <Tool icon="right" label={right?tooltips.layout.collapseRightSideDock:tooltips.layout.expandRightSideDock} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
       <div className="windows-controls-space"/>
@@ -343,6 +348,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>
     </footer>
     {popup&&<CardPopup documentKey={popup.key} snapshot={snapshot} session={session} onClose={closePopup} onNavigate={transferPopup} onPreview={key=>previewCard(key,popup.pane)}/>}
+    {templateOpen&&<TemplateDialog snapshot={snapshot} session={session} onOpen={open} onClose={()=>setTemplateOpen(false)}/>}
     {searchOpen&&<SearchDialog session={session} snapshot={snapshot} onReveal={showOnBoard} onOpen={open} onSplit={openBeside} onClose={()=>setSearchOpen(false)}/>}
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{void confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}).then(ok=>{if(ok)attempt(session.reloadDraft());});}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}
