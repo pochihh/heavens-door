@@ -184,7 +184,7 @@ void app.whenReady().then(async()=>{
     // ponytail: block cross-window history switches until a shared draft-flush barrier exists.
     if(['restore','applyCheckpoint'].includes(request.kind)&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.historyOtherWindows);
     const result=await d.host.call(request);
-    if(['create','createFolder','saveCard','saveBoard','setFill','moveViewCard','setViewProperty','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
+    if(['createFromTemplate','createTemplate','openJournal','trashCard','restoreTrash','create','createFolder','saveCard','saveBoard','setFill','moveViewCard','setViewProperty','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
     return result;
   });
   ipcMain.handle('workspace:current',async event=>{const d=trusted(event),opening=d.opening;try{if(opening)await opening;return await snapshot(d);}finally{d.opening=undefined;}});

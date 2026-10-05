@@ -162,8 +162,8 @@ export function moveModule(docks:Docks,drag:DockDrag,drop:DockDrop):Docks {
   }
   return next;
 }
-export function resizeGroups(docks:Docks,side:DockSide,index:number,fraction:number):Docks {
-  const next=structuredClone(docks),groups=next[side].groups,a=groups[index],b=groups[index+1];
+export function resizeGroups(docks:Docks,side:DockSide,index:number,fraction:number,nextGroup?:string):Docks {
+  const next=structuredClone(docks),groups=next[side].groups,a=groups[index],b=nextGroup?groups.find(g=>g.id===nextGroup):groups[index+1];
   if(!a||!b)return docks;
   const total=a.weight+b.weight,ratio=Math.max(.12,Math.min(.88,fraction));a.weight=total*ratio;b.weight=total*(1-ratio);return next;
 }

@@ -1,3 +1,4 @@
+import {featureEnabled} from '../features';
 import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
@@ -44,7 +45,7 @@ export function NoteView({path,session,snapshot,active,memory,suspended=false,on
     void session.bridge.request<{path:string}[]>({kind:'query',text:'backlinks:'+info.id}).then(rows=>{if(live)setBacklinks(rows);}).catch(error=>{if(live)session.update({error:String(error)});});
     return()=>{live=false;};
   },[info?.id,snapshot,session]);
-  const tags=info?<CardTags card={info} snapshot={snapshot} session={session} onOpen={onOpen}/>:undefined;
+  const tags=info&&featureEnabled(snapshot.preferences,'tags')?<CardTags card={info} snapshot={snapshot} session={session} onOpen={onOpen}/>:undefined;
   return <section className="document-editor" ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
     onPointerDown={e=>{
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
@@ -75,7 +76,7 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
   },[session,snapshot.cards,board.path,board.showMentions,board.cards.length]);
   const legacyRoot=!board.folder&&board.cards.some(p=>!p.folder);
   const shown=legacyRoot?{...board,cards:board.cards.filter(p=>p.folder),edges:[]}:board;
-  return <Whiteboard addTagActions={(card):MenuAction[]=>(snapshot.tags??[]).filter(t=>!card.tags?.includes(t.tag)).map<MenuAction>(t=>({label:t.tag,icon:'tag' as const,run:()=>{void session.setCardTag(card.path,card.revision,t.tag,true).catch(()=>undefined);}})).concat((snapshot.tags??[]).every(t=>card.tags?.includes(t.tag))?[{label:ui.tags.unavailable,disabled:true,icon:'tag' as const,run:()=>{}}]:[])} reveal={reveal} onRevealed={onRevealed} onOpenCard={(id,mode='new')=>mode==='popup'?onPreview('card:'+id):onNavigate('card:'+id,mode)} edgeDefaults={snapshot.lastEdgeStyle} board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
+  return <Whiteboard addTagActions={featureEnabled(snapshot.preferences,'tags')?(card):MenuAction[]=>(snapshot.tags??[]).filter(t=>!card.tags?.includes(t.tag)).map<MenuAction>(t=>({label:t.tag,icon:'tag' as const,run:()=>{void session.setCardTag(card.path,card.revision,t.tag,true).catch(()=>undefined);}})).concat((snapshot.tags??[]).every(t=>card.tags?.includes(t.tag))?[{label:ui.tags.unavailable,disabled:true,icon:'tag' as const,run:()=>{}}]:[]):undefined} reveal={reveal} onRevealed={onRevealed} onOpenCard={(id,mode='new')=>mode==='popup'?onPreview('card:'+id):onNavigate('card:'+id,mode)} edgeDefaults={snapshot.lastEdgeStyle} board={shown} mentions={mentions} onSelection={onSelection} onStyle={onStyle} cards={snapshot.cards} inputMode={snapshot.preferences?.whiteboardInput} onCycleInput={onCycleInput} enabled={active} initialCamera={memory.camera} onCamera={camera=>{memory.camera=camera;onViewChange();}}
     boards={snapshot.boards} onOpenFolder={(folder,mode)=>onNavigate('board:'+folder,mode)}
     onSave={(next,label,base)=>{
       if(legacyRoot){onMigrate();return Promise.reject(new Error(ui.errors.migrateRootFirst));}

@@ -70,6 +70,9 @@ async function dispatch(request: Request) {
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
     case 'inspectFile': string(request.path);return inspectFile(workspace.root,request.path);
     case 'snapshot': return workspace.snapshot();
+    case 'trashEntries': return workspace.trashEntries();
+    case 'trashCard': string(request.path);string(request.expected);return workspace.trashCard(request.path,request.expected);
+    case 'restoreTrash': string(request.path);string(request.expected);return workspace.restoreTrash(request.path,request.expected);
     case 'journalEntries': return workspace.journalEntries(request.year);
     case 'openJournal': string(request.date);return workspace.openJournal(request.date,request.period);
     case 'createFromTemplate': string(request.template);string(request.folder);string(request.stem);return workspace.createFromTemplate(request.template,request.folder,request.stem);

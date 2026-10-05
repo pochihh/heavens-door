@@ -1,3 +1,4 @@
+import {systemFolder} from '../features';
 import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,expandTemplate,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
 import {wallTime,DEFAULT_DATE_DISPLAY} from '../dates';
 import {visit} from 'yaml';
@@ -24,7 +25,9 @@ import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNot
 import { DEFAULT_CARD_FOLDER, COLLAPSED_CARD_HEIGHT, DEFAULT_WHITEBOARD_NAME, placementHeight, edgeStyle } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
 
-const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
+const isTrashNote=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
+const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.(md|json)$/.test(path);
+function trashWrites(path:string,raw:string,expected:string):Write[]{const archived='.heavens-door/trash/'+randomUUID();return [{path:archived+'.md',content:raw,expected:null},{path:archived+'.json',content:JSON.stringify({path,deleted:new Date().toISOString()},null,2)+'\n',expected:null},{path,content:null,expected}];}
 
 function validateStem(stem:string) {
     if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error(ui.errors.invalidFilename);
@@ -110,8 +113,7 @@ export class Workspace {
       if(readCard(card.path,raw).id!==card.id)throw new Error(ui.errors.externalEdit(card.path));
       // The empty title placeholder is never stored; a blank H1 is editor scaffolding.
       if(body.replace(/^\s*#(?:[ \t]+#*)?\s*$/,'').trim()||Object.keys(front.toJSON()??{}).some(key=>!['card-id','card-color'].includes(key)))nonEmpty.push(card.path);
-      changes.push({path:'.heavens-door/trash/'+randomUUID()+'.md',content:raw,expected:null},
-        {path:card.path,content:null,expected:revision(raw)});
+      changes.push(...trashWrites(card.path,raw,revision(raw)));
     }
     const removed=new Set(board.cards.filter(p=>!p.folder&&ids.has(p.cardId)).map(p=>p.id));
     const next={...board,cards:board.cards.filter(p=>!removed.has(p.id)),edges:board.edges.filter(e=>!edges.includes(e.id)&&!removed.has(e.from)&&!removed.has(e.to))};
@@ -145,11 +147,12 @@ export class Workspace {
     changes=this.automaticPlacements(changes);
     const journal = [];
     for (const change of changes) {
-      if (!['.md','.whiteboard','.tag'].includes(extname(change.path)) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
+      if (!['.md','.whiteboard','.tag'].includes(extname(change.path))&&!(isTrash(change.path)&&change.path.endsWith('.json')) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
       const before = await this.raw(change.path);
       if ((before === null ? null : revision(before)) !== change.expected) throw new Error(ui.errors.externalEdit(change.path));
       if (change.content !== null) {
-        if(change.path.endsWith('.tag'))readTag(change.path,change.content);else if (change.path.endsWith('.md')) readCard(change.path,change.content); else readBoard(change.path,change.content);
+        if(isTrash(change.path)&&change.path.endsWith('.json')){const meta=JSON.parse(change.content);if(!meta||!validNotePath(meta.path)||!meta.path.endsWith('.md')||!Number.isFinite(Date.parse(meta.deleted)))throw new Error(ui.errors.invalidEdit);await this.path(meta.path);}
+        else if(change.path.endsWith('.tag'))readTag(change.path,change.content);else if (change.path.endsWith('.md')) readCard(change.path,change.content); else readBoard(change.path,change.content);
       }
       journal.push({ path: change.path, before, after: change.content });
     }
@@ -243,7 +246,7 @@ export class Workspace {
   }
 
   private allBoards() {
-    const boards=[...this.boards.values()].filter(b=>this.boardPath(b.folder)===b.path);
+    const boards=[...this.boards.values()].filter(b=>this.boardPath(b.folder)===b.path&&!systemFolder(b.folder,this.preferences));
     if(!boards.some(b=>!b.folder))boards.unshift(emptyBoard(basename(this.root)+'.whiteboard'));
     const boardFolders=new Set(boards.map(b=>b.folder)),childrenByFolder=new Map<string,string[]>();
     for(const folder of boardFolders){
@@ -254,7 +257,7 @@ export class Workspace {
     }
     return boards.map(board => {
       const children=childrenByFolder.get(board.folder)??[];
-      const cards=board.folder?[...board.cards]:board.cards.filter(p=>p.folder);
+      const cards=(board.folder?[...board.cards]:board.cards.filter(p=>p.folder)).filter(p=>!p.folder||!systemFolder(p.folder,this.preferences));
       for (const folder of children) if (!cards.some(p => p.folder === folder)) {
         const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
         cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
@@ -269,7 +272,7 @@ export class Workspace {
     const affected=folders??new Set(changes.length?changes.map(c=>dirname(c.path)==='.'?'':dirname(c.path)):[...this.boards.values()].map(b=>b.folder));
     let displayed:Map<string,Board>|undefined;
     for(const folder of affected){
-      if(!folder)continue; // The mother board contains sub-whiteboards only.
+      if(!folder||systemFolder(folder,this.preferences))continue; // Special folders do not intake cards onto a board.
       const path=this.boardPath(folder),explicit=result.find(c=>c.path===path);
       if(explicit?.content===null)continue;
       const board=explicit?readBoard(path,explicit.content!):this.boards.get(path);
@@ -299,6 +302,32 @@ export class Workspace {
     const folders=paths?new Set(paths.filter(p=>p.endsWith('.md')||p.endsWith('.whiteboard')).map(p=>dirname(p)==='.'?'':dirname(p))):undefined;
     const additions=this.automaticPlacements([],folders);
     if(additions.length)await this.write(additions);
+  }
+  async trashEntries():Promise<import('../shared').TrashEntry[]> {
+    const folder=join(this.root,'.heavens-door/trash');
+    let files:string[];try{await this.path('.heavens-door/trash/00000000-0000-0000-0000-000000000000.md');files=await fs.readdir(folder);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return [];throw e;}
+    const entries=await Promise.all(files.filter(name=>isTrashNote('.heavens-door/trash/'+name)).map(async name=>{
+      const path='.heavens-door/trash/'+name,raw=await this.read(path),metaRaw=await this.raw(path.slice(0,-3)+'.json'),meta=metaRaw?JSON.parse(metaRaw):undefined,card=readCard(typeof meta?.path==='string'?meta.path:path,raw);
+      const info={id:card.id,path,name:card.name,title:card.title,titleMarkdown:card.titleMarkdown,revision:card.revision,legacy:card.legacy,tags:card.tags,fillColor:card.fillColor};return {...info,originalPath:typeof meta?.path==='string'?meta.path:undefined,deleted:Number.isFinite(Date.parse(meta?.deleted))?Date.parse(meta.deleted):(await fs.stat(await this.path(path))).mtimeMs};
+    }));return entries.sort((a,b)=>b.deleted-a.deleted);
+  }
+  async trashCard(path:string,expected:string){
+    if(!validNotePath(path)||!path.endsWith('.md'))throw new Error(ui.errors.invalidWorkspacePath);
+    const raw=await this.read(path),card=readCard(path,raw);if(card.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+    const changes:Write[]=trashWrites(path,raw,expected);
+    for(const board of this.boards.values()){const removed=new Set(board.cards.filter(p=>p.cardId===card.id).map(p=>p.id));if(removed.size)changes.push({path:board.path,content:writeBoard({...board,cards:board.cards.filter(p=>!removed.has(p.id)),edges:board.edges.filter(e=>!removed.has(e.from)&&!removed.has(e.to))}),expected:board.revision});}
+    return this.write(changes);
+  }
+  async restoreTrash(path:string,expected:string){
+    if(!isTrashNote(path))throw new Error(ui.errors.invalidWorkspacePath);
+    const raw=await this.read(path);if(revision(raw)!==expected)throw new Error(ui.errors.externalEdit(path));
+    const metaPath=path.slice(0,-3)+'.json',metaRaw=await this.raw(metaPath),meta=metaRaw?JSON.parse(metaRaw):undefined;
+    let destination=typeof meta?.path==='string'?meta.path:join(this.preferences.cardFolder??DEFAULT_CARD_FOLDER,'Restored card.md');
+    if(!validNotePath(destination)||!destination.endsWith('.md'))throw new Error(ui.errors.invalidWorkspacePath);
+    await this.path(destination);const stem=destination.slice(0,-3);let suffix=1;
+    while(await this.raw(destination)!==null)destination=stem+' '+(++suffix)+'.md';
+    await fs.mkdir(dirname(await this.path(destination)),{recursive:true});
+    return this.write([{path:destination,content:raw,expected:null},{path,content:null,expected},...(metaRaw?[{path:metaPath,content:null,expected:revision(metaRaw)}]:[])]);
   }
   async setPreferences(patch: Partial<Preferences>) {
     this.assertReady();

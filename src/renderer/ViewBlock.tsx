@@ -1,3 +1,4 @@
+import {featureEnabled} from '../features';
 import {createContext,useContext,useEffect,useMemo,useState,useRef,useId,type ReactNode} from 'react';
 import type {NavigationMode} from '../layout';
 import type {Snapshot,ViewResults,TagResult,TagValue} from '../shared';
@@ -47,8 +48,8 @@ export function ViewBlock({source,onChange,onRemove,onDuplicate,path,blockIndex=
   useEffect(()=>{if(path&&view)context?.session.viewTabs.set(path+'\0'+blockIndex,view.id);},[path,blockIndex,view?.id,context?.session]);
   const scroll=useMemo(()=>{if(!path||!context)return;const key=path+'\0'+blockIndex+'\0'+view?.id;if(!context.session.viewScrolls.has(key))context.session.viewScrolls.set(key,{left:0,top:0});return context.session.viewScrolls.get(key);},[path,blockIndex,view?.id,context?.session]);
   const nameInput=useRef<HTMLInputElement>(null);
-  const generation=useRef(0),identity=JSON.stringify([context?.snapshot.root,context?.snapshot.cards.map(c=>[c.path,c.revision]),tags.map(t=>[t.tag,t.fields,t.inherits])]);
-  useEffect(()=>{const version=++generation.current;let live=true;setError('');if(!context||!block||!view||editing){setBusy(false);return;}setBusy(true);const timer=setTimeout(()=>{void context.session.bridge.request<ViewResults>({kind:'viewCards',source,view:view.id}).then(rows=>{if(live&&version===generation.current)setResult(rows);}).catch(e=>{if(live&&version===generation.current)setError(String(e).replace(/^Error: /,''));}).finally(()=>{if(live&&version===generation.current)setBusy(false);});},80);return()=>{live=false;generation.current++;clearTimeout(timer);};},[source,view?.id,identity,context?.session,editing]);
+  const generation=useRef(0),identity=JSON.stringify([context?.snapshot.root,context?.snapshot.preferences?.features?.views,context?.snapshot.cards.map(c=>[c.path,c.revision]),tags.map(t=>[t.tag,t.fields,t.inherits])]);
+  useEffect(()=>{const version=++generation.current;let live=true;setError('');if(!context||!featureEnabled(context.snapshot.preferences,'views')||!block||!view||editing){setBusy(false);return;}setBusy(true);const timer=setTimeout(()=>{void context.session.bridge.request<ViewResults>({kind:'viewCards',source,view:view.id}).then(rows=>{if(live&&version===generation.current)setResult(rows);}).catch(e=>{if(live&&version===generation.current)setError(String(e).replace(/^Error: /,''));}).finally(()=>{if(live&&version===generation.current)setBusy(false);});},80);return()=>{live=false;generation.current++;clearTimeout(timer);};},[source,view?.id,identity,context?.session,editing]);
   const shown=draft??block,selected=checked.error?undefined:shown?.views.find(v=>v.id===(view?.id))??shown?.views[0];
   const fields=useMemo(()=>{
     const fields=queryFields(tags,[...new Set([...positiveTags(shown?.query.where),...(result.scopeTags??result.rows.flatMap(row=>tagsFrom(row.properties.tags)))])],context?.snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES);
@@ -66,7 +67,7 @@ export function ViewBlock({source,onChange,onRemove,onDuplicate,path,blockIndex=
   const duplicate=onDuplicate??(owner?(next:string)=>context!.session.saveViewBlock(owner.path,owner.revision,blockIndex,source,next,true):undefined);
   const tabGroup=useId(),tabs=useTabDrag((source,target)=>reorder(source.key,target.before));
   useEffect(()=>{if(tabs.drag){setPopup(null);setDraft(null);}},[tabs.drag]);
-  if(!context)return <pre><code>{source}</code></pre>;
+  if(!context||!featureEnabled(context.snapshot.preferences,'views'))return <pre><code>{source}</code></pre>;
   function open(kind:string,anchor:HTMLElement){if(popup?.kind===kind&&popup.anchor===anchor){setPopup(null);setDraft(null);return;}setDraft(block?structuredClone(block):null);setYaml(source);setError('');setPopup({kind,anchor});}
   async function commit(next:Definition,keep=false,id=selected?.id){try{if(next.query.where)validateRule(next.query.where,tags);const edited=next.views.find(v=>v.id===id)??next.views[0];validateView(edited,tags);setSaving(true);await change?.(writeViewBlock(source,next));if(keep)setDraft(next);else{setPopup(null);setDraft(null);}setError('');return true;}catch(e){setError(String(e).replace(/^Error: /,''));return false;}finally{setSaving(false);}}
   async function removeBlock(){try{setSaving(true);await remove?.();setPopup(null);setDraft(null);}catch(e){setError(String(e).replace(/^Error: /,''));}finally{setSaving(false);}}

@@ -10,6 +10,9 @@ import {tintColor} from '../src/colors';
 import {Session} from '../src/renderer/session';
 import {writeViewBlock,newViewBlock,parseViewBlock} from '../src/view-block';
 
+// JSDOM does not supply the native observer used to position editor controls.
+Object.assign(globalThis,{ResizeObserver:class {observe(){} disconnect(){}}});
+
 test('editable view blocks render without changing Markdown, commit group edits and preserve source through focus changes',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});

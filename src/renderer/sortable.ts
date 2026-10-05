@@ -28,7 +28,7 @@ export function animateReorder(before:Map<HTMLElement,DOMRect>,axis:SortAxis|'bo
   if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   for(const [row,r] of before){const next=row.getBoundingClientRect(),x=axis==='vertical'?0:r.left-next.left,y=axis==='horizontal'?0:r.top-next.top;if((x||y)&&row.animate){const animation=row.animate([{transform:`translate(${x}px,${y}px)`},{transform:'none'}],{duration:150,easing:'cubic-bezier(0.2,0,0,1)'});animations.set(row,animation);}}
 }
-export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:string,index:number|null,fromStarred:boolean,group?:string)=>void,axis:SortAxis='vertical',reorderOnly=false,onDragging?:(active:boolean)=>void) {
+export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:string,index:number|null,fromStarred:boolean,group?:string)=>void,axis:SortAxis='vertical',reorderOnly=false,onDragging?:(active:boolean)=>void,canDrop?:(key:string,group:string)=>boolean) {
   const cancel=useRef<()=>void>(()=>{}),onCommit=useRef(commit);onCommit.current=commit;
   const dragging=useRef(onDragging);dragging.current=onDragging;
   useEffect(()=>()=>cancel.current(),[]);
@@ -38,15 +38,15 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
     const source=event.currentTarget.closest<HTMLElement>('[data-file-key]')!,root=target.current??(key.startsWith('card:')&&!reorderOnly?document.createElement('div'):null);
     if(!source||!root)return;
     const groups=[...root.querySelectorAll<HTMLElement>('[data-sort-group]')];
-    let list=groups.find(group=>group.contains(source))??root;
+    let list=source.closest<HTMLElement>('[data-sort-group]')??root;
     const vertical=axis==='vertical',start=vertical?event.clientY:event.clientX,initialCross=vertical?event.clientX:event.clientY;
     const rect=source.getBoundingClientRect(),offset=start-(vertical?rect.top:rect.left),pointer=event.pointerId;
     let phantom:HTMLElement|null=null,placeholder:HTMLElement|null=null,active=false,ended=false,last=start,direction=0,x=event.clientX,y=event.clientY,frame=0;
     const animations=new Map<HTMLElement,Animation>();
     const duplicate=[...list.querySelectorAll<HTMLElement>('[data-file-key]')].find(el=>el!==source&&el.dataset.fileKey===key);
     const area=groups.length?root:list.closest<HTMLElement>('[data-bookmark-target]')??list;
-    const scroller=vertical?(list.closest<HTMLElement>(reorderOnly?'.editor-body,.card-preview,.tag-view':'.nav-bottom')??list):list;
-    const destination=()=>groups.length?groups.find(group=>{const r=(group.closest('[data-sort-area]')??group).getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;}):list;
+    const scroller=vertical?(list.closest<HTMLElement>(reorderOnly?'.editor-body,.card-preview,.tag-view,.file-tree':'.nav-bottom')??list):list;
+    const destination=()=>groups.length?[...groups].reverse().find(group=>{if(canDrop&&!canDrop(key,group.dataset.sortGroup??''))return false;const r=(group.closest('[data-sort-area]')??group).getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;}):list;
     const inside=()=>{const r=area.getBoundingClientRect(),clip=scroller.getBoundingClientRect();return !!destination()&&x>=r.left&&x<=r.right&&y>=Math.max(r.top,clip.top)&&y<=Math.min(r.bottom,clip.bottom);};
     const rows=()=>[...list.querySelectorAll<HTMLElement>(':scope > [data-file-key]')].filter(el=>el!==source&&el.dataset.fileKey!==key);
     const place=(before:HTMLElement|null)=>{
@@ -61,14 +61,14 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
       if(!active||!phantom)return;
       if(!source.isConnected){finish(false);return;}
       const coordinate=vertical?y:x,r=area.getBoundingClientRect(),inList=inside();
-      const size=vertical?rect.height:rect.width,min=vertical?r.top:r.left,max=(vertical?r.bottom:r.right)-size;
+      if(inList){list=destination()!;if(placeholder!.parentElement!==list){const before=rows().find(row=>{const r=row.getBoundingClientRect();return coordinate<(vertical?r.top+r.height/2:r.left+r.width/2);});place(before??null);}}
+      const size=vertical?rect.height:rect.width,clip=scroller.getBoundingClientRect(),bounds=list.getBoundingClientRect(),min=vertical?Math.max(bounds.top,clip.top):r.left,max=Math.max(min,(vertical?Math.min(bounds.bottom,clip.bottom):r.right)-size);
       const table=source.closest<HTMLElement>('.view-records');
       if(table){const clip=table.getBoundingClientRect();phantom.style.clipPath=`inset(0 ${Math.max(0,rect.right-clip.right)}px 0 ${Math.max(0,clip.left-rect.left)}px)`;}
       phantom.style[vertical?'top':'left']=(inList||reorderOnly?Math.max(min,Math.min(max,coordinate-offset)):coordinate-offset)+'px';
+      if(vertical&&source.closest('.file-tree')){const top=Number.parseFloat(phantom.style.top);phantom.style.clipPath=`inset(${Math.max(0,clip.top-top)}px 0 ${Math.max(0,top+size-clip.bottom)}px 0)`;}
       if(!reorderOnly)document.body.dataset.bookmarkDrop=inList?'star':fromStarred?'remove':'';
       if(inList){
-        list=destination()!;
-        if(placeholder!.parentElement!==list){const before=rows().find(row=>{const r=row.getBoundingClientRect();return coordinate<(vertical?r.top+r.height/2:r.left+r.width/2);});place(before??null);}
         const available=rows();
         for(let step=0;step<available.length;step++){
           const children=[...list.children].filter(el=>el===placeholder||available.includes(el as HTMLElement)),index=children.indexOf(placeholder!);

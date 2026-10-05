@@ -1,3 +1,4 @@
+import {featureEnabled} from '../features';
 import {ui} from '../text/ui';
 import {useContext,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -10,7 +11,7 @@ import {PropertyPopover} from './PropertyValue';
 import {EditorSymbols} from './EditorSymbols';
 import {imageHtml} from './image-layout';
 export function EditorCommands({editor}:{editor:Editor}){
-  const context=useContext(ViewBlockContext),commands=(context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS).commands.filter(c=>c.enabled),[trigger,setTrigger]=useState<{from:number;to:number;query:string}|null>(null),[index,setIndex]=useState(0),[symbols,setSymbols]=useState<HTMLElement|null>(null),ref=useRef<HTMLDivElement>(null),ignored=useRef('');
+  const context=useContext(ViewBlockContext),commands=(context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS).commands.filter(c=>c.enabled&&(c.action!=='view'||featureEnabled(context?.snapshot.preferences,'views'))),[trigger,setTrigger]=useState<{from:number;to:number;query:string}|null>(null),[index,setIndex]=useState(0),[symbols,setSymbols]=useState<HTMLElement|null>(null),ref=useRef<HTMLDivElement>(null),ignored=useRef('');
   const search=useMemo(()=>{const engine=new TextSearch();commands.forEach(c=>engine.update({path:c.id,name:c.name,title:c.name,body:c.template??c.action??''}));return engine;},[JSON.stringify(commands)]);
   const hits=trigger?.query?new Set(search.search(trigger.query).map(h=>h.path)):null,shown=commands.filter(c=>!hits||hits.has(c.id));
   useEffect(()=>{const change=()=>{const {$from,empty}=editor.state.selection,query=$from.parent.textBetween(0,$from.parentOffset);if(!editor.isFocused||!empty||$from.parent.type.name!=='paragraph'||!query.startsWith('/')||query.includes('\n')||query.length>80||query===ignored.current){setTrigger(null);return;}setTrigger({from:$from.start(),to:$from.pos,query:query.slice(1)});setIndex(0);};editor.on('transaction',change);editor.on('focus',change);return()=>{editor.off('transaction',change);editor.off('focus',change);};},[editor]);

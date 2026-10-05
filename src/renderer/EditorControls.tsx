@@ -1,7 +1,8 @@
+import {featureEnabled} from '../features';
 import {trackEditorOverlay} from './editor-overlay';
 import {EditorSymbols} from './EditorSymbols';
 import {imageHtml} from './image-layout';
-import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {useContext,useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import type {Editor,JSONContent} from '@tiptap/core';
 import {NodeSelection} from '@tiptap/pm/state';
@@ -13,12 +14,13 @@ import {Icon,Tool} from './Icons';
 import {ActionMenu,overlayContainer,type MenuState} from './Overlays';
 import {PropertyPopover} from './PropertyValue';
 import {Color} from './StyleView';
-import {defaultViewSource} from './ViewBlock';
+import {ViewBlockContext,defaultViewSource} from './ViewBlock';
 import {createDragPhantom} from './sortable';
 import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
 export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}:{editor:Editor;cards:CardInfo[];onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
+  const context=useContext(ViewBlockContext);
   const [revision,update]=useState(0),[block,setBlock]=useState<EditorBlock|null>(null),[menu,setMenu]=useState<MenuState|null>(null),[popup,setPopup]=useState<{kind:'color'|'link'|'symbols';anchor:HTMLElement}|null>(null),[query,setQuery]=useState('');
   const controls=useRef<HTMLDivElement>(null),bubble=useRef<HTMLDivElement>(null),cancel=useRef<()=>void>(()=>{}),dragging=useRef(false);
   const popupOpen=useRef(false);popupOpen.current=!!menu||!!popup;
@@ -83,7 +85,7 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
         {label:tooltips.editor.checklist,icon:'tasks',run:()=>add({type:'taskList',content:[{type:'taskItem',attrs:{checked:false},content:[{type:'paragraph'}]}]})},
         {label:tooltips.editor.quote,icon:'quote',run:()=>add({type:'blockquote',content:[{type:'paragraph'}]})},
         {label:tooltips.editor.codeBlock,icon:'code',run:()=>add({type:'codeBlock'})},
-        {label:tooltips.views.add,icon:'database',run:()=>add({type:'codeBlock',attrs:{language:'view-block'},content:[{type:'text',text:defaultViewSource()}]})},
+        ...(featureEnabled(context?.snapshot.preferences,'views')?[{label:tooltips.views.add,icon:'database' as const,run:()=>add({type:'codeBlock',attrs:{language:'view-block'},content:[{type:'text',text:defaultViewSource()}]})}]:[]),
         {label:ui.editor.insertImage,icon:'image',run:()=>add({type:'htmlBlock',attrs:{source:imageHtml({kind:'placeholder'})}})},
         {label:ui.editorTools.uploadImage,icon:'image',run:()=>{editor.commands.setTextSelection(Math.min(positionAfter(editor,block),editor.state.doc.content.size));onImage();}},
         {label:ui.editorTools.symbolsAndEmoji,icon:'text',run:()=>setPopup({kind:'symbols',anchor:controls.current!})},

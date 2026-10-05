@@ -1,9 +1,11 @@
+import {systemText} from './system';
 import {journalText} from './journal';
 import {editorText} from './editor';
 import {viewText} from './views';
 // App-authored UI copy. Settings copy, user content, and native/dependency-owned labels are excluded.
 // Plain strings and typed formatters only; no rendering or application state.
 export const ui = {
+  system:systemText,
   journal:journalText,
   editorTools:editorText,
   views:viewText,

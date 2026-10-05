@@ -152,6 +152,8 @@ export class Session {
     const result=await this.bridge.request<Mutation>({kind:'createFromTemplate',template,folder,stem});this.accept(result,ui.journal.createdFromTemplate);
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
   });}
+  restoreTrash(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'restoreTrash',path,expected});this.accept(result,'Restore card');return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;});}
+  trashCard(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'trashCard',path,expected});this.accept(result,'Move card to Trash');});}
   createTemplate(){return this.run(async()=>{
     await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation>({kind:'createTemplate'});this.accept(result,ui.journal.createTemplate);
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;

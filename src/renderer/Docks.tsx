@@ -16,10 +16,11 @@ function revealActiveTabs(dock:HTMLElement|null){
     else if(active.right>visible.right)strip.scrollLeft+=active.right-visible.right;
   });
 }
-export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderModule}:{side:DockSide;docks:Docks;drag:TabDrag|null;onTabDrag:(event:PointerEvent,value:TabDrag)=>void;onChange:(docks:Docks)=>void;onPreview:(docks:Docks)=>void;renderModule:(module:ModuleId)=>ReactNode}){
+export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderModule,enabled=()=>true}:{enabled?:(module:ModuleId)=>boolean;side:DockSide;docks:Docks;drag:TabDrag|null;onTabDrag:(event:PointerEvent,value:TabDrag)=>void;onChange:(docks:Docks)=>void;onPreview:(docks:Docks)=>void;renderModule:(module:ModuleId)=>ReactNode}){
   const [menu,setMenu]=useState<MenuState|null>(null);
   const closeMenu=useCallback(()=>setMenu(null),[]),resize=useRef<{start:number;fraction:number;size:number;initial:Docks;next:Docks}|null>(null);
-  const dock=docks[side],name=ui.layout.sideDock[side],dockElement=useRef<HTMLElement>(null);
+  const visibleGroups=docks[side].groups.flatMap(group=>{const tabs=group.tabs.filter(enabled);return tabs.length?[{...group,tabs,active:tabs.includes(group.active)?group.active:tabs[0]}]:[];});
+  const dock={...docks[side],groups:visibleGroups},name=ui.layout.sideDock[side],dockElement=useRef<HTMLElement>(null);
   useLayoutEffect(()=>revealActiveTabs(dockElement.current),[dock]);
   const moving=drag?.family==='side'?drag:null;
   // CSS leaves unused space when flex-grow values add up to less than one.
@@ -36,7 +37,7 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
             {label:ui.layout.splitViewAbove,icon:'up',disabled:group.tabs.length===1,run:()=>onChange(moveModule(docks,{module},{side,group:group.id,position:'before'}))},
             {label:ui.layout.splitViewBelow,icon:'arrowDown',disabled:group.tabs.length===1,run:()=>onChange(moveModule(docks,{module},{side,group:group.id,position:'after'}))},
             ...dock.groups.filter(g=>g.id!==group.id).map(g=>({label:ui.layout.mergeInto(modules[g.active].title),icon:'window' as const,run:()=>onChange(moveModule(docks,{group:group.id},{side,group:g.id,position:'tab'}))})),
-            {label:ui.layout.collapseDock(name),icon:side,separatorBefore:true,run:()=>onChange({...docks,[side]:{...dock,collapsed:true}})},
+            {label:ui.layout.collapseDock(name),icon:side,separatorBefore:true,run:()=>onChange({...docks,[side]:{...docks[side],collapsed:true}})},
           ]});
       };
       return <Fragment key={group.id}>
@@ -46,7 +47,7 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
             if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const target=e.target as HTMLElement,r=target.getBoundingClientRect();openMenu(target,r.left,r.bottom);return;}
             if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const buttons=[...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')],current=buttons.indexOf(document.activeElement as HTMLButtonElement),next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(current+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next]?.focus();buttons[next]?.click();
           }}>
-            {group.tabs.map(module=><button key={module} role="tab" id={'tab-'+module} data-tab-key={module} aria-label={modules[module].title} aria-selected={active===module} aria-controls={'module-'+module} tabIndex={active===module?0:-1} className={'module-tab '+(active===module?'selected':'')} data-tooltip={tooltips.tabs.view(modules[module].title)} onPointerDown={e=>onTabDrag(e,{family:'side',group:group.id,key:module})} onClick={()=>onChange({...docks,[side]:{...dock,groups:dock.groups.map(g=>g.id===group.id?{...g,active:module}:g)}})}><Icon name={modules[module].icon}/><span className="module-tab-label" aria-hidden={active!==module}>{modules[module].title}</span></button>)}
+            {group.tabs.map(module=><button key={module} role="tab" id={'tab-'+module} data-tab-key={module} aria-label={modules[module].title} aria-selected={active===module} aria-controls={'module-'+module} tabIndex={active===module?0:-1} className={'module-tab '+(active===module?'selected':'')} data-tooltip={tooltips.tabs.view(modules[module].title)} onPointerDown={e=>onTabDrag(e,{family:'side',group:group.id,key:module})} onClick={()=>onChange({...docks,[side]:{...docks[side],groups:docks[side].groups.map(g=>g.id===group.id?{...g,active:module}:g)}})}><Icon name={modules[module].icon}/><span className="module-tab-label" aria-hidden={active!==module}>{modules[module].title}</span></button>)}
           </div>
         </div>
         <div className="module-content" role="tabpanel" id={active?'module-'+active:undefined} aria-labelledby={active?'tab-'+active:undefined} aria-label={active?modules[active].title:ui.layout.emptyTabGroup}>{active?renderModule(active):null}</div>
@@ -54,9 +55,9 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
       </section>
       {index<dock.groups.length-1&&<div className="dock-splitter" role="separator" tabIndex={0} aria-label={ui.layout.resizeGroups(name)} aria-orientation="horizontal" aria-valuenow={Math.round(group.weight/(group.weight+dock.groups[index+1].weight)*100)}
         onPointerDown={e=>{const before=e.currentTarget.previousElementSibling!.getBoundingClientRect(),after=e.currentTarget.nextElementSibling!.getBoundingClientRect();resize.current={start:e.clientY,fraction:group.weight/(group.weight+dock.groups[index+1].weight),size:before.height+after.height,initial:docks,next:docks};e.currentTarget.setPointerCapture(e.pointerId);e.preventDefault();}}
-        onPointerMove={e=>{const r=resize.current;if(r){r.next=resizeGroups(r.initial,side,index,r.fraction+(e.clientY-r.start)/Math.max(1,r.size));onPreview(r.next);}}}
+        onPointerMove={e=>{const r=resize.current;if(r){r.next=resizeGroups(r.initial,side,docks[side].groups.findIndex(g=>g.id===group.id),r.fraction+(e.clientY-r.start)/Math.max(1,r.size),dock.groups[index+1].id);onPreview(r.next);}}}
         onPointerUp={()=>{if(resize.current)onChange(resize.current.next);resize.current=null;}} onPointerCancel={()=>{if(resize.current)onPreview(resize.current.initial);resize.current=null;}}
-        onKeyDown={e=>{if(['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onChange(resizeGroups(docks,side,index,group.weight/(group.weight+dock.groups[index+1].weight)+(e.key==='ArrowDown'?.05:-.05)));}}}/>}
+        onKeyDown={e=>{if(['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onChange(resizeGroups(docks,side,docks[side].groups.findIndex(g=>g.id===group.id),group.weight/(group.weight+dock.groups[index+1].weight)+(e.key==='ArrowDown'?.05:-.05),dock.groups[index+1].id));}}}/>}
     </Fragment>;})}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
   </aside>;

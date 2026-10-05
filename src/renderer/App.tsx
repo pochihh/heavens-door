@@ -1,3 +1,5 @@
+import {featureEnabled,moduleEnabled,type SystemEntry} from '../features';
+import {SystemView} from './SystemView';
 import {CalendarView} from './CalendarView';
 import {TemplateDialog} from './TemplateDialog';
 import {cardFill,tintColor} from '../colors';
@@ -79,7 +81,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
   const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
-  const left=!docks.left.collapsed&&!!docks.left.groups.length,right=!docks.right.collapsed&&!!docks.right.groups.length;
+  const enabledModule=(module:ModuleId)=>moduleEnabled(module,prefs);
+  const left=!docks.left.collapsed&&docks.left.groups.some(g=>g.tabs.some(enabledModule)),right=!docks.right.collapsed&&docks.right.groups.some(g=>g.tabs.some(enabledModule));
   const [modal,setModal]=useState<'settings'|'icon'|'migration'|'workspaces'|null>(null);
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
   const [pulse,setPulse]=useState(0),[tabMenu,setTabMenu]=useState<MenuState|null>(null);
@@ -290,9 +293,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       </div>}
       <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
-          !info.exists?<p className="notice">{ui.errors.fileMissing}</p>:
+          !info.exists?<p className="notice">{info.kind==='system'?ui.system.disabled:ui.errors.fileMissing}</p>:
+          info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
           board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y},p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
-          tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
+          tag&&!featureEnabled(prefs,'tags')?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
       </ViewBlockProvider></div>
       {focused&&<div className="pane-focus-flash" key={pulse}/>}
@@ -306,7 +310,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="split-child" style={{flex:1-node.ratio}}>{renderLayout(node.second,top&&node.axis==='row',first&&node.axis==='column',last)}</div>
     </div>;
   }
-  const [templateOpen,setTemplateOpen]=useState(false);
+  const [templateOpen,setTemplateOpen]=useState(false),[templatePath,setTemplatePath]=useState<string>();
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
     if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={open}/>;
     if(module==='style'){
@@ -326,21 +330,21 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <Tool icon="left" label={left?tooltips.layout.collapseLeftSideDock:tooltips.layout.expandLeftSideDock} aria-expanded={left} onClick={()=>changeDocks({...docks,left:{...docks.left,collapsed:left}})}/>
       <WorkspaceMenu snapshot={snapshot} session={session} onManage={()=>setModal('workspaces')}/>
       <div className="window-drag-space"/>
-      <Tool icon="copy" label={ui.journal.newFromTemplate} onClick={()=>setTemplateOpen(true)}/>
+      {featureEnabled(prefs,'templates')&&<Tool icon="copy" label={ui.journal.newFromTemplate} onClick={()=>{setTemplatePath(undefined);setTemplateOpen(true);}}/>}
       <Tool icon="search" label={tooltips.workspace.search} onClick={()=>setSearchOpen(true)}/>
       <Tool icon="right" label={right?tooltips.layout.collapseRightSideDock:tooltips.layout.expandRightSideDock} aria-expanded={right} onClick={()=>changeDocks({...docks,right:{...docks.right,collapsed:right}})}/>
       <div className="windows-controls-space"/>
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
       <nav className="activity-bar" aria-label={ui.layout.actionRibbon}>
-        {MODULE_IDS.map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
+        {MODULE_IDS.filter(enabledModule).map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
         <div className="toolbar-spacer"/><Tool icon="settings" label={tooltips.settings.open} onClick={()=>setModal('settings')}/>
       </nav>
-      <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
+      <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule} enabled={enabledModule}/>
       {left&&<Divider value={docks.left.width} label={ui.layout.resizeLeftSideDock} onChange={value=>changeDocks({...docks,left:{...docks.left,width:Math.max(180,Math.min(520,value))}})}/>}
       <main className="workspace" aria-label={ui.layout.mainDock}>{renderLayout(layout)}</main>
       {right&&<Divider value={-docks.right.width} label={ui.layout.resizeRightSideDock} onChange={value=>changeDocks({...docks,right:{...docks.right,width:Math.max(180,Math.min(520,-value))}})}/>}
-      <SideDock side="right" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule}/>
+      <SideDock side="right" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule} enabled={enabledModule}/>
     </div>
     <footer className="statusbar">
       <div className="toolbar-spacer"/>
@@ -348,7 +352,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>
     </footer>
     {popup&&<CardPopup documentKey={popup.key} snapshot={snapshot} session={session} onClose={closePopup} onNavigate={transferPopup} onPreview={key=>previewCard(key,popup.pane)}/>}
-    {templateOpen&&<TemplateDialog snapshot={snapshot} session={session} onOpen={open} onClose={()=>setTemplateOpen(false)}/>}
+    {templateOpen&&featureEnabled(prefs,'templates')&&<TemplateDialog initialTemplate={templatePath} snapshot={snapshot} session={session} onOpen={open} onClose={()=>setTemplateOpen(false)}/>}
     {searchOpen&&<SearchDialog session={session} snapshot={snapshot} onReveal={showOnBoard} onOpen={open} onSplit={openBeside} onClose={()=>setSearchOpen(false)}/>}
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{void confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}).then(ok=>{if(ok)attempt(session.reloadDraft());});}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}

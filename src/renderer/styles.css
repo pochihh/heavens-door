@@ -414,3 +414,35 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .template-dialog::backdrop{background:#0006}.template-dialog form{padding:12px 18px 18px;display:grid;gap:10px}.template-dialog input{width:100%;min-width:0}.template-list{max-height:230px;overflow:auto;display:flex;flex-direction:column;gap:2px}.template-list button{display:flex;align-items:center;gap:7px;text-align:left;padding:7px 8px;background:transparent}.template-list button[aria-selected=true]{background:var(--selected)}.template-list button span{flex:1}.template-list small{max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}.template-actions{display:flex;justify-content:space-between}.template-actions button{display:flex;align-items:center;gap:5px;background:transparent;font-size:12px;color:var(--muted)}.template-dialog label{display:grid;grid-template-columns:70px 1fr;align-items:center;font-size:12px;gap:8px}.template-dialog [role=alert]{font-size:12px;color:var(--danger)}
 .journal-days{padding-bottom:2px}
 .journal-settings-section{margin-top:22px}.journal-settings-section h3{font-size:14px;margin:0 0 4px}.journal-format-preview{margin:6px 0 12px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}.journal-format-preview[role=alert]{color:var(--negative)}
+
+/* System libraries and explorer sections share the regular document row style. */
+.explorer-section-heading {gap:8px;padding:6px 8px 4px;min-height:30px;}
+.explorer-section-heading .tool {width:24px;height:24px;}
+.section-rule {height:1px;background:var(--border);flex:1;}
+.section-collapse {display:flex;align-items:center;gap:8px;width:100%;padding:0;background:transparent;color:inherit;font-size:inherit;text-align:left;}
+.system-section {margin-top:12px;}
+.board-sections [data-sort-group] {min-height:8px;}
+.board-sections .sort-placeholder {max-width:100%;}
+.system-library {padding:28px 36px;overflow:auto;height:100%;box-sizing:border-box;}
+.system-heading {display:flex;align-items:center;gap:10px;margin-bottom:20px;}
+.system-heading h1 {margin:0;font-size:24px;}
+.system-heading button {display:flex;align-items:center;gap:5px;background:transparent;}
+.system-search {display:flex;align-items:center;gap:8px;max-width:460px;margin:14px 0;color:var(--muted);}
+.system-search input {flex:1;min-width:0;}
+.system-search small {font-variant-numeric:tabular-nums;}
+.system-records {width:100%;min-width:600px;}
+.system-record {display:grid;grid-template-columns:minmax(220px,1.35fr) minmax(180px,1fr) minmax(100px,.65fr) 32px;align-items:center;border-bottom:1px solid var(--border);min-height:36px;font-size:13px;}
+.system-record > :not(.tool) {padding:8px 10px;min-width:0;}
+.system-record.header {color:var(--muted);}
+.system-record.header span {display:flex;align-items:center;gap:6px;}
+.system-name {display:flex;align-items:center;gap:8px;text-align:left;background:transparent;border-radius:0;color:var(--text);}
+.system-name span,.system-path {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.system-record:hover {background:var(--hover);}
+.system-record.header:hover {background:transparent;}
+.system-path {color:var(--muted);}
+.system-tags {display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);}
+.system-calendar {max-width:360px;}
+
+.system-record > .system-name-cell {padding:0;}
+.system-name {width:100%;padding:8px 10px;min-height:36px;}
+.system-record > span:last-child {padding:0;display:flex;justify-content:center;}
