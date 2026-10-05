@@ -1,3 +1,4 @@
+import {operateFile,fileTrashEntries,fileStamp,editablePath,vacant,availableFilePath} from './files';
 import {systemFolder,systemPath} from '../features';
 import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,expandTemplate,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
 import {wallTime,DEFAULT_DATE_DISPLAY} from '../dates';
@@ -78,6 +79,7 @@ export class Workspace {
     await fs.mkdir(cache,{recursive:true});
     const workspace = new Workspace(actual,cache);
     try {
+      await workspace.recoverFileMove();
       await workspace.recover();
       await workspace.history.initialize();
       await workspace.scan();
@@ -181,6 +183,7 @@ export class Workspace {
       for (const entry of await fs.readdir(join(this.root,folder),{withFileTypes:true})) {
         if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.isSymbolicLink()) continue;
         const path = join(folder,entry.name);
+        if(entry.isDirectory()&&/^[a-f0-9-]{36}\.trash$/.test(entry.name)&&await this.raw(join(folder,entry.name.slice(0,-6)+'.json'))!==null)continue;
         if (entry.isDirectory()) { this.folders.add(path); await walk(path); }
         else if (entry.isFile() && ['.md','.whiteboard','.tag'].includes(extname(path))) { unseen.delete(path); await this.refresh(path); }
       }
@@ -205,6 +208,7 @@ export class Workspace {
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
   }
   async refresh(path: string,reconcile=true) {
+    if(path.startsWith(systemPath('trash',this.preferences)+'/')&&path.split('/').some(part=>/^[a-f0-9-]{36}\.trash$/.test(part)))return;
     if(isTrashNote(path)&&(dirname(path)===systemPath('trash',this.preferences)||await this.raw(path.slice(0,-3)+'.json')!==null)){this.removeIndex(path);return;}
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
@@ -258,7 +262,7 @@ export class Workspace {
     }
     return boards.map(board => {
       const children=childrenByFolder.get(board.folder)??[];
-      const cards=(board.folder?[...board.cards]:board.cards.filter(p=>p.folder)).filter(p=>!p.folder||!systemFolder(p.folder,this.preferences));
+      const cards=(board.folder?[...board.cards]:board.cards.filter(p=>p.folder)).filter(p=>!p.folder||boardFolders.has(p.folder)&&!systemFolder(p.folder,this.preferences));
       for (const folder of children) if (!cards.some(p => p.folder === folder)) {
         const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
         cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
@@ -310,7 +314,7 @@ export class Workspace {
     const entries=await Promise.all(files.filter(name=>isTrashNote(archive+'/'+name)).map(async name=>{
       const path=archive+'/'+name,raw=await this.read(path),metaRaw=await this.raw(path.slice(0,-3)+'.json'),meta=metaRaw?JSON.parse(metaRaw):undefined,card=readCard(typeof meta?.path==='string'?meta.path:path,raw);
       const info={id:card.id,path,name:card.name,title:card.title,titleMarkdown:card.titleMarkdown,revision:card.revision,legacy:card.legacy,tags:card.tags,fillColor:card.fillColor};return {...info,originalPath:typeof meta?.path==='string'?meta.path:undefined,deleted:Number.isFinite(Date.parse(meta?.deleted))?Date.parse(meta.deleted):(await fs.stat(await this.path(path))).mtimeMs};
-    }));return entries.sort((a,b)=>b.deleted-a.deleted);
+    }));return [...entries,...await fileTrashEntries(this.root,archive)].sort((a,b)=>b.deleted-a.deleted);
   }
   async trashCard(path:string,expected:string){
     if(!validNotePath(path)||!path.endsWith('.md'))throw new Error(ui.errors.invalidWorkspacePath);
@@ -656,25 +660,7 @@ export class Workspace {
     this.preferences=await writePreferences(this.root,preferences,journal.preferences);
     await fs.unlink(file);this.renamePending=false;
   }
-  async renameBoard(folder:string,name:string,expected:string):Promise<Mutation> {
-    this.assertReady();
-    validateStem(name);
-    if(!folder)throw new Error(ui.errors.rootRename);
-    const from=join(folder),to=join(dirname(from),name),boardPath=this.boardPath(from),board=this.boards.get(boardPath);
-    if(!board||board.revision!==expected||revision(await this.read(boardPath))!==expected)throw new Error(ui.errors.renameChanged);
-    if(from===to)return {snapshot:this.snapshot(),edits:[]};
-    if(Buffer.byteLength(name+'.whiteboard')>255)throw new Error(ui.errors.longWhiteboardName);
-    const target=await this.path(to),source=await this.path(from);
-    if((await fs.readdir(dirname(source))).some(n=>n.toLowerCase()===name.toLowerCase()))throw new Error(ui.errors.folderNameConflict);
-    if((await fs.readdir(source)).some(n=>n.toLowerCase()===(name+'.whiteboard').toLowerCase()))throw new Error(ui.errors.metadataNameConflict);
-    const known=new Set([...this.boards.keys(),...(this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(c=>c.path)]);
-    const checkIndexed=async(folder:string):Promise<void>=>{for(const entry of await fs.readdir(await this.path(folder),{withFileTypes:true})){
-      if(entry.name.startsWith('.')||entry.name==='node_modules'||entry.isSymbolicLink())continue;
-      const path=join(folder,entry.name);
-      if(entry.isDirectory())await checkIndexed(path);
-      else if(/\.(md|whiteboard)$/.test(entry.name)&&!known.has(path))throw new Error(ui.errors.renameIndexing(path));
-    }};
-    await checkIndexed(from);
+  private async pathEdits(from:string,to:string,boardPath=this.boardPath(from),name=basename(to)){
     const edits:{path:string;before:string;after:string}[]=[];
     // ponytail: rename scans note links; add a path-link index if large-workspace renames become slow.
     for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
@@ -704,6 +690,61 @@ export class Workspace {
       const cards=b.cards.map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p);
       if(b.path===boardPath||cards.some((p,i)=>p.folder!==b.cards[i].folder))edits.push({path:b.path,before,after:writeBoard({...b,name:b.path===boardPath?name:b.name,cards})});
     }
+    return edits;
+  }
+  private async recoverFileMove(){
+    const file=join(this.cache,'file-move.json');let journal:{from:string;to:string;edits:import('../shared').Edit[];preferences:Preferences;nextPreferences:Preferences};
+    try{journal=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e;}
+    const exists=async(path:string)=>{try{await fs.lstat(await editablePath(this.root,path));return true;}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return false;throw e;}};
+    const moved=await exists(journal.to);if(moved===await exists(journal.from))throw new Error(ui.errors.renameRecoveryPaths);
+    const oldBoard=join(journal.to,basename(journal.from)+'.whiteboard'),newBoard=join(journal.to,basename(journal.to)+'.whiteboard'),boardRenamed=moved&&await exists(newBoard);
+    const actual=(path:string)=>moved?path===this.boardPath(journal.from)?boardRenamed?newBoard:oldBoard:remapPath(path,journal.from,journal.to):path;
+    const current=await readPreferences(this.root);if(JSON.stringify(current)!==JSON.stringify(journal.preferences)&&JSON.stringify(current)!==JSON.stringify(journal.nextPreferences))throw new Error(ui.errors.renameRecoverySettings);
+    for(const edit of journal.edits){const raw=await this.read(actual(edit.path));if(raw!==edit.before&&raw!==edit.after)throw new Error(ui.errors.renameRecoveryChange(edit.path));}
+    if(moved)await operateFile(this.root,systemPath('trash',this.preferences),{action:'move',path:journal.to,destination:journal.from});
+    for(const edit of journal.edits)await this.atomic(edit.path,edit.before);
+    this.preferences=await writePreferences(this.root,current,journal.preferences);await fs.unlink(file);this.renamePending=false;
+  }
+  async fileOperation(operation:import('../shared').FileOperation):Promise<import('../shared').FileMutation>{
+    this.assertReady();
+    if(operation.action!=='copy'&&operation.path===this.boardPath(''))throw new Error(ui.errors.rootRename);
+    if(operation.action==='move'){
+      const from=operation.path,to=operation.destination;if(!to)throw new Error(ui.errors.invalidWorkspacePath);
+      const source=await editablePath(this.root,from),target=await editablePath(this.root,to,true);if(source===target||target.startsWith(source+sep))throw new Error(ui.errors.invalidWorkspacePath);await vacant(this.root,to);
+      if(operation.expected&&await fileStamp(this.root,from)!==operation.expected)throw new Error(ui.errors.externalEdit(from));
+      const edits=await this.pathEdits(from,to),preferences=await readPreferences(this.root),nextPreferences=remapPreferences(preferences,from,to),file=join(this.cache,'file-move.json'),handle=await fs.open(file,'wx');
+      try{await handle.writeFile(JSON.stringify({from,to,edits,preferences,nextPreferences}));await handle.sync();}finally{await handle.close();}
+      this.renamePending=true;
+      try{
+        for(const edit of edits){if(await this.read(edit.path)!==edit.before)throw new Error(ui.errors.concurrentEdit(edit.path));await this.atomic(edit.path,edit.after);}
+        const result=await operateFile(this.root,systemPath('trash',this.preferences),{...operation,expected:undefined});
+        this.preferences=await writePreferences(this.root,preferences,nextPreferences);await fs.unlink(file);this.renamePending=false;this.pathMoves.push({from,to});await this.scan();
+        return {...result,snapshot:this.snapshot(),edits:[]};
+      }catch(e){await this.recoverFileMove().catch(()=>undefined);throw e;}
+    }
+    if(operation.action==='copy'&&operation.destination)operation={...operation,destination:await availableFilePath(this.root,operation.destination)};
+    const result=await operateFile(this.root,systemPath('trash',this.preferences),operation);await this.scan();return {...result,snapshot:this.snapshot(),edits:[]};
+  }
+  async renameBoard(folder:string,name:string,expected:string):Promise<Mutation> {
+    this.assertReady();
+    validateStem(name);
+    if(!folder)throw new Error(ui.errors.rootRename);
+    const from=join(folder),to=join(dirname(from),name),boardPath=this.boardPath(from),board=this.boards.get(boardPath);
+    if(!board||board.revision!==expected||revision(await this.read(boardPath))!==expected)throw new Error(ui.errors.renameChanged);
+    if(from===to)return {snapshot:this.snapshot(),edits:[]};
+    if(Buffer.byteLength(name+'.whiteboard')>255)throw new Error(ui.errors.longWhiteboardName);
+    const target=await this.path(to),source=await this.path(from);
+    if((await fs.readdir(dirname(source))).some(n=>n.toLowerCase()===name.toLowerCase()))throw new Error(ui.errors.folderNameConflict);
+    if((await fs.readdir(source)).some(n=>n.toLowerCase()===(name+'.whiteboard').toLowerCase()))throw new Error(ui.errors.metadataNameConflict);
+    const known=new Set([...this.boards.keys(),...(this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(c=>c.path)]);
+    const checkIndexed=async(folder:string):Promise<void>=>{for(const entry of await fs.readdir(await this.path(folder),{withFileTypes:true})){
+      if(entry.name.startsWith('.')||entry.name==='node_modules'||entry.isSymbolicLink())continue;
+      const path=join(folder,entry.name);
+      if(entry.isDirectory())await checkIndexed(path);
+      else if(/\.(md|whiteboard)$/.test(entry.name)&&!known.has(path))throw new Error(ui.errors.renameIndexing(path));
+    }};
+    await checkIndexed(from);
+    const edits=await this.pathEdits(from,to,boardPath,name);
     const preferences=await readPreferences(this.root),nextPreferences=remapPreferences(preferences,from,to);
     const journalFile=join(this.cache,'board-rename.json'),handle=await fs.open(journalFile,'wx');
     this.renamePending=true;

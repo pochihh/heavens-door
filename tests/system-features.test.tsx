@@ -58,15 +58,19 @@ test('Trash preserves exact Markdown, restores safely without overwriting, and r
 });
 
 test('explorer shares system rows with Boards, Recent and Starred; libraries provide search and actions',async()=>{
-  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,innerWidth:1200,innerHeight:900,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const prefs={...defaultPreferences(),starred:['system:templates'],recent:['system:tags'],boardNavigation:{order:{'boards:':['system:templates','board:Ideas']}}};
   const snapshot={root:'/notes',name:'Notes',cards:[{id:'one',path:'Templates/Alpha.md',name:'Alpha.md',title:'Alpha',revision:'one',legacy:false},{id:'two',path:'Templates/Beta.md',name:'Beta.md',title:'Beta',revision:'two',legacy:false}],boards:[{path:'Notes.whiteboard',folder:'',name:'Notes',revision:'r',cards:[],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[],edges:[]}],issues:[],historyAvailable:false,tags:[],preferences:prefs};
-  const bridge={platform:'darwin',request:async()=>[]} as unknown as Bridge;Object.assign(window,{door:bridge});const session=new Session(bridge),opened:string[]=[];let saved:Preferences=prefs,writes=0;const root=createRoot(document.getElementById('root')!);
-  function Harness({bookmarks=false}:{bookmarks?:boolean}){const [p,setPrefs]=useState<Preferences>(prefs),target=useRef<HTMLDivElement>(null);return <Explorer module={bookmarks?'bookmarks':'whiteboards'} snapshot={{...snapshot,preferences:p}} prefs={p} activeKey="system:templates" starredTarget={target} session={session} onOpen={key=>opened.push(key)} onSplit={()=>{}} onFolder={()=>{}} onCard={()=>{}} onIcon={()=>{}} onPrefs={change=>setPrefs(p=>{writes++;saved={...p,...change(p)};return saved;})}/>;}
+  const bridge={platform:'darwin',request:async()=>[]} as unknown as Bridge;Object.assign(window,{door:bridge});const session=new Session(bridge),opened:string[]=[],settings:string[]=[];let saved:Preferences=prefs,writes=0;const root=createRoot(document.getElementById('root')!);
+  function Harness({bookmarks=false}:{bookmarks?:boolean}){const [p,setPrefs]=useState<Preferences>(prefs),target=useRef<HTMLDivElement>(null);return <Explorer module={bookmarks?'bookmarks':'whiteboards'} snapshot={{...snapshot,preferences:p}} prefs={p} activeKey="system:templates" starredTarget={target} session={session} onOpen={key=>opened.push(key)} onSplit={()=>{}} onFolder={()=>{}} onCard={()=>{}} onIcon={()=>{}} onSettings={page=>settings.push(page)} onPrefs={change=>setPrefs(p=>{writes++;saved={...p,...change(p)};return saved;})}/>;}
   try{
     await act(async()=>root.render(<Harness/>));const board=document.querySelector('[data-sort-group="boards:"]')!;
     assert.deepEqual([...board.children].map(e=>(e as HTMLElement).dataset.fileKey),['system:templates','board:Ideas']);assert.ok(document.querySelector('[data-sort-group="system"] [data-file-key="system:tags"]'));
-    await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Home whiteboard"]')!.click());assert.deepEqual(opened,['board:']);
+    await act(async()=>document.querySelector<HTMLButtonElement>('[data-file-key="board:"] > .tree-row .file-button')!.click());assert.deepEqual(opened,['board:']);assert.equal(document.querySelector('.boards-section > .explorer-section-heading'),null);assert.equal(document.querySelector('.system-folder-label'),null);
+    dom.window.HTMLElement.prototype.showPopover=function(){};
+    await act(async()=>document.querySelector('[data-file-key="system:slipbox"]')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,cancelable:true})));
+    assert.deepEqual([...document.querySelectorAll('[role="menu"] button')].map(b=>b.textContent),['Open in new tab','Add to Starred','Move to Boards','Settings']);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(b=>b.textContent==='Settings')!.click());assert.deepEqual(settings,['files']);
     const pinned=document.querySelector<HTMLButtonElement>('[data-file-key="system:templates"] .file-button')!;
     await act(async()=>pinned.dispatchEvent(new dom.window.KeyboardEvent('keydown',{bubbles:true,altKey:true,key:'ArrowDown'})));
     assert.deepEqual([...board.children].map(e=>(e as HTMLElement).dataset.fileKey),['board:Ideas','system:templates']);
@@ -86,7 +90,7 @@ test('explorer shares system rows with Boards, Recent and Starred; libraries pro
     await pointer(document.querySelector('[data-file-key="system:tags"] .file-button')!,'pointerdown',230);
     await pointer(document,'pointermove',20);
     assert.equal(writes,prior,'drag previews do not persist');
-    assert.equal(Number.parseFloat((document.querySelector('.drag-phantom') as HTMLElement).style.top),40,'phantom is capped below the Boards heading');
+    assert.equal(Number.parseFloat((document.querySelector('.drag-phantom') as HTMLElement).style.top),40,'phantom is capped below the root whiteboard row');
     await pointer(document,'pointerup',20);
     assert.equal(writes,prior+1);assert.equal(saved.boardNavigation?.order['boards:'][0],'system:tags');assert.equal(document.querySelector('[data-sort-group="system"] [data-file-key="system:tags"]'),null);
     geometry();const orderBefore=JSON.stringify(saved.boardNavigation);

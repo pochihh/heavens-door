@@ -27,7 +27,7 @@ export interface TagSearchResult {kind:'tag';path:string;name:string;tag:string;
 export type WorkspaceSearchResult=CardResult|TagSearchResult;
 export interface CheckpointChange {path:string;added:number|null;removed:number|null}
 export interface Checkpoint { color?:number; id: string; parents: string[]; time: number; label: string; active: boolean }
-export interface TrashEntry extends CardInfo {originalPath?:string;deleted:number}
+export interface TrashEntry extends CardInfo {kind?:'file'|'folder';archive?:string;originalPath?:string;deleted:number}
 export interface FileEntry {name:string;path:string;kind:'folder'|'file'|'symlink'}
 export interface FileInspection {kind:'text'|'image'|'binary';size:number;text?:string}
 export interface RegisteredWorkspace {root:string;name:string;status:'available'|'missing'|'unavailable'|'not-folder';lastUpdated:number|null}
@@ -55,6 +55,8 @@ export interface BoardMove { from:string; to:string }
 export interface Deletion {changes:Write[]; nonEmpty:string[]}
 export interface Mutation { snapshot: Snapshot; edits: Edit[]; move?:BoardMove }
 export interface Write { path: string; content: string | null; expected: string | null }
+export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:string;destination?:string;expected?:string}
+export interface FileMutation extends Mutation {path:string;inverse:FileOperation}
 export type Request =
   | { kind: 'open'; root: string; cache: string }
   | { kind: 'snapshot' }
@@ -66,6 +68,7 @@ export type Request =
   | { kind:'createFromTemplate'; template:string; folder:string; stem:string }
   | { kind:'createTemplate';period?:'daily'|'weekly' }
   | { kind: 'boardMentions'; path:string }
+  | {kind:'fileOperation';operation:FileOperation}
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
   | { kind: 'preferences'; patch: Partial<Preferences> }

@@ -104,7 +104,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelector('.file-tree [data-file-key="card:loose"]'),null,'root notes remain outside whiteboard navigation');
     assert.ok(!requests.includes('migrateRoot'),'opening the workspace never moves files');
     assert.equal(document.querySelector('.statusbar .workspace-switcher'),null);
-    assert.equal(document.querySelector('.file-tree [data-file-key="board:"]'),null,'the master whiteboard is hidden');
+    assert.ok(document.querySelector('.file-tree [data-file-key="board:"] > .tree-row .file-button'),'the root whiteboard is a normal parent row');
     assert.ok(!document.querySelector('[data-tooltip="Expand assets"]'),'ordinary folders stay out of whiteboard mode');
     await click('[aria-label="Switch workspace · Workspace"]');
     assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]')?.textContent,'Workspace');

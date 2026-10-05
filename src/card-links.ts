@@ -1,6 +1,6 @@
 import {marked} from 'marked';
 // Rebase only the moved note's conventional relative links and images.
-export function moveCardLinks(body:string,from:string,to:string){
+export function moveCardLinks(body:string,from:string,to:string,map?:(path:string)=>string){
   from=from.replace(/\\/g,'/');to=to.replace(/\\/g,'/');
   const rewrite=(href:string)=>{
     if(/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href))return href;
@@ -8,7 +8,7 @@ export function moveCardLinks(body:string,from:string,to:string){
     let decoded:string;try{decoded=decodeURIComponent(path);}catch{return href;}
     const target=from.split('/').slice(0,-1);
     for(const part of decoded.split('/')){if(part==='..'){if(!target.length)return href;target.pop();}else if(part&&part!=='.')target.push(part);}
-    const destination=(target.join('/')===from?to:target.join('/')).split('/'),base=to.split('/').slice(0,-1);
+    const destination=(map?map(target.join('/')):target.join('/')===from?to:target.join('/')).split('/'),base=to.split('/').slice(0,-1);
     while(base.length&&base[0]===destination[0]){base.shift();destination.shift();}
     return [...base.map(()=>'..'),...destination].map(encodeURIComponent).join('/')+suffix;
   };

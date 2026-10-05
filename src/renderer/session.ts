@@ -20,6 +20,7 @@ interface State {
 }
 export class Session {
   state: State = {snapshot:null,draft:null,status:ui.status.ready,error:'',checkpoints:[],revision:0};
+  fileClipboard:{root:string;path:string;cut:boolean}|null=null;
   viewTabs=new Map<string,string>();
   viewScrolls=new Map<string,{left:number;top:number}>();
   tagExpansion=new Map<string,{active?:string;last?:string}>();
@@ -152,8 +153,14 @@ export class Session {
     const result=await this.bridge.request<Mutation>({kind:'createFromTemplate',template,folder,stem});this.accept(result,ui.journal.createdFromTemplate);
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
   });}
+  fileOperation(operation:import('../shared').FileOperation,label:string){return this.run(async()=>{
+    await this.flush();await this.flushPreferences();const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});
+    this.undoHistory.record(label,[],false,Date.now(),undefined,result.inverse);this.update({snapshot:result.snapshot,error:'',status:ui.status.savedLocally});
+    const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);if(draft){if(info){const card=await this.bridge.request<Card>({kind:'card',path:info.path}),current=this.state.draft;if(current?.card.id===draft.card.id)this.update({draft:{card,body:current.dirty?current.body:card.body,dirty:current.dirty}});}else if(draft.dirty)throw new Error(ui.errors.externalEdit(draft.card.path));else this.update({draft:null});}
+    return result.path;
+  });}
   restoreTrash(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'restoreTrash',path,expected});this.accept(result,'Restore card');return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;});}
-  trashCard(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'trashCard',path,expected});this.accept(result,'Move card to Trash');});}
+  trashCard(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'trashCard',path,expected});this.accept(result,'Move card to Trash');if(this.state.draft?.card.path===path){if(this.state.draft.dirty)throw new Error(ui.errors.externalEdit(path));this.update({draft:null});}});}
   createTemplate(period?:import('../journal').JournalPeriod){return this.run(async()=>{
     await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation>({kind:'createTemplate',period});this.accept(result,ui.journal.createTemplate);
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
@@ -322,7 +329,7 @@ export class Session {
         if(!board)throw new Error(ui.errors.renameWhiteboardMissing);
         const result=await this.bridge.request<Mutation>({kind:'renameBoard',folder:move.from,name:move.to.split(/[\\/]/).at(-1)!,expected:board.revision});
         this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});
-      });
+      },async operation=>{const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});return result.inverse;});
       const info=this.state.snapshot?.cards.find(c=>c.id===this.state.draft?.card.id);
       if (info) {
         const card=await this.bridge.request<Card>({kind:'card',path:info.path});

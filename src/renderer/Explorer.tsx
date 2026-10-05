@@ -1,4 +1,4 @@
-import {systemEntries,systemPath,navigationOrder} from '../features';
+import {systemEntries,navigationOrder} from '../features';
 import {CreateFileDialog} from './CreateFileDialog';
 import {NewTag} from './TagView';
 import { ui } from '../text/ui';
@@ -13,14 +13,14 @@ import { insertBookmark, useBookmarkDrag } from './sortable';
 
 export type ExplorerModule='whiteboards'|'files'|'bookmarks'|'tags';
 type Entry={path:string;key?:string;folder?:string;name:string;symlink?:boolean};
-export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,onOpen,onSplit,onFolder,onCard,onIcon,onPrefs}:{
+export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,onOpen,onSplit,onFolder,onCard,onIcon,onPrefs,onSettings}:{
   snapshot:Snapshot;prefs:Preferences;activeKey:string;module:ExplorerModule;starredTarget:RefObject<HTMLDivElement|null>;session:Session;
-  onOpen:(key:string)=>void;onSplit:(key:string)=>void;onFolder:(folder:string)=>void;onCard:(folder:string)=>void;onIcon:(key:string)=>void;onPrefs:(change:(prefs:Preferences)=>Partial<Preferences>)=>void;
+  onOpen:(key:string)=>void;onSplit:(key:string)=>void;onFolder:(folder:string)=>void;onCard:(folder:string)=>void;onIcon:(key:string)=>void;onPrefs:(change:(prefs:Preferences)=>Partial<Preferences>)=>void;onSettings?:(page:string)=>void;
 }) {
   const expanded=useMemo(()=>new Set(prefs.navigation?.[module]?.expanded??['']),[prefs.navigation,module]);
   const setExpanded=(change:(current:Set<string>)=>Set<string>)=>onPrefs(p=>({navigation:{...p.navigation,[module]:{...p.navigation?.[module],expanded:[...change(new Set(p.navigation?.[module]?.expanded??['']))]}}}));
   const [files,setFiles]=useState<Record<string,FileEntry[]>>({});
-  const [menu,setMenu]=useState<MenuState|null>(null),[creation,setCreation]=useState<{folder:string;type:'file'|'folder'}|null>(null);
+  const [menu,setMenu]=useState<MenuState|null>(null),[creation,setCreation]=useState<{folder:string;type:'file'|'folder';rename?:{path:string;name:string}}|null>(null);
   const starred=starredTarget,scroller=useRef<HTMLDivElement>(null),boardsTarget=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(scroller.current)scroller.current.scrollTop=prefs.navigation?.[module]?.scroll??0;},[module]);
   const closeMenu=useCallback(()=>setMenu(null),[]);
@@ -62,6 +62,19 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   const star=(key:string)=>onPrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));
   const drag=useBookmarkDrag(starred,(key,index,source)=>onPrefs(p=>{const next=insertBookmark(p.starred,key,index,source);return next.length===p.starred.length&&next.every((k,i)=>k===p.starred[i])?{}:{starred:next};}));
   const entryFor=(key:string):Entry=>{const d=documentInfo(key,snapshot);return {key,path:d.path,name:d.title,folder:d.kind==='board'?d.id:undefined};};
+  const protectedPath=(path:string)=>path.split(/[\\/]/).some(p=>['.git','.heavens-door','node_modules'].includes(p));
+  function clipboard(entry:Entry,cut:boolean){session.fileClipboard={root:snapshot.root,path:entry.path,cut};session.update({});}
+  async function paste(folder:string){const clip=session.fileClipboard;if(!clip||clip.root!==snapshot.root)return;const path=await session.fileOperation({action:clip.cut?'move':'copy',path:clip.path,destination:(folder?folder+'/':'')+clip.path.split('/').at(-1)},ui.system.paste);if(clip.cut)session.fileClipboard=null;setExpanded(current=>new Set([...current,folder]));await refresh();return path;}
+  function rename(entry:Entry){setCreation({folder:parent(entry.path),type:entry.folder===undefined?'file':'folder',rename:{path:entry.path,name:entry.name}});}
+  async function remove(entry:Entry){const card=snapshot.cards.find(c=>c.path===entry.path);if(card)await session.trashCard(card.path,card.revision);else await session.fileOperation({action:'trash',path:entry.path},ui.system.moveToTrash);await refresh();}
+  function fileActions(entry:Entry):MenuAction[]{
+    const blocked=entry.symlink||protectedPath(entry.path),root=!entry.path,mother=entry.path===snapshot.boards.find(b=>!b.folder)?.path,folder=entry.folder??parent(entry.path),clip=session.fileClipboard;
+    return [
+      ...(!root?[{label:ui.system.copy,icon:'copy' as const,disabled:blocked,separatorBefore:true,run:()=>clipboard(entry,false)},{label:ui.system.cut,disabled:blocked||mother,run:()=>clipboard(entry,true)}]:[]),
+      {label:ui.system.paste,disabled:blocked||!clip||clip.root!==snapshot.root||clip.cut&&parent(clip.path)===folder,run:()=>attempt(paste(folder))},
+      ...(!root?[{label:ui.system.duplicate,icon:'copy' as const,disabled:blocked,run:()=>attempt(session.fileOperation({action:'copy',path:entry.path,destination:entry.path},ui.system.duplicate))},{label:ui.system.rename,icon:'edit' as const,disabled:blocked||mother,run:()=>rename(entry)},{label:ui.system.moveToTrash,icon:'trash' as const,danger:true,disabled:blocked||mother,run:()=>attempt(remove(entry))}]:[]),
+    ];
+  }
   const creations=(folder:string):MenuAction[]=>{
     const internal=portable(folder).split('/').some(part=>part.startsWith('.')||part==='node_modules');
     if(module==='files')return [{label:ui.system.newFolder,icon:'folder',disabled:internal,run:()=>setCreation({folder,type:'folder'})},{label:ui.system.newFile,icon:'file',disabled:internal,run:()=>setCreation({folder,type:'file'})}];
@@ -72,9 +85,14 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   };
   function actions(entry:Entry):MenuAction[] {
     const key=entry.key,index=key?prefs.starred.indexOf(key):-1;
+    if(key?.startsWith('system:'))return [
+      {label:ui.common.openInNewTab,icon:'external',run:()=>onOpen(key)},
+      {label:index>=0?ui.explorer.removeFromStarred:ui.explorer.addToStarred,icon:'star',danger:index>=0,run:()=>star(key)},
+      {label:pinned.includes(key)?ui.system.moveToSystem:ui.system.moveToBoards,icon:'map',run:()=>reorder(key,groupKeys(pinned.includes(key)?'system':rootGroup).length,pinned.includes(key)?'system':rootGroup)},
+      {label:ui.settings.title,icon:'settings',separatorBefore:true,run:()=>onSettings?.(['system:slipbox','system:trash'].includes(key)?'files':key.slice(7))},
+    ];
     return [
       ...(entry.folder!==undefined?creations(entry.folder):[]),
-      ...(module==='whiteboards'&&key?.startsWith('system:')?[{label:pinned.includes(key)?ui.system.moveToSystem:ui.system.moveToBoards,icon:'map' as const,run:()=>reorder(key,groupKeys(pinned.includes(key)?'system':rootGroup).length,pinned.includes(key)?'system':rootGroup)}]:[]),
       ...(key&&!entry.symlink?[
         {label:ui.explorer.open,icon:'file' as const,run:()=>onOpen(key)},
         {label:ui.common.openInNewTab,icon:'external' as const,run:()=>onOpen(key)},
@@ -87,6 +105,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
         ]:[]),
         ...(entry.folder===undefined&&module==='files'?[{label:ui.explorer.viewSource,icon:'source' as const,run:()=>onOpen('file:'+entry.path)}]:[]),
       ]:[]),
+      ...(module==='files'?fileActions(entry):[]),
       {label:ui.explorer.copyRelativePath,icon:'copy',run:()=>attempt(navigator.clipboard.writeText(entry.path||'.'))},
       {label:window.door.platform==='darwin'?ui.explorer.revealInFinder:ui.explorer.revealInFileManager,icon:'reveal',disabled:entry.symlink,run:()=>attempt(window.door.revealFile(entry.path))},
     ];
@@ -94,6 +113,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   function viewActions():MenuAction[] {
     return [
       ...(module==='whiteboards'||module==='files'?creations(''):[]),
+      ...(module==='files'?fileActions({path:'',folder:'',name:snapshot.name}):[]),
       {label:ui.explorer.refreshExplorer,icon:'sync',run:()=>attempt(module==='files'?refresh():session.refresh())},
       ...(module==='whiteboards'||module==='files'?[{label:ui.explorer.collapseFolders,icon:'collapse' as const,run:()=>setExpanded(()=>new Set(['']))}]:[]),
     ];
@@ -105,22 +125,21 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   function row(entry:Entry,depth=0,saved?:'starred'|'recent',physical=false,branch=false):ReactNode {
     const key=entry.key,folder=entry.folder,expandedHere=folder!==undefined&&expanded.has(folder);
     const info=key?documentInfo(key,snapshot):null,icon=folder!==undefined?(physical?'folder':'map'):info?.icon??fileIcon(entry.path);
-    return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-key={branch?undefined:key} data-card-drop-folder={key?.startsWith('board:')&&entry.folder?entry.folder:undefined} style={{paddingLeft:8+depth*16}}
+    return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-path={physical?entry.path:undefined} data-file-key={branch?undefined:key} data-card-drop-folder={key?.startsWith('board:')&&entry.folder?entry.folder:undefined} style={{paddingLeft:8+depth*16}}
       onContextMenu={e=>{e.preventDefault();show(actions(entry),e,true);}}
-      onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();show(actions(entry),e);}}}>
+      onKeyDown={e=>{if(module==='files'&&!(e.target instanceof HTMLInputElement)){const command=e.metaKey||e.ctrlKey,key=e.key.toLowerCase();if(command&&['c','x','v'].includes(key)||key==='f2'||key==='delete'||e.metaKey&&key==='backspace'){e.preventDefault();e.stopPropagation();if(command&&key==='v')attempt(paste(entry.folder??parent(entry.path)));else if(entry.path&&!entry.symlink&&!protectedPath(entry.path)){if(command&&['c','x'].includes(key))clipboard(entry,key==='x');else if(key==='f2')rename(entry);else attempt(remove(entry));}return;}}if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();show(actions(entry),e);}}}>
       {!saved&&(folder!==undefined?<button className="tree-disclosure" data-tooltip={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-label={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-expanded={expandedHere} onClick={()=>toggle(folder)}><Icon name={expandedHere?'down':'chevron'} size={12}/></button>:<span className="tree-spacer"/>)}
       <button className="file-button" disabled={entry.symlink} data-tooltip={entry.symlink?tooltips.explorer.symbolicLink(entry.path):tooltips.explorer.open(entry.path||snapshot.name)}
         onPointerDown={key?e=>module==='whiteboards'?boardDrag(e,key,false):drag(e,key,saved==='starred'):undefined}
         onKeyDown={e=>{if(module==='whiteboards'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const group=[...boardGroups].find(([,keys])=>keys.includes(key))?.[0];if(group!==undefined)reorder(key,groupKeys(group).indexOf(key)+(e.key==='ArrowUp'?-1:1),group);return;}if(saved==='starred'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+(e.key==='ArrowUp'?-1:1),true)}));}}}
         onClick={()=>{if(physical&&folder!==undefined)toggle(folder);else if(key)onOpen(key);}}>
-        <span className="row-icon"><DocumentIcon value={key?prefs.icons[key]:undefined} fallback={entry.symlink?'link':icon}/></span><span>{entry.name}{key?.startsWith('system:')&&<small className="system-folder-label">{systemPath(key.slice(7) as import('../features').SystemEntry,prefs)}</small>}</span>
+        <span className="row-icon"><DocumentIcon value={key?prefs.icons[key]:undefined} fallback={entry.symlink?'link':icon}/></span><span>{entry.name}</span>
       </button>
       <span className="row-actions">{folder!==undefined&&<Tool icon="plus" label={tooltips.explorer.add(entry.path||snapshot.name)} onClick={e=>show(creations(folder),e)}/>}<Tool icon="more" label={tooltips.common.moreActions(entry.name)} onClick={e=>show(actions(entry),e)}/></span>
     </div>;
   }
   function boardBranch(folder:string,depth=0):ReactNode {
-    const group=tree.get(portable(folder));
-    return <div key={folder} data-file-key={'board:'+portable(folder)} onContextMenu={e=>{if(!e.defaultPrevented){e.preventDefault();show(actions(entryFor('board:'+portable(folder))),e,true);}}}>{row(entryFor('board:'+portable(folder)),depth,undefined,false,true)}{expanded.has(folder)&&!!group?.folders.length&&<div data-sort-group={'boards:'+portable(folder)}>{groupKeys('boards:'+portable(folder)).map(key=>boardBranch(key.slice(6),depth+1))}</div>}</div>;
+    return <div key={folder} data-file-key={'board:'+portable(folder)} onContextMenu={e=>{if(!e.defaultPrevented){e.preventDefault();show(actions(entryFor('board:'+portable(folder))),e,true);}}}>{row(entryFor('board:'+portable(folder)),depth,undefined,false,true)}{expanded.has(folder)&&!!groupKeys('boards:'+portable(folder)).length&&<div data-sort-group={'boards:'+portable(folder)}>{groupKeys('boards:'+portable(folder)).map(key=>key.startsWith('board:')?boardBranch(key.slice(6),depth+1):row(entryFor(key),depth+1))}</div>}</div>;
   }
   function fileEntry(file:FileEntry):Entry {
     if(file.kind==='folder')return {path:file.path,folder:file.path,name:file.name};
@@ -136,7 +155,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
       <section className="recent"><div className="section-title" data-tooltip={tooltips.explorer.recent}><Icon name="clock" size={13}/><strong>{ui.explorer.recent}</strong></div><div className="saved-files">{prefs.recent.filter(key=>!key.startsWith('system:')||systems.includes(key)).map(key=>row(entryFor(key),0,'recent'))}</div></section>
     </div>:<div className="file-tree" ref={scroller} role="navigation" tabIndex={0} aria-label={module==='files'?ui.explorer.workspaceFiles:module==='whiteboards'?ui.explorer.workspaceWhiteboards:module==='tags'?ui.explorer.workspaceTags:ui.explorer.searchResults} onScroll={e=>rememberScroll(e.currentTarget.scrollTop)} onContextMenu={e=>{if(!e.defaultPrevented&&!(e.target as Element).closest('.tree-row')){e.preventDefault();show(viewActions(),e,true);}}}
       onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10'))){e.preventDefault();show(viewActions(),e);}}}>
-      {module==='tags'?<><NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>{snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path)))}</>:module==='whiteboards'?<div ref={boardsTarget} className="board-sections"><section data-sort-area className="boards-section"><div className="section-title explorer-section-heading"><strong>{ui.system.boards}</strong><span className="section-rule"/><Tool icon="home" label={ui.system.home} onClick={()=>onOpen('board:')}/></div><div data-sort-group={rootGroup}>{groupKeys(rootGroup).map(key=>key.startsWith('board:')?boardBranch(key.slice(6)):row(entryFor(key)))}</div></section><section data-sort-area className="system-section"><div className="section-title explorer-section-heading"><button className="section-collapse" aria-expanded={!prefs.boardNavigation?.systemCollapsed} onClick={()=>onPrefs(p=>({boardNavigation:{order:p.boardNavigation?.order??{},...p.boardNavigation,systemCollapsed:!p.boardNavigation?.systemCollapsed}}))}><strong>{ui.system.system}</strong><span className="section-rule"/><Icon name={prefs.boardNavigation?.systemCollapsed?'chevron':'down'} size={13}/></button></div>{!prefs.boardNavigation?.systemCollapsed&&<div data-sort-group="system">{groupKeys('system').map(key=>row(entryFor(key)))}</div>}</section></div>:fileBranch({path:'',folder:'',name:snapshot.name})}
+      {module==='tags'?<><NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>{snapshot.tags?.map(tag=>row(entryFor('tag:'+tag.path)))}</>:module==='whiteboards'?<div ref={boardsTarget} className="board-sections"><section data-sort-area className="boards-section">{boardBranch('')}</section><section data-sort-area className="system-section"><div className="section-title explorer-section-heading"><button className="section-collapse" aria-expanded={!prefs.boardNavigation?.systemCollapsed} onClick={()=>onPrefs(p=>({boardNavigation:{order:p.boardNavigation?.order??{},...p.boardNavigation,systemCollapsed:!p.boardNavigation?.systemCollapsed}}))}><strong>{ui.system.system}</strong><span className="section-rule"/><Icon name={prefs.boardNavigation?.systemCollapsed?'chevron':'down'} size={13}/></button></div>{!prefs.boardNavigation?.systemCollapsed&&<div data-sort-group="system">{groupKeys('system').map(key=>row(entryFor(key)))}</div>}</section></div>:fileBranch({path:'',folder:'',name:snapshot.name})}
     </div>}
     {creation&&<CreateFileDialog {...creation} session={session} onClose={()=>setCreation(null)} onCreated={(path,type)=>{if(type==='file')onOpen(documentIndex(session.state.snapshot!).paths.get(path)??'file:'+path);else setExpanded(current=>new Set([...current,creation.folder,path]));}}/>}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
