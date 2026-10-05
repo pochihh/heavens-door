@@ -57,6 +57,11 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     await click('[aria-label="Settings"]');
     assert.ok(document.querySelector('[role=dialog][aria-label="Settings"] [role=tablist][aria-label="Settings features"]'));
+    await click('#settings-files');
+    const folderInput=document.querySelector<HTMLInputElement>('[aria-label="Slipbox folder"]')!;
+    await act(async()=>folderInput.focus());assert.ok(document.querySelector('[aria-label="Settings"] .settings-path-options'),'Folder suggestions remain inside the modal');
+    await act(async()=>folderInput.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+    assert.ok(document.querySelector('[aria-label="Settings"]'),'Escape cancels the picker before closing Settings');assert.equal(document.querySelector('.settings-path-options'),null);
     await click('#settings-whiteboard');
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="New whiteboard name"]')?.value,'A new board');
     assert.ok(document.querySelector('[aria-label="Navigation device"]'));

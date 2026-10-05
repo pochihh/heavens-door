@@ -18,9 +18,9 @@ export function PropertyPill({field,value}:{field:TagField;value:string}){
 }
 
 // Small editors share the app's menu placement and dismissal behavior without changing the row.
-export function PropertyPopover({anchor,label,onClose,children,align='start',className=''}:{anchor:HTMLElement;label:string;align?:'start'|'end';className?:string;onClose:(cancel:boolean)=>void;children:ReactNode}){
+export function PropertyPopover({anchor,label,onClose,children,align='start',className='',autoFocus=true}:{autoFocus?:boolean;anchor:HTMLElement;label:string;align?:'start'|'end';className?:string;onClose:(cancel:boolean)=>void;children:ReactNode}){
   const ref=useRef<HTMLDivElement>(null),close=useRef(onClose);close.current=onClose;
-  useLayoutEffect(()=>{const el=ref.current!;el.showPopover();el.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),button:not(:disabled),textarea')?.focus({preventScroll:true});},[label]);
+  useLayoutEffect(()=>{const el=ref.current!;el.showPopover();if(autoFocus)el.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),button:not(:disabled),textarea')?.focus({preventScroll:true});},[label]);
   useLayoutEffect(()=>{const el=ref.current!,r=anchor.getBoundingClientRect();el.style.maxHeight=innerHeight-16+'px';const box=el.getBoundingClientRect(),below=innerHeight-r.bottom-12,above=r.top-12,useBelow=box.height<=below||below>=above;el.style.maxHeight=Math.max(40,useBelow?below:above)+'px';const height=el.getBoundingClientRect().height;el.style.left=Math.max(8,Math.min(align==='end'?r.right-box.width:r.left,innerWidth-box.width-8))+'px';el.style.top=Math.max(8,useBelow?r.bottom+4:r.top-height-4)+'px';});
   useEffect(()=>{
     const outside=(e:PointerEvent)=>{if(!ref.current?.contains(e.target as Node)&&!anchor.contains(e.target as Node))close.current(false);},dismiss=()=>close.current(false);

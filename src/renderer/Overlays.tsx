@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon, type IconName } from './Icons';
 
-export function overlayContainer(anchor?:Element|null){return anchor?.closest('dialog[open]')??[...document.querySelectorAll('dialog[open]')].at(-1)??document.body;}
+export function overlayContainer(anchor?:Element|null){return anchor?.closest('dialog[open],[aria-modal=true]')??[...document.querySelectorAll('dialog[open],[aria-modal=true]')].at(-1)??document.body;}
 
 // One delegated tooltip for the window, including controls mounted inside portals.
 export function TooltipHost() {

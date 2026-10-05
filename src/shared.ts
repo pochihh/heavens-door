@@ -34,7 +34,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
@@ -64,11 +64,13 @@ export type Request =
   | { kind:'journalEntries'; year:number }
   | { kind:'openJournal'; date:string; period:'daily'|'weekly' }
   | { kind:'createFromTemplate'; template:string; folder:string; stem:string }
-  | { kind:'createTemplate' }
+  | { kind:'createTemplate';period?:'daily'|'weekly' }
   | { kind: 'boardMentions'; path:string }
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
   | { kind: 'preferences'; patch: Partial<Preferences> }
+  | {kind:'ensureFolder';path:string}
+  | {kind:'createEntry';folder:string;name:string;type:'file'|'folder'}
   | { kind: 'createFolder'; parent: string; name?: string; position?:{x:number;y:number} }
   | { kind: 'migrateRoot' }
   | { kind:'tagCards';tag:string;text?:string;offset?:number }

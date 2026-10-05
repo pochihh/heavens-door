@@ -13,10 +13,10 @@ export const CORE_FEATURES=[
 export type CoreFeature=typeof CORE_FEATURES[number]['id'];
 export type SystemEntry=Exclude<CoreFeature,'views'>;
 export interface BoardNavigation {order:Record<string,string[]>;systemCollapsed?:boolean}
-export const featureEnabled=(prefs:Preferences|undefined,id:CoreFeature)=>prefs?.features?.[id]!==false;
+export const featureEnabled=(prefs:Preferences|undefined,id:CoreFeature)=>id==='slipbox'||id==='trash'||prefs?.features?.[id]!==false;
 export function systemEntries(prefs?:Preferences){return CORE_FEATURES.filter(f=>f.id!=='views'&&featureEnabled(prefs,f.id)) as readonly (typeof CORE_FEATURES[number]&{id:SystemEntry})[];}
 export function systemPath(id:SystemEntry,prefs?:Preferences){
-  return id==='templates'?(prefs?.templates??DEFAULT_TEMPLATES).folder:id==='slipbox'?prefs?.cardFolder??DEFAULT_CARD_FOLDER:id==='journal'?(prefs?.journal??DEFAULT_JOURNAL).folder:id==='tags'?'tags':'.heavens-door/trash';
+  return id==='templates'?(prefs?.templates??DEFAULT_TEMPLATES).folder:id==='slipbox'?prefs?.cardFolder??DEFAULT_CARD_FOLDER:id==='journal'?(prefs?.journal??DEFAULT_JOURNAL).folder:id==='tags'?prefs?.tagsFolder??'tags':prefs?.trashFolder??'.heavens-door/trash';
 }
 // Reserved paths stay out of Boards even while their feature is off. Files remain indexed.
 export function systemFolder(path:string,prefs?:Preferences){return (['templates','slipbox','journal','tags','trash'] as const).some(id=>{const folder=systemPath(id,prefs);return path===folder||path.startsWith(folder+'/');});}

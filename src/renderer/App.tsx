@@ -116,15 +116,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     if(!modal)return;
     const dialog=document.querySelector<HTMLElement>('[role=dialog]')!,previous=document.activeElement;
     (dialog.querySelector<HTMLElement>('[autofocus]')??dialog.querySelector<HTMLElement>('input,button'))?.focus();
-    const key=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'){event.preventDefault();setModal(null);}
-      if(event.key==='Tab'){
-        const controls=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(el=>!el.closest('details:not([open])')||el.tagName==='SUMMARY'),first=controls[0],last=controls.at(-1);
-        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
-        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
-      }
-    };
-    dialog.addEventListener('keydown',key);return()=>{dialog.removeEventListener('keydown',key);if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
+    return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
   },[modal]);
   const documentState=useRef<()=>DocumentsLayout>(()=>({tree:layout,active:active.id,views:{},formatting:[]}));
   documentState.current=()=>{
@@ -358,7 +350,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{void confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}).then(ok=>{if(ok)attempt(session.reloadDraft());});}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}
     {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className={"settings "+(modal==='settings'?'settings-window':'')} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();setModal(null);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary')].filter(el=>el.getClientRects().length),first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}} role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>
       <div className="panel-title"><strong>{modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='icon'?ui.icons.changeIcon:ui.migration.title}</strong><Tool icon="close" label={tooltips.common.closeDialog} onClick={()=>setModal(null)}/></div>
-      {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<SettingsPanel snapshot={snapshot} prefs={prefs} onChange={patch=>changePrefs(()=>patch)} onResetDocks={()=>changeDocks(defaultDocks())} rootCards={rootCards.length} onMigrate={()=>setModal('migration')}/>:
+      {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<SettingsPanel snapshot={snapshot} prefs={prefs} onCreateFolder={path=>session.run(async()=>{await session.flushPreferences();const snapshot=await session.bridge.request<Snapshot>({kind:'ensureFolder',path});session.update({snapshot,error:''});})} onCreateTemplate={period=>session.createTemplate(period)} onChange={patch=>changePrefs(()=>patch)} onResetDocks={()=>changeDocks(defaultDocks())} rootCards={rootCards.length} onMigrate={()=>setModal('migration')}/>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>
         <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?ui.icons.selectedIcon:ui.icons.defaultIcon}</span></div>
         <Suspense fallback={<small>{ui.icons.loading}</small>}><IconPicker onSelect={setCustomIcon}/></Suspense><div className="dialog-actions"><button type="button" data-tooltip={tooltips.icons.restoreDefault} onClick={()=>setCustomIcon('')}>{ui.common.default}</button><button className="primary" data-tooltip={tooltips.icons.save}>{ui.common.save}</button></div>

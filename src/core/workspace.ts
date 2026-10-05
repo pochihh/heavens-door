@@ -1,4 +1,4 @@
-import {systemFolder} from '../features';
+import {systemFolder,systemPath} from '../features';
 import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,expandTemplate,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
 import {wallTime,DEFAULT_DATE_DISPLAY} from '../dates';
 import {visit} from 'yaml';
@@ -25,9 +25,10 @@ import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNot
 import { DEFAULT_CARD_FOLDER, COLLAPSED_CARD_HEIGHT, DEFAULT_WHITEBOARD_NAME, placementHeight, edgeStyle } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
 
-const isTrashNote=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
-const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.(md|json)$/.test(path);
-function trashWrites(path:string,raw:string,expected:string):Write[]{const archived='.heavens-door/trash/'+randomUUID();return [{path:archived+'.md',content:raw,expected:null},{path:archived+'.json',content:JSON.stringify({path,deleted:new Date().toISOString()},null,2)+'\n',expected:null},{path,content:null,expected}];}
+const archiveName=/^[a-f0-9-]{36}\.(md|json)$/;
+const isTrash=(path:string)=>archiveName.test(basename(path));
+const isTrashNote=(path:string)=>isTrash(path)&&path.endsWith('.md');
+function trashWrites(folder:string,path:string,raw:string,expected:string):Write[]{const archived=folder+'/'+randomUUID();return [{path:archived+'.md',content:raw,expected:null},{path:archived+'.json',content:JSON.stringify({path,deleted:new Date().toISOString()},null,2)+'\n',expected:null},{path,content:null,expected}];}
 
 function validateStem(stem:string) {
     if (!stem.trim() || Buffer.byteLength(stem+'.md')>255 || stem.startsWith('.') || /[<>:"/\\|?*]/.test(stem) || [...stem].some(c => c.charCodeAt(0)<32) || /[. ]$/.test(stem) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) throw new Error(ui.errors.invalidFilename);
@@ -87,7 +88,7 @@ export class Workspace {
   close() { this.db.close(); }
   assertReady(){if(this.renamePending)throw new Error(ui.errors.interruptedRename);}
   private async path(path: string) {
-    if (!path || isAbsolute(path) || path.includes('\0') || (!isTrash(path)&&path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.')))) throw new Error(ui.errors.invalidWorkspacePath);
+    if (!path || isAbsolute(path) || path.includes('\0') || (!(path==='.heavens-door/trash'||isTrash(path)&&dirname(path)==='.heavens-door/trash')&&path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.')))) throw new Error(ui.errors.invalidWorkspacePath);
     const target = resolve(this.root,path);
     if (!target.startsWith(this.root + sep)) throw new Error(ui.errors.pathLeavesWorkspace);
     let current = this.root;
@@ -113,7 +114,7 @@ export class Workspace {
       if(readCard(card.path,raw).id!==card.id)throw new Error(ui.errors.externalEdit(card.path));
       // The empty title placeholder is never stored; a blank H1 is editor scaffolding.
       if(body.replace(/^\s*#(?:[ \t]+#*)?\s*$/,'').trim()||Object.keys(front.toJSON()??{}).some(key=>!['card-id','card-color'].includes(key)))nonEmpty.push(card.path);
-      changes.push(...trashWrites(card.path,raw,revision(raw)));
+      changes.push(...trashWrites(systemPath('trash',this.preferences),card.path,raw,revision(raw)));
     }
     const removed=new Set(board.cards.filter(p=>!p.folder&&ids.has(p.cardId)).map(p=>p.id));
     const next={...board,cards:board.cards.filter(p=>!removed.has(p.id)),edges:board.edges.filter(e=>!edges.includes(e.id)&&!removed.has(e.from)&&!removed.has(e.to))};
@@ -147,12 +148,12 @@ export class Workspace {
     changes=this.automaticPlacements(changes);
     const journal = [];
     for (const change of changes) {
-      if (!['.md','.whiteboard','.tag'].includes(extname(change.path))&&!(isTrash(change.path)&&change.path.endsWith('.json')) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
+      if ((!validNotePath(change.path)&&!(isTrash(change.path)&&dirname(change.path)==='.heavens-door/trash')) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
       const before = await this.raw(change.path);
       if ((before === null ? null : revision(before)) !== change.expected) throw new Error(ui.errors.externalEdit(change.path));
       if (change.content !== null) {
-        if(isTrash(change.path)&&change.path.endsWith('.json')){const meta=JSON.parse(change.content);if(!meta||!validNotePath(meta.path)||!meta.path.endsWith('.md')||!Number.isFinite(Date.parse(meta.deleted)))throw new Error(ui.errors.invalidEdit);await this.path(meta.path);}
-        else if(change.path.endsWith('.tag'))readTag(change.path,change.content);else if (change.path.endsWith('.md')) readCard(change.path,change.content); else readBoard(change.path,change.content);
+        if(isTrash(change.path)&&change.path.endsWith('.json')&&(dirname(change.path)===systemPath('trash',this.preferences)||dirname(change.path)==='.heavens-door/trash'||changes.some(c=>c.path===change.path.slice(0,-5)+'.md'))){const meta=JSON.parse(change.content);if(!meta||!validNotePath(meta.path)||!meta.path.endsWith('.md')||!Number.isFinite(Date.parse(meta.deleted)))throw new Error(ui.errors.invalidEdit);await this.path(meta.path);}
+        else if(change.path.endsWith('.tag'))readTag(change.path,change.content);else if (change.path.endsWith('.md')) readCard(change.path,change.content); else if(change.path.endsWith('.whiteboard'))readBoard(change.path,change.content);
       }
       journal.push({ path: change.path, before, after: change.content });
     }
@@ -204,7 +205,7 @@ export class Workspace {
     this.db.prepare('DELETE FROM links WHERE source=?').run(path);
   }
   async refresh(path: string,reconcile=true) {
-    if(isTrash(path))return;
+    if(isTrashNote(path)&&(dirname(path)===systemPath('trash',this.preferences)||await this.raw(path.slice(0,-3)+'.json')!==null)){this.removeIndex(path);return;}
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
     this.boards.delete(path); this.tags.delete(path);if(path.endsWith('.tag'))this.search.remove(path);
@@ -304,17 +305,17 @@ export class Workspace {
     if(additions.length)await this.write(additions);
   }
   async trashEntries():Promise<import('../shared').TrashEntry[]> {
-    const folder=join(this.root,'.heavens-door/trash');
-    let files:string[];try{await this.path('.heavens-door/trash/00000000-0000-0000-0000-000000000000.md');files=await fs.readdir(folder);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return [];throw e;}
-    const entries=await Promise.all(files.filter(name=>isTrashNote('.heavens-door/trash/'+name)).map(async name=>{
-      const path='.heavens-door/trash/'+name,raw=await this.read(path),metaRaw=await this.raw(path.slice(0,-3)+'.json'),meta=metaRaw?JSON.parse(metaRaw):undefined,card=readCard(typeof meta?.path==='string'?meta.path:path,raw);
+    const archive=systemPath('trash',this.preferences),folder=join(this.root,archive);
+    let files:string[];try{await this.path(archive+'/00000000-0000-0000-0000-000000000000.md');files=await fs.readdir(folder);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return [];throw e;}
+    const entries=await Promise.all(files.filter(name=>isTrashNote(archive+'/'+name)).map(async name=>{
+      const path=archive+'/'+name,raw=await this.read(path),metaRaw=await this.raw(path.slice(0,-3)+'.json'),meta=metaRaw?JSON.parse(metaRaw):undefined,card=readCard(typeof meta?.path==='string'?meta.path:path,raw);
       const info={id:card.id,path,name:card.name,title:card.title,titleMarkdown:card.titleMarkdown,revision:card.revision,legacy:card.legacy,tags:card.tags,fillColor:card.fillColor};return {...info,originalPath:typeof meta?.path==='string'?meta.path:undefined,deleted:Number.isFinite(Date.parse(meta?.deleted))?Date.parse(meta.deleted):(await fs.stat(await this.path(path))).mtimeMs};
     }));return entries.sort((a,b)=>b.deleted-a.deleted);
   }
   async trashCard(path:string,expected:string){
     if(!validNotePath(path)||!path.endsWith('.md'))throw new Error(ui.errors.invalidWorkspacePath);
     const raw=await this.read(path),card=readCard(path,raw);if(card.revision!==expected)throw new Error(ui.errors.externalEdit(path));
-    const changes:Write[]=trashWrites(path,raw,expected);
+    const changes:Write[]=trashWrites(systemPath('trash',this.preferences),path,raw,expected);
     for(const board of this.boards.values()){const removed=new Set(board.cards.filter(p=>p.cardId===card.id).map(p=>p.id));if(removed.size)changes.push({path:board.path,content:writeBoard({...board,cards:board.cards.filter(p=>!removed.has(p.id)),edges:board.edges.filter(e=>!removed.has(e.from)&&!removed.has(e.to))}),expected:board.revision});}
     return this.write(changes);
   }
@@ -358,6 +359,21 @@ export class Workspace {
     }
     return this.write(changes);
   }
+  async ensureFolder(path:string){
+    if(!validNotePath(path)&&path!=='.heavens-door/trash')throw new Error(ui.errors.invalidWorkspacePath);
+    await fs.mkdir(await this.path(path),{recursive:true});if(!path.startsWith('.'))this.folders.add(path);return this.snapshot();
+  }
+  async createEntry(folder:string,name:string,type:'file'|'folder'){
+    if(!['file','folder'].includes(type))throw new Error(ui.errors.invalidRequestValue);
+    validateStem(name);if(folder&&!validNotePath(folder))throw new Error(ui.errors.invalidWorkspacePath);
+    if(type==='file'&&!extname(name))name+='.md';
+    const directory=folder?await this.path(folder):this.root;await fs.mkdir(directory,{recursive:true});
+    if((await fs.readdir(directory)).some(n=>n.toLocaleLowerCase()===name.toLocaleLowerCase()))throw new Error(ui.errors.invalidFilename);
+    const path=join(folder,name);
+    if(type==='folder'){await fs.mkdir(await this.path(path));this.folders.add(path);return {snapshot:this.snapshot(),edits:[],path};}
+    const content=name.endsWith('.md')?newNote():name.endsWith('.whiteboard')?writeBoard(emptyBoard(path)):name.endsWith('.tag')?`---\ntag: ${JSON.stringify(basename(name,'.tag'))}\nfields: []\ninherits: []\n---\n`:'';
+    return {...await this.write([{path,content,expected:null}]),path};
+  }
   tagCards(tag:string,text='',offset=0):TagResult[] {
     return this.queryCards({tag,tagChildren:true,text,limit:200,offset,sort:'name'}).map(({properties,...card})=>({card,properties}));
   }
@@ -371,7 +387,7 @@ export class Workspace {
     if(!validTag(tag))throw new Error(ui.tags.invalidTag);
     tag.split('/').forEach(validateStem);
     if([...this.tags.values()].some(t=>t.tag===tag))throw new Error(ui.tags.duplicate(tag));
-    const path='tags/'+tag+'.tag';await fs.mkdir(dirname(await this.path(path)),{recursive:true});
+    const path=systemPath('tags',this.preferences)+'/'+tag+'.tag';await fs.mkdir(dirname(await this.path(path)),{recursive:true});
     return {path,content:`---\ntag: ${JSON.stringify(tag)}\nfields: []\ninherits: []\n---\n`,expected:null};
   }
   async saveTag(path:string,expected:string,fields:TagField[],inherits:string[],createParent?:string,propertiesCollapsed?:boolean) {
@@ -584,9 +600,10 @@ export class Workspace {
     const path=await this.newCardPath(folder,stem),raw=await this.templateContent(template,path,basename(path,'.md'),journalToday(this.preferences.dateDisplay));
     return this.write([{path,content:raw,expected:null}]);
   }
-  async createTemplate(){
-    const folder=(this.preferences.templates??DEFAULT_TEMPLATES).folder,path=await this.newCardPath(folder,'New template');
-    return this.write([{path,content:newNote()+'# {{title}}\n\n{{date}}\n\n',expected:null}]);
+  async createTemplate(period?:JournalPeriod){
+    if(period!==undefined&&!['daily','weekly'].includes(period))throw new Error(ui.errors.invalidRequestValue);
+    const folder=(this.preferences.templates??DEFAULT_TEMPLATES).folder,path=await this.newCardPath(folder,period==='daily'?'Daily template':period==='weekly'?'Weekly template':'New template');
+    return this.write([{path,content:newNote()+'# {{title}}\n\n{{date}}\n\n'+(period==='weekly'?'## Weekly review\n\n':period==='daily'?'## Notes\n\n':''),expected:null}]);
   }
   async openJournal(date:string,period:JournalPeriod){
     if(!validJournalDay(date)||!['daily','weekly'].includes(period))throw new Error(ui.journal.invalidDate);
