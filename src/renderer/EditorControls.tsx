@@ -15,7 +15,7 @@ import {PropertyPopover} from './PropertyValue';
 import {Color} from './StyleView';
 import {defaultViewSource} from './ViewBlock';
 import {createDragPhantom} from './sortable';
-import {editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
+import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
 export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}:{editor:Editor;cards:CardInfo[];onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
@@ -112,14 +112,14 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
           // Use real block boundaries, never the animated phantom or displaced preview.
           // Horizontal movement selects hierarchy depth; staying in the gutter keeps siblings.
           const depth=Math.max(0,Math.min(...sources.map(b=>b.depth))+Math.round((e.clientX-startX)/(24*zoom)));
-          const candidates=eligible.flatMap(target=>{const r=domFor(target)?.getBoundingClientRect();return r?(['before','after'] as const).map(edge=>({target,edge,r,y:edge==='before'?r.top:r.bottom})):[];});
+          const candidates=editorDropBoundaries(eligible.flatMap(target=>{const r=domFor(target)?.getBoundingClientRect();return r?[{target,r}]:[];}),depth);
           candidates.sort((a,b)=>Math.abs(e.clientY-a.y)+Math.abs(a.target.depth-depth)*12-Math.abs(e.clientY-b.y)-Math.abs(b.target.depth-depth)*12);
           const candidate=candidates[0];if(!candidate)return;
           let target=candidate.target,r=candidate.r;
           while(allItems&&target.item&&target.depth>depth){const parent=eligible.find(b=>b.path.length===target.path.length-2&&b.path.every((v,i)=>v===target.path[i]));if(!parent)break;target=parent;r=domFor(target)!.getBoundingClientRect();}
           const edge=candidate.edge,nest=allItems&&target.item&&depth>target.depth&&edge==='after';
           if(!moveEditorBlocks(editor.getJSON(),paths,target.path,edge,nest))return;
-          choice={target,edge,nest};marker!.hidden=false;Object.assign(marker!.style,{left:r.left+(nest?24:0)+'px',top:(edge==='before'?r.top:r.bottom)+'px',width:Math.max(30,r.width-(nest?24:0))+'px'});
+          choice={target,edge,nest};marker!.hidden=false;Object.assign(marker!.style,{left:r.left+(nest?24:0)+'px',top:(target===candidate.target&&!nest?candidate.y:edge==='before'?r.top:r.bottom)+'px',width:Math.max(30,r.width-(nest?24:0))+'px'});
           // Preview displacement without rearranging ProseMirror's managed DOM.
           if(!nest&&sources.every(b=>b.path.length===target.path.length&&b.path.slice(0,-1).every((v,i)=>v===target.path[i]))){
             const first=Math.min(...sources.map(b=>b.path.at(-1)!)),last=Math.max(...sources.map(b=>b.path.at(-1)!)),to=target.path.at(-1)!+(edge==='after'?1:0);

@@ -50,3 +50,10 @@ test('multiple selected blocks move once in document order and retain list child
   schema.nodeFromJSON(grouped).check();
   assert.equal(schema.nodeFromJSON(grouped).textContent,'TitleLastDestinationParentChildSiblingEnd');
 });
+
+test('one shared gap represents adjacent sibling blocks; nesting stays distinct',async()=>{
+  const {editorDropBoundaries}=await import('../src/renderer/editor-blocks');
+  const blocks=[0,1,2].map(i=>({target:{path:[1,i],from:i,to:i+1,depth:0,item:true},r:{top:i*50,bottom:i*50+30}}));
+  const boundaries=editorDropBoundaries(blocks,0);assert.deepEqual(boundaries.map(b=>b.y),[0,40,90,130]);
+  assert.equal(editorDropBoundaries(blocks,1).filter(b=>b.edge==='after').length,3,'Nesting remains a separate operation');
+});

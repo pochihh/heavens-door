@@ -3,6 +3,18 @@ import type {Node as PMNode} from '@tiptap/pm/model';
 export const isList=(node:{type?:string})=>['bulletList','orderedList','taskList'].includes(node.type??'');
 export const isItem=(node:{type?:string})=>node.type==='listItem'||node.type==='taskItem';
 export interface EditorBlock {path:number[];from:number;to:number;depth:number;item:boolean}
+export function editorDropBoundaries<T extends {target:EditorBlock;r:{top:number;bottom:number}}>(blocks:T[],depth:number){
+  const groups=new Map<string,T[]>();
+  for(const block of blocks){const key=block.target.path.slice(0,-1).join('/');const group=groups.get(key)??[];group.push(block);groups.set(key,group);}
+  const boundaries:(T&{edge:'before'|'after';y:number})[]=[];
+  for(const group of groups.values())group.forEach((block,i)=>{
+    const previous=group[i-1],next=group[i+1];
+    boundaries.push({...block,edge:'before',y:previous?(previous.r.bottom+block.r.top)/2:block.r.top});
+    // An indented drop is a different operation, so keep its own destination.
+    if(!next||block.target.item&&depth>block.target.depth)boundaries.push({...block,edge:'after',y:block.r.bottom});
+  });
+  return boundaries;
+}
 export function editorBlocks(doc:PMNode){
   const blocks:EditorBlock[]=[];
   const walk=(node:PMNode,path:number[],pos:number,depth:number)=>{
