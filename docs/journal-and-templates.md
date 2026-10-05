@@ -1,14 +1,14 @@
 # Templates and Journal
 
-**New from template** in the top bar opens a searchable picker. Templates are ordinary Markdown files in `Templates/` by default. Create or edit one from the picker; its HTML, properties and relative image links are retained when creating a note. The new note gets its own card ID. Settings → Templates changes the folder.
+**New from template** in the top bar opens a searchable picker. Templates are ordinary Markdown files in `Templates/` by default. Create or edit one from the picker; its HTML, properties and relative image links are retained when creating a note. The new note gets its own card ID. Settings → Templates changes the folder. New notes use the configured unplaced-card folder, now `Slipbox` by default; existing configured locations are preserved.
 
 Variables are `{{title}}`, `{{date}}`, `{{time}}`, and formatted dates such as `{{date:MMMM D, YYYY}}`. Supported tokens: `YYYY`, `YY`, `MMMM`, `MMM`, `MM`, `M`, `DD`, `D`, `dddd`, `ddd`, `GGGG`, `WW`, `W`, `HH`, `H`, `hh`, `h`, `mm`, `ss`, `A`. Literal text in formats goes in square brackets. These are a small portable subset of Obsidian’s date-format syntax; executable template scripts are not supported. Quote variables used as YAML values. A template is copied once; editing it never modifies notes already created.
 
 The dockable Calendar View opens from the Action Ribbon. Days create or open daily notes; week numbers create or open weekly notes. Navigation and changing the display do not create files. Weeks start on Monday and use ISO week numbering. Today follows the workspace date timezone and shares the app’s red date marker.
 
-Calendar offers Month and Heatmap appearances. The heatmap runs vertically with seven weekday columns and one week per row. Color measures the current plain-text word count, using language-aware segmentation, in four levels: 0–249, 250–499, 500–749, and 750+ words. Existing empty notes retain the first level; absent notes remain neutral. This measures note contents, including template text, rather than a history of typing activity. Word counts come from the rebuildable file index and are reused until that note’s revision changes.
+Calendar shows a month grid. Dots mark existing notes and increase with the current word count (one dot per 250 words, up to four). Existing empty notes retain one dot. Counts include template text and come from the rebuildable file index.
 
-Settings → Journal controls the folder, daily/weekly filename formats, and separate templates. Default files are `Journal/YYYY/MM/YYYY-MM-DD.md` and `Journal/Weekly/GGGG-[W]WW.md` (for example `Journal/Weekly/2026-W41.md`). Template dates use the chosen day, or Monday for a weekly note; time uses the creation time in the workspace timezone.
+Settings → Journal controls the folder, daily/weekly filename formats, and separate templates. Choose a date-format preset or Custom; the complete output path previews below it. Invalid formats stay in the input until corrected and are not saved. Default files are `Journal/YYYY/MM/YYYY-MM-DD.md` and `Journal/Weekly/GGGG-[W]WW.md` (for example `Journal/Weekly/2026-W41.md`). Template dates use the chosen day, or Monday for a weekly note; time uses the creation time in the workspace timezone.
 
 New journal notes record readable metadata alongside their normal card ID:
 

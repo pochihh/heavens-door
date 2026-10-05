@@ -134,6 +134,7 @@ export interface Bridge {
 declare global { interface Window { door: Bridge } }
 
 export const DEFAULT_TITLE_PLACEHOLDER='A new card';
+export const DEFAULT_CARD_FOLDER='Slipbox';
 export const DEFAULT_WHITEBOARD_NAME='A new board';
 export const COLLAPSED_CARD_HEIGHT=70;
 export function placementHeight(placement:Placement){return placement.collapsed?COLLAPSED_CARD_HEIGHT:placement.height;}

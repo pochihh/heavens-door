@@ -14,6 +14,7 @@ test('journal dates, ISO weeks, timezone boundaries and settings are portable',(
   assert.equal(formatTemplateDate('2026-10-05','dddd, MMMM D, YYYY'),'Monday, October 5, 2026');
   assert.equal(journalToday({format:'ymd',timeFormat:'24',timeZone:'America/Los_Angeles'},new Date('2026-10-05T01:00:00Z')),'2026-10-04');
   assert.equal(journalMonth('2024-02-29').length,42);assert.ok(journalDays(2024).includes('2024-02-29'));assert.equal(journalDays(2026).length%7,0);
+  validateJournal({...DEFAULT_JOURNAL,calendarMode:'heatmap'}); // Older saved settings remain readable.
   validateJournal(DEFAULT_JOURNAL);assert.throws(()=>validateJournal({...DEFAULT_JOURNAL,dailyFormat:'YYYY-MM'}));assert.throws(()=>validateTemplates({folder:'../secret'}));assert.throws(()=>validateTemplates({folder:'Templates/CON'}));
   const old=defaultDocks();old.right.groups[0].tabs=old.right.groups[0].tabs.filter(id=>id!=='calendar');old.right.groups[0].active='style';assert.ok(validateDocks(old).right.groups[0].tabs.includes('calendar'));
 });
@@ -21,7 +22,7 @@ test('journal dates, ISO weeks, timezone boundaries and settings are portable',(
 test('templates and journals create recoverable Markdown, preserve links, and never replace existing notes',async t=>{
   const dir=await fs.mkdtemp(join(tmpdir(),'heavens-journals-')),root=join(dir,'notes'),cache=join(dir,'cache');await fs.mkdir(root);
   let w=await Workspace.open(root,cache);t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
-  const created=await w.createTemplate(),template=created.edits[0].path;
+  const created=await w.createTemplate(),template=created.edits[0].path;assert.ok(created.edits.every(e=>!e.path.endsWith('.whiteboard')));await assert.rejects(fs.access(join(root,'Templates/Templates.whiteboard')));
   const raw='---\ncard-id: template-id\ntags: [project]\nproject/Location: "{{title}}"\nproject/Date: "{{date}}"\n---\n# {{title}}\n\n{{date:dddd, MMMM D, YYYY}}\n\n<img src="images/picture.png">\n';
   await w.write([{path:template,content:raw,expected:revision(await w.read(template))}]);
   await w.setPreferences({journal:{...DEFAULT_JOURNAL,dailyTemplate:template,weeklyTemplate:template}});

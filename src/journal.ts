@@ -1,11 +1,11 @@
 import {shiftDay,wallTime,DEFAULT_DATE_DISPLAY} from './dates';
 import type {DateDisplay} from './shared';
 export type JournalPeriod='daily'|'weekly';
-export interface JournalSettings {folder:string;dailyFormat:string;weeklyFormat:string;dailyTemplate:string;weeklyTemplate:string;calendarMode:'month'|'heatmap'}
+export interface JournalSettings {folder:string;dailyFormat:string;weeklyFormat:string;dailyTemplate:string;weeklyTemplate:string}
 export interface TemplateSettings {folder:string}
 export interface JournalEntry {date:string;period:JournalPeriod;path:string;id:string;words:number}
 export const DEFAULT_TEMPLATES:TemplateSettings={folder:'Templates'};
-export const DEFAULT_JOURNAL:JournalSettings={folder:'Journal',dailyFormat:'YYYY/MM/YYYY-MM-DD',weeklyFormat:'[Weekly]/GGGG-[W]WW',dailyTemplate:'',weeklyTemplate:'',calendarMode:'month'};
+export const DEFAULT_JOURNAL:JournalSettings={folder:'Journal',dailyFormat:'YYYY/MM/YYYY-MM-DD',weeklyFormat:'[Weekly]/GGGG-[W]WW',dailyTemplate:'',weeklyTemplate:''};
 export function validNotePath(value:unknown){return typeof value==='string'&&value.length>0&&value.length<=600&&value.split('/').every(p=>!!p&&!p.startsWith('.')&&!/[<>:"\\|?*]/.test(p)&&!/[. ]$/.test(p)&&![...p].some(c=>c.charCodeAt(0)<32)&&! /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p));}
 export function validJournalDay(day:string){return /^\d{4}-\d{2}-\d{2}$/.test(day)&&Number(day.slice(0,4))>=1000&&Number(day.slice(0,4))<=9998&&!Number.isNaN(Date.parse(day))&&new Date(day+'T12:00:00Z').toISOString().slice(0,10)===day;}
 export function journalWeek(day:string){return shiftDay(day,-((new Date(day+'T12:00:00Z').getUTCDay()+6)%7));}
@@ -24,7 +24,7 @@ export function journalMonth(day:string){const first=day.slice(0,7)+'-01',start=
 export function validateTemplates(value:unknown):asserts value is TemplateSettings {if(!value||typeof value!=='object'||!validNotePath((value as TemplateSettings).folder))throw new Error('Invalid template folder');}
 export function validateJournal(value:unknown):asserts value is JournalSettings {
   const p=value as JournalSettings;
-  if(!p||typeof p!=='object'||!validNotePath(p.folder)||!['month','heatmap'].includes(p.calendarMode)||[p.dailyTemplate,p.weeklyTemplate].some(v=>typeof v!=='string'||v!==''&&(!validNotePath(v)||!v.endsWith('.md'))))throw new Error('Invalid journal settings');
+  if(!p||typeof p!=='object'||!validNotePath(p.folder)||[p.dailyTemplate,p.weeklyTemplate].some(v=>typeof v!=='string'||v!==''&&(!validNotePath(v)||!v.endsWith('.md'))))throw new Error('Invalid journal settings');
   for(const [format,period] of [[p.dailyFormat,'daily'],[p.weeklyFormat,'weekly']] as const){
     if(typeof format!=='string'||format.length>150||!validNotePath(formatTemplateDate('2026-10-05',format)))throw new Error('Invalid journal filename format');
     const tokens=format.replace(/\[[^\]]*\]/g,'');

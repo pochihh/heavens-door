@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useSta
 import { remapKey } from '../path-remap';
 import {DateDisplayContext} from './DateProperty';
 import {DEFAULT_DATE_DISPLAY} from '../dates';
-import { DEFAULT_TITLE_PLACEHOLDER } from '../shared';
+import { DEFAULT_CARD_FOLDER, DEFAULT_TITLE_PLACEHOLDER } from '../shared';
 import { ViewBlockProvider } from './ViewBlock';
 import {SettingsPanel} from './SettingsPanel';
 import { StyleView, type BoardSelection } from './StyleView';
@@ -210,7 +210,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     }));
   }
   function createCard(folder:string,x?:number,y?:number,paneId=activeId){
-    attempt((async()=>{await session.create(folder||prefs.cardFolder||'Inbox',prefs.stem,x??80,y??80,!!folder&&x!==undefined&&y!==undefined);const card=session.state.draft?.card;
+    attempt((async()=>{await session.create(folder||prefs.cardFolder||DEFAULT_CARD_FOLDER,prefs.stem,x??80,y??80,!!folder&&x!==undefined&&y!==undefined);const card=session.state.draft?.card;
       if(card){const p=panes(layout).find(p=>p.id===paneId);if(x===undefined||y===undefined||(!p||tabDocument(p)!=='board:'+folder))open('card:'+card.id,paneId);}
     })());
   }
@@ -308,7 +308,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   }
   const [templateOpen,setTemplateOpen]=useState(false);
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
-    if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={open} onChange={patch=>changePrefs(()=>patch)}/>;
+    if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={open}/>;
     if(module==='style'){
       const board=snapshot.boards.find(b=>'board:'+b.folder===tabDocument(active)),card=snapshot.cards.find(c=>'card:'+c.id===tabDocument(active));
       return <StyleView board={board} card={card} cardInfos={snapshot.cards} palette={prefs.palette} selection={boardSelection?.path===board?.path?boardSelection:undefined} session={session} onPalette={palette=>session.run(async()=>{

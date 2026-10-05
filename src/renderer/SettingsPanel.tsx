@@ -1,14 +1,14 @@
-import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES} from '../journal';
+import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,journalToday,journalWeek,journalPath,formatTemplateDate,validateJournal,type JournalSettings} from '../journal';
 import {EditorSettings} from './EditorSettings';
-import {useState,type ReactNode} from 'react';
+import {useEffect,useState,type ReactNode} from 'react';
 import type {Preferences,Snapshot} from '../shared';
-import {DEFAULT_TITLE_PLACEHOLDER,DEFAULT_WHITEBOARD_NAME} from '../shared';
+import {DEFAULT_CARD_FOLDER, DEFAULT_TITLE_PLACEHOLDER,DEFAULT_WHITEBOARD_NAME} from '../shared';
 import {DEFAULT_QUERY_PREFERENCES} from '../view-block';
 import {Icon,type IconName} from './Icons';
 import {TagColorSettings} from './TagView';
 import {PerformanceSettings} from './PerformanceSettings';
 
-const pages=[{id:'templates',name:'Templates',icon:'copy',keywords:'new note card template folder'}, {id:'journal',name:'Journal',icon:'calendar',keywords:'daily weekly calendar heatmap date template'},{id:'editor',name:'Editor',icon:'edit',keywords:'images attachments slash commands templates symbols'},{id:'general',name:'General',icon:'settings',keywords:'filename title workspace'}, {id:'appearance',name:'Appearance',icon:'art',keywords:'theme light dark'}, {id:'whiteboard',name:'Whiteboard',icon:'map',keywords:'new board default name canvas mouse trackpad navigation'}, {id:'navigation',name:'Navigation',icon:'window',keywords:'split docks'}, {id:'tags',name:'Tags',icon:'tag',keywords:'colors palette'}, {id:'views',name:'Views and queries',icon:'table',keywords:'merge properties names case sensitive filters'}, {id:'performance',name:'Performance',icon:'autoInput',keywords:'hardware acceleration graphics'}, {id:'developer',name:'Developer',icon:'code',keywords:'diagnostics graphics'}] as const;
+const pages=[{id:'templates',name:'Templates',icon:'copy',keywords:'new note card template folder'}, {id:'journal',name:'Journal',icon:'calendar',keywords:'daily weekly calendar date template'},{id:'editor',name:'Editor',icon:'edit',keywords:'images attachments slash commands templates symbols'},{id:'general',name:'General',icon:'settings',keywords:'filename title workspace'}, {id:'appearance',name:'Appearance',icon:'art',keywords:'theme light dark'}, {id:'whiteboard',name:'Whiteboard',icon:'map',keywords:'new board default name canvas mouse trackpad navigation'}, {id:'navigation',name:'Navigation',icon:'window',keywords:'split docks'}, {id:'tags',name:'Tags',icon:'tag',keywords:'colors palette'}, {id:'views',name:'Views and queries',icon:'table',keywords:'merge properties names case sensitive filters'}, {id:'performance',name:'Performance',icon:'autoInput',keywords:'hardware acceleration graphics'}, {id:'developer',name:'Developer',icon:'code',keywords:'diagnostics graphics'}] as const;
 function Row({name,description,children}:{name:string;description?:string;children:ReactNode}){return <div className="setting-row"><div><label>{name}</label>{description&&<p>{description}</p>}</div><div className="setting-control">{children}</div></div>;}
 export function SettingsPanel({snapshot,prefs,onChange,onResetDocks,onMigrate,rootCards}:{snapshot:Snapshot;prefs:Preferences;onChange:(patch:Partial<Preferences>)=>void;onResetDocks:()=>void;onMigrate:()=>void;rootCards:number}){
   const [selected,setSelected]=useState('general'),[search,setSearch]=useState('');
@@ -17,15 +17,9 @@ export function SettingsPanel({snapshot,prefs,onChange,onResetDocks,onMigrate,ro
     <div id="settings-content" role="tabpanel" aria-labelledby={page?'settings-'+page.id:undefined} className="settings-content">
       {!page?<p>No matching settings.</p>:<><h2>{page.name}</h2>
       {page.id==='templates'&&<><Row name="Template folder"><input aria-label="Template folder" defaultValue={(prefs.templates??DEFAULT_TEMPLATES).folder} onBlur={e=>onChange({templates:{folder:e.target.value.trim()||'Templates'}})}/></Row><p className="muted">Templates are ordinary Markdown notes. Use New from template in the top bar to create or edit one.</p><p className="muted">Use {'{{title}}'}, {'{{date}}'}, and {'{{time}}'}. For a custom date: {'{{date:MMMM D, YYYY}}'}.</p></>}
-      {page.id==='journal'&&(()=>{const value=prefs.journal??DEFAULT_JOURNAL,change=(patch:Partial<typeof value>)=>onChange({journal:{...value,...patch}});return <>
-        <Row name="Journal folder"><input aria-label="Journal folder" defaultValue={value.folder} onBlur={e=>change({folder:e.target.value.trim()||'Journal'})}/></Row>
-        <Row name="Daily filename" description="Supports subfolders, for example YYYY/MM/YYYY-MM-DD."><input aria-label="Daily filename" defaultValue={value.dailyFormat} onBlur={e=>change({dailyFormat:e.target.value})}/></Row>
-        <Row name="Weekly filename" description="Weeks start on Monday. GGGG-[W]WW uses the ISO week and year."><input aria-label="Weekly filename" defaultValue={value.weeklyFormat} onBlur={e=>change({weeklyFormat:e.target.value})}/></Row>
-        {(['daily','weekly'] as const).map(period=><Row key={period} name={period==='daily'?'Daily template':'Weekly template'}><select aria-label={period==='daily'?'Daily template':'Weekly template'} value={value[period==='daily'?'dailyTemplate':'weeklyTemplate']} onChange={e=>change({[period==='daily'?'dailyTemplate':'weeklyTemplate']:e.target.value})}><option value="">None</option>{snapshot.cards.filter(c=>c.path.startsWith((prefs.templates??DEFAULT_TEMPLATES).folder+'/')||c.path===value.dailyTemplate||c.path===value.weeklyTemplate).map(c=><option key={c.path} value={c.path}>{c.path}</option>)}</select></Row>)}
-        <p className="muted">A journal template’s date is the selected day, or Monday for a weekly note. Changes apply to new notes only.</p>
-      </>;})()}
+      {page.id==='journal'&&<JournalOptions snapshot={snapshot} prefs={prefs} onChange={onChange}/>}
       {page.id==='editor'&&<EditorSettings value={prefs.editor} onChange={editor=>onChange({editor})}/>}
-      {page.id==='general'&&<><Row name="New card folder" description="Workspace folder for cards created without a specific destination."><input aria-label="New card folder" maxLength={120} defaultValue={prefs.cardFolder??'Inbox'} onBlur={e=>onChange({cardFolder:e.target.value.trim()||'Inbox'})}/></Row><Row name="New card filename"><input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>onChange({stem:e.target.value||'untitled'})}/></Row><Row name="Empty card title"><input aria-label="Empty card title placeholder" maxLength={120} defaultValue={prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER} onBlur={e=>onChange({titlePlaceholder:e.target.value.trim()||DEFAULT_TITLE_PLACEHOLDER})}/></Row><p className="muted">Workspace preferences stay in this workspace.</p>{!!rootCards&&<button onClick={onMigrate}>Organize {rootCards} root cards…</button>}</>}
+      {page.id==='general'&&<><Row name="New card folder" description="Workspace folder for cards created without a specific destination."><input aria-label="New card folder" maxLength={120} defaultValue={prefs.cardFolder??DEFAULT_CARD_FOLDER} onBlur={e=>onChange({cardFolder:e.target.value.trim()||DEFAULT_CARD_FOLDER})}/></Row><Row name="New card filename"><input aria-label="New card filename" defaultValue={prefs.stem} onBlur={e=>onChange({stem:e.target.value||'untitled'})}/></Row><Row name="Empty card title"><input aria-label="Empty card title placeholder" maxLength={120} defaultValue={prefs.titlePlaceholder??DEFAULT_TITLE_PLACEHOLDER} onBlur={e=>onChange({titlePlaceholder:e.target.value.trim()||DEFAULT_TITLE_PLACEHOLDER})}/></Row><p className="muted">Workspace preferences stay in this workspace.</p>{!!rootCards&&<button onClick={onMigrate}>Organize {rootCards} root cards…</button>}</>}
       {page.id==='appearance'&&<Row name="Theme"><select aria-label="Workspace appearance" value={prefs.theme} onChange={e=>onChange({theme:e.target.value as Preferences['theme']})}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></Row>}
       {page.id==='whiteboard'&&<><Row name="New whiteboard name"><input aria-label="New whiteboard name" maxLength={120} defaultValue={prefs.whiteboardName??DEFAULT_WHITEBOARD_NAME} onBlur={e=>onChange({whiteboardName:e.target.value.trim()||DEFAULT_WHITEBOARD_NAME})}/></Row><Row name="Navigation device"><select aria-label="Navigation device" value={prefs.whiteboardInput??'auto'} onChange={e=>onChange({whiteboardInput:e.target.value as Preferences['whiteboardInput']})}><option value="auto">Auto</option><option value="mouse">Mouse</option><option value="trackpad">Trackpad</option></select></Row></>}
       {page.id==='navigation'&&<><Row name="New split direction"><select aria-label="New split direction" value={prefs.newSplitDirection??'row'} onChange={e=>onChange({newSplitDirection:e.target.value as Preferences['newSplitDirection']})}><option value="row">Right</option><option value="column">Below</option></select></Row><Row name="Side docks"><button onClick={onResetDocks}>Reset layout</button></Row></>}
@@ -34,4 +28,27 @@ export function SettingsPanel({snapshot,prefs,onChange,onResetDocks,onMigrate,ro
       {page.id==='performance'&&<PerformanceSettings section="performance"/>}{page.id==='developer'&&<PerformanceSettings section="developer"/>}
       </>}
     </div></div>;
+}
+
+function JournalOptions({snapshot,prefs,onChange}:{snapshot:Snapshot;prefs:Preferences;onChange:(patch:Partial<Preferences>)=>void}){
+  const value=prefs.journal??DEFAULT_JOURNAL,day=journalToday(prefs.dateDisplay),change=(patch:Partial<JournalSettings>)=>onChange({journal:{...value,...patch}});
+  const templates=snapshot.cards.filter(c=>c.path.startsWith((prefs.templates??DEFAULT_TEMPLATES).folder+'/')||c.path===value.dailyTemplate||c.path===value.weeklyTemplate);
+  return <>
+    <Row name="New file location" description="Folder for journal notes. Date formats can create subfolders."><input aria-label="Journal folder" list="journal-folders" defaultValue={value.folder} onBlur={e=>change({folder:e.target.value.trim()||'Journal'})}/><datalist id="journal-folders">{snapshot.folders?.filter(Boolean).map(path=><option key={path} value={path}/>)}</datalist></Row>
+    {(['daily','weekly'] as const).map(period=><section key={period} className="journal-settings-section"><h3>{period==='daily'?'Daily notes':'Weekly notes'}</h3>
+      <JournalFormat value={value} period={period} day={period==='daily'?day:journalWeek(day)} onChange={change}/>
+      <Row name="Template" description={period==='daily'?'Used only when a new daily note is created.':'Template dates use the Monday of the selected week.'}><select aria-label={period==='daily'?'Daily template':'Weekly template'} value={value[period==='daily'?'dailyTemplate':'weeklyTemplate']} onChange={e=>change({[period==='daily'?'dailyTemplate':'weeklyTemplate']:e.target.value})}><option value="">None</option>{templates.map(c=><option key={c.path} value={c.path}>{c.path}</option>)}</select></Row>
+    </section>)}
+  </>;
+}
+function JournalFormat({value,period,day,onChange}:{value:JournalSettings;period:'daily'|'weekly';day:string;onChange:(patch:Partial<JournalSettings>)=>void}){
+  const key=period==='daily'?'dailyFormat':'weeklyFormat',presets=period==='daily'?['YYYY-MM-DD','YYYY/MM/YYYY-MM-DD','YYYY/MMMM/YYYY-MM-DD']:['[Weekly]/GGGG-[W]WW','[Weekly]/GGGG/[W]WW','GGGG-[W]WW'];
+  const saved=value[key],[draft,setDraft]=useState(saved),[custom,setCustom]=useState(!presets.includes(saved));
+  useEffect(()=>{setDraft(saved);},[saved]);
+  let preview='',error='';try{validateJournal({...value,[key]:draft});preview=journalPath({...value,[key]:draft},day,period);}catch(e){error=e instanceof Error?e.message:String(e);}
+  return <>
+    <Row name="Date format"><select aria-label={period==='daily'?'Daily date format':'Weekly date format'} value={custom?'custom':value[key]} onChange={e=>{const format=e.target.value;setCustom(format==='custom');if(format!=='custom'){setDraft(format);onChange({[key]:format});}}}>{presets.map(format=><option key={format} value={format}>{formatTemplateDate(day,format)}</option>)}<option value="custom">Custom…</option></select></Row>
+    {custom&&<Row name="Custom format" description={period==='daily'?'Use YYYY, MM and DD. Put literal text in [brackets].':'Use GGGG for the ISO year and WW for the week.'}><input aria-label={period==='daily'?'Daily custom format':'Weekly custom format'} value={draft} aria-invalid={!!error} onChange={e=>setDraft(e.target.value)} onBlur={()=>{if(!error&&draft!==value[key])onChange({[key]:draft});}}/></Row>}
+    <p className="journal-format-preview" role={error?'alert':undefined}>{error||preview}</p>
+  </>;
 }

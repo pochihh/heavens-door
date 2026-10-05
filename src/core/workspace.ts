@@ -21,7 +21,7 @@ import { remapPath, remapFilePath, remapPreferences } from '../path-remap';
 import { History } from './history';
 import { TextSearch, searchExcerpt, searchDocument, searchHighlights, searchProperties } from './search';
 import { readCard, editCard, readBoard, writeBoard, emptyBoard, revision, newNote, splitNote, validateEdgeStyle } from './format';
-import { COLLAPSED_CARD_HEIGHT, DEFAULT_WHITEBOARD_NAME, placementHeight, edgeStyle } from '../shared';
+import { DEFAULT_CARD_FOLDER, COLLAPSED_CARD_HEIGHT, DEFAULT_WHITEBOARD_NAME, placementHeight, edgeStyle } from '../shared';
 import type { Board, CardInfo, Snapshot, Write, Mutation, Preferences, TagInfo, TagResult, EdgeStyle, Deletion, CardQuery, CardResult } from '../shared';
 
 const isTrash=(path:string)=>/^\.heavens-door\/trash\/[a-f0-9-]{36}\.md$/.test(path);
@@ -519,7 +519,7 @@ export class Workspace {
       const field=resolveField(key,tags);if(!field.definition)throw new Error(viewText.errors.chooseProperty);
       if(![...attached].some(tag=>resolveTag(tags,tag).fields.some(f=>f.propertyKey===key)))attached.add(key.slice(0,-field.definition.key.length-1));
     }
-    const path=await this.newCardPath(folder??this.preferences.cardFolder??'Inbox',stem);
+    const path=await this.newCardPath(folder??this.preferences.cardFolder??DEFAULT_CARD_FOLDER,stem);
     let raw=newNote();for(const tag of attached)raw=editCardTag(raw,path,tags,tag,true);
     for(const [key,value] of values){const field=resolveField(key,tags).definition!;validateTagValue(field,value);const {front,body}=splitNote(raw);front.set(key,value);raw='---\n'+front.toString()+'---\n'+body;}
     if(contextKey)raw=this.viewPropertyContent(raw,path,contextKey,column!==undefined?column||null:date!);

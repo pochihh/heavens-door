@@ -1,13 +1,14 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {TextSearch} from '../core/search';
 import {DEFAULT_TEMPLATES} from '../journal';
+import {DEFAULT_CARD_FOLDER} from '../shared';
 import type {Snapshot} from '../shared';
 import type {Session} from './session';
 import {Icon,Tool} from './Icons';
 import {ui} from '../text/ui';
 const text=ui.journal;
 export function TemplateDialog({snapshot,session,onOpen,onClose}:{snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onClose:()=>void}){
-  const ref=useRef<HTMLDialogElement>(null),[query,setQuery]=useState(''),[chosen,setChosen]=useState(''),[stem,setStem]=useState(''),[folder,setFolder]=useState(snapshot.preferences?.cardFolder??'Inbox'),[busy,setBusy]=useState(false),[error,setError]=useState(''),root=(snapshot.preferences?.templates??DEFAULT_TEMPLATES).folder;
+  const ref=useRef<HTMLDialogElement>(null),[query,setQuery]=useState(''),[chosen,setChosen]=useState(''),[stem,setStem]=useState(''),[folder,setFolder]=useState(snapshot.preferences?.cardFolder??DEFAULT_CARD_FOLDER),[busy,setBusy]=useState(false),[error,setError]=useState(''),root=(snapshot.preferences?.templates??DEFAULT_TEMPLATES).folder;
   const templates=useMemo(()=>snapshot.cards.filter(c=>c.path.startsWith(root+'/')),[snapshot.cards,root]),index=useMemo(()=>{const engine=new TextSearch();templates.forEach(c=>engine.update({...c,body:''}));return engine;},[templates]);
   const shown=query?index.search(query).map(hit=>templates.find(c=>c.path===hit.path)!):templates;
   useLayoutEffect(()=>{const previous=document.activeElement;ref.current?.showModal();return()=>{ref.current?.close();if(previous instanceof HTMLElement)previous.focus();};},[]);
