@@ -49,7 +49,7 @@ export const ui = {
     mainDockTabGroup: "Main Dock Tab Group",
     openFiles: "Open files",
     closeTab: 'Close tab',closeOthers: 'Close other tabs',closeAfter: 'Close tabs to the right',closeAll: 'Close all tabs',
-    searchTabs: 'Search tabs',scrollTabsLeft: 'Scroll tabs left',scrollTabsRight: 'Scroll tabs right',noMatchingTabs: 'No matching tabs.',
+    searchTabs: 'Search tabs',noMatchingTabs: 'No matching tabs.',
 
     tabGroupActions: "Tab Group actions",
     splitRight: "Split right",

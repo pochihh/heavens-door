@@ -34,7 +34,7 @@ import { documentInfo, parent, cardPlacement } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
 import { BoardView, FileView, NoteView, TagView, type ViewMemory } from './DocumentViews';
-import { MAX_PANES, MAX_TABS, tabDocument, tabHistory, travelTab, mapPaneDocuments, updatePane, navigateTab, openJournalTab, closeTabs, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
+import { MAX_PANES, MAX_TABS, tabDocument, tabHistory, travelTab, mapPaneDocuments, updatePane, navigateTab, openJournalTab, closeTabs, moveTab, openTab, pane, panes, removePane, removeEmptyPanes, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
@@ -80,9 +80,9 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [searchOpen,setSearchOpen]=useState(false);
   useEffect(()=>{const search=()=>setSearchOpen(true);window.addEventListener('editor:search',search);return()=>window.removeEventListener('editor:search',search);},[]);
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!document.querySelector('dialog[open]')&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
-  const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
+  const [layout,setLayout]=useState(()=>removeEmptyPanes(prefs.documents?.tree??restoreLayout(null)));
   const layoutRef=useRef(layout);layoutRef.current=layout;
-  const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
+  const [activeId,setActiveId]=useState(()=>panes(layout).find(p=>p.id===prefs.documents?.active)?.id??panes(layout)[0].id);
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
   const enabledModule=(module:ModuleId)=>moduleEnabled(module,prefs);
   const left=!docks.left.collapsed&&docks.left.groups.some(g=>g.tabs.some(enabledModule)),right=!docks.right.collapsed&&docks.right.groups.some(g=>g.tabs.some(enabledModule));
@@ -190,9 +190,9 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     else if(p.id!==activeId)attempt(session.select(null));
   }
   function close(p:Pane,key:string|string[]){
-    attempt((async()=>{await session.run(()=>session.flush());const next=closeTabs(layout,p.id,typeof key==='string'?[key]:key);
-      const nextPane=panes(next).find(item=>item.id===p.id),selected=nextPane&&tabDocument(nextPane),info=selected?documentInfo(selected,session.state.snapshot!):null;
-      await session.select(info?.kind==='card'?info.path:null);setLayout(next);setActiveId(p.id);
+    attempt((async()=>{await session.run(()=>session.flush());const current=layoutRef.current,next=closeTabs(current,p.id,typeof key==='string'?[key]:key),groups=panes(next);
+      const nextPane=groups.find(item=>item.id===p.id)??groups[Math.min(Math.max(0,panes(current).findIndex(item=>item.id===p.id)),groups.length-1)],selected=tabDocument(nextPane),info=selected?documentInfo(selected,session.state.snapshot!):null;
+      await session.select(info?.kind==='card'?info.path:null);layoutRef.current=next;setLayout(next);setActiveId(nextPane.id);
     })());
   }
   function split(p:Pane,axis:'row'|'column'){

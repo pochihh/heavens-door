@@ -55,7 +55,7 @@ test('module layouts keep every module once, persist per workspace, and registra
   const registry=new WorkspaceRegistry(join(root,'registered.json'));await registry.register(one);await registry.register(two);await registry.unregister(await fs.realpath(two));assert.equal((await registry.list()).length,1);assert.equal((await fs.stat(two)).isDirectory(),true);
 });
 
-test('tab pointer drags preview activation, retain empty sources, respect dock families, and cancel without saving',async()=>{
+test('tab pointer drags preserve empty sources until commit, respect dock families, and cancel without saving',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,innerWidth:1200,innerHeight:800,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const root=createRoot(document.getElementById('root')!);let current=defaultDocks(),writes=0;
@@ -139,6 +139,8 @@ test('tab pointer drags preview activation, retain empty sources, respect dock f
     await pointer(document,'pointermove',30,50);assert.equal(document.querySelector('.tab-drop-preview'),null,'Main Dock tabs cannot enter Side Docks');await pointer(document,'pointerup',30,50);assert.equal(documentWrites,1);
     await pointer(mainTab(first.id,'b'),'pointerdown',420,50);await pointer(document,'pointermove',440,310);await act(async()=>window.dispatchEvent(new dom.window.Event('blur')));assert.equal(documentWrites,1);
     assert.equal(document.querySelector('.drag-phantom'),null);assert.equal(document.querySelector('.tab-drop-preview'),null);assert.equal(document.body.classList.contains('tab-dragging'),false);
+    assert.ok(document.querySelector('[data-test-content="'+first.id+'"]'),'cancel retains the source pane');
+    await pointer(mainTab(first.id,'b'),'pointerdown',420,50);await pointer(document,'pointermove',440,310);assert.ok(document.querySelector('[data-test-content="'+first.id+'"]'),'preview retains the empty source');await pointer(document,'pointerup',440,310);assert.equal(panes(documents).length,1);assert.equal(panes(documents)[0].id,second.id);assert.equal(document.querySelector('[data-test-content="'+first.id+'"]'),null,'committing the last tab move closes the source');assert.equal(documentWrites,2);
     await pointer(tab('files'),'pointerdown',30,50);await pointer(document,'pointermove',270,50);await pointer(document,'pointerup',270,50);
     assert.deepEqual(findModule(current,'files').group.tabs,['tags','search','files']);assert.equal(findModule(current,'files').group.active,'files');
     await pointer(tab('files'),'pointerdown',190,50);await pointer(document,'pointermove',30,50);await pointer(document,'pointerup',30,50);

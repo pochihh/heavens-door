@@ -29,7 +29,7 @@ export function navigateTab(layout:Layout,source:string,key:string,mode:Navigati
   if(groups.length>=MAX_PANES)throw new Error(ui.errors.splitLimit);
   const next=pane(key);return {tree:splitPane(layout,origin.id,axis,next),active:next.id};
 }
-// The slot stays with its split when closed, and follows the tab when moved.
+// The journal slot stays in a surviving split, and follows the tab when moved.
 export function openJournalTab(layout:Layout,source:string,key:string,axis:'row'|'column'='row') {
   const groups=panes(layout),target=groups.find(p=>p.journalTab!==undefined);
   if(target){
@@ -49,12 +49,12 @@ export function activeAfterRemoval(tabs:string[],active:string,key:string):strin
 export function closeTab(layout:Layout,id:string,key:string) {return closeTabs(layout,id,[key]);}
 export function closeTabs(layout:Layout,id:string,keys:readonly string[]) {
   const closed=new Set(keys);
-  return updatePane(layout,id,p=>{
+  return removeEmptyPanes(updatePane(layout,id,p=>{
     const tabs=p.tabs.filter(key=>!closed.has(key)),index=p.tabs.indexOf(p.active);
     const active=tabs.includes(p.active)?p.active:p.tabs.slice(index+1).find(key=>!closed.has(key))??p.tabs.slice(0,index).reverse().find(key=>!closed.has(key))??'';
     const history=Object.fromEntries(Object.entries(p.history??{}).filter(([key])=>!closed.has(key)));
     return {...p,tabs,active,...(p.journalTab&&closed.has(p.journalTab)?{journalTab:''}:{}),...(p.history?{history}:{})};
-  });
+  }));
 }
 export function splitPane(layout:Layout,id:string,axis:'row'|'column',next:Pane):Layout {
   if(panes(layout).length>=MAX_PANES)return layout;
@@ -65,6 +65,15 @@ export function removePane(layout:Layout,id:string):Layout|null {
   const first=removePane(layout.first,id),second=removePane(layout.second,id);
   return first&&second?{...layout,first,second}:first??second;
 }
+// Compact committed layouts; drag previews keep their empty source until release.
+export function removeEmptyPanes(layout:Layout):Layout {
+  const prune=(node:Layout):Layout|null=>{
+    if(node.type==='pane')return node.tabs.length?node:null;
+    const first=prune(node.first),second=prune(node.second);
+    return first&&second?(first===node.first&&second===node.second?node:{...node,first,second}):first??second;
+  };
+  return prune(layout)??panes(layout)[0];
+}
 export function resizeSplit(layout:Layout,id:string,ratio:number):Layout {
   if(layout.type==='pane')return layout;
   return layout.id===id?{...layout,ratio:Math.max(.15,Math.min(.85,ratio))}:{...layout,first:resizeSplit(layout.first,id,ratio),second:resizeSplit(layout.second,id,ratio)};
@@ -74,11 +83,12 @@ export function moveTab(layout:Layout,from:string,to:string,key:string,before?:s
   if(!source?.tabs.includes(key)||!target||from===to&&key===before||from!==to&&target.tabs.length>=MAX_TABS)return layout;
   const history=tabHistory(source,key),tab=from!==to&&target.tabs.includes(key)?'tab:'+crypto.randomUUID():key;
   const movingJournal=source.journalTab===key;
-  const remaining=updatePane(closeTab(layout,from,key),from,p=>{if(!movingJournal||from===to)return p;const next={...p};delete next.journalTab;return next;});
-  return updatePane(remaining,to,p=>{
+  // Remove and insert before compacting, including a sole tab reordered in its own pane.
+  const remaining=updatePane(layout,from,p=>{const next={...p,tabs:p.tabs.filter(tab=>tab!==key),active:activeAfterRemoval(p.tabs,p.active,key),...(p.history?{history:Object.fromEntries(Object.entries(p.history).filter(([tab])=>tab!==key))}:{})};if(movingJournal&&from!==to)delete next.journalTab;return next;});
+  return removeEmptyPanes(updatePane(remaining,to,p=>{
     const tabs=[...p.tabs],index=before?tabs.indexOf(before):-1;tabs.splice(index<0?tabs.length:index,0,tab);
     return {...p,tabs,active:tab,...(movingJournal?{journalTab:tab}:{}),...(source.history?.[key]||tab!==key?{history:{...p.history,[tab]:history}}:{})};
-  });
+  }));
 }
 export function restoreLayout(raw:string|null):Layout {
   const ids=new Set<string>();let count=0;
