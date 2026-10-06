@@ -33,11 +33,14 @@ export function activeAfterRemoval(tabs:string[],active:string,key:string):strin
   if(active!==key)return active;
   const index=tabs.indexOf(key);return tabs[index+1]??tabs[index-1]??'';
 }
-export function closeTab(layout:Layout,id:string,key:string) {
+export function closeTab(layout:Layout,id:string,key:string) {return closeTabs(layout,id,[key]);}
+export function closeTabs(layout:Layout,id:string,keys:readonly string[]) {
+  const closed=new Set(keys);
   return updatePane(layout,id,p=>{
-    const tabs=p.tabs.filter(k=>k!==key);
-    const history={...p.history};delete history[key];
-    return {...p,tabs,active:activeAfterRemoval(p.tabs,p.active,key),...(p.history?{history}:{})};
+    const tabs=p.tabs.filter(key=>!closed.has(key)),index=p.tabs.indexOf(p.active);
+    const active=tabs.includes(p.active)?p.active:p.tabs.slice(index+1).find(key=>!closed.has(key))??p.tabs.slice(0,index).reverse().find(key=>!closed.has(key))??'';
+    const history=Object.fromEntries(Object.entries(p.history??{}).filter(([key])=>!closed.has(key)));
+    return {...p,tabs,active,...(p.history?{history}:{})};
   });
 }
 export function splitPane(layout:Layout,id:string,axis:'row'|'column',next:Pane):Layout {

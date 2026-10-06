@@ -207,7 +207,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(snapshot.boards.find(b=>b.folder==='Ideas')?.cards.at(-1)?.collapsed,true);
     const boardTab=document.querySelector<HTMLElement>('.active-pane [data-tab-key="board:Ideas"]')!;assert.ok(boardTab);
     await act(async()=>boardTab.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true})));
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close View tab')!.click());await settle();
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close tab')!.click());await settle();
     assert.equal(document.querySelector('.active-pane [data-tab-key="board:Ideas"]'),null,'Main Dock tabs also close from their context menu');
     assert.ok(snapshot.boards.some(b=>b.folder==='Ideas'),'closing a tab keeps its file');
     await click('.active-pane .document-breadcrumb .breadcrumb-part button');

@@ -77,12 +77,12 @@ p{margin:0 0 12px}kbd{font-size:11px;color:var(--muted)}.muted,small,.empty-text
 .note-pane{position:relative;display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0}
 .tab-strip{display:flex;align-items:center;height:42px;flex-shrink:0;padding:0 4px;min-width:0;background:var(--surface);border-radius:var(--corner) var(--corner) 0 0}
 .tab-list{display:flex;align-items:center;min-width:0;flex:1;overflow-x:auto;scrollbar-width:none}
-.tab{display:flex;max-width:186px;flex-shrink:0;align-items:center;margin:6px 4px;min-height:29px;border-radius:var(--control-corner);color:var(--muted);font-size:14px;-webkit-app-region:no-drag;overflow:hidden}
+.tab{display:flex;max-width:186px;min-width:112px;flex:1 1 186px;align-items:center;margin:6px 4px;min-height:29px;border-radius:var(--control-corner);color:var(--muted);font-size:14px;-webkit-app-region:no-drag;overflow:hidden}
 .tab:hover{background:var(--hover)}.tab.active-tab{background:var(--tab);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}
 .active-pane .tab.active-tab{background:var(--selected);box-shadow:inset 0 0 0 1px var(--tab-border)}
-.tab>button[role=tab]{display:flex;align-items:center;gap:8px;min-width:0;height:29px;padding:4px 8px;line-height:21px}
+.tab>button[role=tab]{display:flex;flex:1;align-items:center;gap:8px;min-width:0;height:29px;padding:4px 8px;line-height:21px}
 .tab>button[role=tab]>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.tab>button[role=tab]:hover{background:none}
-.tab .tool{width:22px;height:22px;padding:4px;margin-right:2px;opacity:0}.tab .tool svg{width:12px;height:12px}
+.tab .tool{flex-shrink:0;width:22px;height:22px;padding:4px;margin-right:2px;opacity:0}.tab .tool svg{width:12px;height:12px}
 .tab:hover .tool,.tab.active-tab .tool,.tab:focus-within .tool{opacity:.68}
 .document-toolbar{display:flex;align-items:center;gap:2px;min-height:42px;padding:0 8px;flex-shrink:0;font-size:14px;background:var(--surface)}
 .document-icon-button{display:flex;align-items:center;padding:4px;color:var(--muted)}.document-breadcrumb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);min-width:20px}
@@ -457,3 +457,8 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .system-guide{margin:0 0 18px;border-bottom:1px solid var(--border);padding-bottom:12px}.system-guide>summary{color:var(--muted);font-size:13px;cursor:pointer}.system-guide-content{max-width:760px;margin:16px 0;font-size:14px}.system-guide-content h1{font-size:20px}.system-guide-edit{display:flex;align-items:center;gap:5px;background:transparent;font-size:12px;color:var(--muted)}
 
 .template-date-input>button{width:100%;text-align:left;background:transparent;border:1px solid var(--border);padding:6px 8px}
+
+/* Main Dock overflow keeps every document reachable in narrow split groups. */
+.tab-list{overscroll-behavior-x:contain}.tab-list::-webkit-scrollbar{display:none}.tab>button[role=tab]>svg,.tab>button[role=tab]>.document-icon{flex-shrink:0}
+.tab-strip>.tab-scroll,.tab-strip>.tab-picker-toggle{flex-shrink:0;width:26px;height:28px;padding:5px;background:transparent;-webkit-app-region:no-drag}.tab-scroll-left svg{transform:rotate(180deg)}
+.main-tab-picker{width:320px;max-width:calc(100vw - 16px);padding:6px}.main-tab-picker>input{width:100%;font-size:12px;margin-bottom:6px}.main-tab-picker [role=listbox]{max-height:320px;overflow:auto;overscroll-behavior:contain}.main-tab-picker [role=option]{display:flex;align-items:center;gap:8px;width:100%;padding:6px;text-align:left;font-size:12px;background:transparent}.main-tab-picker [role=option]:hover,.main-tab-picker [role=option]:focus-visible{background:var(--hover)}.main-tab-picker [role=option]>svg,.main-tab-picker .document-icon{flex-shrink:0}.main-tab-picker [role=option]>span:not(.document-icon){flex:1;min-width:0;overflow-wrap:anywhere}.main-tab-picker small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.main-tab-picker p{padding:8px;color:var(--muted);font-size:12px}

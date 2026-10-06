@@ -28,11 +28,12 @@ import { WorkspaceMenu,WorkspaceManager } from './WorkspaceMenu';
 import {defaultDocks,findModule,revealModule,moveModule,activeAfterRemoval,type ModuleId,type Docks,type DocumentsLayout} from '../layout';
 import { ActionMenu,TooltipHost,type MenuState } from './Overlays';
 import {useTabDrag} from './tab-drag';
+import {MainTabs} from './MainTabs';
 import { documentInfo, parent, cardPlacement } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
 import { BoardView, FileView, NoteView, TagView, type ViewMemory } from './DocumentViews';
-import { MAX_PANES, MAX_TABS, tabDocument, tabHistory, travelTab, mapPaneDocuments, updatePane, navigateTab, closeTab, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
+import { MAX_PANES, MAX_TABS, tabDocument, tabHistory, travelTab, mapPaneDocuments, updatePane, navigateTab, closeTabs, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
@@ -182,9 +183,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     if(current?.kind==='card'){if(state.draft?.card.path!==current.path)attempt(session.select(current.path));}
     else if(p.id!==activeId)attempt(session.select(null));
   }
-  function close(p:Pane,key:string){
-    attempt((async()=>{await session.select(null);const next=closeTab(layout,p.id,key);setLayout(next);setActiveId(p.id);
-      const nextPane=panes(next).find(item=>item.id===p.id);const selected=nextPane&&tabDocument(nextPane);if(selected){const info=documentInfo(selected,snapshot);if(info.kind==='card')await session.select(info.path);}
+  function close(p:Pane,key:string|string[]){
+    attempt((async()=>{await session.run(()=>session.flush());const next=closeTabs(layout,p.id,typeof key==='string'?[key]:key);
+      const nextPane=panes(next).find(item=>item.id===p.id),selected=nextPane&&tabDocument(nextPane),info=selected?documentInfo(selected,session.state.snapshot!):null;
+      await session.select(info?.kind==='card'?info.path:null);setLayout(next);setActiveId(p.id);
     })());
   }
   function split(p:Pane,axis:'row'|'column'){
@@ -253,7 +255,13 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function selectTab(p:Pane,key:string){attempt((async()=>{const info=documentInfo(tabDocument(p,key),session.state.snapshot!);await session.select(info.kind==='card'&&info.exists?info.path:null);setLayout(current=>updatePane(current,p.id,g=>({...g,active:key})));setActiveId(p.id);})());}
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
-    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:ui.layout.viewTabActions,x,y,actions:[{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(tabDocument(p,key),p.id,'other');}},{label:ui.common.closeViewTab,icon:'close',run:()=>close(p,key)}]});
+    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:ui.layout.viewTabActions,x,y,actions:[
+      {label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(tabDocument(p,key),p.id,'other');}},
+      {label:ui.layout.closeTab,icon:'close',separatorBefore:true,run:()=>close(p,key)},
+      {label:ui.layout.closeOthers,disabled:p.tabs.length<2,run:()=>close(p,p.tabs.filter(tab=>tab!==key))},
+      {label:ui.layout.closeAfter,disabled:p.tabs.at(-1)===key,run:()=>close(p,p.tabs.slice(p.tabs.indexOf(key)+1))},
+      {label:ui.layout.closeAll,run:()=>close(p,p.tabs)},
+    ]});
     const documentKey=tabDocument(p),history=tabHistory(p);
     const info=p.active?documentInfo(documentKey,snapshot):null;
     const focused=p.id===active.id;
@@ -262,19 +270,13 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     const board=info?.kind==='board'?snapshot.boards.find(b=>b.folder===info.id):undefined;
     const tag=info?.kind==='tag'?snapshot.tags?.find(t=>t.path===info.id):undefined;
     return <section className={'note-pane '+(focused?'active-pane':'')} style={{'--document-fill':info?.kind==='card'?tintColor(cardFill(snapshot.cards.find(c=>c.id===info.id))):undefined} as CSSProperties} data-pane={p.id} data-active={focused&&!popup} aria-label={ui.layout.mainDockTabGroup} onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
-      <div className="tab-strip">
-        <div className="tab-list" role="tablist" aria-label={ui.layout.openFiles} data-tab-strip data-tab-family="main" data-tab-group={p.id}>
-          {p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return <div className={'tab '+(p.active===key?'active-tab':'')} key={key} data-tab-key={key} onContextMenu={e=>{e.preventDefault();showTabMenu(key,e.clientX,e.clientY);}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();showTabMenu(key,r.left,r.bottom);}}}>
-            <button role="tab" onPointerDown={e=>tabs.begin(e,{family:'main',group:p.id,key})} aria-selected={p.active===key} data-tooltip={info.path||info.title} onClick={()=>selectTab(p,key)}>{docIcon(tabDocument(p,key))}<span>{info.title}</span></button>
-            <Tool icon="close" label={tooltips.tabs.close(info.title)} onClick={()=>close(p,key)}/>
-          </div>;})}
-        </div>
+      <MainTabs group={p.id} active={p.active} items={p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return {key,title:info.title,path:info.path,icon:docIcon(tabDocument(p,key))};})} dragging={!!tabs.drag} onSelect={key=>selectTab(p,key)} onClose={key=>close(p,key)} onMenu={showTabMenu} onDrag={(e,key)=>tabs.begin(e,{family:'main',group:p.id,key})}>
         <details className="menu pane-menu"><summary data-tooltip={tooltips.layout.tabGroupActions} aria-label={ui.layout.tabGroupActions}><Icon name="down" size={12}/></summary><div className="menu-content">
           <button data-tooltip={tooltips.layout.splitRight} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>{ui.layout.splitRight}</button>
           <button data-tooltip={tooltips.layout.splitDown} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>{ui.layout.splitDown}</button>
           <button data-tooltip={tooltips.layout.closeTabGroup} disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>{ui.layout.closeTabGroup}</button>
         </div></details>
-      </div>
+      </MainTabs>
       {info&&<div className="document-toolbar">
         <Breadcrumbs key={documentKey} documentKey={documentKey} snapshot={snapshot} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onIcon={()=>editIcon(documentKey)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else await session.renameBoard(info.id,name);}}/>
         <div className="tab-navigation"><Tool icon="back" label={tooltips.navigation.back} disabled={history.index===0} onClick={()=>travel(p,-1)}/><Tool icon="forward" label={tooltips.navigation.forward} disabled={history.index>=history.entries.length-1} onClick={()=>travel(p,1)}/></div>

@@ -42,6 +42,10 @@ For property editing, preserve keyboard editing and start dragging only on the p
 
 The split containers in the Main Dock and both Side Docks are **Tab Groups**. There is no whole-group drag handle. The Side Dock tab context menu retains close/move/split/merge commands, including moving a whole Tab Group. Open it with right-click, Shift+F10 or the Menu key; there is no persistent **…** button.
 
+Main Dock tabs share the available width, up to 186px, with a 112px minimum. Once they overflow, left/right scroll controls appear; wheel and trackpad scrolling remain available. Opening, selecting, moving, or resizing a group reveals its active tab without scrolling the document. Dragging uses the existing edge auto-scroll and swap preview, with no automatic active-tab reveal during a drag. The fixed Search tabs button lists every tab in that group, with fuzzy title/path search, full names, and keyboard navigation. Arrow keys, Home and End select tabs in the strip; middle-click closes one.
+
+Right-click, Shift+F10, and the Menu key open the same tab menu. Close other tabs keeps the clicked tab; Close tabs to the right uses the current strip order; Close all tabs leaves an empty group. These operations affect only that group, remove closed-tab navigation history, and preserve all files. Pending edits must save successfully before any tabs close. Unavailable bulk actions are disabled.
+
 | Stage | Behavior |
 | --- | --- |
 | Lift | At the 5px threshold, create the phantom with active styling. An inactive Side Dock tab starts at its current width and animates to the expanded size; its label fades in using the normal selection timing. Every Side Dock tab phantom shows icon + name; Main Dock tab phantoms use active document styling. Keep the original grab offset when expanding an inactive tab. The original active tab animates to its inactive appearance while its strip previews the drop. |
