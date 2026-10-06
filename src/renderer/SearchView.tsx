@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import type { WorkspaceSearchResult, TagSearchResult, Snapshot } from '../shared';
 import type { Session } from './session';
+import {useBookmarkDrag} from './sortable';
 import { Icon, Tool } from './Icons';
 import { assetPath } from './markdown';
 import { ActionMenu, type MenuAction, type MenuState } from './Overlays';
@@ -14,10 +15,10 @@ export function Highlight({text,ranges=[]}:{text:string;ranges?:[number,number][
   return <>{ranges.map(([start,finish])=>{const before=text.slice(end,start);end=finish;return <span key={start}>{before}<mark>{text.slice(start,finish)}</mark></span>;})}{text.slice(end)}</>;
 }
 function SearchResult({card,selected,id,onSelect,onOpen,onContext,session}:{card:WorkspaceSearchResult;selected:boolean;id:string;onSelect:()=>void;onOpen:()=>void;onContext:(x:number,y:number)=>void;session:Session}) {
-  const [failed,setFailed]=useState(false);
+  const [failed,setFailed]=useState(false),target=useRef<HTMLDivElement>(null),drag=useBookmarkDrag(target,()=>{});
   let image='';try{if('previewImage' in card&&card.previewImage)image=assetPath(card.path,card.previewImage);}catch{/* Malformed external image URLs cannot break search. */}
   const path=card.path.replaceAll('\\','/');
-  return <button id={id} role="option" tabIndex={-1} aria-selected={selected} className="search-result" onPointerMove={onSelect} onClick={onOpen} onContextMenu={e=>{e.preventDefault();onSelect();onContext(e.clientX,e.clientY);}}>
+  return <button id={id} role="option" tabIndex={-1} aria-selected={selected} className="search-result" data-file-key={!isTag(card)?resultKey(card):undefined} data-drag-path={card.path} onPointerDown={!isTag(card)?e=>drag(e,resultKey(card),false):undefined} onPointerMove={onSelect} onClick={onOpen} onContextMenu={e=>{e.preventDefault();onSelect();onContext(e.clientX,e.clientY);}}>
     <span className="search-result-heading"><Icon name={isTag(card)?"tag":"note"}/><strong><Highlight text={card.name} ranges={card.highlights?.name}/></strong><small>{path.slice(path.lastIndexOf('.'))}</small></span>
     <small className="search-result-path"><Icon name="folder" size={13}/><span><Highlight text={path} ranges={card.highlights?.path}/></span></small>
     <span className="search-result-excerpt"><Highlight text={card.snippet} ranges={card.highlights?.snippet}/></span>

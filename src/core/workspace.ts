@@ -175,6 +175,8 @@ export class Workspace {
       await fs.unlink(journalFile);
     } catch(e) { await this.recover().catch(() => undefined); throw e; }
     for (const change of changes) await this.refresh(change.path,false);
+    const created=journal.filter(e=>e.before===null&&e.after!==null&&e.path.endsWith('.md')&&!isTrash(e.path)).map(e=>readCard(e.path,e.after!));
+    for(const edit of journal)if(edit.after===null&&edit.before!==null&&edit.path.endsWith('.md')&&!isTrash(edit.path)){const previous=readCard(edit.path,edit.before),next=created.find(c=>c.id===previous.id);if(next)this.pathMoves.push({from:edit.path,to:next.path});}
     return {snapshot:this.snapshot(),edits:journal};
   }
   async scan() {
@@ -266,7 +268,7 @@ export class Workspace {
     }
     return boards.map(board => {
       const children=childrenByFolder.get(board.folder)??[];
-      const cards=(board.folder?[...board.cards]:board.cards.filter(p=>p.folder)).filter(p=>!p.folder||boardFolders.has(p.folder)&&!systemFolder(p.folder,this.preferences));
+      const cards=(board.folder?[...board.cards]:board.cards.filter(p=>p.folder)).filter(p=>!p.folder||children.includes(p.folder));
       for (const folder of children) if (!cards.some(p => p.folder === folder)) {
         const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
         cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
@@ -670,7 +672,7 @@ export class Workspace {
     this.preferences=await writePreferences(this.root,preferences,journal.preferences);
     await fs.unlink(file);this.renamePending=false;
   }
-  private async pathEdits(from:string,to:string,boardPath=this.boardPath(from),name=basename(to)){
+  private async pathEdits(from:string,to:string,boardPath=this.boardPath(from),name=basename(to),position?:{x:number;y:number}){
     const edits:{path:string;before:string;after:string}[]=[];
     // ponytail: rename scans note links; add a path-link index if large-workspace renames become slow.
     for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
@@ -695,10 +697,21 @@ export class Workspace {
       const before=await this.read(tag.path);if(revision(before)!==tag.revision)throw new Error(ui.errors.renameRefresh(tag.path));
       const after=remapTagReferences(before,tag.path,[...this.tags.values()],value=>remapFilePath(value,from,to));if(after!==before)edits.push({path:tag.path,before,after});
     }
+    const displayed=this.allBoards(),movingBoard=displayed.find(b=>b.folder===from),tile=displayed.flatMap(b=>b.cards).find(p=>p.folder===from);
+    let destination=dirname(to)==='.'?'':dirname(to);
+    while(destination&&!displayed.some(b=>b.folder===destination&&b.folder!==from&&!b.folder.startsWith(from+'/')))destination=dirname(destination)==='.'?'':dirname(destination);
+    const movingCard=this.snapshot().cards.find(c=>c.path===from),home=dirname(from)==='.'?'':dirname(from),cardFolder=dirname(to)==='.'?'':dirname(to),owned=displayed.find(b=>b.folder===home)?.cards.find(p=>p.cardId===movingCard?.id);
     for(const b of this.boards.values()){
       const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error(ui.errors.renameRefresh(b.path));
-      const cards=b.cards.map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p);
-      if(b.path===boardPath||cards.some((p,i)=>p.folder!==b.cards[i].folder))edits.push({path:b.path,before,after:writeBoard({...b,name:b.path===boardPath?name:b.name,cards})});
+      const cards=b.cards.filter(p=>!(movingBoard&&p.folder===from&&b.folder!==destination)&&!(movingCard&&b.folder===home&&home!==dirname(to)&&p.cardId===movingCard.id)).map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p);
+      if(movingBoard&&b.folder===destination){
+        const existing=cards.find(p=>p.folder===to);
+        if(existing){if(position){existing.x=position.x;existing.y=position.y;}}
+        else cards.push({...tile,id:tile?.id??randomUUID(),cardId:'',folder:to,x:position?.x??tile?.x??60,y:position?.y??tile?.y??60,width:tile?.width??320,height:tile?.height??160});
+      }
+      if(movingCard&&b.folder===cardFolder&&cardFolder&&cardFolder!==home&&!cards.some(p=>p.cardId===movingCard.id))cards.push({...owned,id:owned?.id??randomUUID(),cardId:movingCard.id,x:position?.x??owned?.x??80,y:position?.y??owned?.y??80,width:owned?.width??340,height:owned?.height??280});
+      const ids=new Set(cards.map(p=>p.id)),edges=b.edges.filter(e=>ids.has(e.from)&&ids.has(e.to));
+      if(b.path===boardPath||JSON.stringify(cards)!==JSON.stringify(b.cards))edits.push({path:b.path,before,after:writeBoard({...b,name:b.path===boardPath?name:b.name,cards,edges})});
     }
     return edits;
   }
@@ -717,19 +730,31 @@ export class Workspace {
   }
   async fileOperation(operation:import('../shared').FileOperation):Promise<import('../shared').FileMutation>{
     this.assertReady();
+    if(operation.position&&(!Number.isFinite(operation.position.x)||!Number.isFinite(operation.position.y)))throw new Error(ui.errors.invalidWorkspacePath);
     if(operation.action!=='copy'&&operation.path===this.boardPath(''))throw new Error(ui.errors.rootRename);
     if(operation.action==='move'){
       const from=operation.path,to=operation.destination;if(!to)throw new Error(ui.errors.invalidWorkspacePath);
       const source=await editablePath(this.root,from),target=await editablePath(this.root,to,true);if(source===target||target.startsWith(source+sep))throw new Error(ui.errors.invalidWorkspacePath);await vacant(this.root,to);
       if(operation.expected&&await fileStamp(this.root,from)!==operation.expected)throw new Error(ui.errors.externalEdit(from));
-      const edits=await this.pathEdits(from,to),preferences=await readPreferences(this.root),nextPreferences=remapPreferences(preferences,from,to),file=join(this.cache,'file-move.json'),handle=await fs.open(file,'wx');
+      const edits=await this.pathEdits(from,to,undefined,undefined,operation.position);
+      if(operation.boards){
+        if(!Array.isArray(operation.boards)||operation.boards.length>10000)throw new Error(ui.errors.invalidTransaction);
+        for(const restore of operation.boards){
+          if(typeof restore.path!=='string'||typeof restore.content!=='string'||typeof restore.expected!=='string'||!this.boards.has(restore.path))throw new Error(ui.errors.invalidTransaction);
+          readBoard(restore.path,restore.content);
+          const before=await this.read(restore.path);if(revision(before)!==restore.expected)throw new Error(ui.errors.externalEdit(restore.path));
+          const edit=edits.find(e=>e.path===restore.path);if(edit)edit.after=restore.content;else edits.push({path:restore.path,before,after:restore.content});
+        }
+      }
+      const restoredBoards=edits.filter(e=>this.boards.has(e.path)).map(e=>({path:remapFilePath(e.path,from,to),content:e.before,expected:revision(e.after)}));
+      const preferences=await readPreferences(this.root),nextPreferences=remapPreferences(preferences,from,to),file=join(this.cache,'file-move.json'),handle=await fs.open(file,'wx');
       try{await handle.writeFile(JSON.stringify({from,to,edits,preferences,nextPreferences}));await handle.sync();}finally{await handle.close();}
       this.renamePending=true;
       try{
         for(const edit of edits){if(await this.read(edit.path)!==edit.before)throw new Error(ui.errors.concurrentEdit(edit.path));await this.atomic(edit.path,edit.after);}
         const result=await operateFile(this.root,systemPath('trash',this.preferences),{...operation,expected:undefined});
         this.preferences=await writePreferences(this.root,preferences,nextPreferences);await fs.unlink(file);this.renamePending=false;this.pathMoves.push({from,to});await this.scan();
-        return {...result,snapshot:this.snapshot(),edits:[]};
+        return {...result,inverse:{...result.inverse,boards:restoredBoards},snapshot:this.snapshot(),edits:[]};
       }catch(e){await this.recoverFileMove().catch(()=>undefined);throw e;}
     }
     if(operation.action==='copy'&&operation.destination)operation={...operation,destination:await availableFilePath(this.root,operation.destination)};
@@ -774,26 +799,32 @@ export class Workspace {
     await this.scan();
     return {snapshot:this.snapshot(),edits:[],move:{from,to}};
   }
-  async placeCard(id:string,expected:string,folder:string,boardExpected:string,x:number,y:number,mode:'move'|'reference',source?:string){
-    if(!['move','reference'].includes(mode)||!Number.isFinite(x)||!Number.isFinite(y)||!folder||source!==undefined&&typeof source!=='string')throw new Error(ui.errors.invalidQuery);
+  async placeCard(id:string,expected:string,folder:string,boardExpected:string,x:number,y:number,mode:'move'|'reference'|'move-reference',source?:string,placement?:string){
+    if(!['move','reference','move-reference'].includes(mode)||!Number.isFinite(x)||!Number.isFinite(y)||!folder||source!==undefined&&typeof source!=='string')throw new Error(ui.errors.invalidQuery);
     const info=this.snapshot().cards.find(c=>c.id===id),board=this.boards.get(this.boardPath(folder));
     if(!info||!board)throw new Error(ui.errors.fileMissing);
     if(info.revision!==expected||board.revision!==boardExpected)throw new Error(ui.errors.externalEdit(info.path));
     const before=await this.read(info.path),card=readCard(info.path,before),moving=mode==='move'&&dirname(card.path)!==folder;
     if(card.revision!==expected)throw new Error(ui.errors.externalEdit(card.path));
+    if(mode==='move-reference'&&!this.boards.get(this.boardPath(source??''))?.cards.some(p=>p.cardId===id&&(!placement||p.id===placement)))throw new Error(ui.errors.fileMissing);
     const path=moving?await this.newCardPath(folder,basename(card.path,'.md')):card.path,changes:Write[]=[],boards=new Map<string,Board>();
     const destination=structuredClone(board),existing=destination.cards.find(p=>p.cardId===id);
     if(existing){existing.x=x;existing.y=y;destination.cards=destination.cards.filter(p=>p!==existing).concat(existing);}
     else {const original=this.boards.get(this.boardPath(source??dirname(card.path)))?.cards.find(p=>p.cardId===id);destination.cards.push({...original,id:randomUUID(),cardId:id,x,y,width:original?.width??340,height:original?.height??280});}
     boards.set(destination.path,destination);
-    if(mode==='move'){
-      const home=dirname(card.path),origins=new Set([home,...(source?[source]:[])]);
+    if(mode!=='reference'){
+      const home=dirname(card.path);if(mode==='move-reference'&&(!source||source===home))throw new Error(ui.errors.invalidQuery);
+      const origins=new Set(mode==='move-reference'?[source!]:[home,...(source?[source]:[])]);
       for(const origin of origins){const original=this.boards.get(this.boardPath(origin));if(!original||original.path===board.path)continue;
-        const ids=new Set(original.cards.filter(p=>p.cardId===id).map(p=>p.id));if(!ids.size)continue;
+        const ids=new Set(original.cards.filter(p=>p.cardId===id&&(mode!=='move-reference'||!placement||p.id===placement)).map(p=>p.id));if(!ids.size)continue;
         boards.set(original.path,{...original,cards:original.cards.filter(p=>!ids.has(p.id)),edges:original.edges.filter(e=>!ids.has(e.from)&&!ids.has(e.to))});
       }
     }
-    if(moving)changes.push({path:card.path,content:null,expected},{path,content:editCard(before,card,moveCardLinks(card.body,card.path,path)),expected:null});
+    if(moving){
+      const edits=await this.pathEdits(card.path,path),own=edits.find(e=>e.path===card.path);
+      changes.push({path:card.path,content:null,expected},{path,content:own?.after??editCard(before,card,moveCardLinks(card.body,card.path,path)),expected:null});
+      for(const edit of edits)if(edit.path!==card.path&&!this.boards.has(edit.path))changes.push({path:edit.path,content:edit.after,expected:revision(edit.before)});
+    }
     else if(card.legacy)changes.push({path:card.path,content:editCard(before,card,card.body),expected});
     for(const next of boards.values())changes.push({path:next.path,expected:next.revision,content:writeBoard(next)});
     return this.write(changes);

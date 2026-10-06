@@ -125,7 +125,7 @@ async function dispatch(request: Request) {
     case 'queryTags': string(request.text);return workspace.queryTags(request.text,request.exclude,request.limit);
     case 'searchWorkspace': string(request.text);return workspace.searchWorkspace(request.text);
     case 'queryCards': return workspace.queryCards(request.query);
-    case 'placeCard': string(request.id);string(request.expected);string(request.board);string(request.boardExpected);return workspace.placeCard(request.id,request.expected,request.board,request.boardExpected,request.x,request.y,request.mode,request.source);
+    case 'placeCard': string(request.id);string(request.expected);string(request.board);string(request.boardExpected);return workspace.placeCard(request.id,request.expected,request.board,request.boardExpected,request.x,request.y,request.mode,request.source,request.placement);
     case 'createViewCard': return workspace.createViewCard(request.owner,request.view,request.choice,request.column,request.date);
     case 'moveViewCard': return workspace.moveViewCard(request.move);
     case 'viewCards': return workspace.viewCards(request.source,request.view,request.offset);

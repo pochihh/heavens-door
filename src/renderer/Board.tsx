@@ -1,4 +1,5 @@
-import {dropCardAt} from './card-drop';
+import {clearDocumentDrop,dropDocumentAt,previewDocumentDrop,type DocumentDrag} from './card-drop';
+import {createDragPhantom} from './sortable';
 import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
@@ -165,6 +166,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     element.ownerDocument.addEventListener('keyup', keyup);
     element.ownerDocument.defaultView!.addEventListener('blur', blur);
     return () => {
+      clearDocumentDrop();externalPhantom.current?.remove();externalPhantom.current=null;
       observer.disconnect(); latest.current.onCamera?.(nav.current); nav.dispose(); navigation.current = null;
       if (dragFrame.current !== null) element.ownerDocument.defaultView!.cancelAnimationFrame(dragFrame.current);
       element.removeEventListener('wheel', wheel, true);
@@ -254,6 +256,8 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     }).map(e=>e.id);
     setSelectedEdges(g.additive?[...new Set([...g.initialEdges,...edges])]:edges);
   }
+  const externalPhantom=useRef<HTMLElement|null>(null);
+  function draggedDocument(g:Gesture):DocumentDrag|null {const p=g.board.cards.find(p=>p.id===g.ids[0]);return g.type==='move'&&g.ids.length===1&&p?{key:p.folder?'board:'+p.folder:'card:'+p.cardId,path:p.folder??lookup.get(p.cardId)?.path,source:board.folder,placement:p.id}:null;}
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
@@ -266,6 +270,13 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     if (g.type === 'pan') navigation.current!.set({ ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy });
     else if (g.type === 'select') { if (g.moved) selectRegion(g, e.clientX, e.clientY); }
     else if(g.moved) {
+      const drag=draggedDocument(g),source=viewport.current?.querySelector<HTMLElement>('[data-placement="'+g.ids[0]+'"]');
+      if(drag&&source){
+        previewDocumentDrop(drag,e.clientX,e.clientY,source);
+        const r=viewport.current!.getBoundingClientRect(),outside=r.width>0&&r.height>0&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom);
+        if(outside&&!externalPhantom.current)externalPhantom.current=createDragPhantom(source);
+        if(externalPhantom.current){const p=g.board.cards.find(p=>p.id===g.ids[0])!;externalPhantom.current.style.visibility=outside?'visible':'hidden';externalPhantom.current.style.left=e.clientX-g.x+g.rect.left+g.camera.x+p.x*g.camera.zoom+'px';externalPhantom.current.style.top=e.clientY-g.y+g.rect.top+g.camera.y+p.y*g.camera.zoom+'px';}
+      }
       dragPoint.current = { x: e.clientX, y: e.clientY };
       if (dragFrame.current === null) dragFrame.current = viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(() => {
         dragFrame.current = null;
@@ -284,7 +295,9 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
       // The last pointer event may arrive before React renders the last move.
       const next=movedBoard(g,e.clientX,e.clientY);
       if(g.type==='move')next.cards=[...next.cards.filter(p=>!g.ids.includes(p.id)),...next.cards.filter(p=>g.ids.includes(p.id))];
-      if(!(g.type==='move'&&g.ids.length===1&&!g.board.cards.find(p=>p.id===g.ids[0])?.folder&&dropCardAt(g.board.cards.find(p=>p.id===g.ids[0])!.cardId,e.clientX,e.clientY,board.folder)))save(next, g.type === 'move' ? ui.history.moveCards : ui.history.resizeCard, g.board);
+      const drag=draggedDocument(g),source=viewport.current?.querySelector<HTMLElement>('[data-placement="'+g.ids[0]+'"]'),r=viewport.current!.getBoundingClientRect();
+      const dropped=drag&&dropDocumentAt(drag,e.clientX,e.clientY,source??undefined),inside=!r.width||!r.height||e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
+      if(!dropped&&(inside||g.type==='resize'))save(next, g.type === 'move' ? ui.history.moveCards : ui.history.resizeCard, g.board);
     }
     cancel();
     if (viewport.current!.hasPointerCapture(e.pointerId)) viewport.current!.releasePointerCapture(e.pointerId);
@@ -298,7 +311,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     }
   }
   function cancel() {
-    gesture.current = null; setDragged([]); setWorking(pendingSave.current);
+    clearDocumentDrop();externalPhantom.current?.remove();externalPhantom.current=null;gesture.current = null; setDragged([]); setWorking(pendingSave.current);
     if (dragFrame.current !== null) {
       viewport.current!.ownerDocument.defaultView!.cancelAnimationFrame(dragFrame.current); dragFrame.current = null;
     }
@@ -387,7 +400,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <div className="canvas" data-card-drop-folder={board.folder||undefined} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
+    <div className="canvas" data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
@@ -411,7 +424,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
-          return <article key={p.id} data-card-drop-folder={p.folder||undefined} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
+          return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={p.folder} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
             data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:tintColor(p.folder?p.fillColor:cardFill(savedCard,p)) }}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;

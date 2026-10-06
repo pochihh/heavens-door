@@ -31,7 +31,7 @@ test('Table grips preview row swaps, cancel safely, and preserve cell clicks whi
    assert.deepEqual(ids(),['b','a','c']);assert.equal(moves.length,1);assert.equal(document.querySelector('.drag-phantom'),null);assert.equal(busy,false);
   }
   const cell=document.querySelector('tbody tr td:last-child button')!;
-  await pointer(cell,'pointerdown',250,70);await pointer(document,'pointermove',170,70);assert.equal(scroll.left,80);await pointer(document,'pointerup',170,70);await act(async()=>cell.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true,cancelable:true})));assert.equal(edits,0,'Panning does not open a cell editor');
+  await pointer(cell,'pointerdown',250,70);await pointer(document,'pointermove',170,70);assert.equal(scroll.left,80);await pointer(document,'pointerup',170,70);await act(async()=>cell.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true,cancelable:true,detail:1})));assert.equal(edits,0,'Panning does not open a cell editor');
   await new Promise(resolve=>setTimeout(resolve,1));await act(async()=>(cell as HTMLElement).click());assert.equal(edits,1,'A normal click still edits');
   await pointer(cell,'pointerdown',200,70);await pointer(document,'pointermove',150,70);await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(scroll.left,80);assert.equal((table as HTMLElement).scrollLeft,80);assert.equal(moves.length,1);
   await act(async()=>{compact=true;render();});assert.equal(document.querySelector('thead'),null);assert.equal(document.querySelector('.view-records'),table);assert.equal((table as HTMLElement).scrollLeft,80);

@@ -87,12 +87,17 @@ Use the shared phantom and neighbor animation for Kanban. Pointer-down remains a
 
 A drop saves both placement and any grouping-property change together. Escape, pointer cancellation, losing the window, and dropping outside restore the original arrangement without writing. Titles and read-only property previews behave as the card surface for clicking and dragging. More buttons never start a drag. Allow swap previews and positional drops under every sort. A completed positional drop switches to Manual and preserves the current ordering of the other columns. Honor reduced-motion preferences. See [View blocks](../view-blocks.md#manual-kanban-order) for the file contract.
 
-## Cards onto whiteboards
+## Documents between places
 
-Drag a card from File explorer, Starred or Recent onto a whiteboard canvas, tile or Whiteboard explorer row. A card in an ordinary folder such as Inbox moves into the destination folder. A card already owned by a whiteboard offers **Move card** and **Add reference** at the drop position. A single card dragged directly from one canvas can use the same destinations. A canvas drop converts the pointer through its camera; a tile/tree drop uses a default position. Cancel before release to write nothing.
+Explorer rows (including real folders), saved entries, Slipbox/Journal/Template cards, and Table grips, Gallery cards, Kanban cards and Timeline bars can be dragged onto another folder or board. Whiteboard cards and child-board tiles use the same destinations. The center half of an explorer folder row means “inside”; the top and bottom gaps retain navigation reordering. Highlight only valid destinations with the accent outline. The floating preview keeps the grab offset and follows both axes outside its original list. Cancel, Escape, blur, pointer cancellation or an invalid outside drop changes nothing.
 
-Move preserves `card-id`, relocates the Markdown file, removes the source placement and its attached edges, and adds or repositions the destination placement in one undoable transaction. Other board references remain valid. Add reference leaves the file where it is. A collision gets a free numbered filename rather than overwriting a note. See [whiteboards](../whiteboards.md#moving-cards) for link limitations.
+- An unplaced card dropped onto a board moves its Markdown file into that board and adds a real placement. A canvas drop uses its camera coordinates; a tile or explorer row appends below existing items.
+- A real card owned by another board offers **Move card** or **Add reference** after release. Dismissing the menu does nothing. Move preserves its ID and other references, removes the old owned/source placement and attached edges, and rewrites relative Markdown/HTML links. Add reference leaves the source file and placement intact. A colliding card filename gets a numbered name.
+- Dragging a reference between boards moves only that reference. Its original file and owning placement stay intact. Other references remain unchanged. The separate Add reference action still creates another reference.
+- Dropping a card/file onto a physical folder moves the real file. Folder drops never create reference files. Special-library folders are real storage targets; Trash remains available through the explicit delete action.
+- A whiteboard always moves its complete folder, including child boards, cards and assets. It appears only under its new real parent; board references are unsupported. Its canonical metadata, document paths and links follow the move. The mother whiteboard accepts child boards, not card placements. Moving a board into itself or a descendant is invalid; a name collision never overwrites a folder.
 
+All committed moves are undoable. Within view blocks, existing property/date/manual-order gestures retain their meaning and do not change file ownership. Within a canvas, ordinary geometry moves retain their meaning. Block/editor text drags and tab drags stay separate from document transfers.
 
 ## Timeline rows
 

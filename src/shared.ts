@@ -56,7 +56,7 @@ export interface BoardMove { from:string; to:string }
 export interface Deletion {changes:Write[]; nonEmpty:string[]}
 export interface Mutation { snapshot: Snapshot; edits: Edit[]; move?:BoardMove }
 export interface Write { path: string; content: string | null; expected: string | null }
-export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:string;destination?:string;expected?:string}
+export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:string;destination?:string;expected?:string;position?:{x:number;y:number};boards?:Write[]}
 export interface FileMutation extends Mutation {path:string;inverse:FileOperation}
 export type Request =
   | { kind: 'open'; root: string; cache: string }
@@ -100,7 +100,7 @@ export type Request =
   | { kind: 'queryCards'; query: CardQuery }
   | { kind:'moveViewCard';move:ViewCardMove }
   | { kind:'createViewCard';owner:ViewCardMove['owner'];view:string;choice:number;column?:string;date?:TagValue }
-  | { kind:'placeCard';id:string;expected:string;board:string;boardExpected:string;x:number;y:number;mode:'move'|'reference';source?:string }
+  | { kind:'placeCard';id:string;expected:string;board:string;boardExpected:string;x:number;y:number;mode:'move'|'reference'|'move-reference';source?:string;placement?:string }
   | { kind:'viewCards';source:string;view:string;offset?:number }
   | { kind:'saveTagBody';path:string;expected:string;body:string }
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }

@@ -1,7 +1,7 @@
 import {useEffect,useLayoutEffect,useRef,useState,type ReactNode,type PointerEvent as ReactPointerEvent} from 'react';
 import type {Snapshot,TagResult} from '../shared';
 import {DEFAULT_QUERY_PREFERENCES,sameField,type BlockView,type QueryField,type FieldRef} from '../view-block';
-import {useBookmarkDrag} from './sortable';
+import {suppressDragClick,useBookmarkDrag} from './sortable';
 import {Icon,Tool} from './Icons';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
@@ -27,11 +27,10 @@ export function TableView({view,rows,columns,compact,snapshot,scroll,busy,onEdit
     const el=viewport.current!,target=event.target as HTMLElement;
     if(event.button!==0||busy||el.scrollWidth<=el.clientWidth||target.closest('.view-row-grip,input,textarea,select')||target.closest('[contenteditable]')?.getAttribute('contenteditable')==='true')return;
     cancel.current();const x=event.clientX,y=event.clientY,left=el.scrollLeft,pointer=event.pointerId;let active=false;
-    const suppress=(e:MouseEvent)=>{e.preventDefault();e.stopPropagation();};
     const finish=(restore=false)=>{
       document.removeEventListener('pointermove',motion);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);
       if(restore){el.scrollLeft=left;if(scroll)scroll.left=left;}document.body.classList.remove('table-panning');cancel.current=()=>{};
-      if(active){document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
+      if(active)suppressDragClick();
     };
     const motion=(e:PointerEvent)=>{
       if(e.pointerId!==pointer)return;
@@ -49,7 +48,7 @@ export function TableView({view,rows,columns,compact,snapshot,scroll,busy,onEdit
         <div className="view-column-heading"><Icon name={f.type==='date'?'calendar':f.type==='boolean'?'checkbox':f.type==='number'?'number':f.type==='status'||f.type==='select'?'list':f.type==='tags'?'tag':f.type==='link'?'link':'format'} size={14}/><span>{f.name}</span>{onSort&&<span className="view-column-sort">{(['asc','desc'] as const).map(direction=><button key={direction} aria-label={(direction==='asc'?t.ascending:t.descending)+' · '+f.name} aria-pressed={typeof view.sort==='object'&&sameField(view.sort.field,f.keys)&&view.sort.direction===direction} onClick={()=>onSort(f.keys,direction)}><Icon name={direction==='asc'?'up':'arrowDown'} size={12}/></button>)}</span>}</div>
         {!(snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).mergeProperties&&f.definition&&<small>{f.tags.map(t=>'#'+t).join(', ')}</small>}
       </th>)}</tr></thead>}
-      <tbody ref={body}>{rows.map((row,index)=><tr key={row.card.id} data-file-key={row.card.id} className={compact?'view-compact-row':undefined} onClick={compact?()=>onPreview('card:'+row.card.id):undefined}>
+      <tbody ref={body}>{rows.map((row,index)=><tr key={row.card.id} data-file-key={row.card.id} data-drag-key={'card:'+row.card.id} data-drag-path={row.card.path} className={compact?'view-compact-row':undefined} onClick={compact?()=>onPreview('card:'+row.card.id):undefined}>
         {onMove&&<td className="view-row-grip-cell"><Tool icon="grip" className="view-row-grip" label={tooltips.views.reorder} disabled={busy} onClick={e=>e.stopPropagation()} onPointerDown={e=>{e.stopPropagation();if(!busy)drag(e,row.card.id,true);}} onKeyDown={e=>{if(!busy&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();e.stopPropagation();void move(row.card.id,Math.max(0,Math.min(rows.length-1,index+(e.key==='ArrowUp'?-1:1))));}}}/></td>}
         {columns.map(f=><td key={f.keys.join('\0')} aria-label={compact?f.name:undefined}>{f.keys[0]==='file.title'?title(row):cell(row,f)}</td>)}
       </tr>)}</tbody>

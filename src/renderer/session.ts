@@ -1,3 +1,4 @@
+import {remapFilePath} from '../path-remap';
 import {moveCardLinks} from '../card-links';
 import {replaceViewSource,viewBlockRanges} from '../view-block';
 import { ui } from '../text/ui';
@@ -160,7 +161,7 @@ export class Session {
   fileOperation(operation:import('../shared').FileOperation,label:string){return this.run(async()=>{
     await this.flush();await this.flushPreferences();const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});
     this.undoHistory.record(label,[],false,Date.now(),undefined,result.inverse);this.update({snapshot:result.snapshot,error:'',status:ui.status.savedLocally});
-    const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);if(draft){if(info){const card=await this.bridge.request<Card>({kind:'card',path:info.path}),current=this.state.draft;if(current?.card.id===draft.card.id)this.update({draft:{card,body:current.dirty?current.body:card.body,dirty:current.dirty}});}else if(draft.dirty)throw new Error(ui.errors.externalEdit(draft.card.path));else this.update({draft:null});}
+    const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);if(draft){if(info){const card=await this.bridge.request<Card>({kind:'card',path:info.path}),current=this.state.draft;if(current?.card.id===draft.card.id)this.update({draft:{card,body:current.dirty&&operation.action==='move'?moveCardLinks(current.body,current.card.path,card.path,path=>remapFilePath(path,operation.path,result.path)):current.dirty?current.body:card.body,dirty:current.dirty}});}else if(draft.dirty)throw new Error(ui.errors.externalEdit(draft.card.path));else this.update({draft:null});}
     return result.path;
   });}
   restoreTrash(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'restoreTrash',path,expected});this.accept(result,'Restore card');return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;});}
@@ -196,15 +197,17 @@ export class Session {
       return result.snapshot.cards.find(c=>c.path===created.path)!;
     });
   }
-  placeCard(id:string,folder:string,x:number,y:number,mode:'move'|'reference',source?:string){
+  placeCard(id:string,folder:string,x:number,y:number,mode:'move'|'reference'|'move-reference',source?:string,placement?:string){
     return this.run(async()=>{
       await this.flush();
       const card=this.state.snapshot?.cards.find(c=>c.id===id),board=this.state.snapshot?.boards.find(b=>b.folder===folder);
       if(!card||!board)throw new Error(ui.errors.fileMissing);
-      const result=await this.bridge.request<Mutation>({kind:'placeCard',id,expected:card.revision,board:folder,boardExpected:board.revision,x,y,mode,source});
-      this.accept(result,mode==='move'?ui.views.moveCard:ui.views.addReference);
-      if(this.state.draft?.card.id===id){const updated=result.snapshot.cards.find(c=>c.id===id)!;const next=await this.bridge.request<Card>({kind:'card',path:updated.path}),draft=this.state.draft;
-        if(draft?.card.id===id)this.update({draft:{card:next,body:draft.dirty?moveCardLinks(draft.body,card.path,next.path):next.body,dirty:draft.dirty}});
+      const result=await this.bridge.request<Mutation>({kind:'placeCard',id,expected:card.revision,board:folder,boardExpected:board.revision,x,y,mode,source,placement});
+      this.accept(result,mode!=='reference'?ui.views.moveCard:ui.views.addReference);
+      const active=this.state.draft?.card,updated=active&&result.snapshot.cards.find(c=>c.id===active.id),moved=result.snapshot.cards.find(c=>c.id===id)!;
+      if(active&&updated&&(active.path!==updated.path||active.revision!==updated.revision)){
+        const next=await this.bridge.request<Card>({kind:'card',path:updated.path}),draft=this.state.draft;
+        if(draft?.card.id===active.id)this.update({draft:{card:next,body:draft.dirty?moveCardLinks(draft.body,draft.card.path,next.path,path=>path===card.path?moved.path:path):next.body,dirty:draft.dirty}});
       }
     });
   }

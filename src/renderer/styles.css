@@ -466,3 +466,8 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .tab-list{overscroll-behavior-x:contain}.tab-list::-webkit-scrollbar{display:none}.tab>button[role=tab]>svg,.tab>button[role=tab]>.document-icon{flex-shrink:0}
 .tab-strip>.tab-picker-toggle{flex-shrink:0;width:26px;height:28px;padding:5px;background:transparent;-webkit-app-region:no-drag}
 .main-tab-picker{width:320px;max-width:calc(100vw - 16px);padding:6px}.main-tab-picker>input{width:100%;font-size:12px;margin-bottom:6px}.main-tab-picker [role=listbox]{max-height:320px;overflow:auto;overscroll-behavior:contain}.main-tab-picker [role=option]{display:flex;align-items:center;gap:8px;width:100%;padding:6px;text-align:left;font-size:12px;background:transparent}.main-tab-picker [role=option]:hover,.main-tab-picker [role=option]:focus-visible{background:var(--hover)}.main-tab-picker [role=option]>svg,.main-tab-picker .document-icon{flex-shrink:0}.main-tab-picker [role=option]>span:not(.document-icon){flex:1;min-width:0;overflow-wrap:anywhere}.main-tab-picker small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.main-tab-picker p{padding:8px;color:var(--muted);font-size:12px}
+
+/* A document destination uses the same accent as sortable insertion previews. */
+.document-drop-target {outline:2px solid var(--accent);outline-offset:-2px;}
+.tree-row.document-drop-target {border-radius:var(--radius-small,6px);background:color-mix(in srgb,var(--accent) 12%,transparent);}
+.canvas.document-drop-target::after {content:attr(data-drop-label);position:absolute;left:16px;bottom:16px;padding:5px 9px;border-radius:6px;background:var(--surface);color:var(--text);pointer-events:none;}

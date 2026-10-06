@@ -1,4 +1,4 @@
-import {dropCardAt} from './card-drop';
+import {clearDocumentDrop,documentDrag,dropDocumentAt,previewDocumentDrop} from './card-drop';
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 export type SortAxis='vertical'|'horizontal';
@@ -12,16 +12,22 @@ export function insertBookmark(keys:string[],key:string,index:number|null,fromSt
 }
 function freezeStyle(source:HTMLElement,clone:HTMLElement) {
   const originals=[source,...source.querySelectorAll('*')],copies=[clone,...clone.querySelectorAll('*')];
-  originals.forEach((el,i)=>{const style=getComputedStyle(el),copy=copies[i] as HTMLElement;for(let j=0;j<style.length;j++){const name=style.item(j);copy.style.setProperty(name,style.getPropertyValue(name));}copy.removeAttribute('id');copy.removeAttribute('data-tooltip');copy.removeAttribute('aria-describedby');});
+  originals.forEach((el,i)=>{const style=source.ownerDocument.defaultView!.getComputedStyle(el),copy=copies[i] as HTMLElement;for(let j=0;j<style.length;j++){const name=style.item(j);copy.style.setProperty(name,style.getPropertyValue(name));}copy.removeAttribute('id');copy.removeAttribute('data-tooltip');copy.removeAttribute('aria-describedby');});
 }
 export function createDragPhantom(source:HTMLElement,rect=source.getBoundingClientRect()) {
   const phantom=source.cloneNode(true) as HTMLElement;freezeStyle(source,phantom);
-  const fill=getComputedStyle(source).backgroundColor;let parent=source.parentElement,backing='transparent';
-  while(parent){backing=getComputedStyle(parent).backgroundColor;if(backing!=='transparent'&&!backing.endsWith(', 0)'))break;parent=parent.parentElement;}
+  const fill=source.ownerDocument.defaultView!.getComputedStyle(source).backgroundColor;let parent=source.parentElement,backing='transparent';
+  while(parent){backing=source.ownerDocument.defaultView!.getComputedStyle(parent).backgroundColor;if(backing!=='transparent'&&!backing.endsWith(', 0)'))break;parent=parent.parentElement;}
   phantom.style.backgroundColor=backing;phantom.style.backgroundImage=`linear-gradient(${fill},${fill})`;
   Object.assign(phantom.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',zIndex:'1000',pointerEvents:'none',transition:'none'});
   phantom.classList.add('drag-phantom');phantom.setAttribute('aria-hidden','true');phantom.inert=true;(source.closest('dialog[open]')??document.body).appendChild(phantom);
   return phantom;
+}
+// A release click may arrive after a render/task; the next press starts a new interaction.
+export function suppressDragClick(){
+  const clear=()=>{document.removeEventListener('click',suppress,true);document.removeEventListener('pointerdown',clear,true);clearTimeout(timer);};
+  const suppress=(event:MouseEvent)=>{if(event.detail===0)return;clear();event.preventDefault();event.stopPropagation();};
+  const timer=setTimeout(clear,250);document.addEventListener('click',suppress,true);document.addEventListener('pointerdown',clear,{capture:true,once:true});
 }
 export function animateReorder(before:Map<HTMLElement,DOMRect>,axis:SortAxis|'both',animations:Map<HTMLElement,Animation>) {
   animations.forEach(a=>a.cancel());animations.clear();
@@ -35,7 +41,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
   return (event:ReactPointerEvent,key:string,fromStarred:boolean)=>{
     if(event.button!==0)return;
     cancel.current();
-    const source=event.currentTarget.closest<HTMLElement>('[data-file-key]')!,root=target.current??(key.startsWith('card:')&&!reorderOnly?document.createElement('div'):null);
+    const source=event.currentTarget.closest<HTMLElement>('[data-file-key]')!,drag=source&&documentDrag(source,key),root=target.current??(drag?document.createElement('div'):null);
     if(!source||!root)return;
     const groups=[...root.querySelectorAll<HTMLElement>('[data-sort-group]')];
     let list=source.closest<HTMLElement>('[data-sort-group]')??root;
@@ -60,7 +66,9 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
     const update=()=>{
       if(!active||!phantom)return;
       if(!source.isConnected){finish(false);return;}
-      const coordinate=vertical?y:x,r=area.getBoundingClientRect(),inList=inside();
+      const coordinate=vertical?y:x,r=area.getBoundingClientRect(),external=drag&&(!inside()||!!source.closest('.file-tree,.saved-files'))&&previewDocumentDrop(drag,x,y,source),inList=inside()&&!external;
+      if(!external)clearDocumentDrop();
+      if(drag&&!inList){phantom.style.left=rect.left+x-event.clientX+'px';phantom.style.top=rect.top+y-event.clientY+'px';phantom.style.clipPath='none';placeholder?.remove();return;}
       if(inList){list=destination()!;if(placeholder!.parentElement!==list){const before=rows().find(row=>{const r=row.getBoundingClientRect();return coordinate<(vertical?r.top+r.height/2:r.left+r.width/2);});place(before??null);}}
       const size=vertical?rect.height:rect.width,clip=scroller.getBoundingClientRect(),bounds=list.getBoundingClientRect(),min=vertical?Math.max(bounds.top,clip.top):r.left,max=Math.max(min,(vertical?Math.min(bounds.bottom,clip.bottom):r.right)-size);
       const table=source.closest<HTMLElement>('.view-records');
@@ -103,15 +111,14 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
       }
       if(coordinate!==last)direction=coordinate-last;last=coordinate;update();
     };
-    const suppress=(e:MouseEvent)=>{e.preventDefault();e.stopPropagation();};
     const finish=(save:boolean)=>{
       if(ended)return;ended=true;
       let index:number|null=null;
       if(save&&active&&inside()&&placeholder?.parentElement===list)index=[...list.children].slice(0,[...list.children].indexOf(placeholder)).filter(el=>el instanceof HTMLElement&&el.dataset.fileKey&&el!==source&&el.dataset.fileKey!==key).length;
-      cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;
+      cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;clearDocumentDrop();
       document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',keyboard,true);window.removeEventListener('blur',abort);cancel.current=()=>{};
-      if(active){dragging.current?.(false);document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
-      if(save&&active&&!(key.startsWith('card:')&&dropCardAt(key.slice(5),x,y)))onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
+      if(active){dragging.current?.(false);suppressDragClick();}
+      if(save&&active&&!(drag&&(!inside()||!!source.closest('.file-tree,.saved-files'))&&dropDocumentAt(drag,x,y,source)))onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
     };
     const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update();finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};
     const abort=(event?:Event)=>{if(event?.type!=='pointercancel'||(event as PointerEvent).pointerId===pointer)finish(false);};
@@ -122,7 +129,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
 
 // Shared by tag pages and embedded views; pressing a card is not a drag until it moves.
 export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onDrop:(value:string,position:{before?:string;after?:string})=>void,accepts:(value:string)=>boolean,reorder=true){
-  const source=e.currentTarget,rect=source.getBoundingClientRect(),start={x:e.clientX,y:e.clientY},pointer=e.pointerId,id=source.dataset.cardId;
+  const source=e.currentTarget,rect=source.getBoundingClientRect(),start={x:e.clientX,y:e.clientY},pointer=e.pointerId,id=source.dataset.cardId,drag=documentDrag(source,'card:'+source.dataset.cardId);
   const scroller=root.closest<HTMLElement>('.editor-body,.card-preview,.tag-view')??root,horizontal=root.closest<HTMLElement>('.tag-results')??root;
   const bounds=()=>{const r=root.getBoundingClientRect(),clip=scroller.getBoundingClientRect();return {left:Math.max(r.left,clip.left),right:Math.min(r.right,clip.right),top:Math.max(r.top,clip.top),bottom:Math.min(r.bottom,clip.bottom)};};
   const home=source.closest<HTMLElement>('[data-tag-column]')!,columns=[...root.querySelectorAll<HTMLElement>('[data-tag-column]')];
@@ -137,14 +144,17 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     const rows=target?cards(target):[],index=slot?rows.filter(row=>!!(row.compareDocumentPosition(slot!)&Node.DOCUMENT_POSITION_FOLLOWING)).length:0;
     const value=target?.dataset.tagColumn,before=rows[index]?.dataset.cardId,after=rows[index-1]?.dataset.cardId;
     const changed=target!==home||reorder&&before!==initialBefore,dragged=!!phantom;
-    animations.forEach(a=>a.cancel());target?.classList.remove('kanban-drop');slot?.remove();phantom?.remove();reveal();document.body.classList.remove('list-dragging');
+    animations.forEach(a=>a.cancel());target?.classList.remove('kanban-drop');slot?.remove();phantom?.remove();reveal();document.body.classList.remove('list-dragging');clearDocumentDrop();
     document.removeEventListener('pointermove',motion);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);
-    if(dragged){const suppress=(event:MouseEvent)=>{event.preventDefault();event.stopPropagation();};document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}
+    if(dragged)suppressDragClick();
+    if(save&&dragged&&drag&&(x<bounds().left||x>bounds().right||y<bounds().top||y>bounds().bottom)&&dropDocumentAt(drag,x,y,source))return;
     if(save&&dragged&&changed&&value!==undefined)onDrop(value,reorder?{before,after}:{});
   }
   function place(scrollY=0){
     if(!phantom||!slot)return;
-    const area=bounds();
+    const area=bounds(),outside=x<area.left||x>area.right||y<area.top||y>area.bottom;
+    const external=drag&&outside&&previewDocumentDrop(drag,x,y,source);if(!external)clearDocumentDrop();
+    if(outside&&(external||x<area.left||x>area.right)){target?.classList.remove('kanban-drop');target=null;slot.remove();phantom.style.left=rect.left+x-start.x+'px';phantom.style.top=rect.top+y-start.y+'px';phantom.style.width=rect.width+'px';lastY=y;return;}
     const hit=columns.filter(column=>accepts(column.dataset.tagColumn!)&&(()=>{const r=column.getBoundingClientRect(),margin=column===target?24:12;return x>=area.left-24&&x<=area.right+24&&x>=r.left-margin&&x<=r.right+margin&&y>=area.top-24&&y<=area.bottom+24;})()).sort((a,b)=>Math.abs(x-(a.getBoundingClientRect().left+a.getBoundingClientRect().right)/2)-Math.abs(x-(b.getBoundingClientRect().left+b.getBoundingClientRect().right)/2))[0]??null;
     const changed=hit!==target;let layoutChanged=changed;
     const beforeRects=new Map([...new Set([target,hit])].flatMap(column=>column?cards(column):[]).map(row=>[row,row.getBoundingClientRect()]));
@@ -187,6 +197,6 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     if(!phantom){phantom=createDragPhantom(source,rect);phantom.style.transition=matchMedia('(prefers-reduced-motion: reduce)').matches?'none':'left 100ms ease, width 100ms ease';slot=document.createElement('div');slot.className='kanban-slot';slot.style.height=rect.height+'px';slot.setAttribute('aria-hidden','true');source.before(slot);conceal(source);target=home;home.classList.add('kanban-drop');document.body.classList.add('list-dragging');frame=requestAnimationFrame(scroll);}
     place();
   }
-  const up=(event:PointerEvent)=>{if(event.pointerId===pointer)finish(true);},abort=()=>finish(false),cancel=(event:PointerEvent)=>{if(event.pointerId===pointer)abort();},key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();abort();}};
+  const up=(event:PointerEvent)=>{if(event.pointerId===pointer){x=event.clientX;y=event.clientY;place();finish(true);}},abort=()=>finish(false),cancel=(event:PointerEvent)=>{if(event.pointerId===pointer)abort();},key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();abort();}};
   document.addEventListener('pointermove',motion,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);return abort;
 }

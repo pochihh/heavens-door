@@ -5,6 +5,7 @@ import {validTagDate} from '../tags';
 import {dateDraft,dateValue,dateSummary,formatDay,shiftDay,wallTime} from '../dates';
 import {DateDisplayContext} from './DateProperty';
 import {cardFill,tintColor} from '../colors';
+import {clearDocumentDrop,dropDocumentAt,previewDocumentDrop} from './card-drop';
 import {crossed,createDragPhantom} from './sortable';
 import {Icon,Tool} from './Icons';
 import {PropertyPopover} from './PropertyValue';
@@ -117,6 +118,7 @@ export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onVi
       if(!moved&&scheduling){phantom=createDragPhantom(target);target.style.visibility='hidden';}moved=true;event.preventDefault();
       if(row&&mode==='move'){document.body.classList.add('timeline-dragging');if(!frame)frame=window.requestAnimationFrame(tick);}
       const inside=inTrack(event);
+      if(row&&mode==='move'&&!inside){previewDocumentDrop({key:'card:'+row.card.id,path:row.card.path},event.clientX,event.clientY,target);if(!phantom)phantom=createDragPhantom(target,sourceRect);}else clearDocumentDrop();
       if(phantom){phantom.style.left=(event.clientX-(x-sourceRect.left))+'px';phantom.style.top=(event.clientY-grabY)+'px';phantom.style.visibility=inside?'hidden':'visible';}
       try{invalid=false;setError('');
         const delta=event.clientX-x+(viewport.current?.scrollLeft??0)-initialScroll;
@@ -142,7 +144,8 @@ export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onVi
     };
     const finish=(event?:PointerEvent)=>{
       if(ended||event&&event.pointerId!==pointer)return;if(event)update(event);ended=true;window.cancelAnimationFrame(frame);
-      document.removeEventListener('pointermove',update);document.removeEventListener('pointerup',finish);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);phantom?.remove();if(scheduling)target.style.removeProperty('visibility');gesture.current=false;document.body.classList.remove('timeline-dragging');setPreview(null);onEditing(null);
+      document.removeEventListener('pointermove',update);document.removeEventListener('pointerup',finish);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);phantom?.remove();if(scheduling)target.style.removeProperty('visibility');gesture.current=false;document.body.classList.remove('timeline-dragging');setPreview(null);onEditing(null);clearDocumentDrop();
+      if(event&&moved&&row&&mode==='move'&&!inTrack(event)&&dropDocumentAt({key:'card:'+row.card.id,path:row.card.path},event.clientX,event.clientY,target))return;
       if(!event||invalid)return;if(scheduling&&!moved){onOpen('card:'+row!.card.id);return;}if(scheduling&&!inTrack(event))return;
       const area=viewport.current?.getBoundingClientRect();if(area&&(event.clientX<area.left||event.clientX>area.right||event.clientY<area.top||event.clientY>area.bottom))return;
       if(row){if(moved&&mode==='move'&&inTrack(event))void move(row,latest,index);else if(moved&&mode!=='move'&&JSON.stringify(original)!==JSON.stringify(latest))void save(row,latest);else if(!moved&&mode==='move')onOpen('card:'+row.card.id);}else onCreate?.(target,undefined,latest);

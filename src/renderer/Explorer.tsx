@@ -1,4 +1,4 @@
-import {systemEntries,navigationOrder} from '../features';
+import {systemEntries,systemPath,navigationOrder} from '../features';
 import {CreateFileDialog} from './CreateFileDialog';
 import {NewTag} from './TagView';
 import { ui } from '../text/ui';
@@ -60,6 +60,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   const boardDrag=useBookmarkDrag(boardsTarget,(key,index,_,group)=>reorder(key,index,group),'vertical',true,undefined,allowed);
   const toggle=(folder:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(folder))next.delete(folder);else next.add(folder);return next;});
   const star=(key:string)=>onPrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));
+  const filesTarget=useRef<HTMLDivElement>(null),fileDrag=useBookmarkDrag(filesTarget,()=>{});
   const drag=useBookmarkDrag(starred,(key,index,source)=>onPrefs(p=>{const next=insertBookmark(p.starred,key,index,source);return next.length===p.starred.length&&next.every((k,i)=>k===p.starred[i])?{}:{starred:next};}));
   const entryFor=(key:string):Entry=>{const d=documentInfo(key,snapshot);return {key,path:d.path,name:d.title,folder:d.kind==='board'?d.id:undefined};};
   const protectedPath=(path:string)=>path.split(/[\\/]/).some(p=>['.git','.heavens-door','node_modules'].includes(p));
@@ -125,12 +126,12 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
   function row(entry:Entry,depth=0,saved?:'starred'|'recent',physical=false,branch=false):ReactNode {
     const key=entry.key,folder=entry.folder,expandedHere=folder!==undefined&&expanded.has(folder);
     const info=key?documentInfo(key,snapshot):null,icon=folder!==undefined?(physical?'folder':'map'):info?.icon??fileIcon(entry.path);
-    return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-path={physical?entry.path:undefined} data-file-key={branch?undefined:key} data-card-drop-folder={key?.startsWith('board:')&&entry.folder?entry.folder:undefined} style={{paddingLeft:8+depth*16}}
+    return <div className={'tree-row '+(key&&activeKey===key?'current ':'')+(saved?'saved-row':'')} key={saved?key:entry.path} data-file-path={physical?entry.path:undefined} data-file-key={branch?undefined:key} data-drag-key={physical&&folder!==undefined&&folder?(snapshot.boards.some(b=>b.folder===folder)?'board:':'file:')+folder:key?.startsWith('system:')||branch?undefined:key} data-drag-path={entry.path} data-source-board={key?.startsWith('board:')?parent(key.slice(6)):undefined} data-drop-folder={folder??(key?.startsWith('system:')&&['slipbox','templates','journal'].includes(key.slice(7))?systemPath(key.slice(7) as 'slipbox'|'templates'|'journal',prefs):undefined)} data-drop-kind={physical||key?.startsWith('system:')?'folder':'board'} data-drop-name={entry.name} style={{paddingLeft:8+depth*16}}
       onContextMenu={e=>{e.preventDefault();show(actions(entry),e,true);}}
       onKeyDown={e=>{if(module==='files'&&!(e.target instanceof HTMLInputElement)){const command=e.metaKey||e.ctrlKey,key=e.key.toLowerCase();if(command&&['c','x','v'].includes(key)||key==='f2'||key==='delete'||e.metaKey&&key==='backspace'){e.preventDefault();e.stopPropagation();if(command&&key==='v')attempt(paste(entry.folder??parent(entry.path)));else if(entry.path&&!entry.symlink&&!protectedPath(entry.path)){if(command&&['c','x'].includes(key))clipboard(entry,key==='x');else if(key==='f2')rename(entry);else attempt(remove(entry));}return;}}if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();show(actions(entry),e);}}}>
       {!saved&&(folder!==undefined?<button className="tree-disclosure" data-tooltip={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-label={tooltips.explorer.disclosure(entry.path||snapshot.name,expandedHere)} aria-expanded={expandedHere} onClick={()=>toggle(folder)}><Icon name={expandedHere?'down':'chevron'} size={12}/></button>:<span className="tree-spacer"/>)}
       <button className="file-button" disabled={entry.symlink} data-tooltip={entry.symlink?tooltips.explorer.symbolicLink(entry.path):tooltips.explorer.open(entry.path||snapshot.name)}
-        onPointerDown={key?e=>module==='whiteboards'?boardDrag(e,key,false):drag(e,key,saved==='starred'):undefined}
+        onPointerDown={key?e=>module==='whiteboards'?boardDrag(e,key,false):physical?fileDrag(e,key,false):drag(e,key,saved==='starred'):undefined}
         onKeyDown={e=>{if(module==='whiteboards'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const group=[...boardGroups].find(([,keys])=>keys.includes(key))?.[0];if(group!==undefined)reorder(key,groupKeys(group).indexOf(key)+(e.key==='ArrowUp'?-1:1),group);return;}if(saved==='starred'&&key&&e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();onPrefs(p=>({starred:insertBookmark(p.starred,key,p.starred.indexOf(key)+(e.key==='ArrowUp'?-1:1),true)}));}}}
         onClick={()=>{if(physical&&folder!==undefined)toggle(folder);else if(key)onOpen(key);}}>
         <span className="row-icon"><DocumentIcon value={key?prefs.icons[key]:undefined} fallback={entry.symlink?'link':icon}/></span><span>{entry.name}</span>
@@ -139,10 +140,10 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     </div>;
   }
   function boardBranch(folder:string,depth=0):ReactNode {
-    return <div key={folder} data-file-key={'board:'+portable(folder)} onContextMenu={e=>{if(!e.defaultPrevented){e.preventDefault();show(actions(entryFor('board:'+portable(folder))),e,true);}}}>{row(entryFor('board:'+portable(folder)),depth,undefined,false,true)}{expanded.has(folder)&&!!groupKeys('boards:'+portable(folder)).length&&<div data-sort-group={'boards:'+portable(folder)}>{groupKeys('boards:'+portable(folder)).map(key=>key.startsWith('board:')?boardBranch(key.slice(6),depth+1):row(entryFor(key),depth+1))}</div>}</div>;
+    return <div key={folder} data-file-key={'board:'+portable(folder)} data-drag-key={'board:'+portable(folder)} data-source-board={parent(folder)} data-drag-path={folder} onContextMenu={e=>{if(!e.defaultPrevented){e.preventDefault();show(actions(entryFor('board:'+portable(folder))),e,true);}}}>{row(entryFor('board:'+portable(folder)),depth,undefined,false,true)}{expanded.has(folder)&&!!groupKeys('boards:'+portable(folder)).length&&<div data-sort-group={'boards:'+portable(folder)}>{groupKeys('boards:'+portable(folder)).map(key=>key.startsWith('board:')?boardBranch(key.slice(6),depth+1):row(entryFor(key),depth+1))}</div>}</div>;
   }
   function fileEntry(file:FileEntry):Entry {
-    if(file.kind==='folder')return {path:file.path,folder:file.path,name:file.name};
+    if(file.kind==='folder')return {path:file.path,folder:file.path,name:file.name,key:'file:'+file.path};
     return {path:file.path,name:file.name,symlink:file.kind==='symlink',key:documentIndex(snapshot).paths.get(portable(file.path))??'file:'+file.path};
   }
   function fileBranch(entry:Entry,depth=0):ReactNode {

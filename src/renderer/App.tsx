@@ -4,7 +4,7 @@ import {SystemView} from './SystemView';
 import {CalendarView} from './CalendarView';
 import {TemplateDialog} from './TemplateDialog';
 import {cardFill,tintColor} from '../colors';
-import type {CardDrop} from './card-drop';
+import type {DocumentDrop} from './card-drop';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import { useCallback, useEffect, useLayoutEffect, lazy, Suspense, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
@@ -93,14 +93,32 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const dismissTabMenu=useCallback(()=>setTabMenu(null),[]);
   useEffect(()=>{
     const drop=(event:Event)=>{
-      const d=(event as CustomEvent<CardDrop>).detail,card=snapshot.cards.find(c=>c.id===d.id);
-      if(!card||!snapshot.boards.some(b=>b.folder===d.folder))return;
-      const run=(mode:'move'|'reference')=>attempt(session.placeCard(d.id,d.folder,d.x,d.y,mode,d.source));
-      if(!snapshot.boards.some(b=>b.folder&&b.folder===parent(card.path)))run('move');
+      const d=(event as CustomEvent<DocumentDrop>).detail,current=session.state.snapshot;if(!current)return;
+      const board=d.key.startsWith('board:')?current.boards.find(b=>b.folder===d.key.slice(6)):undefined;
+      const card=d.key.startsWith('card:')?current.cards.find(c=>c.id===d.key.slice(5)):undefined;
+      const path=board?.folder??card?.path??(d.key.startsWith('file:')?d.key.slice(5):undefined);
+      if(path===undefined||!path)return;
+      const destination=current.boards.find(b=>b.folder===d.folder),point=d.atPointer?{x:d.x,y:d.y}:{x:80,y:Math.max(48,...(destination?.cards??[]).map(p=>p.y+p.height))+32};
+      const target=(d.folder?d.folder+'/':'')+path.split('/').at(-1);
+      if(board||!card||d.kind==='folder'){
+        if(target===path){
+          if(board&&destination&&d.atPointer){const next=structuredClone(destination),tile=next.cards.find(p=>p.folder===board.folder);if(tile){tile.x=point.x;tile.y=point.y;attempt(session.board(next,ui.history.moveCards,destination));}}return;
+        }
+        if(target.startsWith(path+'/'))return;
+        const run=async()=>{const result=await session.fileOperation({action:'move',path,destination:target,...(board&&d.kind==='board'?{position:point}:{})},board?ui.history.moveCards:ui.views.moveCard);
+          if(board&&d.kind==='board')session.schedulePreferences({navigation:{whiteboards:{expanded:[...new Set([...(session.state.snapshot?.preferences?.navigation?.whiteboards?.expanded??['']),d.folder])]}}},current.root);return result;};
+        const special=['slipbox','templates','journal'].some(id=>systemPath(id as 'slipbox'|'templates'|'journal',current.preferences)===d.folder);
+        attempt(special&&!current.folders?.includes(d.folder)?session.bridge.request({kind:'ensureFolder',path:d.folder}).then(run):run());return;
+      }
+      if(!d.folder||!current.boards.some(b=>b.folder===d.folder))return;
+      const run=(mode:'move'|'reference'|'move-reference')=>attempt(session.placeCard(card.id,d.folder,point.x,point.y,mode,d.source,d.placement));
+      const owned=current.boards.some(b=>b.folder&&b.folder===parent(card.path));
+      if(d.source&&d.source!==parent(card.path))run('move-reference');
+      else if(!owned||parent(card.path)===d.folder)run('move');
       else setTabMenu({x:d.screenX,y:d.screenY,actions:[{label:ui.views.moveCard,icon:'folder',run:()=>run('move')},{label:ui.views.addReference,icon:'link',run:()=>run('reference')}]});
     };
-    window.addEventListener('door:card-drop',drop);return()=>window.removeEventListener('door:card-drop',drop);
-  },[snapshot]);
+    window.addEventListener('door:document-drop',drop);return()=>window.removeEventListener('door:document-drop',drop);
+  },[session]);
 
   const memories=useRef(new Map<string,ViewMemory>(Object.entries(prefs.documents?.views??{}))),starredTarget=useRef<HTMLDivElement>(null);
   const seenMoves=useRef(snapshot.pathMoves?.length??0);
