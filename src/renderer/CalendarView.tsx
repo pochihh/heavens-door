@@ -5,12 +5,14 @@ import type {Snapshot} from '../shared';
 import type {Session} from './session';
 import {ui} from '../text/ui';
 import {Tool} from './Icons';
+import {TemplateInputDialog} from './TemplateDialog';
+import type {TemplateInput} from '../templates';
 const text=ui.journal;
 export function CalendarView({snapshot,session,onOpen}:{snapshot:Snapshot;session:Session;onOpen:(key:string)=>void}){
-  const settings=snapshot.preferences?.journal??DEFAULT_JOURNAL,today=journalToday(snapshot.preferences?.dateDisplay),[date,setDate]=useState(today),[selected,setSelected]=useState(today),[entries,setEntries]=useState<JournalEntry[]>([]),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),grid=useRef<HTMLDivElement>(null),lock=useRef(false);
+  const settings=snapshot.preferences?.journal??DEFAULT_JOURNAL,today=journalToday(snapshot.preferences?.dateDisplay),[date,setDate]=useState(today),[selected,setSelected]=useState(today),[entries,setEntries]=useState<JournalEntry[]>([]),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),grid=useRef<HTMLDivElement>(null),lock=useRef(false),[prompt,setPrompt]=useState<{day:string;period:JournalPeriod;inputs:TemplateInput[]}|null>(null);
   const year=Number(date.slice(0,4)),days=journalMonth(date),daily=new Map(entries.filter(e=>e.period==='daily').map(e=>[e.date,e])),weekly=new Map(entries.filter(e=>e.period==='weekly').map(e=>[e.date,e]));
   useEffect(()=>{let stale=false;void window.door.request<JournalEntry[]>({kind:'journalEntries',year}).then(value=>{if(!stale){setEntries(value);setLoading(false);}},error=>{if(!stale){setLoading(false);session.update({error:String(error)});}});return()=>{stale=true;};},[snapshot.cards,settings,year,session]);
-  const open=async(day:string,period:JournalPeriod='daily')=>{if(lock.current)return;lock.current=true;setBusy(true);try{const card=await session.openJournal(day,period);setSelected(day);onOpen('card:'+card.id);}catch(error){session.update({error:String(error)});}finally{lock.current=false;setBusy(false);}};
+  const open=async(day:string,period:JournalPeriod='daily')=>{if(lock.current)return;lock.current=true;setBusy(true);try{const template=period==='daily'?settings.dailyTemplate:settings.weeklyTemplate;if(template&&!(period==='daily'?daily.has(day):weekly.has(day))){const plan=await session.templatePlan(template);if(plan.inputs.length){setPrompt({day,period,inputs:plan.inputs});return;}}const card=await session.openJournal(day,period);setSelected(day);onOpen('card:'+card.id);}catch(error){session.update({error:String(error)});}finally{lock.current=false;setBusy(false);}};
   const move=(n:number)=>setDate(shiftMonth(date,n));
   const keyboard=(event:KeyboardEvent<HTMLButtonElement>,day:string)=>{const offset={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[event.key];if(offset!==undefined){event.preventDefault();const next=shiftDay(day,offset);setSelected(next);if(!days.includes(next))setDate(next);requestAnimationFrame(()=>grid.current?.querySelector<HTMLButtonElement>(`[data-day="${next}"]`)?.focus());}};
   return <section className="journal-calendar" aria-label={text.calendar} aria-busy={busy||loading}>
@@ -24,6 +26,7 @@ export function CalendarView({snapshot,session,onOpen}:{snapshot:Snapshot;sessio
         </button>;})}
       </div>;})}
     </div>
+    {prompt&&<TemplateInputDialog inputs={prompt.inputs} snapshot={snapshot} title={text.createJournal} onClose={()=>setPrompt(null)} onSubmit={async values=>{const card=await session.openJournal(prompt.day,prompt.period,values);setSelected(prompt.day);setPrompt(null);onOpen('card:'+card.id);}}/>}
     <button className="journal-open-today" disabled={busy} onClick={()=>void open(today)}>{text.openToday}</button>
   </section>;
 }

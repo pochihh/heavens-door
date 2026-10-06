@@ -1,8 +1,11 @@
 import {operateFile,fileTrashEntries,fileStamp,editablePath,vacant,availableFilePath} from './files';
 import {systemFolder,systemPath} from '../features';
-import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,expandTemplate,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
+import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
 import {wallTime,DEFAULT_DATE_DISPLAY} from '../dates';
-import {visit} from 'yaml';
+import {loadTemplate} from './templates';
+import type {TemplateValues} from '../templates';
+import {systemGuideBody,systemGuidePath} from '../system-guides';
+import type {SystemEntry} from '../features';
 import {moveCardLinks,rewriteHtmlLinks} from '../card-links';
 import {compileView} from './view-query';
 import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView,viewCreationChoices,resolveField} from '../view-block';
@@ -90,7 +93,7 @@ export class Workspace {
   close() { this.db.close(); }
   assertReady(){if(this.renamePending)throw new Error(ui.errors.interruptedRename);}
   private async path(path: string) {
-    if (!path || isAbsolute(path) || path.includes('\0') || (!(path==='.heavens-door/trash'||isTrash(path)&&dirname(path)==='.heavens-door/trash')&&path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.')))) throw new Error(ui.errors.invalidWorkspacePath);
+    if (!path || isAbsolute(path) || path.includes('\0') || (!(path==='.heavens-door/trash'||path===systemGuidePath('trash',this.preferences)&&path.startsWith('.heavens-door/trash/')||isTrash(path)&&dirname(path)==='.heavens-door/trash')&&path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.')))) throw new Error(ui.errors.invalidWorkspacePath);
     const target = resolve(this.root,path);
     if (!target.startsWith(this.root + sep)) throw new Error(ui.errors.pathLeavesWorkspace);
     let current = this.root;
@@ -150,7 +153,7 @@ export class Workspace {
     changes=this.automaticPlacements(changes);
     const journal = [];
     for (const change of changes) {
-      if ((!validNotePath(change.path)&&!(isTrash(change.path)&&dirname(change.path)==='.heavens-door/trash')) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
+      if ((!validNotePath(change.path)&&!(change.path===systemGuidePath('trash',this.preferences)&&change.path.startsWith('.heavens-door/trash/')||isTrash(change.path)&&dirname(change.path)==='.heavens-door/trash')) || (change.content !== null && typeof change.content !== 'string')) throw new Error(ui.errors.unsupportedFileEdit);
       const before = await this.raw(change.path);
       if ((before === null ? null : revision(before)) !== change.expected) throw new Error(ui.errors.externalEdit(change.path));
       if (change.content !== null) {
@@ -192,6 +195,7 @@ export class Workspace {
     this.scanning=true; this.db.exec('BEGIN');
     try {
       await walk('');
+      const guide=systemGuidePath('trash',this.preferences);if(guide.startsWith('.heavens-door/trash/')&&await this.raw(guide)!==null){unseen.delete(guide);await this.refresh(guide);}
       for (const path of unseen) this.removeIndex(path);
       this.db.exec('COMMIT');
     } catch(error) { this.db.exec('ROLLBACK'); throw error; }
@@ -590,18 +594,24 @@ export class Workspace {
     }
     return entries;
   }
-  private async templateContent(template:string,path:string,title:string,day:string,period?:JournalPeriod){
-    const raw=template?await this.read(template):'# {{title}}\n',parts=splitNote(raw),time=wallTime(new Date().toISOString(),this.preferences.dateDisplay??DEFAULT_DATE_DISPLAY).slice(11,19);
-    // Substitute YAML scalar values structurally, so titles containing quotes remain data.
-    visit(parts.front,{Scalar(_key,node){if(typeof node.value==='string')node.value=expandTemplate(node.value,title,day,time);}});
+  async templatePlan(template:string){return {inputs:(await loadTemplate(template,path=>this.read(path))).inputs};}
+  async ensureSystemGuide(id:SystemEntry){
+    if(!Object.hasOwn(systemGuideBody,id))throw new Error(ui.errors.invalidRequestValue);
+    const path=systemGuidePath(id,this.preferences),raw=await this.raw(path);
+    if(raw!==null){await this.refresh(path,false);return {snapshot:this.snapshot(),edits:[],path};}
+    await fs.mkdir(dirname(await this.path(path)),{recursive:true});
+    return {...await this.write([{path,content:newNote()+systemGuideBody[id],expected:null}]),path};
+  }
+  private async templateContent(template:string,path:string,title:string,day:string,period?:JournalPeriod,inputs:TemplateValues={}){
+    const time=wallTime(new Date().toISOString(),this.preferences.dateDisplay??DEFAULT_DATE_DISPLAY).slice(11,19);
+    const parts=template?(await loadTemplate(template,p=>this.read(p))).render(path,title,day,time,inputs):splitNote('# '+title+'\n');
     parts.front.set('card-id',randomUUID());parts.front.delete('journal');
     if(period)parts.front.set('journal',{date:day,period});
-    const body=expandTemplate(parts.body,title,day,time);
-    return '---\n'+parts.front.toString()+'---\n'+(template?moveCardLinks(body,template,path):body);
+    return '---\n'+parts.front.toString()+'---\n'+parts.body;
   }
-  async createFromTemplate(template:string,folder:string,stem:string){
+  async createFromTemplate(template:string,folder:string,stem:string,inputs:TemplateValues={}){
     if(!validNotePath(template)||!template.endsWith('.md')||!validNotePath(folder))throw new Error(ui.errors.invalidWorkspacePath);
-    const path=await this.newCardPath(folder,stem),raw=await this.templateContent(template,path,basename(path,'.md'),journalToday(this.preferences.dateDisplay));
+    const path=await this.newCardPath(folder,stem),raw=await this.templateContent(template,path,basename(path,'.md'),journalToday(this.preferences.dateDisplay),undefined,inputs);
     return this.write([{path,content:raw,expected:null}]);
   }
   async createTemplate(period?:JournalPeriod){
@@ -609,7 +619,7 @@ export class Workspace {
     const folder=(this.preferences.templates??DEFAULT_TEMPLATES).folder,path=await this.newCardPath(folder,period==='daily'?'Daily template':period==='weekly'?'Weekly template':'New template');
     return this.write([{path,content:newNote()+'# {{title}}\n\n{{date}}\n\n'+(period==='weekly'?'## Weekly review\n\n':period==='daily'?'## Notes\n\n':''),expected:null}]);
   }
-  async openJournal(date:string,period:JournalPeriod){
+  async openJournal(date:string,period:JournalPeriod,inputs:TemplateValues={}){
     if(!validJournalDay(date)||!['daily','weekly'].includes(period))throw new Error(ui.journal.invalidDate);
     const day=period==='weekly'?journalWeek(date):date,entries=this.db.prepare(`SELECT path FROM cards WHERE json_extract(frontmatter,'$.journal.date')=? AND json_extract(frontmatter,'$.journal.period')=?`).all(day,period) as {path:string}[];
     if(entries.length>1)throw new Error(ui.journal.duplicate(entries.map(e=>e.path)));
@@ -617,7 +627,7 @@ export class Workspace {
     const settings=this.preferences.journal??DEFAULT_JOURNAL,path=journalPath(settings,day,period),existing=await this.raw(path);
     // Never replace a conventional existing date note. It can be opened without migration.
     if(existing!==null){const identity=splitNote(existing).front.toJSON()?.journal;if(identity&&(identity.date!==day||identity.period!==period))throw new Error(ui.journal.pathConflict(path));readCard(path,existing);return {snapshot:this.snapshot(),edits:[],path};}
-    const template=period==='daily'?settings.dailyTemplate:settings.weeklyTemplate,raw=await this.templateContent(template,path,basename(path,'.md'),day,period);
+    const template=period==='daily'?settings.dailyTemplate:settings.weeklyTemplate,raw=await this.templateContent(template,path,basename(path,'.md'),day,period,inputs);
     await fs.mkdir(dirname(await this.path(path)),{recursive:true});
     return {...await this.write([{path,content:raw,expected:null}]),path};
   }

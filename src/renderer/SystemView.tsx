@@ -2,7 +2,7 @@ import {ui} from '../text/ui';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {systemPath,systemEntries,type SystemEntry} from '../features';
 import {TextSearch} from '../core/search';
-import type {Snapshot,TrashEntry,CardInfo} from '../shared';
+import type {Snapshot,TrashEntry,CardInfo,Card} from '../shared';
 import type {Session} from './session';
 import {Icon,Tool} from './Icons';
 import {CalendarView} from './CalendarView';
@@ -10,12 +10,16 @@ import {NewTag} from './TagView';
 import {ActionMenu,type MenuState} from './Overlays';
 import {useBookmarkDrag} from './sortable';
 import {useConfirmation} from './Confirmation';
+import {isSystemGuide,systemGuidePath} from '../system-guides';
+import {preview} from './markdown';
 export function SystemView({id,snapshot,session,onOpen,onPreview,onTemplate}:{id:SystemEntry;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview:(key:string)=>void;onTemplate:(path?:string)=>void}){
-  const [search,setSearch]=useState(''),[trash,setTrash]=useState<TrashEntry[]>([]),[menu,setMenu]=useState<MenuState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [search,setSearch]=useState(''),[trash,setTrash]=useState<TrashEntry[]>([]),[menu,setMenu]=useState<MenuState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[guide,setGuide]=useState<Card|null>(null),[guideError,setGuideError]=useState('');
   const confirm=useConfirmation(),dragTarget=useRef<HTMLDivElement>(null),drag=useBookmarkDrag(dragTarget,()=>{}),closeMenu=useCallback(()=>setMenu(null),[]);
   const path=systemPath(id,snapshot.preferences),entry=systemEntries(snapshot.preferences).find(f=>f.id===id)!;
+  const guidePath=systemGuidePath(id,snapshot.preferences),guideRevision=snapshot.cards.find(c=>c.path===guidePath)?.revision;
+  useEffect(()=>{let live=true;void session.ensureSystemGuide(id).then(async path=>{if(typeof path==='string'){const card=await session.bridge.request<Card>({kind:'card',path});if(live){setGuide(card);setGuideError('');}}},e=>{if(live)setGuideError(String(e));}).catch(e=>{if(live)setGuideError(String(e));});return()=>{live=false;};},[id,guidePath,guideRevision,session]);
   useEffect(()=>{let live=true;if(id==='trash'){setBusy(true);void session.bridge.request<TrashEntry[]>({kind:'trashEntries'}).then(rows=>{if(live){setTrash(rows);setError('');}},e=>{if(live)setError(String(e));}).finally(()=>{if(live)setBusy(false);});}return()=>{live=false;};},[id,snapshot,session]);
-  const cards=useMemo(()=>id==='trash'?trash:snapshot.cards.filter(c=>c.path.startsWith(path+'/')),[id,trash,snapshot.cards,path]);
+  const cards=useMemo(()=>id==='trash'?trash:snapshot.cards.filter(c=>c.path.startsWith(path+'/')&&!isSystemGuide(c.path,snapshot.preferences)),[id,trash,snapshot.cards,path]);
   const rows=useMemo(()=>id==='tags'?(snapshot.tags??[]).filter(t=>t.path.startsWith(path+'/')).map(t=>({key:'tag:'+t.path,name:t.name,path:t.path,tags:[] as string[],card:undefined as CardInfo|undefined})):cards.map(c=>({key:id==='trash'?'file:'+c.path:'card:'+c.id,name:c.title||c.name,path:id==='trash'?(c as TrashEntry).originalPath??c.path:c.path,tags:c.tags??[],card:c})),[id,cards,snapshot.tags,path]);
   const index=useMemo(()=>{const engine=new TextSearch();rows.forEach(row=>engine.update({path:row.key,name:row.name,title:row.name,body:row.path+' '+row.tags.join(' ')}));return engine;},[rows]);
   const hits=search?new Set(index.search(search).map(hit=>hit.path)):null,shown=rows.filter(row=>!hits||hits.has(row.key));
@@ -28,6 +32,7 @@ export function SystemView({id,snapshot,session,onOpen,onPreview,onTemplate}:{id
   ]});}
   return <section className="system-library" aria-label={entry.name} aria-busy={busy}>
     <div className="system-heading"><Icon name={entry.icon}/><h1>{id==='journal'?'Journal':entry.name}</h1><div className="toolbar-spacer"/>{id==='templates'?<button onClick={()=>void perform(async()=>{const c=await session.createTemplate();onOpen('card:'+c.id);})}><Icon name="plus"/>{ui.journal.newTemplate}</button>:id==='slipbox'?<button onClick={()=>void perform(async()=>{await session.create(path,snapshot.preferences?.stem??'untitled',0,0,false);const card=session.state.draft?.card;if(card)onOpen('card:'+card.id);})}><Icon name="plus"/>{ui.common.newCard}</button>:null}</div>
+    <details className="system-guide"><summary>{ui.system.guide}</summary>{guideError&&<p role="alert">{guideError}</p>}{guide&&<><div className="prose system-guide-content" dangerouslySetInnerHTML={{__html:preview(guide.body,guide.path,false)}} onClick={e=>{const href=(e.target as HTMLElement).closest('a')?.getAttribute('href');if(href?.startsWith('card:')){e.preventDefault();onPreview(href);}}}/><button className="system-guide-edit" onClick={()=>onPreview('card:'+guide.id)}><Icon name="edit"/>{ui.system.editGuide}</button></>}</details>
     {id==='journal'&&<div className="system-calendar"><CalendarView snapshot={snapshot} session={session} onOpen={onOpen}/></div>}
     <div className="system-search"><Icon name="search"/><input aria-label={ui.system.searchIn(entry.name)} placeholder={ui.system.search} value={search} onChange={e=>setSearch(e.target.value)}/><small>{shown.length}</small></div>
     {id==='tags'&&<NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>}

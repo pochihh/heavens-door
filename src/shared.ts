@@ -1,3 +1,4 @@
+import type {TemplateValues} from './templates';
 import type {CoreFeature,BoardNavigation} from './features';
 import type {JournalSettings,TemplateSettings} from './journal';
 import type {EditorSettings} from './editor-settings';
@@ -64,8 +65,10 @@ export type Request =
   | { kind:'restoreTrash';path:string;expected:string }
   | { kind:'trashCard';path:string;expected:string }
   | { kind:'journalEntries'; year:number }
-  | { kind:'openJournal'; date:string; period:'daily'|'weekly' }
-  | { kind:'createFromTemplate'; template:string; folder:string; stem:string }
+  | { kind:'openJournal'; date:string; period:'daily'|'weekly';inputs?:TemplateValues }
+  | { kind:'createFromTemplate'; template:string; folder:string; stem:string;inputs?:TemplateValues }
+  | {kind:'templatePlan';template:string}
+  | {kind:'ensureSystemGuide';id:import('./features').SystemEntry}
   | { kind:'createTemplate';period?:'daily'|'weekly' }
   | { kind: 'boardMentions'; path:string }
   | {kind:'fileOperation';operation:FileOperation}

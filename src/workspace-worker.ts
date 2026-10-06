@@ -74,9 +74,11 @@ async function dispatch(request: Request) {
     case 'trashEntries': return workspace.trashEntries();
     case 'trashCard': string(request.path);string(request.expected);return workspace.trashCard(request.path,request.expected);
     case 'restoreTrash': string(request.path);string(request.expected);return workspace.restoreTrash(request.path,request.expected);
+    case 'templatePlan': string(request.template);return workspace.templatePlan(request.template);
+    case 'ensureSystemGuide': return workspace.ensureSystemGuide(request.id);
     case 'journalEntries': return workspace.journalEntries(request.year);
-    case 'openJournal': string(request.date);return workspace.openJournal(request.date,request.period);
-    case 'createFromTemplate': string(request.template);string(request.folder);string(request.stem);return workspace.createFromTemplate(request.template,request.folder,request.stem);
+    case 'openJournal': string(request.date);return workspace.openJournal(request.date,request.period,request.inputs);
+    case 'createFromTemplate': string(request.template);string(request.folder);string(request.stem);return workspace.createFromTemplate(request.template,request.folder,request.stem,request.inputs);
     case 'createTemplate': return workspace.createTemplate(request.period);
     case 'ensureFolder': string(request.path);return workspace.ensureFolder(request.path);
     case 'createEntry': string(request.folder);string(request.name);return workspace.createEntry(request.folder,request.name,request.type);

@@ -7,7 +7,7 @@ import {Icon,Tool} from './Icons';
 
 export const DateDisplayContext=createContext<{display:DateDisplay;onChange:(display:DateDisplay)=>Promise<unknown>}>({display:DEFAULT_DATE_DISPLAY,onChange:async()=>undefined});
 const zones=['local','UTC',...Intl.supportedValuesOf('timeZone')];
-export function DateProperty({draft,display,onDisplayChange,onChange,onCommit}:{draft:DateDraft;display:DateDisplay;onDisplayChange:(display:DateDisplay)=>void;onChange:(draft:DateDraft)=>void;onCommit:()=>void}){
+export function DateProperty({draft,display,onDisplayChange,onChange,onCommit,dateOnly=false}:{dateOnly?:boolean;draft:DateDraft;display:DateDisplay;onDisplayChange:(display:DateDisplay)=>void;onChange:(draft:DateDraft)=>void;onCommit:()=>void}){
   const today=wallTime(new Date().toISOString(),display).slice(0,10);
   const start=parseDay(draft.start.day,display.format),end=parseDay(draft.end.day,display.format),[active,setActive]=useState<'start'|'end'>('start');
   const [month,setMonth]=useState((start||today).slice(0,7)+'-01'),[focused,setFocused]=useState(start||today);
@@ -41,9 +41,9 @@ export function DateProperty({draft,display,onDisplayChange,onChange,onCommit}:{
       })}</div>)}
     </div>
     <div className="date-options">
-      <label className="settings-toggle">{ui.tags.endDate}<input type="checkbox" role="switch" checked={draft.range} onChange={e=>{const start=draft.start.day?draft.start:{...draft.start,day:formatDay(today,display.format)};onChange({...draft,start,range:e.target.checked,end:start});setActive(e.target.checked?'end':'start');}}/></label>
+      {!dateOnly&&<label className="settings-toggle">{ui.tags.endDate}<input type="checkbox" role="switch" checked={draft.range} onChange={e=>{const start=draft.start.day?draft.start:{...draft.start,day:formatDay(today,display.format)};onChange({...draft,start,range:e.target.checked,end:start});setActive(e.target.checked?'end':'start');}}/></label>}
       <label className="date-option">{ui.tags.dateFormat}<span><select aria-label={ui.tags.dateFormat} value={display.format} onChange={e=>onDisplayChange({...display,format:e.target.value as DateDisplay['format']})}>{Object.entries(ui.tags.dateFormats).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><Icon name="chevron" size={13}/></span></label>
-      <label className="settings-toggle">{ui.tags.includeTime}<input type="checkbox" role="switch" checked={draft.time} onChange={e=>onChange({...draft,time:e.target.checked})}/></label>
+      {!dateOnly&&<label className="settings-toggle">{ui.tags.includeTime}<input type="checkbox" role="switch" checked={draft.time} onChange={e=>onChange({...draft,time:e.target.checked})}/></label>}
       {draft.time&&<><label className="date-option">{ui.tags.timeFormat}<span><select aria-label={ui.tags.timeFormat} value={display.timeFormat} onChange={e=>onDisplayChange({...display,timeFormat:e.target.value as DateDisplay['timeFormat']})}>{Object.entries(ui.tags.timeFormats).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><Icon name="chevron" size={13}/></span></label>
       <label className="date-option">{ui.tags.timeZone}<span><select aria-label={ui.tags.timeZone} value={display.timeZone} onChange={e=>onDisplayChange({...display,timeZone:e.target.value})}>{[...new Set([...zones,display.timeZone])].map(zone=><option key={zone} value={zone}>{zone==='local'?ui.tags.localTimeZone:zone.replaceAll('_',' ')}</option>)}</select><Icon name="chevron" size={13}/></span></label></>}
     </div>

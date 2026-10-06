@@ -148,9 +148,13 @@ export class Session {
       }
     });
   }
-  createFromTemplate(template:string,folder:string,stem:string){return this.run(async()=>{
+  templatePlan(template:string){return this.run(async()=>{await this.flush();return this.bridge.request<import('../templates').TemplatePlan>({kind:'templatePlan',template});});}
+  ensureSystemGuide(id:import('../features').SystemEntry){return this.run(async()=>{
+    await this.flushPreferences();const result=await this.bridge.request<Mutation&{path:string}>({kind:'ensureSystemGuide',id});this.update({snapshot:result.snapshot});return result.path;
+  });}
+  createFromTemplate(template:string,folder:string,stem:string,inputs:import('../templates').TemplateValues={}){return this.run(async()=>{
     await this.flush();await this.flushPreferences();
-    const result=await this.bridge.request<Mutation>({kind:'createFromTemplate',template,folder,stem});this.accept(result,ui.journal.createdFromTemplate);
+    const result=await this.bridge.request<Mutation>({kind:'createFromTemplate',template,folder,stem,inputs});this.accept(result,ui.journal.createdFromTemplate);
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
   });}
   fileOperation(operation:import('../shared').FileOperation,label:string){return this.run(async()=>{
@@ -165,8 +169,8 @@ export class Session {
     await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation>({kind:'createTemplate',period});this.accept(result,ui.journal.createTemplate);
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
   });}
-  openJournal(date:string,period:import('../journal').JournalPeriod){return this.run(async()=>{
-    await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation&{path:string}>({kind:'openJournal',date,period});
+  openJournal(date:string,period:import('../journal').JournalPeriod,inputs:import('../templates').TemplateValues={}){return this.run(async()=>{
+    await this.flush();await this.flushPreferences();const result=await this.bridge.request<Mutation&{path:string}>({kind:'openJournal',date,period,inputs});
     if(result.edits.length)this.accept(result,ui.journal.createJournal);
     return this.bridge.request<Card>({kind:'card',path:result.path});
   });}

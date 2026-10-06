@@ -19,3 +19,39 @@ journal:
 ```
 
 The date stays an all-day ISO string. Weekly notes store their Monday and `period: weekly`. This identity survives file renames and moves. Existing notes at the configured date path open without changes; they are recognized by that naming convention until given explicit journal metadata. Duplicate explicit journal identities are reported instead of selecting one silently. Existing files are never overwritten. Creation uses the normal recoverable transaction and undo/redo flow; the database can be deleted and rebuilt from Markdown.
+
+## Named inputs and includes
+
+Use `{{input:project}}` wherever an answer belongs. Repeated names share one answer, including across included templates. Undeclared inputs are required text fields. Optional definitions live in the template's YAML:
+
+```yaml
+---
+template:
+  inputs:
+    project:
+      label: Project
+      type: text
+    priority:
+      type: number
+      default: 3
+    reviewed:
+      type: checkbox
+      default: false
+    mood:
+      options: [Good, Okay, Low]
+      default: Okay
+    participants:
+      required: false
+project/Priority: "{{input:priority}}"
+---
+```
+
+Supported input types are text, number, checkbox, date, choice, note, and tag. A note picker writes a stable `card:id` reference; tag pickers write the tag name without `#`. Both reuse fuzzy search. A whole YAML value such as `"{{input:priority}}"` retains the answer's number/boolean type; mixed text becomes a string. Template configuration is removed from the generated note. Answers are inserted once as data and never evaluated as more template syntax.
+
+`{{include:Templates/Review checklist.md}}` copies that file's body. Paths are workspace-relative. Includes can be nested, share input definitions, and expand date/time/title variables in the new note's context. Their frontmatter properties are ignored. Relative Markdown and HTML image/link paths are rebased from each source template to the new note. Missing files, circular includes, conflicting input definitions, and invalid answers prevent creation. Existing notes remain independent of later template edits.
+
+The template picker collects all inputs in one form. Calendar requests them only for a new daily or weekly note; reopening an existing journal does not apply a template again.
+
+## Editable feature notes
+
+Opening a special-folder view creates its guide if absent: `template.md`, `journal.md`, `slipbox.md`, `tags.md`, or `trash.md`, in the feature's configured folder. No whiteboard file is created. These are ordinary Markdown cards with a card ID; existing files and user edits are never replaced. Each view shows **Notes** above its calendar/search/list, collapsed by default. **Edit notes** opens the normal card popup. Guide files are excluded from feature lists and template selection but remain accessible through normal note navigation. Changing a feature's folder uses a guide in the newly selected folder and retains the old files.

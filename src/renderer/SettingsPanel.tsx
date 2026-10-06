@@ -9,6 +9,7 @@ import {Icon,type IconName} from './Icons';
 import {TagColorSettings} from './TagView';
 import {PerformanceSettings} from './PerformanceSettings';
 import {SettingsPathInput} from './SettingsPathInput';
+import {isSystemGuide} from '../system-guides';
 
 const generalPages=[{id:'general',name:'General',icon:'settings',keywords:'filename title workspace'}, {id:'appearance',name:'Appearance',icon:'art',keywords:'theme light dark'}, {id:'files',name:'Files and folders',icon:'folder',keywords:'slipbox trash location storage'}, {id:'whiteboard',name:'Whiteboard',icon:'map',keywords:'new board default name canvas mouse trackpad navigation'}, {id:'editor',name:'Editor',icon:'edit',keywords:'images attachments slash commands templates symbols'}, {id:'navigation',name:'Navigation',icon:'window',keywords:'split docks'}, {id:'performance',name:'Performance',icon:'autoInput',keywords:'hardware acceleration graphics'}, {id:'developer',name:'Developer',icon:'code',keywords:'diagnostics graphics'}] as const;
 const pluginPages=[{id:'templates',name:'Templates',icon:'copy',keywords:'new note card template folder'}, {id:'journal',name:'Journal and Calendar',icon:'calendar',keywords:'daily weekly calendar date template folder'}, {id:'tags',name:'Tags',icon:'tag',keywords:'colors palette folder'}, {id:'views',name:'Views and queries',icon:'table',keywords:'merge properties names case sensitive filters'}] as const;
@@ -41,7 +42,7 @@ function FolderSetting({label,value,folders=[],onChange,onCreate}:{label:string;
 }
 function JournalOptions({snapshot,prefs,onChange,onCreateTemplate,onCreateFolder}:{onCreateFolder?:(path:string)=>Promise<void>;snapshot:Snapshot;prefs:Preferences;onChange:(patch:Partial<Preferences>)=>void;onCreateTemplate?:(period:'daily'|'weekly')=>Promise<CardInfo>}){
   const value=prefs.journal??DEFAULT_JOURNAL,day=journalToday(prefs.dateDisplay),change=(patch:Partial<JournalSettings>)=>onChange({journal:{...value,...patch}}),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const templates=[...snapshot.cards].sort((a,b)=>Number(b.path.startsWith(systemPath('templates',prefs)+'/'))-Number(a.path.startsWith(systemPath('templates',prefs)+'/'))||a.path.localeCompare(b.path));
+  const templates=snapshot.cards.filter(c=>!isSystemGuide(c.path,prefs)).sort((a,b)=>Number(b.path.startsWith(systemPath('templates',prefs)+'/'))-Number(a.path.startsWith(systemPath('templates',prefs)+'/'))||a.path.localeCompare(b.path));
   async function create(period:'daily'|'weekly'){setBusy(true);try{const card=await onCreateTemplate!(period);change({[period==='daily'?'dailyTemplate':'weeklyTemplate']:card.path});setError('');}catch(e){setError(String(e));}finally{setBusy(false);}}
   return <>
     <Row name="Folder" description="Date formats can create subfolders."><FolderSetting label="Journal folder" value={value.folder} folders={snapshot.folders} onCreate={onCreateFolder} onChange={folder=>change({folder})}/></Row>
