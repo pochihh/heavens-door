@@ -1,11 +1,11 @@
 import { ui } from './text/ui';
 export const MAX_PANES=16,MAX_TABS=200;
 export interface TabHistory {entries:string[];index:number}
-export interface Pane {type:'pane';id:string;tabs:string[];active:string;history?:Record<string,TabHistory>}
+export interface Pane {type:'pane';id:string;tabs:string[];active:string;history?:Record<string,TabHistory>;journalTab?:string}
 export function tabDocument(p:Pane,tab=p.active){const h=p.history?.[tab];return h?h.entries[h.index]:tab;}
 export function tabHistory(p:Pane,tab=p.active):TabHistory{return p.history?.[tab]??{entries:tab?[tab]:[],index:0};}
 export function travelTab(layout:Layout,id:string,offset:-1|1){return updatePane(layout,id,p=>{const h=tabHistory(p),index=h.index+offset;return index<0||index>=h.entries.length?p:{...p,history:{...p.history,[p.active]:{...h,index}}};});}
-export function mapPaneDocuments(p:Pane,map:(key:string)=>string):Pane{return {...p,tabs:p.tabs.map(map),active:map(p.active),...(p.history?{history:Object.fromEntries(Object.entries(p.history).map(([id,h])=>[map(id),{...h,entries:h.entries.map(map)}]))}:{})};}
+export function mapPaneDocuments(p:Pane,map:(key:string)=>string):Pane{return {...p,tabs:p.tabs.map(map),active:map(p.active),...(p.journalTab!==undefined?{journalTab:p.journalTab?map(p.journalTab):''}:{}),...(p.history?{history:Object.fromEntries(Object.entries(p.history).map(([id,h])=>[map(id),{...h,entries:h.entries.map(map)}]))}:{})};}
 export interface Split {type:'split';id:string;axis:'row'|'column';ratio:number;first:Layout;second:Layout}
 export type Layout=Pane|Split;
 export function pane(document=''):Pane {return {type:'pane',id:crypto.randomUUID(),tabs:document?[document]:[],active:document};}
@@ -29,6 +29,19 @@ export function navigateTab(layout:Layout,source:string,key:string,mode:Navigati
   if(groups.length>=MAX_PANES)throw new Error(ui.errors.splitLimit);
   const next=pane(key);return {tree:splitPane(layout,origin.id,axis,next),active:next.id};
 }
+// The slot stays with its split when closed, and follows the tab when moved.
+export function openJournalTab(layout:Layout,source:string,key:string,axis:'row'|'column'='row') {
+  const groups=panes(layout),target=groups.find(p=>p.journalTab!==undefined);
+  if(target){
+    if(!target.journalTab&&target.tabs.length>=MAX_TABS)throw new Error(ui.errors.tabLimit);
+    const selected=target.journalTab?updatePane(layout,target.id,p=>({...p,active:p.journalTab!})):openTab(layout,target.id,key);
+    const next=navigateTab(selected,target.id,key,'same');
+    return {...next,tree:updatePane(next.tree,target.id,p=>({...p,journalTab:p.active}))};
+  }
+  if(groups.length>=MAX_PANES)throw new Error(ui.errors.splitLimit);
+  const next=pane(key);next.journalTab=next.active;
+  return {tree:splitPane(layout,groups.find(p=>p.id===source)?.id??groups[0].id,axis,next),active:next.id};
+}
 export function activeAfterRemoval(tabs:string[],active:string,key:string):string {
   if(active!==key)return active;
   const index=tabs.indexOf(key);return tabs[index+1]??tabs[index-1]??'';
@@ -40,7 +53,7 @@ export function closeTabs(layout:Layout,id:string,keys:readonly string[]) {
     const tabs=p.tabs.filter(key=>!closed.has(key)),index=p.tabs.indexOf(p.active);
     const active=tabs.includes(p.active)?p.active:p.tabs.slice(index+1).find(key=>!closed.has(key))??p.tabs.slice(0,index).reverse().find(key=>!closed.has(key))??'';
     const history=Object.fromEntries(Object.entries(p.history??{}).filter(([key])=>!closed.has(key)));
-    return {...p,tabs,active,...(p.history?{history}:{})};
+    return {...p,tabs,active,...(p.journalTab&&closed.has(p.journalTab)?{journalTab:''}:{}),...(p.history?{history}:{})};
   });
 }
 export function splitPane(layout:Layout,id:string,axis:'row'|'column',next:Pane):Layout {
@@ -60,17 +73,19 @@ export function moveTab(layout:Layout,from:string,to:string,key:string,before?:s
   const source=panes(layout).find(p=>p.id===from),target=panes(layout).find(p=>p.id===to);
   if(!source?.tabs.includes(key)||!target||from===to&&key===before||from!==to&&target.tabs.length>=MAX_TABS)return layout;
   const history=tabHistory(source,key),tab=from!==to&&target.tabs.includes(key)?'tab:'+crypto.randomUUID():key;
-  return updatePane(closeTab(layout,from,key),to,p=>{
+  const movingJournal=source.journalTab===key;
+  const remaining=updatePane(closeTab(layout,from,key),from,p=>{if(!movingJournal||from===to)return p;const next={...p};delete next.journalTab;return next;});
+  return updatePane(remaining,to,p=>{
     const tabs=[...p.tabs],index=before?tabs.indexOf(before):-1;tabs.splice(index<0?tabs.length:index,0,tab);
-    return {...p,tabs,active:tab,...(source.history?.[key]||tab!==key?{history:{...p.history,[tab]:history}}:{})};
+    return {...p,tabs,active:tab,...(movingJournal?{journalTab:tab}:{}),...(source.history?.[key]||tab!==key?{history:{...p.history,[tab]:history}}:{})};
   });
 }
 export function restoreLayout(raw:string|null):Layout {
   const ids=new Set<string>();let count=0;
   const valid=(value:Layout,depth=0):boolean=>!!value&&++count<=31&&depth<16&&typeof value.id==='string'&&value.id.length<=100&&!ids.has(value.id)&&!!ids.add(value.id)&&(value.type==='pane'
-    ?Array.isArray(value.tabs)&&value.tabs.length<=MAX_TABS&&value.tabs.every(k=>typeof k==='string'&&k.length<=2048)&&new Set(value.tabs).size===value.tabs.length&&typeof value.active==='string'&&(value.active===''||value.tabs.includes(value.active))&&(value.history===undefined||!!value.history&&typeof value.history==='object'&&!Array.isArray(value.history)&&Object.entries(value.history).every(([tab,h])=>value.tabs.includes(tab)&&!!h&&Array.isArray(h.entries)&&h.entries.length>0&&h.entries.length<=100&&h.entries.every(k=>typeof k==='string'&&k.length<=2048)&&Number.isInteger(h.index)&&h.index>=0&&h.index<h.entries.length))
+    ?Array.isArray(value.tabs)&&value.tabs.length<=MAX_TABS&&value.tabs.every(k=>typeof k==='string'&&k.length<=2048)&&new Set(value.tabs).size===value.tabs.length&&typeof value.active==='string'&&(value.active===''||value.tabs.includes(value.active))&&(value.journalTab===undefined||value.journalTab===''||typeof value.journalTab==='string'&&value.tabs.includes(value.journalTab))&&(value.history===undefined||!!value.history&&typeof value.history==='object'&&!Array.isArray(value.history)&&Object.entries(value.history).every(([tab,h])=>value.tabs.includes(tab)&&!!h&&Array.isArray(h.entries)&&h.entries.length>0&&h.entries.length<=100&&h.entries.every(k=>typeof k==='string'&&k.length<=2048)&&Number.isInteger(h.index)&&h.index>=0&&h.index<h.entries.length))
     :value.type==='split'&&['row','column'].includes(value.axis)&&Number.isFinite(value.ratio)&&value.ratio>=.15&&value.ratio<=.85&&valid(value.first,depth+1)&&valid(value.second,depth+1));
-  try{const value=JSON.parse(raw??'null');if(valid(value)&&panes(value).length<=MAX_PANES)return value;}catch{/* start clean */}
+  try{const value=JSON.parse(raw??'null');if(valid(value)&&panes(value).length<=MAX_PANES&&panes(value).filter(p=>p.journalTab!==undefined).length<=1)return value;}catch{/* start clean */}
   return pane('board:');
 }
 

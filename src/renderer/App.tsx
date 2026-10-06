@@ -1,4 +1,5 @@
-import {featureEnabled,moduleEnabled,type SystemEntry} from '../features';
+import {isSystemGuide} from '../system-guides';
+import {featureEnabled,systemPath,moduleEnabled,type SystemEntry} from '../features';
 import {SystemView} from './SystemView';
 import {CalendarView} from './CalendarView';
 import {TemplateDialog} from './TemplateDialog';
@@ -33,7 +34,7 @@ import { documentInfo, parent, cardPlacement } from './documents';
 const IconPicker=lazy(()=>import('./IconPicker'));
 export { documentInfo } from './documents';
 import { BoardView, FileView, NoteView, TagView, type ViewMemory } from './DocumentViews';
-import { MAX_PANES, MAX_TABS, tabDocument, tabHistory, travelTab, mapPaneDocuments, updatePane, navigateTab, closeTabs, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
+import { MAX_PANES, MAX_TABS, tabDocument, tabHistory, travelTab, mapPaneDocuments, updatePane, navigateTab, openJournalTab, closeTabs, moveTab, openTab, pane, panes, removePane, resizeSplit, restoreLayout, splitPane, type NavigationMode, type Layout, type Pane } from '../layout';
 
 export const session=new Session(window.door);
 const attempt=(promise:Promise<unknown>)=>{void promise.catch(()=>undefined);};
@@ -80,6 +81,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   useEffect(()=>{const search=()=>setSearchOpen(true);window.addEventListener('editor:search',search);return()=>window.removeEventListener('editor:search',search);},[]);
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!document.querySelector('dialog[open]')&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   const [layout,setLayout]=useState(()=>prefs.documents?.tree??restoreLayout(null));
+  const layoutRef=useRef(layout);layoutRef.current=layout;
   const [activeId,setActiveId]=useState(()=>prefs.documents?.active??panes(layout)[0].id);
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
   const enabledModule=(module:ModuleId)=>moduleEnabled(module,prefs);
@@ -166,17 +168,21 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       session.update({snapshot:result});
     }));
   },[]);
-  const open=useCallback((key:string,id=activeId)=>{
+  const open=useCallback((key:string,id=activeId,journalNote=false)=>{
     attempt((async()=>{
-      const target=panes(layout).find(p=>p.id===id);
-      if(target&&!target.tabs.some(tab=>tabDocument(target,tab)===key)&&target.tabs.length>=MAX_TABS){session.update({error:ui.errors.tabLimit});return;}
-      const info=documentInfo(key,session.state.snapshot!);
+      const current=session.state.snapshot!,settings=current.preferences,info=documentInfo(key,current);
+      const journal=info.kind==='card'&&featureEnabled(settings,'journal')&&settings?.journal?.reuseSplit&&(journalNote||info.path.startsWith(systemPath('journal',settings)+'/'))&&!isSystemGuide(info.path,settings);
+      const target=panes(layoutRef.current).find(p=>p.id===id);
+      if(!journal&&target&&!target.tabs.some(tab=>tabDocument(target,tab)===key)&&target.tabs.length>=MAX_TABS){session.update({error:ui.errors.tabLimit});return;}
       if(!info.exists){session.update({error:ui.errors.fileMissing});return;}
+      const before=layoutRef.current,journalNext=journal?openJournalTab(before,id,key,settings?.newSplitDirection):undefined;
       await session.select(info.kind==='card'?info.path:null);
-      setLayout(current=>openTab(current,id,key));setActiveId(id);setPulse(v=>v+1);
+      if(journal){const next=layoutRef.current===before?journalNext!:openJournalTab(layoutRef.current,id,key,settings?.newSplitDirection);layoutRef.current=next.tree;setLayout(next.tree);setActiveId(next.active);}
+      else{setLayout(current=>openTab(current,id,key));setActiveId(id);}
+      setPulse(v=>v+1);
       changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
-    })());
-  },[activeId,changePrefs,layout]);
+    })().catch(error=>session.update({error:String(error)})));
+  },[activeId,changePrefs]);
   function focusPane(p:Pane){
     setActiveId(p.id);
     const current=p.active?documentInfo(tabDocument(p),snapshot):null;
@@ -217,12 +223,14 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
   async function navigate(key:string,id:string,mode:NavigationMode='same'){
     try{
-      const info=documentInfo(key,session.state.snapshot!);
+      const current=session.state.snapshot!,settings=current.preferences,info=documentInfo(key,current);
       if(!info.exists)throw new Error(ui.errors.fileMissing);
-      const next=navigateTab(layout,id,key,mode,prefs.newSplitDirection);
+      const journal=mode==='same'&&info.kind==='card'&&featureEnabled(settings,'journal')&&settings?.journal?.reuseSplit&&info.path.startsWith(systemPath('journal',settings)+'/')&&!isSystemGuide(info.path,settings);
+      const before=layoutRef.current,visit=(tree:Layout)=>journal?openJournalTab(tree,id,key,settings?.newSplitDirection):navigateTab(tree,id,key,mode,settings?.newSplitDirection),planned=visit(before);
       await session.run(()=>session.flush());
       await session.select(info.kind==='card'?info.path:null);
-      setLayout(next.tree);setActiveId(next.active);setPulse(v=>v+1);
+      const next=layoutRef.current===before?planned:visit(layoutRef.current);
+      layoutRef.current=next.tree;setLayout(next.tree);setActiveId(next.active);setPulse(v=>v+1);
       changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
       return true;
     }catch(error){session.update({error:String(error)});return false;}
@@ -289,7 +297,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
           !info.exists?<p className="notice">{info.kind==='system'?ui.system.disabled:ui.errors.fileMissing}</p>:
-          info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
+          info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id,'new')} onJournalOpen={key=>open(key,p.id,true)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
           board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y},p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag&&!featureEnabled(prefs,'tags')?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
@@ -307,7 +315,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   }
   const [templateOpen,setTemplateOpen]=useState(false),[templatePath,setTemplatePath]=useState<string>();
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
-    if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={open}/>;
+    if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={key=>open(key,activeId,true)}/>;
     if(module==='style'){
       const board=snapshot.boards.find(b=>'board:'+b.folder===tabDocument(active)),card=snapshot.cards.find(c=>'card:'+c.id===tabDocument(active));
       return <StyleView board={board} card={card} cardInfos={snapshot.cards} palette={prefs.palette} selection={boardSelection?.path===board?.path?boardSelection:undefined} session={session} onPalette={palette=>session.run(async()=>{

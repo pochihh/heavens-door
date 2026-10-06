@@ -12,7 +12,7 @@ import {useBookmarkDrag} from './sortable';
 import {useConfirmation} from './Confirmation';
 import {isSystemGuide,systemGuidePath} from '../system-guides';
 import {preview} from './markdown';
-export function SystemView({id,snapshot,session,onOpen,onPreview,onTemplate}:{id:SystemEntry;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview:(key:string)=>void;onTemplate:(path?:string)=>void}){
+export function SystemView({id,snapshot,session,onOpen,onJournalOpen=onOpen,onPreview,onTemplate}:{id:SystemEntry;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onJournalOpen?:(key:string)=>void;onPreview:(key:string)=>void;onTemplate:(path?:string)=>void}){
   const [search,setSearch]=useState(''),[trash,setTrash]=useState<TrashEntry[]>([]),[menu,setMenu]=useState<MenuState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[guide,setGuide]=useState<Card|null>(null),[guideError,setGuideError]=useState('');
   const confirm=useConfirmation(),dragTarget=useRef<HTMLDivElement>(null),drag=useBookmarkDrag(dragTarget,()=>{}),closeMenu=useCallback(()=>setMenu(null),[]);
   const path=systemPath(id,snapshot.preferences),entry=systemEntries(snapshot.preferences).find(f=>f.id===id)!;
@@ -33,7 +33,7 @@ export function SystemView({id,snapshot,session,onOpen,onPreview,onTemplate}:{id
   return <section className="system-library" aria-label={entry.name} aria-busy={busy}>
     <div className="system-heading"><Icon name={entry.icon}/><h1>{id==='journal'?'Journal':entry.name}</h1><div className="toolbar-spacer"/>{id==='templates'?<button onClick={()=>void perform(async()=>{const c=await session.createTemplate();onOpen('card:'+c.id);})}><Icon name="plus"/>{ui.journal.newTemplate}</button>:id==='slipbox'?<button onClick={()=>void perform(async()=>{await session.create(path,snapshot.preferences?.stem??'untitled',0,0,false);const card=session.state.draft?.card;if(card)onOpen('card:'+card.id);})}><Icon name="plus"/>{ui.common.newCard}</button>:null}</div>
     <details className="system-guide"><summary>{ui.system.guide}</summary>{guideError&&<p role="alert">{guideError}</p>}{guide&&<><div className="prose system-guide-content" dangerouslySetInnerHTML={{__html:preview(guide.body,guide.path,false)}} onClick={e=>{const href=(e.target as HTMLElement).closest('a')?.getAttribute('href');if(href?.startsWith('card:')){e.preventDefault();onPreview(href);}}}/><button className="system-guide-edit" onClick={()=>onPreview('card:'+guide.id)}><Icon name="edit"/>{ui.system.editGuide}</button></>}</details>
-    {id==='journal'&&<div className="system-calendar"><CalendarView snapshot={snapshot} session={session} onOpen={onOpen}/></div>}
+    {id==='journal'&&<div className="system-calendar"><CalendarView snapshot={snapshot} session={session} onOpen={onJournalOpen}/></div>}
     <div className="system-search"><Icon name="search"/><input aria-label={ui.system.searchIn(entry.name)} placeholder={ui.system.search} value={search} onChange={e=>setSearch(e.target.value)}/><small>{shown.length}</small></div>
     {id==='tags'&&<NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>}
     {error&&<p role="alert">{error}</p>}

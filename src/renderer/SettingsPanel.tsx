@@ -1,3 +1,4 @@
+import {ui} from '../text/ui';
 import {CORE_FEATURES,featureEnabled,systemPath} from '../features';
 import {DEFAULT_JOURNAL,journalToday,journalWeek,journalPath,formatTemplateDate,validateJournal,type JournalSettings} from '../journal';
 import {EditorSettings} from './EditorSettings';
@@ -46,6 +47,7 @@ function JournalOptions({snapshot,prefs,onChange,onCreateTemplate,onCreateFolder
   async function create(period:'daily'|'weekly'){setBusy(true);try{const card=await onCreateTemplate!(period);change({[period==='daily'?'dailyTemplate':'weeklyTemplate']:card.path});setError('');}catch(e){setError(String(e));}finally{setBusy(false);}}
   return <>
     <Row name="Folder" description="Date formats can create subfolders."><FolderSetting label="Journal folder" value={value.folder} folders={snapshot.folders} onCreate={onCreateFolder} onChange={folder=>change({folder})}/></Row>
+    <Row name={ui.journal.reuseSplit} description={ui.journal.reuseSplitHint}><label className="settings-toggle"><input type="checkbox" role="switch" aria-label={ui.journal.reuseSplit} checked={value.reuseSplit??false} onChange={e=>change({reuseSplit:e.target.checked})}/></label></Row>
     {(['daily','weekly'] as const).map(period=><section key={period} className="journal-settings-section"><h3>{period==='daily'?'Daily notes':'Weekly notes'}</h3>
       <JournalFormat value={value} period={period} day={period==='daily'?day:journalWeek(day)} onChange={change}/>
       <Row name="Template" description={period==='daily'?'Used only when a new daily note is created.':'Template dates use the Monday of the selected week.'}><div className="journal-template-picker"><SettingsPathInput empty label={period==='daily'?'Daily template':'Weekly template'} value={value[period==='daily'?'dailyTemplate':'weeklyTemplate']} choices={templates.map(c=>({path:c.path,name:c.name}))} onChange={path=>change({[period==='daily'?'dailyTemplate':'weeklyTemplate']:path})}/>{onCreateTemplate&&<button disabled={busy} aria-label={period==='daily'?'Create daily template':'Create weekly template'} onClick={()=>void create(period)}><Icon name="plus"/>New template</button>}</div></Row>

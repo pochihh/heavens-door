@@ -1,3 +1,4 @@
+import {featureEnabled,systemPath} from '../features';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import type { NavigationMode } from '../layout';
@@ -14,7 +15,7 @@ export function Breadcrumbs({documentKey,snapshot,onNavigate,onRename,onIcon}:{d
   const ancestors: {name:string;key?:string;path:string}[]=[];
   if(info.kind!=='system'&&(info.kind!=='board'||info.id)){
     ancestors.push({name:snapshot.name,key:'board:',path:snapshot.root});
-    let path='';for(const part of portable(folder).split('/').filter(Boolean)){path=path?path+'/'+part:part;ancestors.push({name:part,path,key:snapshot.boards.some(b=>portable(b.folder)===path)?'board:'+path:undefined});}
+    let path='';for(const part of portable(folder).split('/').filter(Boolean)){path=path?path+'/'+part:part;ancestors.push({name:part,path,key:featureEnabled(snapshot.preferences,'journal')&&path===systemPath('journal',snapshot.preferences)?'system:journal':snapshot.boards.some(b=>portable(b.folder)===path)?'board:'+path:undefined});}
   }
   function context(key:string,anchor:HTMLElement,x:number,y:number){setMenu({label:ui.breadcrumbs.breadcrumbActions,anchor,x,y,actions:[{label:ui.common.openInNewTab,icon:'external',run:()=>onNavigate(key,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onNavigate(key,'other')}]});}
   const editable=info.exists&&(info.kind==='card'||info.kind==='board'&&!!info.id);
