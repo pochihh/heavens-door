@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {act,useState} from 'react';
 import {MainTabs} from '../src/renderer/MainTabs';
+import {documentDropTarget,dropDocumentAt,type DocumentDrop} from '../src/renderer/card-drop';
 import {closeTabs,moveTab,navigateTab,panes,removeEmptyPanes,splitPane,pane,tabDocument,validateDocuments,type Pane} from '../src/layout';
 import type {Bridge,Card,Snapshot,Request} from '../src/shared';
 
@@ -95,4 +96,24 @@ test('bulk tab closing stays in its group, saves drafts first and preserves the 
     await openMenu('card:b');assert.deepEqual([...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]:disabled')].map(button=>button.textContent),['Close other tabs','Close tabs to the right']);await action('Close all tabs');assert.equal(document.querySelector('.note-pane[data-pane=one]'),null,'closing its last tab removes the split');assert.equal(snapshot.cards.length,3,'tab closing never deletes files');assert.ok(document.querySelector(`[data-pane="${other.id}"] [data-tab-key="board:Other"]`));await act(async()=>session.flushPreferences());assert.equal(snapshot.preferences!.documents!.active,other.id);assert.equal(validateDocuments(snapshot.preferences!.documents).tree.type,'pane');
     await act(async()=>document.querySelector<HTMLButtonElement>(`[data-pane="${other.id}"] [data-tab-key] > button:last-child`)!.click());await settle();assert.equal(document.querySelectorAll('.note-pane').length,1);assert.ok(document.querySelector(`[data-pane="${other.id}"] .empty-pane>button`),'the final pane can reopen the root board');await act(async()=>session.flushPreferences());assert.equal(validateDocuments(snapshot.preferences!.documents).active,other.id);
   }finally{await act(async()=>root.unmount());session.dispose();dom.window.close();}
+});
+
+
+test('inactive board tabs accept documents without activating the tab or becoming file-reference targets',async()=>{
+  const dom=setup(),{createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);let selected=0;
+  const drops:DocumentDrop[]=[];window.addEventListener('door:document-drop',event=>drops.push((event as CustomEvent<DocumentDrop>).detail));Object.assign(globalThis,{CustomEvent:dom.window.CustomEvent});
+  try{
+    await act(async()=>root.render(<MainTabs group="main" active="note-tab" items={[
+      {key:'note-tab',title:'Note',icon:<span/>},
+      {key:'visited-tab',title:'Destination',boardFolder:'Boards/Destination',icon:<span/>},
+      {key:'home-tab',title:'Home',boardFolder:'',icon:<span/>},
+    ]} dragging={false} onSelect={()=>selected++} onClose={()=>{}} onMenu={()=>{}} onDrag={()=>{}}><span/></MainTabs>));
+    const board=document.querySelector<HTMLElement>('[data-tab-key="visited-tab"]')!,home=document.querySelector<HTMLElement>('[data-tab-key="home-tab"]')!,note=document.querySelector<HTMLElement>('[data-tab-key="note-tab"]')!;
+    let hit=board.querySelector<HTMLElement>('[role=tab]')!;document.elementsFromPoint=()=>[hit];
+    assert.equal(documentDropTarget({key:'card:c',path:'Slipbox/C.md'},100,20),board);
+    assert.equal(dropDocumentAt({key:'card:c',path:'Slipbox/C.md'},100,20),true);assert.equal(drops[0].folder,'Boards/Destination');assert.equal(drops[0].atPointer,false);assert.equal(selected,0);assert.equal(board.querySelector('[role=tab]')!.getAttribute('aria-selected'),'false');
+    assert.equal(documentDropTarget({key:'board:Boards/Destination'},100,20),null);assert.equal(documentDropTarget({key:'board:Boards'},100,20),null);
+    hit=home;assert.equal(documentDropTarget({key:'card:c'},100,20),null);assert.equal(documentDropTarget({key:'board:Other'},100,20),home);
+    hit=note;assert.equal(documentDropTarget({key:'card:c'},100,20),null);
+  }finally{await act(async()=>root.unmount());dom.window.close();}
 });
