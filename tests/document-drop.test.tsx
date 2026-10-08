@@ -81,3 +81,61 @@ test('moving a linked card refreshes an open note and preserves text typed while
   assert.match(session.state.draft!.body,/Two\/Target.md/);assert.match(session.state.draft!.body,/Typed during move/);assert.equal(session.state.draft!.dirty,true);assert.equal(session.state.draft!.card.revision,(await w.card(note.path)).revision);
   await session.run(()=>session.flush());assert.match((await w.card(note.path)).body,/Typed during move/);
 });
+
+
+test('the whole board tile arms after 650 ms; leaving, changing source and cancellation clear the hold',async t=>{
+  const dom=new JSDOM('<div class="canvas" data-drop-kind="board" data-drop-folder="Parent"></div><article class="board-tile" data-drop-kind="board" data-drop-folder="Parent/Target" data-drop-name="Target"><header>Title</header><section>Contents</section><footer>Bottom</footer></article>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,CustomEvent:dom.window.CustomEvent});t.mock.timers.enable({apis:['setTimeout']});
+  const tile=document.querySelector<HTMLElement>('article')!,canvas=document.querySelector<HTMLElement>('.canvas')!,drag={key:'card:c',path:'Parent/Card.md',source:'Parent',placement:'p'};
+  let hit:Element[]=[],drops:DocumentDrop[]=[];document.elementsFromPoint=()=>hit;window.addEventListener('door:document-drop',e=>drops.push((e as CustomEvent<DocumentDrop>).detail));
+  try{
+    for(const part of tile.querySelectorAll('header,section,footer')){
+      hit=[canvas,part,tile];assert.equal(previewDocumentDrop(drag,100,100),true);assert.ok(tile.classList.contains('document-drop-pending'));assert.match(document.querySelector('.document-drop-label')!.textContent!,/Hold to move into Target/);
+      t.mock.timers.tick(649);assert.equal(dropDocumentAt(drag,100,100),false);assert.equal(drops.length,0);assert.equal(document.querySelector('[role=status]'),null);
+      previewDocumentDrop(drag,100,100);t.mock.timers.tick(650);assert.ok(tile.classList.contains('document-drop-target'));assert.match(document.querySelector('[role=status]')!.textContent!,/^Move into Target$/);
+      assert.equal(dropDocumentAt(drag,100,100),true);assert.equal(drops.at(-1)!.folder,'Parent/Target');assert.equal(drops.at(-1)!.intoBoard,true);assert.equal(drops.at(-1)!.atPointer,false);assert.equal(document.querySelector('[role=status]'),null);
+      drops=[];
+    }
+    hit=[tile];previewDocumentDrop(drag,100,100);t.mock.timers.tick(500);hit=[];previewDocumentDrop(drag,300,300);t.mock.timers.tick(500);assert.equal(tile.className,'board-tile');
+    hit=[tile];previewDocumentDrop(drag,100,100);t.mock.timers.tick(500);previewDocumentDrop({...drag,key:'card:other'},100,100);t.mock.timers.tick(150);assert.ok(tile.classList.contains('document-drop-pending'),'a different item starts a fresh hold');
+    clearDocumentDrop();t.mock.timers.tick(650);assert.equal(dropDocumentAt(drag,100,100),false);assert.equal(tile.className,'board-tile');assert.equal(drops.length,0);
+    hit=[tile];assert.equal(previewDocumentDrop({key:'board:Parent'},100,100),false,'cycles never arm');assert.equal(document.querySelector('[role=status]'),null);
+    hit=[canvas];previewDocumentDrop({key:'card:c',path:'Slipbox/Card.md'},100,100);t.mock.timers.tick(649);assert.equal(dropDocumentAt({key:'card:c',path:'Slipbox/Card.md'},100,100),false,'canvas drop also requires a hold');
+  }finally{clearDocumentDrop();dom.window.close();}
+});
+
+test('table and Kanban exports keep their armed board target until release',async t=>{
+  const dom=new JSDOM('<div id="root"></div><article class="board-tile" data-drop-kind="board" data-drop-folder="Target"><section>Whole board</section></article>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,CustomEvent:dom.window.CustomEvent,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
+  t.mock.timers.enable({apis:['setTimeout']});const destination=document.querySelector<HTMLElement>('article')!;document.elementsFromPoint=()=>[destination.querySelector('section')!,destination];
+  const rect=(left:number,top:number,width:number,height:number)=>({left,top,width,height,right:left+width,bottom:top+height,x:left,y:top,toJSON(){}} as DOMRect),drops:DocumentDrop[]=[];window.addEventListener('door:document-drop',e=>drops.push((e as CustomEvent<DocumentDrop>).detail));let writes=0;
+  function Harness(){const ref=useRef<HTMLTableSectionElement>(null),drag=useBookmarkDrag(ref,()=>{writes++;},'vertical',true);return <table><tbody ref={ref}><tr data-file-key="c" data-drag-key="card:c" data-drag-path="Slipbox/Note.md"><td><button onPointerDown={e=>drag(e,'c',true)}>Grip</button></td></tr></tbody></table>;}
+  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);
+  const pointer=async(el:Element|Document,type:string,x:number,y:number)=>{await act(async()=>{const e=new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y});Object.defineProperty(e,'pointerId',{value:1});el.dispatchEvent(e);});};
+  try{
+    await act(async()=>root.render(<Harness/>));const row=document.querySelector('tbody tr')!,body=document.querySelector('tbody')!;row.getBoundingClientRect=()=>rect(100,100,200,30);body.getBoundingClientRect=()=>rect(100,100,200,100);
+    await pointer(row.querySelector('button')!,'pointerdown',120,115);await pointer(document,'pointermove',550,120);t.mock.timers.tick(650);await pointer(document,'pointerup',550,120);assert.equal(drops.length,1);assert.equal(writes,0);
+    await act(async()=>root.render(<div className="view-kanban"><section data-tag-column="Todo"><h3>Todo</h3><div data-card-id="c">Card</div></section></div>));const kanban=document.querySelector<HTMLElement>('.view-kanban')!,source=kanban.querySelector<HTMLElement>('[data-card-id]')!,column=source.parentElement!;
+    kanban.getBoundingClientRect=column.getBoundingClientRect=()=>rect(100,100,200,300);source.getBoundingClientRect=()=>rect(100,150,200,60);column.querySelector('h3')!.getBoundingClientRect=()=>rect(100,100,200,30);
+    dragKanban({currentTarget:source,clientX:120,clientY:160,pointerId:1} as unknown as Parameters<typeof dragKanban>[0],kanban,()=>{writes++;},()=>true);
+    await pointer(document,'pointermove',550,120);t.mock.timers.tick(650);await pointer(document,'pointerup',550,120);assert.equal(drops.length,2);assert.equal(writes,0);assert.equal(document.querySelector('[role=status]'),null);
+  }finally{await act(async()=>root.unmount());clearDocumentDrop();dom.window.close();}
+});
+
+test('canvas card and child-board drags drop into another whole tile without saving a geometry move',async t=>{
+  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,CustomEvent:dom.window.CustomEvent,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+  dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;dom.window.HTMLElement.prototype.releasePointerCapture=()=>{};t.mock.timers.enable({apis:['setTimeout']});
+  const {Whiteboard}=await import('../src/renderer/Board'),{createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);
+  const board:import('../src/shared').Board={path:'Parent/Parent.whiteboard',folder:'Parent',name:'Parent',revision:'r',cards:[{id:'source',cardId:'c',x:0,y:0,width:340,height:280},{id:'child',cardId:'',folder:'Parent/Child',x:400,y:0,width:320,height:160},{id:'target',cardId:'',folder:'Parent/Target',x:800,y:0,width:320,height:160}],edges:[]},drops:DocumentDrop[]=[];let saves=0;
+  window.addEventListener('door:document-drop',e=>drops.push((e as CustomEvent<DocumentDrop>).detail));
+  const pointer=async(el:Element|Document,type:string,x:number,y:number)=>act(async()=>{const e=new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y});Object.defineProperty(e,'pointerId',{value:1});el.dispatchEvent(e);});
+  try{
+    await act(async()=>root.render(<Whiteboard board={board} cards={[]} onSave={()=>{saves++;}} onOpen={()=>{}} onCreate={()=>{}}/>));
+    const target=document.querySelector<HTMLElement>('[data-placement=target]')!,canvas=document.querySelector<HTMLElement>('.canvas')!;document.elementsFromPoint=()=>[canvas,target.querySelector('.board-tile-contents')!,target];
+    for(const id of ['source','child']){
+      const source=document.querySelector<HTMLElement>('[data-placement='+id+']')!;await pointer(source,'pointerdown',100,100);await pointer(document,'pointermove',850,100);assert.ok(target.classList.contains('document-drop-pending'));t.mock.timers.tick(650);await pointer(document,'pointerup',850,100);
+      assert.equal(drops.length,id==='source'?1:2);assert.equal(drops.at(-1)!.folder,'Parent/Target');assert.equal(drops.at(-1)!.key,id==='source'?'card:c':'board:Parent/Child');assert.equal(saves,0);assert.equal(document.querySelector('[role=status]'),null);
+    }
+  }finally{await act(async()=>root.unmount());clearDocumentDrop();dom.window.close();}
+});

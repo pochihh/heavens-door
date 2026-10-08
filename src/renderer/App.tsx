@@ -114,7 +114,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       const run=(mode:'move'|'reference'|'move-reference')=>attempt(session.placeCard(card.id,d.folder,point.x,point.y,mode,d.source,d.placement));
       const owned=current.boards.some(b=>b.folder&&b.folder===parent(card.path));
       if(d.source&&d.source!==parent(card.path))run('move-reference');
-      else if(!owned||parent(card.path)===d.folder)run('move');
+      else if(d.intoBoard||!owned||parent(card.path)===d.folder)run('move');
       else setTabMenu({x:d.screenX,y:d.screenY,actions:[{label:ui.views.moveCard,icon:'folder',run:()=>run('move')},{label:ui.views.addReference,icon:'link',run:()=>run('reference')}]});
     };
     window.addEventListener('door:document-drop',drop);return()=>window.removeEventListener('door:document-drop',drop);

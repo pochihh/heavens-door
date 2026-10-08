@@ -89,6 +89,7 @@ export const ui = {
     editLabel:'Edit edge label',delete:'Delete edge',showStyle:'Show Style View',
   },
   whiteboard: {
+    holdToMoveInto:(name:string)=>`Hold to move into ${name}`,moveInto:(name:string)=>`Move into ${name}`,
     cardUnavailable: "Card unavailable",
     contentsCount: (cards: number, boards: number) => `${cards} card${cards === 1 ? "" : "s"} · ${boards} whiteboard${boards === 1 ? "" : "s"}`,
     resize: (name: string) => `Resize ${name}`,

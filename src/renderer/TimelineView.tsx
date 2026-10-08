@@ -143,9 +143,11 @@ export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onVi
       frame=window.requestAnimationFrame(tick);
     };
     const finish=(event?:PointerEvent)=>{
-      if(ended||event&&event.pointerId!==pointer)return;if(event)update(event);ended=true;window.cancelAnimationFrame(frame);
+      if(ended||event&&event.pointerId!==pointer)return;if(event)update(event);
+      const dropped=!!(event&&moved&&row&&mode==='move'&&!inTrack(event)&&dropDocumentAt({key:'card:'+row.card.id,path:row.card.path},event.clientX,event.clientY,target));
+      ended=true;window.cancelAnimationFrame(frame);
       document.removeEventListener('pointermove',update);document.removeEventListener('pointerup',finish);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);phantom?.remove();if(scheduling)target.style.removeProperty('visibility');gesture.current=false;document.body.classList.remove('timeline-dragging');setPreview(null);onEditing(null);clearDocumentDrop();
-      if(event&&moved&&row&&mode==='move'&&!inTrack(event)&&dropDocumentAt({key:'card:'+row.card.id,path:row.card.path},event.clientX,event.clientY,target))return;
+      if(dropped)return;
       if(!event||invalid)return;if(scheduling&&!moved){onOpen('card:'+row!.card.id);return;}if(scheduling&&!inTrack(event))return;
       const area=viewport.current?.getBoundingClientRect();if(area&&(event.clientX<area.left||event.clientX>area.right||event.clientY<area.top||event.clientY>area.bottom))return;
       if(row){if(moved&&mode==='move'&&inTrack(event))void move(row,latest,index);else if(moved&&mode!=='move'&&JSON.stringify(original)!==JSON.stringify(latest))void save(row,latest);else if(!moved&&mode==='move')onOpen('card:'+row.card.id);}else onCreate?.(target,undefined,latest);

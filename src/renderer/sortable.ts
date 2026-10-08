@@ -115,10 +115,11 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
       if(ended)return;ended=true;
       let index:number|null=null;
       if(save&&active&&inside()&&placeholder?.parentElement===list)index=[...list.children].slice(0,[...list.children].indexOf(placeholder)).filter(el=>el instanceof HTMLElement&&el.dataset.fileKey&&el!==source&&el.dataset.fileKey!==key).length;
+      const dropped=!!(save&&active&&drag&&(!inside()||!!source.closest('.file-tree,.saved-files'))&&dropDocumentAt(drag,x,y,source));
       cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;clearDocumentDrop();
       document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',keyboard,true);window.removeEventListener('blur',abort);cancel.current=()=>{};
       if(active){dragging.current?.(false);suppressDragClick();}
-      if(save&&active&&!(drag&&(!inside()||!!source.closest('.file-tree,.saved-files'))&&dropDocumentAt(drag,x,y,source)))onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
+      if(save&&active&&!dropped)onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
     };
     const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update();finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};
     const abort=(event?:Event)=>{if(event?.type!=='pointercancel'||(event as PointerEvent).pointerId===pointer)finish(false);};
@@ -144,10 +145,11 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     const rows=target?cards(target):[],index=slot?rows.filter(row=>!!(row.compareDocumentPosition(slot!)&Node.DOCUMENT_POSITION_FOLLOWING)).length:0;
     const value=target?.dataset.tagColumn,before=rows[index]?.dataset.cardId,after=rows[index-1]?.dataset.cardId;
     const changed=target!==home||reorder&&before!==initialBefore,dragged=!!phantom;
+    const dropped=!!(save&&dragged&&drag&&(x<bounds().left||x>bounds().right||y<bounds().top||y>bounds().bottom)&&dropDocumentAt(drag,x,y,source));
     animations.forEach(a=>a.cancel());target?.classList.remove('kanban-drop');slot?.remove();phantom?.remove();reveal();document.body.classList.remove('list-dragging');clearDocumentDrop();
     document.removeEventListener('pointermove',motion);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);
     if(dragged)suppressDragClick();
-    if(save&&dragged&&drag&&(x<bounds().left||x>bounds().right||y<bounds().top||y>bounds().bottom)&&dropDocumentAt(drag,x,y,source))return;
+    if(dropped)return;
     if(save&&dragged&&changed&&value!==undefined)onDrop(value,reorder?{before,after}:{});
   }
   function place(scrollY=0){
