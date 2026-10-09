@@ -83,6 +83,7 @@ export class Workspace {
     const workspace = new Workspace(actual,cache);
     try {
       await workspace.recoverFileMove();
+      await workspace.recoverTransfer();
       await workspace.recover();
       await workspace.history.initialize();
       await workspace.scan();
@@ -672,31 +673,37 @@ export class Workspace {
     this.preferences=await writePreferences(this.root,preferences,journal.preferences);
     await fs.unlink(file);this.renamePending=false;
   }
-  private async pathEdits(from:string,to:string,boardPath=this.boardPath(from),name=basename(to),position?:{x:number;y:number}){
+  private async linkEdits(moves:{from:string;to:string}[]){
+    if(!moves.length)return [];
+    const remap=(path:string)=>{const move=moves.find(m=>path===m.from||path.startsWith(m.from+'/'));return move?remapFilePath(path,move.from,move.to):path;};
     const edits:{path:string;before:string;after:string}[]=[];
     // ponytail: rename scans note links; add a path-link index if large-workspace renames become slow.
     for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
       const path=String(row.path),before=await this.read(path);
       if(revision(before)!==row.revision)throw new Error(ui.errors.renameRefresh(path));
-      const card=readCard(path,before),nextPath=remapPath(path,from,to);
+      const card=readCard(path,before),nextPath=remap(path);
       const rewrite=(href:string)=>{
         if(/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href))return href;
         const [link]=href.split(/[?#]/),tail=href.slice(link.length);
         let decoded:string;try{decoded=decodeURIComponent(link);}catch{return href;}
-        const target=relative(this.root,resolve(this.root,dirname(path),decoded)),mapped=remapFilePath(target,from,to);
+        const target=relative(this.root,resolve(this.root,dirname(path),decoded)),mapped=remap(target);
         const next=relative(dirname(nextPath),mapped).split(sep).map(encodeURIComponent).join('/');
         return next===relative(dirname(path),target).split(sep).map(encodeURIComponent).join('/')?href:next+tail;
       };
       let body=card.body;
       marked.walkTokens(marked.lexer(body),token=>{if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}else if(token.type==='html')body=body.replace(token.raw,rewriteHtmlLinks(token.raw,rewrite));});
       body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(all,lead,href)=>{const next=rewrite(href);return next===href?all:lead+'<'+next+'>';});
-      const after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remapFilePath(value,from,to));
+      const after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remap(value));
       if(after!==before)edits.push({path,before,after});
     }
     for(const tag of this.tags.values()){
       const before=await this.read(tag.path);if(revision(before)!==tag.revision)throw new Error(ui.errors.renameRefresh(tag.path));
-      const after=remapTagReferences(before,tag.path,[...this.tags.values()],value=>remapFilePath(value,from,to));if(after!==before)edits.push({path:tag.path,before,after});
+      const after=remapTagReferences(before,tag.path,[...this.tags.values()],value=>remap(value));if(after!==before)edits.push({path:tag.path,before,after});
     }
+    return edits;
+  }
+  private async pathEdits(from:string,to:string,boardPath=this.boardPath(from),name=basename(to),position?:{x:number;y:number}){
+    const edits=await this.linkEdits([{from,to}]);
     const displayed=this.allBoards(),movingBoard=displayed.find(b=>b.folder===from),tile=displayed.flatMap(b=>b.cards).find(p=>p.folder===from);
     let destination=dirname(to)==='.'?'':dirname(to);
     while(destination&&!displayed.some(b=>b.folder===destination&&b.folder!==from&&!b.folder.startsWith(from+'/')))destination=dirname(destination)==='.'?'':dirname(destination);
@@ -746,7 +753,7 @@ export class Workspace {
           const edit=edits.find(e=>e.path===restore.path);if(edit)edit.after=restore.content;else edits.push({path:restore.path,before,after:restore.content});
         }
       }
-      const restoredBoards=edits.filter(e=>this.boards.has(e.path)).map(e=>({path:remapFilePath(e.path,from,to),content:e.before,expected:revision(e.after)}));
+      const restoredBoards=edits.filter(e=>this.boards.has(e.path)).map(e=>({path:remapFilePath(e.path,from,to),content:e.before,expected:revision(e.after!)}));
       const preferences=await readPreferences(this.root),nextPreferences=remapPreferences(preferences,from,to),file=join(this.cache,'file-move.json'),handle=await fs.open(file,'wx');
       try{await handle.writeFile(JSON.stringify({from,to,edits,preferences,nextPreferences}));await handle.sync();}finally{await handle.close();}
       this.renamePending=true;
@@ -798,6 +805,90 @@ export class Workspace {
     this.pathMoves.push({from,to});
     await this.scan();
     return {snapshot:this.snapshot(),edits:[],move:{from,to}};
+  }
+  async moveSelection(source:string,expected:string,ids:string[],destination:string,destinationExpected:string,x:number,y:number):Promise<import('../shared').TransferMutation>{
+    this.assertReady();
+    if(!Array.isArray(ids)||!ids.length||ids.length>10000||ids.some(id=>typeof id!=='string')||new Set(ids).size!==ids.length||![x,y].every(Number.isFinite)||source===destination)throw new Error(ui.errors.invalidTransaction);
+    const origin=this.allBoards().find(b=>b.folder===source),target=this.allBoards().find(b=>b.folder===destination);
+    if(!origin||!target)throw new Error(ui.errors.whiteboardMissing);
+    if(origin.revision!==expected||target.revision!==destinationExpected)throw new Error(ui.errors.externalEdit(origin.path));
+    const selected=new Set(ids),items=origin.cards.filter(p=>selected.has(p.id));
+    if(items.length!==ids.length||!destination&&items.some(p=>!p.folder)||items.some(p=>p.folder&&(destination===p.folder||destination.startsWith(p.folder+'/'))))throw new Error(ui.errors.invalidWorkspacePath);
+    const snapshot=this.snapshot(),paths=new Set<string>();
+    for(const p of items){
+      if(p.folder){if(!snapshot.boards.some(b=>b.folder===p.folder))throw new Error(ui.errors.whiteboardMissing);paths.add(p.folder);}
+      else{const card=snapshot.cards.find(c=>c.id===p.cardId);if(!card)throw new Error(ui.errors.cardMissing);if(dirname(card.path)===source)paths.add(card.path);}
+    }
+    const moves:import('../shared').BoardTransfer['moves']=[];
+    for(const from of paths){
+      if([...paths].some(p=>p!==from&&from.startsWith(p+'/')))continue;
+      const requested=join(destination,basename(from)),to=items.some(p=>p.folder===from)?requested:await availableFilePath(this.root,requested);
+      if(moves.some(m=>m.to.toLocaleLowerCase()===to.toLocaleLowerCase()))throw new Error(ui.errors.fileNameConflict);
+      moves.push({from,to,expected:await fileStamp(this.root,from)});
+    }
+    const remap=(path:string)=>{const move=moves.find(m=>path===m.from||path.startsWith(m.from+'/'));return move?remapFilePath(path,move.from,move.to):path;};
+    const edits=await this.linkEdits(moves),left=Math.min(...items.map(p=>p.x)),top=Math.min(...items.map(p=>p.y));
+    const placementIds=new Set(target.cards.map(p=>p.id)),edgeIds=new Set(target.edges.map(e=>e.id)),mappedIds=new Map<string,string>();
+    const incoming=items.map(p=>{
+      const id=placementIds.has(p.id)?randomUUID():p.id;placementIds.add(id);mappedIds.set(p.id,id);
+      return {...p,id,x:p.x-left+x,y:p.y-top+y,...(p.folder?{folder:remap(p.folder)}:{})};
+    });
+    const connections=origin.edges.filter(e=>selected.has(e.from)&&selected.has(e.to)).map(e=>{const id=edgeIds.has(e.id)?randomUUID():e.id;edgeIds.add(id);return {...e,id,from:mappedIds.get(e.from)!,to:mappedIds.get(e.to)!};});
+    for(const board of this.boards.values()){
+      if(board.folder!==source&&board.folder!==destination&&!board.cards.some(p=>p.folder&&remap(p.folder)!==p.folder))continue;
+      const before=await this.read(board.path);if(revision(before)!==board.revision)throw new Error(ui.errors.renameRefresh(board.path));
+      const cards=board.cards.filter(p=>board.folder!==source||!selected.has(p.id)).map(p=>p.folder?{...p,folder:remap(p.folder)}:p);
+      const remaining=new Set(cards.map(p=>p.id)),edges=board.edges.filter(e=>remaining.has(e.from)&&remaining.has(e.to));
+      if(board.folder===destination){cards.push(...incoming);edges.push(...connections);}
+      if(JSON.stringify(cards)!==JSON.stringify(board.cards)||JSON.stringify(edges)!==JSON.stringify(board.edges))edits.push({path:board.path,before,after:writeBoard({...board,cards,edges})});
+    }
+    return this.transfer({moves,changes:edits.map(e=>({path:e.path,content:e.after,expected:revision(e.before)}))});
+  }
+  private async recoverTransfer(){
+    const file=join(this.cache,'board-transfer.json');
+    let journal:{moves:import('../shared').BoardTransfer['moves'];edits:import('../shared').Edit[];preferences:Preferences;nextPreferences:Preferences};
+    try{journal=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e;}
+    const exists=async(path:string)=>{try{await fs.lstat(await editablePath(this.root,path));return true;}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return false;throw e;}};
+    const moved:import('../shared').BoardTransfer['moves']=[];
+    for(const move of journal.moves){const atTarget=await exists(move.to);if(atTarget===await exists(move.from))throw new Error(ui.errors.renameRecoveryPaths);if(atTarget)moved.push(move);}
+    const actual=(path:string)=>{const move=moved.find(m=>path===m.from||path.startsWith(m.from+'/'));return move?remapFilePath(path,move.from,move.to):path;};
+    const current=await readPreferences(this.root);
+    if(JSON.stringify(current)!==JSON.stringify(journal.preferences)&&JSON.stringify(current)!==JSON.stringify(journal.nextPreferences))throw new Error(ui.errors.renameRecoverySettings);
+    for(const edit of journal.edits){const raw=await this.raw(actual(edit.path));if(raw!==edit.before&&raw!==edit.after)throw new Error(ui.errors.renameRecoveryChange(edit.path));}
+    for(const move of moved.reverse())await operateFile(this.root,systemPath('trash',this.preferences),{action:'move',path:move.to,destination:move.from});
+    for(const edit of journal.edits)await this.atomic(edit.path,edit.before);
+    this.preferences=await writePreferences(this.root,current,journal.preferences);await fs.unlink(file);this.renamePending=false;
+  }
+  async transfer(operation:import('../shared').BoardTransfer):Promise<import('../shared').TransferMutation>{
+    this.assertReady();
+    if(!operation||!Array.isArray(operation.moves)||!Array.isArray(operation.changes)||operation.moves.length>10000||!operation.changes.length||operation.changes.length>10000||new Set(operation.changes.map(c=>c.path)).size!==operation.changes.length)throw new Error(ui.errors.invalidTransaction);
+    const moves=operation.moves;
+    for(const move of moves){
+      if(typeof move.from!=='string'||typeof move.to!=='string'||typeof move.expected!=='string'||move.from===this.boardPath('')||move.from===move.to||move.to.startsWith(move.from+'/'))throw new Error(ui.errors.invalidTransaction);
+      await editablePath(this.root,move.from);await editablePath(this.root,move.to,true);await vacant(this.root,move.to);
+      if(await fileStamp(this.root,move.from)!==move.expected)throw new Error(ui.errors.externalEdit(move.from));
+    }
+    for(let i=0;i<moves.length;i++)for(let j=0;j<moves.length;j++)if(i!==j&&(moves[i].from===moves[j].from||moves[i].from.startsWith(moves[j].from+'/')||moves[i].to.toLocaleLowerCase()===moves[j].to.toLocaleLowerCase()||moves[i].to.startsWith(moves[j].to+'/')||moves[i].to===moves[j].from||moves[i].to.startsWith(moves[j].from+'/')))throw new Error(ui.errors.invalidTransaction);
+    const edits:import('../shared').Edit[]=[];
+    for(const change of operation.changes){
+      if(typeof change.path!=='string'||typeof change.content!=='string'||typeof change.expected!=='string'||!validNotePath(change.path))throw new Error(ui.errors.invalidTransaction);
+      const before=await this.read(change.path);if(revision(before)!==change.expected)throw new Error(ui.errors.externalEdit(change.path));
+      if(change.path.endsWith('.whiteboard'))readBoard(change.path,change.content);else if(change.path.endsWith('.tag'))readTag(change.path,change.content);else if(change.path.endsWith('.md'))readCard(change.path,change.content);else throw new Error(ui.errors.unsupportedFileEdit);
+      edits.push({path:change.path,before,after:change.content});
+    }
+    const preferences=await readPreferences(this.root),nextPreferences=moves.reduce((p,m)=>remapPreferences(p,m.from,m.to),preferences),file=join(this.cache,'board-transfer.json'),handle=await fs.open(file,'wx');
+    try{await handle.writeFile(JSON.stringify({moves,edits,preferences,nextPreferences}));await handle.sync();}finally{await handle.close();}
+    this.renamePending=true;
+    try{
+      for(const edit of edits){if(await this.read(edit.path)!==edit.before)throw new Error(ui.errors.concurrentEdit(edit.path));await this.atomic(edit.path,edit.after);}
+      for(const move of moves)await operateFile(this.root,systemPath('trash',this.preferences),{action:'move',path:move.from,destination:move.to});
+      this.preferences=await writePreferences(this.root,preferences,nextPreferences);
+      const inverseMoves=await Promise.all(moves.map(async m=>({from:m.to,to:m.from,expected:await fileStamp(this.root,m.to)})));
+      const remap=(path:string)=>{const move=moves.find(m=>path===m.from||path.startsWith(m.from+'/'));return move?remapFilePath(path,move.from,move.to):path;};
+      const inverse={moves:inverseMoves,changes:edits.map(e=>({path:remap(e.path),content:e.before,expected:revision(e.after!)}))};
+      await fs.unlink(file);this.renamePending=false;this.pathMoves.push(...moves.map(({from,to})=>({from,to})));await this.scan();
+      return {snapshot:this.snapshot(),edits:[],inverse};
+    }catch(e){await this.recoverTransfer().catch(()=>undefined);throw e;}
   }
   async placeCard(id:string,expected:string,folder:string,boardExpected:string,x:number,y:number,mode:'move'|'reference'|'move-reference',source?:string,placement?:string){
     if(!['move','reference','move-reference'].includes(mode)||!Number.isFinite(x)||!Number.isFinite(y)||!folder||source!==undefined&&typeof source!=='string')throw new Error(ui.errors.invalidQuery);

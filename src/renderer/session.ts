@@ -197,6 +197,21 @@ export class Session {
       return result.snapshot.cards.find(c=>c.path===created.path)!;
     });
   }
+  moveSelection(source:string,ids:string[],folder:string,x:number,y:number,base:Board){return this.run(async()=>{
+    const origin=this.state.snapshot?.boards.find(b=>b.folder===source);
+    if(!origin||layout(origin)!==layout(base))throw new Error(ui.errors.whiteboardChanged(origin?.path??source));
+    await this.flush();await this.flushPreferences();
+    const current=this.state.snapshot!,board=current.boards.find(b=>b.folder===source),destination=current.boards.find(b=>b.folder===folder);
+    if(!board||!destination)throw new Error(ui.errors.whiteboardMissing);
+    if(layout(board)!==layout(base))throw new Error(ui.errors.whiteboardChanged(board.path));
+    const result=await this.bridge.request<import('../shared').TransferMutation>({kind:'moveSelection',source,expected:board.revision,ids,destination:folder,destinationExpected:destination.revision,x,y});
+    this.undoHistory.record(ui.history.moveCards,[],false,Date.now(),undefined,undefined,result.inverse);this.update({snapshot:result.snapshot,error:''});
+    const active=this.state.draft?.card,updated=active&&result.snapshot.cards.find(c=>c.id===active.id);
+    if(active&&updated&&(active.path!==updated.path||active.revision!==updated.revision)){
+      const card=await this.bridge.request<Card>({kind:'card',path:updated.path}),draft=this.state.draft,moves=result.inverse.moves;
+      if(draft?.card.id===active.id)this.update({draft:{card,body:draft.dirty?moveCardLinks(draft.body,active.path,card.path,path=>{const move=moves.find(m=>path===m.to||path.startsWith(m.to+'/'));return move?remapFilePath(path,move.to,move.from):path;}):card.body,dirty:draft.dirty}});
+    }
+  });}
   placeCard(id:string,folder:string,x:number,y:number,mode:'move'|'reference'|'move-reference',source?:string,placement?:string){
     return this.run(async()=>{
       await this.flush();
@@ -336,7 +351,7 @@ export class Session {
         if(!board)throw new Error(ui.errors.renameWhiteboardMissing);
         const result=await this.bridge.request<Mutation>({kind:'renameBoard',folder:move.from,name:move.to.split(/[\\/]/).at(-1)!,expected:board.revision});
         this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});
-      },async operation=>{const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});return result.inverse;});
+      },async operation=>{const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});return result.inverse;},async operation=>{const result=await this.bridge.request<import('../shared').TransferMutation>({kind:'transfer',operation});this.update({snapshot:result.snapshot,status:redo?ui.status.redone:ui.status.undone,error:''});return result.inverse;});
       const info=this.state.snapshot?.cards.find(c=>c.id===this.state.draft?.card.id);
       if (info) {
         const card=await this.bridge.request<Card>({kind:'card',path:info.path});

@@ -257,7 +257,33 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     setSelectedEdges(g.additive?[...new Set([...g.initialEdges,...edges])]:edges);
   }
   const externalPhantom=useRef<HTMLElement|null>(null);
-  function draggedDocument(g:Gesture):DocumentDrag|null {const p=g.board.cards.find(p=>p.id===g.ids[0]);return g.type==='move'&&g.ids.length===1&&p?{key:p.folder?'board:'+p.folder:'card:'+p.cardId,path:p.folder??lookup.get(p.cardId)?.path,source:board.folder,placement:p.id}:null;}
+  function draggedDocument(g:Gesture):DocumentDrag|null {
+    const items=g.board.cards.filter(p=>g.ids.includes(p.id)),p=items[0];if(g.type!=='move'||!p)return null;
+    const left=Math.min(...items.map(p=>p.x)),top=Math.min(...items.map(p=>p.y));
+    return {key:p.folder?'board:'+p.folder:'card:'+p.cardId,path:p.folder??lookup.get(p.cardId)?.path,source:board.folder,placement:p.id,
+      selection:{ids:g.ids,folders:items.flatMap(p=>p.folder?[p.folder]:[]),board:g.board,offset:{x:(g.x-g.rect.left-g.camera.x)/g.camera.zoom-left,y:(g.y-g.rect.top-g.camera.y)/g.camera.zoom-top}}};
+  }
+  function selectionPhantom(g:Gesture){
+    const items=g.board.cards.filter(p=>g.ids.includes(p.id)),left=Math.min(...items.map(p=>p.x)),top=Math.min(...items.map(p=>p.y)),zoom=g.camera.zoom;
+    const phantom=document.createElement('div');phantom.className='drag-phantom';phantom.setAttribute('aria-hidden','true');phantom.inert=true;
+    Object.assign(phantom.style,{position:'fixed',pointerEvents:'none',zIndex:'1000',width:'0',height:'0'});document.body.appendChild(phantom);
+    const edges=viewport.current!.querySelector('.edge-layer')!.cloneNode(true) as SVGSVGElement;
+    edges.querySelectorAll('.mention-link,.edge-preview,.edge-hit').forEach(node=>node.remove());
+    edges.querySelectorAll<SVGGElement>('[data-edge]').forEach(node=>{
+      const edge=g.board.edges.find(e=>e.id===node.dataset.edge&&g.ids.includes(e.from)&&g.ids.includes(e.to));
+      if(!edge){node.remove();return;}
+      const geometry=edgeGeometry(edge,items.find(p=>p.id===edge.from)!,items.find(p=>p.id===edge.to)!,heightOf);
+      node.querySelectorAll('path').forEach(path=>path.setAttribute('d',geometry.path));
+      const label=node.querySelector('foreignObject');label?.setAttribute('x',String(geometry.midpoint.x-120));label?.setAttribute('y',String(geometry.midpoint.y-20));
+    });
+    edges.querySelector('.edge-camera')!.setAttribute('transform',`scale(${zoom}) translate(${-left} ${-top})`);
+    Object.assign(edges.style,{position:'absolute',left:'0',top:'0',width:'1px',height:'1px',overflow:'visible',pointerEvents:'none'});phantom.appendChild(edges);
+    for(const p of items){const source=viewport.current!.querySelector<HTMLElement>('[data-placement="'+p.id+'"]');if(!source)continue;
+      const clone=createDragPhantom(source),height=source.getBoundingClientRect().height/zoom;
+      Object.assign(clone.style,{position:'absolute',left:(p.x-left)*zoom+'px',top:(p.y-top)*zoom+'px',width:p.width+'px',height:height+'px',transform:`scale(${zoom})`,transformOrigin:'top left'});phantom.appendChild(clone);
+    }
+    return phantom;
+  }
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
@@ -274,8 +300,8 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
       if(drag&&source){
         previewDocumentDrop(drag,e.clientX,e.clientY,source);
         const r=viewport.current!.getBoundingClientRect(),outside=r.width>0&&r.height>0&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom);
-        if(outside&&!externalPhantom.current)externalPhantom.current=createDragPhantom(source);
-        if(externalPhantom.current){const p=g.board.cards.find(p=>p.id===g.ids[0])!;externalPhantom.current.style.visibility=outside?'visible':'hidden';externalPhantom.current.style.left=e.clientX-g.x+g.rect.left+g.camera.x+p.x*g.camera.zoom+'px';externalPhantom.current.style.top=e.clientY-g.y+g.rect.top+g.camera.y+p.y*g.camera.zoom+'px';}
+        if(outside&&!externalPhantom.current)externalPhantom.current=selectionPhantom(g);
+        if(externalPhantom.current){const offset=drag.selection!.offset;externalPhantom.current.style.visibility=outside?'visible':'hidden';externalPhantom.current.style.left=e.clientX-offset.x*g.camera.zoom+'px';externalPhantom.current.style.top=e.clientY-offset.y*g.camera.zoom+'px';}
       }
       dragPoint.current = { x: e.clientX, y: e.clientY };
       if (dragFrame.current === null) dragFrame.current = viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(() => {

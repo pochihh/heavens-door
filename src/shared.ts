@@ -58,6 +58,8 @@ export interface Mutation { snapshot: Snapshot; edits: Edit[]; move?:BoardMove }
 export interface Write { path: string; content: string | null; expected: string | null }
 export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:string;destination?:string;expected?:string;position?:{x:number;y:number};boards?:Write[]}
 export interface FileMutation extends Mutation {path:string;inverse:FileOperation}
+export interface BoardTransfer {moves:{from:string;to:string;expected:string}[];changes:Write[]}
+export interface TransferMutation extends Mutation {inverse:BoardTransfer}
 export type Request =
   | { kind: 'open'; root: string; cache: string }
   | { kind: 'snapshot' }
@@ -72,6 +74,8 @@ export type Request =
   | { kind:'createTemplate';period?:'daily'|'weekly' }
   | { kind: 'boardMentions'; path:string }
   | {kind:'fileOperation';operation:FileOperation}
+  | {kind:'moveSelection';source:string;expected:string;ids:string[];destination:string;destinationExpected:string;x:number;y:number}
+  | {kind:'transfer';operation:BoardTransfer}
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
   | { kind: 'preferences'; patch: Partial<Preferences> }
