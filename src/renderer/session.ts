@@ -185,6 +185,12 @@ export class Session {
       this.update({draft:{card,body:card.body,dirty:false}});
     });
   }
+  createSlipboxCard(name:string,placement?:{folder:string;x:number;y:number}){return this.run(async()=>{
+    await this.flush();await this.flushPreferences();
+    const board=placement&&this.state.snapshot?.boards.find(b=>b.folder===placement.folder);if(placement&&!board)throw new Error(ui.errors.whiteboardMissing);
+    const result=await this.bridge.request<Mutation>({kind:'createSlipboxCard',name,board:placement?{...placement,expected:board!.revision}:undefined});this.accept(result,ui.history.createCard);
+    return result.snapshot.cards.find(c=>result.edits.some(e=>e.before===null&&e.path===c.path))!;
+  });}
   createViewCard(owner:import('../shared').ViewCardMove['owner'],view:string,choice:number,column?:string,date?:import('../shared').TagValue){
     return this.run(async()=>{
       const before=this.state.snapshot?.cards.find(c=>c.path===owner.path)??this.state.snapshot?.tags?.find(t=>t.path===owner.path);
@@ -294,8 +300,11 @@ export class Session {
       if(!card)throw new Error(ui.errors.cardMissing);
       const result=await this.bridge.request<Mutation>({kind:'renameCard',path:card.path,stem,expected:card.revision});
       this.accept(result,ui.history.rename(card.path));
-      const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===id);
-      if(draft?.card.id===id&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
+      const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
+      if(draft&&info&&!draft.dirty&&result.edits.some(e=>e.path===draft.card.path||e.path===info.path)){
+        const current=await this.bridge.request<Card>({kind:'card',path:info.path});
+        if(this.state.draft?.card.id===info.id&&!this.state.draft.dirty)this.update({draft:{card:current,body:current.body,dirty:false}});
+      }
     });
   }
   board(board: Board,label: string,base = this.state.snapshot?.boards.find(b => b.path === board.path)) {

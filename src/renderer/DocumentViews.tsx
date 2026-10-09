@@ -51,10 +51,7 @@ export function NoteView({path,session,snapshot,active,memory,suspended=false,on
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
       setFocus({x:e.clientX,y:e.clientY,scrollTop:memory.scroll??0});onActivate();
     }}
-    onClick={e=>{
-      const link=(e.target as HTMLElement).closest('a'),href=link?.getAttribute('href');
-      if(href?.startsWith('card:')){e.preventDefault();onOpen(href);}
-    }}>
+    >
     {memory.source?<textarea className="editor-body card-source" aria-label={ui.editorTools.markdownSource} spellCheck={false} value={shown.body} readOnly={suspended||!shown.editing} onFocus={()=>{if(!editing)onActivate();}} onChange={e=>{if(!suspended)session.edit(e.target.value);}}/>:shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
       <TitleContent path={path} className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
@@ -85,6 +82,8 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
     onOpen={path=>{onActivate();void session.select(path).catch(()=>undefined);}}
     onReference={id=>onOpen('card:'+id)} onRename={(id,stem)=>session.renameCard(id,stem)}
     onDelete={(base,placements,edges)=>session.deleteSelection(base,placements,edges,names=>confirm({title:ui.card.deleteTitle(names.length),message:ui.card.confirmDelete(names),accept:ui.card.deleteTitle(names.length),danger:true}))}
+    onPlaceReference={(id,x,y)=>session.placeCard(id,board.folder,x,y,'reference')}
+    onCreateReference={async(name,x,y)=>{await session.createSlipboxCard(name,{folder:board.folder,x,y});}}
     onCreate={onCreate} onCreateBoard={onCreateBoard}
     draft={active?session.state.draft:null} onEdit={(body,label)=>{if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;

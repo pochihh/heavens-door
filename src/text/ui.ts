@@ -128,6 +128,10 @@ export const ui = {
     save: "Save",
     loading: "Loading…",
   },
+  references: {
+    find:'Find a card or whiteboard…',findCard:'Find a card…',insert:'Insert mention',add:'Add reference card',
+    create:(name:string)=>`Create “${name}” in Slipbox`,empty:'No matches',
+  },
   card: {
     delete: "Delete card",
     deleteTitle:(n:number)=>n===1?'Delete card':`Delete ${n} cards`,

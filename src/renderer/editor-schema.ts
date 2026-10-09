@@ -1,9 +1,15 @@
 import { ui } from '../text/ui';
-import { Extension, Node as TiptapNode, type Editor, type NodeViewRenderer } from '@tiptap/core';
+import { Extension, Node as TiptapNode, type Editor, type NodeViewRenderer, type JSONContent, type MarkdownRendererHelpers } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import CodeBlock from '@tiptap/extension-code-block';
 import StarterKit from '@tiptap/starter-kit';
+import {wikiToken} from '../document-links';
+const CardKit=StarterKit.extend({addExtensions(){return (this.parent?.()??[]).map(extension=>extension.name==='link'?extension.extend({markdownTokenizer:{name:'wikiLink',level:'inline',start:(source:string)=>source.indexOf('[['),tokenize:wikiToken},renderMarkdown(node:JSONContent,helpers:MarkdownRendererHelpers){
+  const href=String(node.attrs?.href??'');if(!href.startsWith('wiki:')){const text=helpers.renderChildren(node),title=node.attrs?.title;return title?`[${text}](${href} "${title}")`:`[${text}](${href})`;}
+  const target=decodeURIComponent(href.slice(5)),text=helpers.renderChildren(node);return '[['+target+(text===target?'':'|'+text)+']]';
+}}):extension);}});
+
 import { Markdown } from '@tiptap/markdown';
 import Image from '@tiptap/extension-image';
 import {TextColors,htmlAttribute,inlineHtmlToken,supportedHtml} from './editor-html';
@@ -39,7 +45,7 @@ export function cardMarkdown(editor:Editor){
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
 export function extensions(path: string,codeView?:NodeViewRenderer,htmlView?:NodeViewRenderer,imageView?:NodeViewRenderer) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
-  return [CardTitle,StarterKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,
+  return [CardTitle,CardKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,
     TiptapNode.create({name:'htmlBlock',group:'block',atom:true,addAttributes(){return {source:{default:''}};},parseHTML(){return [{tag:'div[data-html-source]',getAttrs:element=>({source:(element as HTMLElement).dataset.htmlSource})}];},renderHTML({node}){return ['div',{'data-html-source':node.attrs.source}];},
       markdownTokenName:'html',parseMarkdown(token,helpers){
         const template=document.createElement('template');template.innerHTML=token.raw??'';

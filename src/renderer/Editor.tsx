@@ -13,6 +13,8 @@ import { unsupported, preview } from './markdown';
 import { withCardTitle } from '../card-title';
 import {EditorControls} from './EditorControls';
 import {NodeSelection,Plugin,PluginKey} from '@tiptap/pm/state';
+import {EditorMentions} from './EditorMentions';
+import {useDocumentLinks} from './DocumentLink';
 import {assetPath} from './markdown';
 import {EditorImage} from './EditorImage';
 import {HtmlContent} from './HtmlContent';
@@ -23,8 +25,9 @@ export interface EditorFocus { x: number; y: number; scrollTop: number; append?:
 interface Props { afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
 // Changing files remounts the editor: effects must never touch a destroyed instance.
 export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
-function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
+function EditableCard({afterTitle,path,body,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
   const context=useContext(ViewBlockContext),settings=context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS;
+  const links=useDocumentLinks(path);
   const blocked=unsupported(body);
   const [initialContent]=useState(()=>withCardTitle(body));
   const [imageError,setImageError]=useState(''),imageInput=useRef<HTMLInputElement>(null),actionLabel=useRef<string|undefined>(undefined),imageHandler=useRef<(files:File[],position?:number)=>void>(()=>{});
@@ -84,8 +87,10 @@ function EditableCard({afterTitle,path,body,cards,onEdit,autofocus=false,focusPo
     <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml" multiple hidden onChange={e=>{const files=[...e.target.files??[]];e.target.value='';void insertImages(files);}}/>
     {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}
     <EditorCommands editor={editor}/>
-    <EditorControls zoom={zoom} canvas={canvas} editor={editor} cards={cards} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
-    <EditorContent editor={editor} className="prose editor-body" onPointerDownCapture={event=>{
+    {links.picker}
+    <EditorMentions editor={editor} path={path} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
+    <EditorControls path={path} zoom={zoom} canvas={canvas} editor={editor} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
+    <EditorContent editor={editor} className="prose editor-body" onClick={links.click} onPointerDownCapture={event=>{
       if(!canvas||event.button!==0||event.defaultPrevented||(event.target as HTMLElement).closest('button,a,input,[contenteditable=false]'))return;
       const last=editor.view.dom.lastElementChild;if(!last||event.clientY<=last.getBoundingClientRect().bottom)return;
       event.preventDefault();event.stopPropagation();

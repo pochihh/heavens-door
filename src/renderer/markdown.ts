@@ -1,3 +1,4 @@
+import '../document-links';
 import {parseImageLayout,imageHtml} from './image-layout';
 import { ui } from '../text/ui';
 import { marked, type Token } from 'marked';
@@ -17,7 +18,7 @@ export function assetPath(notePath: string, source: string) {
 }
 export function unsupported(body: string) {
   let text=body;marked.walkTokens(marked.lexer(body),token=>{if(['html','code','codespan'].includes(token.type))text=text.replace(token.raw,'');});
-  return /\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(text);
+  return /!\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(text);
 }
 export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.
@@ -39,7 +40,7 @@ export function titlePreview(card:CardInfo) {
 }
 export function previewHtml(html:string,path:string){return renderPreview(html,path,false).replace(/<input\b/g,'<input disabled');}
 function renderPreview(html:string,path:string,reservedTitle=true) {
-  const clean=DOMPurify.sanitize(html,{FORBID_TAGS:['script','style','iframe','object','embed','form','button','textarea','select','video','audio','source','link','meta'],ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|[^:]*$)/i});
+  const clean=DOMPurify.sanitize(html,{FORBID_TAGS:['script','style','iframe','object','embed','form','button','textarea','select','video','audio','source','link','meta'],ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|wiki:[^\s]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
   if(reservedTitle){let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}

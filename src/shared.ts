@@ -26,6 +26,7 @@ export interface CardQuery {
 export interface CardResult extends CardInfo { properties:Record<string,unknown>; snippet:string; score:number; terms:string[]; previewImage?:string; highlights?:{name:[number,number][];path:[number,number][];snippet:[number,number][]} }
 export interface TagSearchResult {kind:'tag';path:string;name:string;tag:string;revision:string;snippet:string;score:number;terms:string[];highlights:{name:[number,number][];path:[number,number][];snippet:[number,number][]}}
 export type WorkspaceSearchResult=CardResult|TagSearchResult;
+export interface ReferenceTarget {kind:'card'|'board';key:string;path:string;name:string}
 export interface CheckpointChange {path:string;added:number|null;removed:number|null}
 export interface Checkpoint { color?:number; id: string; parents: string[]; time: number; label: string; active: boolean }
 export interface TrashEntry extends CardInfo {kind?:'file'|'folder';archive?:string;originalPath?:string;deleted:number}
@@ -109,6 +110,8 @@ export type Request =
   | { kind:'saveTagBody';path:string;expected:string;body:string }
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }
   | { kind: 'searchWorkspace'; text:string }
+  | { kind: 'queryReferences';text:string;cardsOnly?:boolean;exclude?:string[] }
+  | { kind: 'createSlipboxCard';name:string;board?:{folder:string;expected:string;x:number;y:number} }
   | { kind: 'checkpoint'; label: string }
   | { kind: 'history'; limit?:number }
   | { kind: 'checkpointChanges'; id:string }

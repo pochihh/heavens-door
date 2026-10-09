@@ -7,6 +7,7 @@ import type {TemplateValues} from '../templates';
 import {systemGuideBody,systemGuidePath} from '../system-guides';
 import type {SystemEntry} from '../features';
 import {moveCardLinks,rewriteHtmlLinks} from '../card-links';
+import {referencePath,referenceResolver} from '../document-links';
 import {compileView} from './view-query';
 import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView,viewCreationChoices,resolveField} from '../view-block';
 import {viewText} from '../text/views';
@@ -56,8 +57,8 @@ export class Workspace {
   private pathMoves:{from:string;to:string}[]=[];
   constructor(readonly root: string, readonly cache: string) {
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 7) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=7;');
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 8) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=8;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT,searchText TEXT);
@@ -183,7 +184,7 @@ export class Workspace {
   async scan() {
     this.preferences=await readPreferences(this.root);
     const unseen=new Set((this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(row => row.path));
-    for(const path of this.tags.keys())this.search.remove(path);
+    for(const path of [...this.tags.keys(),...this.boards.keys()])this.search.remove(path);
     this.boards.clear(); this.issues.clear(); this.folders=new Set(['']); this.tags.clear();
     const walk = async (folder: string) => {
       for (const entry of await fs.readdir(join(this.root,folder),{withFileTypes:true})) {
@@ -219,7 +220,7 @@ export class Workspace {
     if(isTrashNote(path)&&(dirname(path)===systemPath('trash',this.preferences)||await this.raw(path.slice(0,-3)+'.json')!==null)){this.removeIndex(path);return;}
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
     this.issues.delete(path);
-    this.boards.delete(path); this.tags.delete(path);if(path.endsWith('.tag'))this.search.remove(path);
+    this.boards.delete(path); this.tags.delete(path);if(!path.endsWith('.md'))this.search.remove(path);
     try {
       const raw = await this.raw(path);
       if (raw === null) { this.removeIndex(path); return; }
@@ -229,7 +230,7 @@ export class Workspace {
         const tag=readTag(path,raw);this.tags.set(path,tag);this.search.update({path,name:tag.tag,title:tag.tag,body:''});
         return;
       }
-      if (path.endsWith('.whiteboard')) { this.boards.set(path,readBoard(path,raw)); return; }
+      if (path.endsWith('.whiteboard')) { const board=readBoard(path,raw);this.boards.set(path,board);this.search.update({path,name:board.name,title:board.name,body:board.folder});return; }
       const cached=this.db.prepare('SELECT revision FROM cards WHERE path=?').get(path);
       // Verify content hashes rather than trusting timestamps or file sizes.
       if (cached?.revision === revision(raw)) return;
@@ -242,7 +243,9 @@ export class Workspace {
         for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,target);}
         this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
         marked.walkTokens(marked.lexer(card.body), token => {
-          if (token.type === 'link' && token.href.startsWith('card:')) this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.slice(5));
+          if(token.type!=='link')return;
+          const target=token.href.startsWith('card:')?token.href.slice(5):token.href.startsWith('wiki:')?token.href:referencePath(path,token.href);
+          if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.startsWith('card:')||token.href.startsWith('wiki:')?target:'file:'+target);
         });
         if (!this.scanning) this.db.exec('COMMIT');
       } catch(e) { if (!this.scanning) this.db.exec('ROLLBACK'); throw e; }
@@ -676,7 +679,8 @@ export class Workspace {
   private async linkEdits(moves:{from:string;to:string}[]){
     if(!moves.length)return [];
     const remap=(path:string)=>{const move=moves.find(m=>path===m.from||path.startsWith(m.from+'/'));return move?remapFilePath(path,move.from,move.to):path;};
-    const edits:{path:string;before:string;after:string}[]=[];
+    const edits:{path:string;before:string;after:string}[]=[],targets:import('../shared').ReferenceTarget[]=[...this.db.prepare('SELECT id,path,name FROM cards').all().map(c=>({kind:'card' as const,key:'card:'+c.id,path:String(c.path),name:String(c.name)})),...this.allBoards().map(b=>({kind:'board' as const,key:'board:'+b.folder,path:b.path,name:b.name}))];
+    const resolveReference=referenceResolver(targets);
     // ponytail: rename scans note links; add a path-link index if large-workspace renames become slow.
     for(const row of this.db.prepare('SELECT path,revision FROM cards').all()){
       const path=String(row.path),before=await this.read(path);
@@ -691,7 +695,7 @@ export class Workspace {
         return next===relative(dirname(path),target).split(sep).map(encodeURIComponent).join('/')?href:next+tail;
       };
       let body=card.body;
-      marked.walkTokens(marked.lexer(body),token=>{if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}else if(token.type==='html')body=body.replace(token.raw,rewriteHtmlLinks(token.raw,rewrite));});
+      marked.walkTokens(marked.lexer(body),token=>{if(token.type==='link'&&token.href.startsWith('wiki:')){const matches=resolveReference(path,token.href),target=matches.length===1?matches[0].path:undefined;if(target&&remap(target)!==target){const original=decodeURIComponent(token.href.slice(5)),fragment=original.includes('#')?original.slice(original.indexOf('#')):'',alias=token.raw.includes('|')?'|'+token.raw.slice(token.raw.indexOf('|')+1,-2):'';body=body.replace(token.raw,'[['+remap(target).replace(/\.md$/i,'')+fragment+alias+']]');}}else if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}else if(token.type==='html')body=body.replace(token.raw,rewriteHtmlLinks(token.raw,rewrite));});
       body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(all,lead,href)=>{const next=rewrite(href);return next===href?all:lead+'<'+next+'>';});
       const after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remap(value));
       if(after!==before)edits.push({path,before,after});
@@ -930,9 +934,8 @@ export class Workspace {
     if(names.some(name=>name.toLocaleLowerCase()===(stem+'.md').toLocaleLowerCase()))throw new Error(ui.errors.fileNameConflict);
     // Reuse the journaled transaction so rename is recoverable and one undo action.
     // Persist a legacy card's existing provisional identity before its path changes.
-    const remap=(value:string)=>value===path?next:value,tags=[...this.tags.values()];
-    const changes:Write[]=[{path,content:null,expected},{path:next,content:remapTagReferences(editCard(raw,card,card.body),path,tags,remap),expected:null}];
-    for(const info of [...this.snapshot().cards,...tags]){if(info.path===path)continue;const before=await this.read(info.path),after=remapTagReferences(before,info.path,tags,remap);if(after!==before)changes.push({path:info.path,content:after,expected:info.revision});}
+    const edits=await this.linkEdits([{from:path,to:next}]),own=edits.find(e=>e.path===path);
+    const changes:Write[]=[{path,content:null,expected},{path:next,content:own?.after??editCard(raw,card,card.body),expected:null},...edits.filter(e=>e.path!==path).map(e=>({path:e.path,content:e.after,expected:revision(e.before)}))];
     return this.write(changes);
   }
   async saveCard(path: string, body: string, expected: string) {
@@ -971,15 +974,23 @@ export class Workspace {
     this.rememberEdgeStyle(board,before);result.snapshot.lastEdgeStyle=this.lastEdgeStyle;
     return result;
   }
+  private wikiLinks(){
+    const rows=this.db.prepare("SELECT source,target FROM links WHERE substr(target,1,5)='wiki:'").all();if(!rows.length)return [];
+    const targets=this.db.prepare('SELECT id,path,name FROM cards').all().map(c=>({kind:'card' as const,key:'card:'+c.id,path:String(c.path),name:String(c.name)}));
+    const match=referenceResolver(targets);
+    return rows.flatMap(row=>{const matches=match(String(row.source),String(row.target));return matches.length===1?[{source:String(row.source),id:matches[0].key.slice(5)}]:[];});
+  }
   boardMentions(path:string) {
     const board=this.boards.get(path);if(!board)return [];
     const ids=[...new Set(board.cards.filter(p=>!p.folder).map(p=>p.cardId))];
-    return this.db.prepare(`SELECT DISTINCT c.id AS "from", target.id AS "to"
+    const links=this.db.prepare(`SELECT DISTINCT c.id AS "from", target.id AS "to"
       FROM json_each(?) selected JOIN cards c ON c.id=selected.value JOIN links l ON l.source=c.path JOIN cards target ON l.target=target.id OR (substr(l.target,1,5)='file:' AND target.path=substr(l.target,6))
       WHERE target.id IN (SELECT value FROM json_each(?)) AND c.id<>target.id`).all(JSON.stringify(ids),JSON.stringify(ids));
+    const sources=new Map(this.db.prepare('SELECT cards.id,cards.path FROM cards JOIN json_each(?) selected ON cards.id=selected.value').all(JSON.stringify(ids)).map(c=>[String(c.path),String(c.id)]));
+    return [...links,...this.wikiLinks().filter(l=>sources.has(l.source)&&ids.includes(l.id)&&sources.get(l.source)!==l.id).map(l=>({from:sources.get(l.source)!,to:l.id}))];
   }
   query(text: string) {
-    if (text.startsWith('backlinks:')) return this.db.prepare("SELECT DISTINCT source AS path FROM links WHERE target=? OR target='file:'||(SELECT path FROM cards WHERE id=?)").all(text.slice(10),text.slice(10));
+    if (text.startsWith('backlinks:')) {const id=text.slice(10),rows=this.db.prepare("SELECT DISTINCT source AS path FROM links WHERE target=? OR target='file:'||(SELECT path FROM cards WHERE id=?)").all(id,id);return [...new Set([...rows.map(row=>String(row.path)),...this.wikiLinks().filter(l=>l.id===id).map(l=>l.source)])].map(path=>({path}));}
     return this.queryCards({text}).map(({path})=>({path}));
   }
   queryTags(text:string,exclude:string[]=[],limit=20):TagSearchResult[] {
@@ -989,6 +1000,27 @@ export class Workspace {
       const tag=this.tags.get(hit.path)!,name='#'+tag.tag;
       return {kind:'tag',path:tag.path,name,tag:tag.tag,revision:tag.revision,snippet:'',score:hit.score,terms:hit.terms,highlights:{name:searchHighlights(name,hit.terms),path:searchHighlights(tag.path,hit.terms),snippet:[]}};
     });
+  }
+  queryReferences(text:string,cardsOnly=false,exclude:string[]=[]):import('../shared').ReferenceTarget[] {
+    if(typeof text!=='string'||text.length>2048||typeof cardsOnly!=='boolean'||!Array.isArray(exclude)||exclude.length>20000||exclude.some(path=>typeof path!=='string'||path.length>4096))throw new Error(ui.errors.invalidQuery);
+    const omitted=new Set(exclude),boards=new Map((cardsOnly?[]:this.allBoards()).filter(b=>!omitted.has(b.path)).map(b=>[b.path,b]));
+    const cardAt=this.db.prepare('SELECT id,path,name,title FROM cards WHERE path=?');
+    const paths=text.trim()?this.search.search(text).filter(hit=>!omitted.has(hit.path)&&(hit.path.endsWith('.md')||boards.has(hit.path))).slice(0,30).map(hit=>hit.path):[
+      ...this.db.prepare('SELECT path FROM cards ORDER BY name').all().map(row=>String(row.path)),...boards.keys()
+    ].filter(path=>!omitted.has(path)).sort((a,b)=>a.localeCompare(b)).slice(0,30);
+    return paths.flatMap<import('../shared').ReferenceTarget>(path=>{const b=boards.get(path);if(b)return [{kind:'board' as const,key:'board:'+b.folder,path,name:b.name}];const c=cardAt.get(path);return c?[{kind:'card' as const,key:'card:'+c.id,path,name:String(c.title||c.name)}]:[];});
+  }
+  async createSlipboxCard(name:string,placement?:{folder:string;expected:string;x:number;y:number}){
+    if(typeof name!=='string')throw new Error(ui.errors.invalidFilename);
+    name=name.trim();validateStem(name);
+    let board:Board|undefined;
+    if(placement){
+      if(typeof placement!=='object'||typeof placement.folder!=='string'||!placement.folder||typeof placement.expected!=='string'||!Number.isFinite(placement.x)||!Number.isFinite(placement.y))throw new Error(ui.errors.invalidQuery);
+      board=this.boards.get(this.boardPath(placement.folder));if(!board)throw new Error(ui.errors.whiteboardMissing);if(board.revision!==placement.expected)throw new Error(ui.errors.whiteboardChanged(board.path));
+    }
+    const path=await this.newCardPath(systemPath('slipbox',this.preferences),name),raw=newNote()+'# '+name.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&')+'\n\n',changes:Write[]=[{path,content:raw,expected:null}];
+    if(board&&placement)changes.push({path:board.path,expected:board.revision,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:readCard(path,raw).id,x:placement.x,y:placement.y,width:340,height:280}]})});
+    return this.write(changes);
   }
   searchWorkspace(text:string):WorkspaceSearchResult[] {
     return [...this.queryCards({text,limit:100}),...this.queryTags(text,[],100)].sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path)).slice(0,100);
@@ -1106,7 +1138,7 @@ export class Workspace {
       if(query.recursive){where.push("(c.folder=? OR substr(c.folder,1,length(?))=?)");const prefix=path?path+'/':'';args.push(path,prefix,prefix);}
       else {where.push('c.folder=?');args.push(path);}
     }
-    if(backlinksTo!==undefined){where.push("c.path IN (SELECT source FROM links WHERE target=? OR target='file:'||(SELECT path FROM cards WHERE id=?))");args.push(backlinksTo,backlinksTo);}
+    if(backlinksTo!==undefined){where.push('c.path IN (SELECT value FROM json_each(?))');args.push(JSON.stringify(this.query('backlinks:'+backlinksTo).map(row=>String(row.path))));}
     if(tag!==undefined&&query.tagChildren){where.push("c.path IN (SELECT p.path FROM properties p,json_each(p.value) v WHERE p.field='tags' AND v.type='text' AND (v.value=? OR substr(v.value,1,length(?))=?))");args.push(tag,tag+'/',tag+'/');}
     const filters=[...properties,...(tag!==undefined&&!query.tagChildren?[{field:'tags',op:'contains' as const,value:tag}]:[])];
     for(const filter of filters){

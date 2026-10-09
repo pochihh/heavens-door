@@ -16,6 +16,8 @@ import { preview, titlePreview } from './markdown';
 import { BoardNavigation, type Camera } from './navigation';
 import { Icon, Tool } from './Icons';
 import { InlineName } from './InlineName';
+import {ReferencePicker} from './ReferencePicker';
+import {PropertyPopover} from './PropertyValue';
 import { ActionMenu, type MenuState } from './Overlays';
 import {TitleContent} from './TitleContent';
 import { CardEditor, type EditorFocus } from './Editor';
@@ -61,6 +63,7 @@ interface Props {
   inputMode?: WhiteboardInput; onCycleInput?: () => void;
   enabled?: boolean; initialCamera?: Camera; onCamera?: (camera:Camera)=>void; boards?: Board[]; onOpenFolder?: (folder:string,mode?:NavigationMode)=>void; onReference?: (id:string)=>void;
   onDelete?:(board:Board,placements:string[],edges:string[])=>Promise<boolean>;
+  onPlaceReference?:(id:string,x:number,y:number)=>Promise<void>;onCreateReference?:(name:string,x:number,y:number)=>Promise<void>;
   onRename?:(id:string,stem:string)=>Promise<void>;
   board: Board; cards: CardInfo[]; onSave: (board: Board, label: string, base: Board) => void | Promise<void>;
   onOpen: (path: string) => void; onCreate: (x: number, y: number) => void; onCreateBoard?:(x:number,y:number)=>void;
@@ -76,7 +79,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete }: Props) {
+export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -102,6 +105,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
   const heightOf=(p:Placement)=>p.collapsed||autoHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;
   const expandedHeight=(p:Placement)=>autoHeight(p)?(measuredHeight({...p,collapsed:false})??p.height):p.height;
   const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
+  const [reference,setReference]=useState<{x:number;y:number;screenX:number;screenY:number}|null>(null),[referenceAnchor,setReferenceAnchor]=useState<HTMLSpanElement|null>(null),[referenceBusy,setReferenceBusy]=useState(false),[referenceError,setReferenceError]=useState('');
   const [dragged, setDragged] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedEdges,setSelectedEdges]=useState<string[]>([]);
@@ -393,6 +397,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     setMenu({label:ui.whiteboard.canvasActions,x:clientX,y:clientY,actions:[
       {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
       {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
+      ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
   }
   function fit() {
@@ -498,6 +503,8 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
           onClick={onCycleInput}><Icon name={inputMode==='auto'?'autoInput':inputMode}/></button>
       </div>
     </div>
+    {reference&&<span ref={setReferenceAnchor} style={{position:'fixed',left:reference.screenX,top:reference.screenY,width:1,height:1}}/>}
+    {reference&&referenceAnchor&&<PropertyPopover anchor={referenceAnchor} label={ui.references.add} onClose={()=>{if(!referenceBusy)setReference(null);}}><ReferencePicker cardsOnly disabled={referenceBusy} exclude={board.cards.flatMap(p=>{const card=lookup.get(p.cardId);return card?[card.path]:[];})} onSelect={target=>{setReferenceBusy(true);void onPlaceReference?.(target.key.slice(5),reference.x,reference.y).then(()=>setReference(null)).catch(error=>setReferenceError(String(error))).finally(()=>setReferenceBusy(false));}} onCreate={onCreateReference?async name=>{await onCreateReference(name,reference.x,reference.y);setReference(null);}:undefined}/>{referenceError&&<p role="alert">{referenceError}</p>}</PropertyPopover>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </div>;
 });

@@ -23,7 +23,7 @@ test('formatted editing retains headings, tasks, tables, local images and card l
   const html=preview('[Card](card:stable-id)\n\n<img src="x" onerror="alert(1)">\n\n[Bad](javascript:alert(1))','note.md');
   assert.match(html,/href="card:stable-id"/); assert.doesNotMatch(html,/onerror|javascript:/);
   assert.equal(unsupported('<div>Custom block</div>'),false);
-  assert.equal(unsupported('[[Obsidian link]]'),true);
+  assert.equal(unsupported('[[Obsidian link]]'),false);
   editor.destroy();
 });
 

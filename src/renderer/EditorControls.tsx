@@ -6,11 +6,12 @@ import {useContext,useCallback,useEffect,useLayoutEffect,useRef,useState} from '
 import {createPortal} from 'react-dom';
 import type {Editor,JSONContent} from '@tiptap/core';
 import {NodeSelection} from '@tiptap/pm/state';
-import type {CardInfo} from '../shared';
+import {ReferencePicker} from './ReferencePicker';
+import {referenceHref} from '../document-links';
 import {DEFAULT_PALETTE} from '../colors';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
-import {Icon,Tool} from './Icons';
+import {Tool} from './Icons';
 import {ActionMenu,overlayContainer,type MenuState} from './Overlays';
 import {PropertyPopover} from './PropertyValue';
 import {Color} from './StyleView';
@@ -19,9 +20,9 @@ import {createDragPhantom} from './sortable';
 import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
-export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}:{editor:Editor;cards:CardInfo[];onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
+export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:{editor:Editor;path:string;onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
   const context=useContext(ViewBlockContext);
-  const [revision,update]=useState(0),[block,setBlock]=useState<EditorBlock|null>(null),[menu,setMenu]=useState<MenuState|null>(null),[popup,setPopup]=useState<{kind:'color'|'link'|'symbols';anchor:HTMLElement}|null>(null),[query,setQuery]=useState('');
+  const [revision,update]=useState(0),[block,setBlock]=useState<EditorBlock|null>(null),[menu,setMenu]=useState<MenuState|null>(null),[popup,setPopup]=useState<{kind:'color'|'link'|'symbols';anchor:HTMLElement}|null>(null);
   const controls=useRef<HTMLDivElement>(null),bubble=useRef<HTMLDivElement>(null),cancel=useRef<()=>void>(()=>{}),dragging=useRef(false);
   const popupOpen=useRef(false);popupOpen.current=!!menu||!!popup;
   const closeMenu=useCallback(()=>setMenu(null),[]);
@@ -139,13 +140,13 @@ export function EditorControls({editor,cards,onImage,action,zoom=1,canvas=false}
       <Tool icon="italic" label={tooltips.editor.italic} aria-pressed={editor.isActive('italic')} onClick={()=>format(()=>editor.chain().focus().toggleItalic().run())}/>
       <Tool icon="strike" label={ui.editorTools.strikethrough} aria-pressed={editor.isActive('strike')} onClick={()=>format(()=>editor.chain().focus().toggleStrike().run())}/>
       <Tool icon="code" label={ui.editorTools.inlineCode} aria-pressed={editor.isActive('code')} onClick={()=>format(()=>editor.chain().focus().toggleCode().run())}/>
-      <Tool icon="link" label={tooltips.editor.linkToAnotherCard} onClick={e=>{setQuery('');setPopup({kind:'link',anchor:e.currentTarget});}}/>
+      <Tool icon="link" label={tooltips.editor.linkToAnotherCard} onClick={e=>{setPopup({kind:'link',anchor:e.currentTarget});}}/>
       <Tool icon="art" label={ui.editor.textColor} onClick={e=>setPopup({kind:'color',anchor:e.currentTarget})}/>
     </div>}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
     {popup&&<PropertyPopover anchor={popup.anchor} label={popup.kind==='color'?ui.editor.textColor:popup.kind==='symbols'?'Symbols and emoji':ui.editor.linkCard} className="editor-style-popover" onClose={()=>setPopup(null)}>{popup.kind==='symbols'?<EditorSymbols onSelect={text=>{format(()=>editor.chain().focus().insertContent({type:'text',text}).run());setPopup(null);}}/>:popup.kind==='color'?<>
       {(['color','background'] as const).map(key=><Color key={key} label={key==='color'?ui.editor.textColor:ui.editor.highlight} palette={DEFAULT_PALETTE} value={editor.getAttributes('textColors')[key]??undefined} onChange={value=>{format(()=>{editor.chain().focus().setMark('textColors',{[key]:value??null}).run();});setPopup(null);}}/>)}
-    </>:<><form onSubmit={e=>{e.preventDefault();if(/^(https?:|mailto:|card:)/i.test(query)){format(()=>editor.chain().focus().setLink({href:query}).run());setPopup(null);}}}><input aria-label={ui.editorTools.linkURLOrCardName} placeholder={ui.editorTools.uRLOrCardName} value={query} onChange={e=>setQuery(e.target.value)}/><button type="submit" disabled={!/^(https?:|mailto:|card:)/i.test(query)}>{ui.editorTools.applyLink}</button><button type="button" onClick={()=>{format(()=>editor.chain().focus().unsetLink().run());setPopup(null);}}>{ui.editorTools.removeLink}</button></form><div className="view-menu-list">{cards.filter(c=>c.name.toLowerCase().includes(query.toLowerCase())).slice(0,30).map(card=><button key={card.id} onClick={()=>{format(()=>editor.chain().focus().setLink({href:'card:'+card.id}).run());setPopup(null);}}><Icon name="note"/>{card.name}</button>)}</div></>}</PropertyPopover>}
+    </>:<><ReferencePicker exclude={[path]} onCreate={context?async name=>{const card=await context.session.createSlipboxCard(name);format(()=>editor.chain().focus().setLink({href:referenceHref(path,card.path)}).run());setPopup(null);}:undefined} onSelect={target=>{format(()=>editor.chain().focus().setLink({href:referenceHref(path,target.path)}).run());setPopup(null);}} onURL={href=>{format(()=>editor.chain().focus().setLink({href}).run());setPopup(null);}}/><div className="property-popup-actions"><button type="button" className="danger" onClick={()=>{format(()=>editor.chain().focus().unsetLink().run());setPopup(null);}}>{ui.editorTools.removeLink}</button></div></>}</PropertyPopover>}
   </>,overlayContainer(editor.view.dom));
 }
 function positionAfter(editor:Editor,block:EditorBlock|null){return block?.to??editor.state.doc.content.size;}
