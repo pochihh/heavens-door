@@ -4,6 +4,8 @@ import {normalizedWheelDelta} from './navigation';
 export class GraphCanvas {
   private nodes:GraphParticle[]=[];
   private moved=new Set<string>();
+  private neighbors=new Map<string,Set<string>>();
+  private hoverWeights=new Map<string,number>();private hoverFrom=new Map<string,number>();private hoverStarted?:number;private hoverDuration=180;
   private graph:WorkspaceGraph={nodes:[],links:[]};
   private width=1;private height=1;private frame=0;private ticks=0;private settled=0;private hovered?:string;
   private camera:GraphCamera={x:0,y:0,zoom:1,yaw:.15,pitch:.2,distance:1200};
@@ -15,33 +17,46 @@ export class GraphCanvas {
   constructor(private canvas:HTMLCanvasElement,private mode:GraphMode,private onOpen:(key:string)=>void,private onHover:(key:string|undefined)=>void){
     this.context=canvas.getContext('2d');
     this.resize=new ResizeObserver(()=>{const rect=canvas.getBoundingClientRect();this.width=rect.width||1;this.height=rect.height||1;const ratio=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(this.width*ratio);canvas.height=Math.round(this.height*ratio);this.context?.setTransform(ratio,0,0,ratio,0,0);this.paint();});this.resize.observe(canvas);
-    const theme=()=>{const style=getComputedStyle(canvas);this.colors={text:style.getPropertyValue('--text').trim()||'#ddd',muted:style.getPropertyValue('--muted').trim()||'#999',border:style.getPropertyValue('--border').trim()||'#444',background:style.getPropertyValue('--card').trim()||'#222'};this.paint();};
+    const theme=()=>{const style=getComputedStyle(canvas),motion=style.getPropertyValue('--motion-normal').trim(),duration=parseFloat(motion)*(motion.endsWith('ms')?1:1000);this.hoverDuration=Number.isFinite(duration)?duration:180;this.colors={text:style.getPropertyValue('--text').trim()||'#ddd',muted:style.getPropertyValue('--muted').trim()||'#999',border:style.getPropertyValue('--border').trim()||'#444',background:style.getPropertyValue('--card').trim()||'#222'};this.paint();};
     this.theme=new MutationObserver(theme);this.theme.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','style','class']});theme();
     canvas.addEventListener('pointerdown',this.down);canvas.addEventListener('pointermove',this.move);canvas.addEventListener('pointerup',this.up);canvas.addEventListener('pointercancel',this.cancel);canvas.addEventListener('pointerleave',this.leave);canvas.addEventListener('wheel',this.wheel,{passive:false});canvas.addEventListener('keydown',this.key);document.addEventListener('visibilitychange',this.visibility);
   }
   setData(graph:WorkspaceGraph){
     const previous=new Map(this.nodes.map(n=>[n.key,n])),layout=graphLayout(graph,this.mode),anchors=new Map(layout.map(n=>[n.key,n.home]));this.graph={...graph,links:graph.links.map(link=>{const a=anchors.get(link.from),b=anchors.get(link.to);return {...link,length:a&&b?Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z):90};})};this.nodes=layout.map(node=>{const saved=previous.get(node.key);return saved?{...node,x:saved.x,y:saved.y,z:saved.z,home:this.moved.has(node.key)?saved.home:node.home,vx:saved.vx,vy:saved.vy,vz:saved.vz}:node;});
+    this.neighbors.clear();for(const link of graph.links)for(const [from,to] of [[link.from,link.to],[link.to,link.from]])if(from!==to){const neighbors=this.neighbors.get(from)??new Set<string>();neighbors.add(to);this.neighbors.set(from,neighbors);}
     if(!previous.size)this.fit();if(this.hovered&&!this.nodes.some(n=>n.key===this.hovered))this.hover(undefined);this.wake();
   }
   fit(){const rect=this.canvas.getBoundingClientRect();this.width=rect.width||this.width;this.height=rect.height||this.height;const radius=Math.max(180,...this.nodes.map(n=>Math.hypot(n.x,n.y,n.z)))+65;this.camera={x:0,y:0,zoom:Math.max(.015,Math.min(2,Math.min(this.width,this.height)/(radius*2))),yaw:.15,pitch:.2,distance:radius*3};this.paint();}
   reset(){this.moved.clear();this.nodes=graphLayout(this.graph,this.mode);this.fit();this.wake();}
   focus(key:string){const node=this.nodes.find(n=>n.key===key);if(!node)return;const p=graphProject(node,this.camera,this.width,this.height,this.mode);this.camera.x-=p.x-this.width/2;this.camera.y-=p.y-this.height/2;this.hover(key);this.paint();this.canvas.focus();}
-  private hover(key:string|undefined){if(key===this.hovered)return;this.hovered=key;this.onHover(key);this.paint();}
+  private hover(key:string|undefined){
+    if(key===this.hovered)return;this.updateHover();this.hovered=key;this.hoverFrom=new Map(this.hoverWeights);if(key&&!this.hoverFrom.has(key))this.hoverFrom.set(key,0);this.hoverStarted=performance.now();this.onHover(key);this.paint();if(this.hoverStarted!==undefined&&!this.frame&&!document.hidden)this.frame=requestAnimationFrame(this.tick);
+  }
+  private updateHover(){
+    if(this.hoverStarted===undefined)return;const progress=this.reduced||this.hoverDuration<=0?1:Math.min(1,(performance.now()-this.hoverStarted)/this.hoverDuration),ease=1-(1-progress)**3;
+    this.hoverWeights=new Map([...this.hoverFrom].map(([key,from])=>[key,from+((key===this.hovered?1:0)-from)*ease]));
+    if(progress===1){this.hoverWeights=this.hovered?new Map([[this.hovered,1]]):new Map();this.hoverFrom.clear();this.hoverStarted=undefined;}
+  }
   private wake(){this.ticks=0;this.settled=0;if(!this.frame&&!document.hidden)this.frame=requestAnimationFrame(this.tick);}
-  private tick=()=>{this.frame=0;if(document.hidden)return;const energy=this.reduced?0:graphStep(this.nodes,this.graph.links,this.gesture?.key);this.paint();this.ticks++;this.settled=energy<Math.max(.002,this.nodes.length*.003)?this.settled+1:0;if(!this.reduced&&(this.gesture||this.ticks<60||this.settled<15))this.frame=requestAnimationFrame(this.tick);};
+  private tick=()=>{
+    this.frame=0;if(document.hidden)return;
+    // Hover transitions share the frame loop without waking a settled layout.
+    if(!this.reduced&&(this.gesture||this.ticks<60||this.settled<15)){const energy=graphStep(this.nodes,this.graph.links,this.gesture?.key);this.ticks++;this.settled=energy<Math.max(.002,this.nodes.length*.003)?this.settled+1:0;}
+    this.paint();if(this.hoverStarted!==undefined||!this.reduced&&(this.gesture||this.ticks<60||this.settled<15))this.frame=requestAnimationFrame(this.tick);
+  };
   private paint(){
-    const ctx=this.context;if(!ctx)return;ctx.clearRect(0,0,this.width,this.height);
+    this.updateHover();const ctx=this.context;if(!ctx)return;ctx.clearRect(0,0,this.width,this.height);
     this.projected=new Map(this.nodes.map(node=>{const p=graphProject(node,this.camera,this.width,this.height,this.mode);return [node.key,{...p,radius:Math.max(2.5,Math.min(18,node.radius*Math.sqrt(p.scale)))}];}));
-    const neighbors=new Set<string>(this.hovered?[this.hovered]:[]);if(this.hovered)for(const link of this.graph.links)if(link.from===this.hovered||link.to===this.hovered){neighbors.add(link.from);neighbors.add(link.to);}
-    for(const link of this.graph.links){const a=this.projected.get(link.from),b=this.projected.get(link.to);if(!a||!b)continue;const active=this.hovered&&(link.from===this.hovered||link.to===this.hovered);ctx.globalAlpha=active?.85:this.hovered?.08:link.kind==='membership'?.48:.26;ctx.strokeStyle=this.colors.muted;ctx.lineWidth=active?1.6:1;ctx.setLineDash(link.kind==='membership'?[]:link.kind==='mention'?[2,4]:link.kind==='reference'?[5,4]:[]);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+    const strength=Math.min(1,[...this.hoverWeights.values()].reduce((sum,weight)=>sum+weight,0)),neighbors=new Map(this.hoverWeights);for(const [key,weight] of this.hoverWeights)for(const neighbor of this.neighbors.get(key)??[])neighbors.set(neighbor,(neighbors.get(neighbor)??0)+weight);
+    for(const link of this.graph.links){const a=this.projected.get(link.from),b=this.projected.get(link.to);if(!a||!b)continue;const active=Math.min(strength,(this.hoverWeights.get(link.from)??0)+(this.hoverWeights.get(link.to)??0)),base=link.kind==='membership'?.48:.26;ctx.globalAlpha=base*(1-strength)+.08*strength+.77*active;ctx.strokeStyle=this.colors.muted;ctx.lineWidth=1+.6*active;ctx.setLineDash(link.kind==='membership'?[]:link.kind==='mention'?[2,4]:link.kind==='reference'?[5,4]:[]);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
     ctx.setLineDash([]);
-    for(const node of [...this.nodes].sort((a,b)=>this.projected.get(b.key)!.z-this.projected.get(a.key)!.z)){const p=this.projected.get(node.key)!;if(p.x<-100||p.y<-100||p.x>this.width+100||p.y>this.height+100)continue;const selected=node.key===this.hovered,connected=neighbors.has(node.key);ctx.globalAlpha=this.hovered&&!connected?.25:Math.max(.45,Math.min(1,p.scale/this.camera.zoom));const color=/^#[a-f0-9]{6}$/i.test(node.color??'')?node.color!:this.colors.muted;ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=selected?2.8:2;ctx.beginPath();ctx.arc(p.x,p.y,p.radius+(selected?1.8:0),0,Math.PI*2);if(node.kind==='board'){const alpha=ctx.globalAlpha;ctx.globalAlpha=1;ctx.fillStyle=this.colors.background;ctx.fill();ctx.globalAlpha=alpha;ctx.stroke();}else ctx.fill();
+    for(const node of [...this.nodes].sort((a,b)=>this.projected.get(b.key)!.z-this.projected.get(a.key)!.z)){const p=this.projected.get(node.key)!;if(p.x<-100||p.y<-100||p.x>this.width+100||p.y>this.height+100)continue;const selected=this.hoverWeights.get(node.key)??0,base=Math.max(.45,Math.min(1,p.scale/this.camera.zoom));ctx.globalAlpha=base+(.25-base)*(strength-Math.min(strength,neighbors.get(node.key)??0));const color=/^#[a-f0-9]{6}$/i.test(node.color??'')?node.color!:this.colors.muted;ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=2+.8*selected;ctx.beginPath();ctx.arc(p.x,p.y,p.radius+1.8*selected,0,Math.PI*2);if(node.kind==='board'){const alpha=ctx.globalAlpha;ctx.globalAlpha=1;ctx.fillStyle=this.colors.background;ctx.fill();ctx.globalAlpha=alpha;ctx.stroke();}else ctx.fill();
     }
     const labels:{x:number;y:number;width:number}[]=[];
-    for(const node of [...this.nodes].sort((a,b)=>Number(b.key===this.hovered)-Number(a.key===this.hovered))){const p=this.projected.get(node.key)!,selected=node.key===this.hovered;if(p.x<0||p.y<0||p.x>this.width||p.y>this.height||!(selected||neighbors.has(node.key)||node.kind==='board'&&this.camera.zoom>.28))continue;
-      ctx.font=(selected?'500 ':'')+'12px system-ui';const width=ctx.measureText(node.name).width,y=Math.min(this.height-10,Math.max(18,p.y+4)),offset=p.radius+7,free=(x:number)=>!labels.some(r=>x<r.x+r.width+4&&x+width+4>r.x&&Math.abs(y-r.y)<18);let x=Math.min(this.width-width-8,Math.max(8,p.x+offset));
+    for(const node of [...this.nodes].sort((a,b)=>(this.hoverWeights.get(b.key)??0)-(this.hoverWeights.get(a.key)??0))){const p=this.projected.get(node.key)!,selected=this.hoverWeights.get(node.key)??0,opacity=Math.max(node.kind==='board'&&this.camera.zoom>.28?.8:0,.8*(neighbors.get(node.key)??0)+.2*selected);if(p.x<0||p.y<0||p.x>this.width||p.y>this.height||opacity<=0)continue;
+      ctx.font='500 12px system-ui';const width=ctx.measureText(node.name).width,y=Math.min(this.height-10,Math.max(18,p.y+4)),offset=p.radius+7,free=(x:number)=>!labels.some(r=>x<r.x+r.width+4&&x+width+4>r.x&&Math.abs(y-r.y)<18);let x=Math.min(this.width-width-8,Math.max(8,p.x+offset));
       if(!selected&&!free(x)){const left=p.x-offset-width;if(left<8||!free(left))continue;x=left;}
-      labels.push({x,y,width});ctx.globalAlpha=selected?1:.8;ctx.lineWidth=4;ctx.strokeStyle=this.colors.background;ctx.strokeText(node.name,x,y);ctx.fillStyle=this.colors.text;ctx.fillText(node.name,x,y);
+      labels.push({x,y,width});ctx.globalAlpha=Math.min(1,opacity);ctx.lineWidth=4;ctx.strokeStyle=this.colors.background;ctx.strokeText(node.name,x,y);ctx.fillStyle=this.colors.text;ctx.fillText(node.name,x,y);
     }ctx.globalAlpha=1;
   }
   private point(event:PointerEvent|WheelEvent){const rect=this.canvas.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}
