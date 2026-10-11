@@ -6,7 +6,7 @@ import {Icon,type IconName} from './Icons';
 import {ActionMenu,type MenuState} from './Overlays';
 import type {TabDrag} from './tab-drag';
 export const modules:Record<ModuleId,{title:string;icon:IconName}>={
-  calendar:{title:ui.journal.calendar,icon:'calendar'},whiteboards:{title:ui.layout.whiteboardExplorer,icon:'map'},files:{title:ui.layout.fileExplorer,icon:'folder'},bookmarks:{title:ui.layout.starredRecent,icon:'star'},tags:{title:ui.layout.tags,icon:'tag'},search:{title:ui.layout.search,icon:'search'},agent:{title:ui.layout.agentConsole,icon:'agent'},history:{title:ui.layout.history,icon:'branch'},style:{title:ui.layout.style,icon:'art'},
+  graph:{title:ui.graph.title,icon:'graph'},calendar:{title:ui.journal.calendar,icon:'calendar'},whiteboards:{title:ui.layout.whiteboardExplorer,icon:'map'},files:{title:ui.layout.fileExplorer,icon:'folder'},bookmarks:{title:ui.layout.starredRecent,icon:'star'},tags:{title:ui.layout.tags,icon:'tag'},search:{title:ui.layout.search,icon:'search'},agent:{title:ui.layout.agentConsole,icon:'agent'},history:{title:ui.layout.history,icon:'branch'},style:{title:ui.layout.style,icon:'art'},
 };
 export {MODULE_IDS};
 function revealActiveTabs(dock:HTMLElement|null){
@@ -22,7 +22,7 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
   const visibleGroups=docks[side].groups.flatMap(group=>{const tabs=group.tabs.filter(enabled);return tabs.length?[{...group,tabs,active:tabs.includes(group.active)?group.active:tabs[0]}]:[];});
   const dock={...docks[side],groups:visibleGroups},name=ui.layout.sideDock[side],dockElement=useRef<HTMLElement>(null);
   useLayoutEffect(()=>revealActiveTabs(dockElement.current),[dock]);
-  const moving=drag?.family==='side'?drag:null;
+  const moving=drag?.family==='side'||drag?.document==='graph:'?drag:null;
   // CSS leaves unused space when flex-grow values add up to less than one.
   const totalWeight=dock.groups.reduce((sum,group)=>sum+group.weight,0);
   if(dock.collapsed||!dock.groups.length)return moving?<aside className="side-dock collapsed-dock-target" aria-label={ui.layout.dockDropTarget(name)} style={{width:dock.width}}><div className="module-tabs" data-tab-family="side" data-tab-group="" data-dock-side={side} data-tab-drop="after"/><div className="module-content"/></aside>:null;

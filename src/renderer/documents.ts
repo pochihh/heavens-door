@@ -19,7 +19,8 @@ export function documentIndex(snapshot:Snapshot) {
   for(const board of snapshot.boards){const key='board:'+portable(board.folder);documents.set(key,{key,kind:'board',id:board.folder,title:board.folder?leaf(board.folder):snapshot.name,path:board.folder,icon:'map',exists:true});paths.set(portable(board.path),key);}
   for(const card of snapshot.cards){const key='card:'+card.id;documents.set(key,{key,kind:'card',id:card.id,title:leaf(card.path),path:card.path,icon:'note',exists:true});paths.set(portable(card.path),key);}
   for(const tag of snapshot.tags??[]){const key='tag:'+portable(tag.path);documents.set(key,{key,kind:'tag',id:tag.path,title:tag.name,path:tag.path,icon:'tag',exists:true});paths.set(portable(tag.path),key);}
-  for(const entry of CORE_FEATURES.filter(f=>f.id!=='views')){const key='system:'+entry.id;documents.set(key,{key,kind:'system',id:entry.id,title:entry.id==='journal'?'Journal':entry.name,path:systemPath(entry.id,snapshot.preferences),icon:entry.icon,exists:featureEnabled(snapshot.preferences,entry.id)});}
+  for(const entry of CORE_FEATURES.filter(f=>f.id!=='views'&&f.id!=='graph')){const key='system:'+entry.id;documents.set(key,{key,kind:'system',id:entry.id,title:entry.id==='journal'?'Journal':entry.name,path:systemPath(entry.id,snapshot.preferences),icon:entry.icon,exists:featureEnabled(snapshot.preferences,entry.id)});}
+  documents.set('graph:',{key:'graph:',kind:'graph',id:'',title:ui.graph.title,path:'',icon:'graph',exists:featureEnabled(snapshot.preferences,'graph')});
   index={documents,paths};indexes.set(snapshot,index);return index;
 }
 export function documentInfo(key:string,snapshot:Snapshot):DocumentInfo {

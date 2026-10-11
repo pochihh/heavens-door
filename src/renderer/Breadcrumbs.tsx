@@ -13,7 +13,7 @@ export function Breadcrumbs({documentKey,snapshot,onNavigate,onRename,onIcon}:{d
   const info=documentInfo(documentKey,snapshot),folder=info.kind==='board'?parent(info.id):parent(info.path);
   const [menu,setMenu]=useState<MenuState|null>(null),dismiss=useCallback(()=>setMenu(null),[]);
   const ancestors: {name:string;key?:string;path:string}[]=[];
-  if(info.kind!=='system'&&(info.kind!=='board'||info.id)){
+  if(info.kind!=='graph'&&info.kind!=='system'&&(info.kind!=='board'||info.id)){
     ancestors.push({name:snapshot.name,key:'board:',path:snapshot.root});
     let path='';for(const part of portable(folder).split('/').filter(Boolean)){path=path?path+'/'+part:part;ancestors.push({name:part,path,key:featureEnabled(snapshot.preferences,'journal')&&path===systemPath('journal',snapshot.preferences)?'system:journal':snapshot.boards.some(b=>portable(b.folder)===path)?'board:'+path:undefined});}
   }

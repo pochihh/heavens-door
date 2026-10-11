@@ -1,6 +1,7 @@
 import {isSystemGuide} from '../system-guides';
 import {featureEnabled,systemPath,moduleEnabled,type SystemEntry} from '../features';
 import {SystemView} from './SystemView';
+import {GraphView} from './GraphView';
 import {CalendarView} from './CalendarView';
 import {TemplateDialog} from './TemplateDialog';
 import {cardFill,tintColor} from '../colors';
@@ -26,7 +27,7 @@ import { ConfirmationProvider, useConfirmation } from './Confirmation';
 import { Explorer } from './Explorer';
 import { SideDock, modules, MODULE_IDS } from './Docks';
 import { WorkspaceMenu,WorkspaceManager } from './WorkspaceMenu';
-import {defaultDocks,findModule,revealModule,moveModule,activeAfterRemoval,type ModuleId,type Docks,type DocumentsLayout} from '../layout';
+import {defaultDocks,findModule,revealModule,closeModule,moveModule,activeAfterRemoval,type ModuleId,type Docks,type DocumentsLayout} from '../layout';
 import { ActionMenu,TooltipHost,type MenuState } from './Overlays';
 import {useTabDrag} from './tab-drag';
 import {MainTabs} from './MainTabs';
@@ -157,6 +158,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   useEffect(()=>{if(!prefs.docks)session.schedulePreferences({docks},snapshot.root);},[]);
   function changeDocks(next:Docks){setDocks(next);session.schedulePreferences({docks:next},snapshot.root);}
   const tabs=useTabDrag((source,target)=>{
+    if(source.family==='side'&&source.key==='graph'&&!target.side){graphToMain(target.group,target.before);return;}
+    if(source.family==='main'&&source.document==='graph:'&&target.side){
+      attempt((async()=>{await session.select(null);setLayout(current=>closeTabs(current,source.group,[source.key]));changeDocks(moveModule(revealModule(docks,'graph'),{module:'graph'},{side:target.side!,group:target.group||undefined,position:target.position,beforeTab:target.before as ModuleId|undefined}));})());return;
+    }
     if(source.family==='side'){
       if(!target.side||!MODULE_IDS.includes(source.key as ModuleId)||docks.closed?.[source.key as ModuleId])return;
       const placed=findModule(docks,source.key as ModuleId);if(placed.group.id!==source.group)return;
@@ -172,6 +177,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       })());
     }
   });
+  function graphToMain(id=active.id,before?:string){attempt((async()=>{if(!panes(layoutRef.current).some(p=>p.id===id))return;await session.select(null);let next=openTab(layoutRef.current,id,'graph:');const group=panes(next).find(p=>p.id===id)!;if(tabDocument(group)!=='graph:')return;next=moveTab(next,id,id,group.active,before);layoutRef.current=next;setLayout(next);setActiveId(id);changeDocks(closeModule(docks,'graph'));})());}
+  function graphToSide(p:Pane,key:string){attempt((async()=>{await session.select(null);const next=closeTabs(layoutRef.current,p.id,[key]);layoutRef.current=next;setLayout(next);setActiveId(panes(next)[0].id);changeDocks(revealModule(docks,'graph'));})());}
   const shownModules=[...(left?docks.left.groups:[]),...(right?docks.right.groups:[])].map(g=>tabs.drag?.family==='side'&&tabs.drag.group===g.id?activeAfterRemoval(g.tabs,g.active,tabs.drag.key):g.active);
   const historyVisible=shownModules.includes('history');
 
@@ -287,6 +294,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
     const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:ui.layout.viewTabActions,x,y,actions:[
+      ...(tabDocument(p,key)==='graph:'?[{label:ui.graph.moveSide,icon:'right' as const,run:()=>graphToSide(p,key)}]:[]),
       {label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(tabDocument(p,key),p.id,'other');}},
       {label:ui.layout.closeTab,icon:'close',separatorBefore:true,run:()=>close(p,key)},
       {label:ui.layout.closeOthers,disabled:p.tabs.length<2,run:()=>close(p,p.tabs.filter(tab=>tab!==key))},
@@ -301,7 +309,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     const board=info?.kind==='board'?snapshot.boards.find(b=>b.folder===info.id):undefined;
     const tag=info?.kind==='tag'?snapshot.tags?.find(t=>t.path===info.id):undefined;
     return <section className={'note-pane '+(focused?'active-pane':'')} style={{'--document-fill':info?.kind==='card'?tintColor(cardFill(snapshot.cards.find(c=>c.id===info.id))):undefined} as CSSProperties} data-pane={p.id} data-active={focused&&!popup} aria-label={ui.layout.mainDockTabGroup} onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
-      <MainTabs group={p.id} active={p.active} items={p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return {key,title:info.title,path:info.path,boardFolder:info.kind==='board'?info.id:undefined,icon:docIcon(tabDocument(p,key))};})} dragging={!!tabs.drag} onSelect={key=>selectTab(p,key)} onClose={key=>close(p,key)} onMenu={showTabMenu} onDrag={(e,key)=>tabs.begin(e,{family:'main',group:p.id,key})}>
+      <MainTabs group={p.id} active={p.active} items={p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return {key,title:info.title,path:info.path,boardFolder:info.kind==='board'?info.id:undefined,icon:docIcon(tabDocument(p,key))};})} dragging={!!tabs.drag} onSelect={key=>selectTab(p,key)} onClose={key=>close(p,key)} onMenu={showTabMenu} onDrag={(e,key)=>tabs.begin(e,{family:'main',group:p.id,key,document:tabDocument(p,key)})}>
         <details className="menu pane-menu"><summary data-tooltip={tooltips.layout.tabGroupActions} aria-label={ui.layout.tabGroupActions}><Icon name="down" size={12}/></summary><div className="menu-content">
           <button data-tooltip={tooltips.layout.splitRight} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>{ui.layout.splitRight}</button>
           <button data-tooltip={tooltips.layout.splitDown} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>{ui.layout.splitDown}</button>
@@ -319,8 +327,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       </div>}
       <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
-          !info.exists?<p className="notice">{info.kind==='system'?ui.system.disabled:ui.errors.fileMissing}</p>:
-          info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id,'new')} onJournalOpen={key=>open(key,p.id,true)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
+          !info.exists?<p className="notice">{info.kind==='system'||info.kind==='graph'?ui.system.disabled:ui.errors.fileMissing}</p>:
+          info.kind==='graph'?<GraphView key={documentKey} snapshot={snapshot} onOpen={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onMode={graphMode=>changePrefs(()=>({graphMode}))}/>:info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id,'new')} onJournalOpen={key=>open(key,p.id,true)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
           board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y},p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag&&!featureEnabled(prefs,'tags')?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
@@ -338,6 +346,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   }
   const [templateOpen,setTemplateOpen]=useState(false),[templatePath,setTemplatePath]=useState<string>();
   function renderModule(module:typeof MODULE_IDS[number]):ReactNode {
+    if(module==='graph')return <GraphView snapshot={snapshot} onOpen={key=>previewCard(key,active.id)} onNavigate={(key,mode)=>navigate(key,active.id,mode)} onMode={graphMode=>changePrefs(()=>({graphMode}))} onMain={()=>graphToMain()}/>;
     if(module==='calendar')return <CalendarView snapshot={snapshot} session={session} onOpen={key=>open(key,activeId,true)}/>;
     if(module==='style'){
       const board=snapshot.boards.find(b=>'board:'+b.folder===tabDocument(active)),card=snapshot.cards.find(c=>'card:'+c.id===tabDocument(active));
@@ -363,7 +372,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
       <nav className="activity-bar" aria-label={ui.layout.actionRibbon}>
-        {MODULE_IDS.filter(enabledModule).map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>changeDocks(revealModule(docks,module))}/>;})}
+        {MODULE_IDS.filter(enabledModule).map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>{const graph=module==='graph'&&panes(layout).find(p=>p.tabs.some(key=>tabDocument(p,key)==='graph:'));if(graph){selectTab(graph,graph.tabs.find(key=>tabDocument(graph,key)==='graph:')!);}else changeDocks(revealModule(docks,module));}}/>;})}
         <div className="toolbar-spacer"/><Tool icon="settings" label={tooltips.settings.open} onClick={()=>setModal('settings')}/>
       </nav>
       <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule} enabled={enabledModule}/>

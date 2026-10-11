@@ -33,7 +33,7 @@ test('edges and styles round-trip independently of indexed mentions, including u
   assert.throws(()=>writeBoard({...styled,edges:[{...edge,strokeColor:'url(https://example.com)'}]}),/Invalid whiteboard style/);
   assert.throws(()=>writeBoard({...styled,edges:[{...edge,strokeWidth:NaN}]}),/Invalid whiteboard style/);
   const old=defaultDocks();old.right.groups[0].tabs=['agent','history'];old.right.groups[0].active='history';
-  const migrated=validateDocks(old);assert.deepEqual(migrated.right.groups[0].tabs,['agent','history','style','calendar']);assert.equal(migrated.right.groups[0].active,'history');assert.equal(old.right.groups[0].tabs.length,2);
+  const migrated=validateDocks(old);assert.deepEqual(migrated.right.groups[0].tabs,['agent','history','style','calendar','graph']);assert.equal(migrated.right.groups[0].active,'history');assert.equal(old.right.groups[0].tabs.length,2);
 });
 
 test('anchor clicks, dragging, reconnection, cancellation and deletion work for cards and whiteboards',async()=>{

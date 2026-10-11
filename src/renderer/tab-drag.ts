@@ -2,7 +2,7 @@ import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent} from '
 import {flushSync} from 'react-dom';
 import {animateReorder,createDragPhantom,crossed} from './sortable';
 
-export interface TabDrag {family:'side'|'main'|'view';group:string;key:string}
+export interface TabDrag {family:'side'|'main'|'view';group:string;key:string;document?:string}
 export interface TabDrop {group:string;side?:'left'|'right';position:'tab'|'before'|'after';before?:string}
 // Tab strips share bookmark visuals/thresholds; moving between strips unlocks Y.
 export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
@@ -29,7 +29,7 @@ export function useTabDrag(commit:(source:TabDrag,target:TabDrop)=>void){
       if(!active||!phantom||!preview)return;
       if(!source.isConnected){finish(false);return;}
       const candidates=[...document.querySelectorAll<HTMLElement>('[data-tab-strip],[data-tab-drop]')];
-      const next=candidates.find(el=>el.dataset.tabFamily===value.family&&(value.family!=='view'||el.dataset.tabGroup===value.group)&&contains(el))??null;
+      const next=candidates.find(el=>(el.dataset.tabFamily===value.family||((value.family==='side'&&value.key==='graph'||value.document==='graph:')&&['side','main'].includes(el.dataset.tabFamily??'')))&&(value.family!=='view'||el.dataset.tabGroup===value.group)&&contains(el))??null;
       if(next!==target){
         clearTarget();target=next;
         if(target){

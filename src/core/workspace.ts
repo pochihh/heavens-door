@@ -7,7 +7,10 @@ import type {TemplateValues} from '../templates';
 import {systemGuideBody,systemGuidePath} from '../system-guides';
 import type {SystemEntry} from '../features';
 import {moveCardLinks,rewriteHtmlLinks} from '../card-links';
-import {referencePath,referenceResolver} from '../document-links';
+import {cardFill} from '../colors';
+import type {GraphNode,GraphLink,WorkspaceGraph} from '../graph';
+import {isSystemGuide} from '../system-guides';
+import {referenceHref,referencePath,referenceResolver} from '../document-links';
 import {compileView} from './view-query';
 import {viewPropertyTargets,viewDisplayFields,parseViewBlock,writeViewBlock,replaceViewSource,viewBlockRanges,orderedCardIds,moveCardId,fieldKeys,validateView,viewCreationChoices,resolveField} from '../view-block';
 import {viewText} from '../text/views';
@@ -973,6 +976,24 @@ export class Workspace {
     const result=await this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);
     this.rememberEdgeStyle(board,before);result.snapshot.lastEdgeStyle=this.lastEdgeStyle;
     return result;
+  }
+  workspaceGraph():WorkspaceGraph {
+    const snapshot=this.snapshot(),prefs=snapshot.preferences,hidden=(path:string)=>isSystemGuide(path,prefs)||['templates','trash'].some(id=>{const folder=systemPath(id as 'templates'|'trash',prefs);return path===folder||path.startsWith(folder+'/');});
+    const boardColors=new Map(snapshot.boards.flatMap(b=>b.cards.filter(p=>p.folder).map(p=>[p.folder,p.fillColor] as const)));
+    const nodes:GraphNode[]=snapshot.boards.map(b=>({kind:'board',key:'board:'+b.folder,path:b.path,name:b.name,color:boardColors.get(b.folder)}));
+    const boards=new Map(snapshot.boards.map(b=>[b.folder,b])),placed=new Map<string,import('../shared').Placement>();
+    for(const b of snapshot.boards)for(const p of b.cards)if(!p.folder&&!placed.has(p.cardId))placed.set(p.cardId,p);
+    for(const card of snapshot.cards)if(!hidden(card.path)){const folder=dirname(card.path)==='.'?'':dirname(card.path),owner=boards.get(folder),placement=owner?.cards.find(p=>!p.folder&&p.cardId===card.id)??placed.get(card.id);nodes.push({kind:'card',key:'card:'+card.id,path:card.path,name:card.title||card.name,color:cardFill(card,placement)});}
+    const byKey=new Map(nodes.map(n=>[n.key,n])),paths=new Map(nodes.map(n=>[n.path,n])),links:GraphLink[]=[],seen=new Set<string>();
+    const add=(from:string,to:string,kind:GraphLink['kind'])=>{const key=kind+'|'+from+'|'+to;if(from!==to&&byKey.has(from)&&byKey.has(to)&&!seen.has(key)){seen.add(key);links.push({from,to,kind});}};
+    for(const board of snapshot.boards){const from='board:'+board.folder;for(const placement of board.cards){const to=placement.folder?'board:'+placement.folder:'card:'+placement.cardId,node=byKey.get(to);if(!node)continue;const owned=!!placement.folder||dirname(node.path)===board.folder;add(from,to,owned?'membership':'reference');if(owned)node.parent=from;}
+      const placements=new Map(board.cards.map(p=>[p.id,p.folder?'board:'+p.folder:'card:'+p.cardId]));for(const edge of board.edges){const a=placements.get(edge.from),b=placements.get(edge.to);if(a&&b)add(a,b,'edge');}
+    }
+    // Ownership is file based even if an externally edited board has no placement yet.
+    for(const node of nodes)if(node.kind==='card'&&!node.parent&&!systemFolder(dirname(node.path),prefs)){let folder=dirname(node.path);while(folder&&folder!=='.'){if(boards.has(folder)){node.parent='board:'+folder;add(node.parent,node.key,'membership');break;}folder=dirname(folder);}}
+    const targets:import('../shared').ReferenceTarget[]=[...snapshot.cards.map(c=>({kind:'card' as const,key:'card:'+c.id,path:c.path,name:c.name})),...snapshot.boards.map(b=>({kind:'board' as const,key:'board:'+b.folder,path:b.path,name:b.name}))],resolve=referenceResolver(targets);
+    for(const row of this.db.prepare('SELECT DISTINCT source,target FROM links').all()){const source=paths.get(String(row.source));if(!source)continue;const target=String(row.target),href=target.startsWith('file:')?referenceHref(source.path,target.slice(5)):target.startsWith('wiki:')?target:'card:'+target,matches=resolve(source.path,href);if(matches.length===1)add(source.key,matches[0].key,'mention');}
+    return {nodes,links};
   }
   private wikiLinks(){
     const rows=this.db.prepare("SELECT source,target FROM links WHERE substr(target,1,5)='wiki:'").all();if(!rows.length)return [];

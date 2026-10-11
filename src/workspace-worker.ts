@@ -82,6 +82,7 @@ async function dispatch(request: Request) {
     case 'createTemplate': return workspace.createTemplate(request.period);
     case 'ensureFolder': string(request.path);return workspace.ensureFolder(request.path);
     case 'createEntry': string(request.folder);string(request.name);return workspace.createEntry(request.folder,request.name,request.type);
+    case 'workspaceGraph': return workspace.workspaceGraph();
     case 'boardMentions': string(request.path); return workspace.boardMentions(request.path);
     case 'create':
       string(request.folder); string(request.stem);
