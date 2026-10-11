@@ -9,7 +9,7 @@ export const ui = {
   journal:journalText,
   editorTools:editorText,
   views:viewText,
-  graph:{title:'Graph',appearance:'Graph appearance',canvas:'Workspace graph',search:'Find a node…',find:'Find a graph node',options:'Graph options',reset:'Reset graph layout',fit:'Fit graph',openMain:'Open in main dock',moveSide:'Move to side dock',membership:'Board membership',reference:'Board references',mention:'Mentions',edge:'Drawn edges',empty:'No matching nodes',loading:'Loading graph…',center:'Center reserved for an icon',help2d:'Drag nodes or canvas · Scroll to zoom',help3d:'Drag nodes · Drag canvas to orbit · Shift-drag to pan · Scroll to zoom',counts:(nodes:number,links:number)=>`${nodes} nodes · ${links} links`},
+  graph:{title:'Graph',appearance:'Graph appearance',canvas:'Workspace graph',search:'Find a node…',find:'Find a graph node',options:'Graph options',reset:'Reset graph layout',fit:'Fit graph',openMain:'Open in main dock',moveSide:'Move to side dock',membership:'Board membership',reference:'Board references',mention:'Mentions',edge:'Drawn edges',empty:'No matching nodes',loading:'Loading graph…',help2d:'Drag nodes or canvas · Scroll to zoom',help3d:'Drag nodes · Drag canvas to orbit · Shift-drag to pan · Scroll to zoom',counts:(nodes:number,links:number)=>`${nodes} nodes · ${links} links`},
   settings: {
     title:'Settings',workspace:'Workspace',performance:'Performance',hardwareAcceleration:'Hardware acceleration',
     deviceScope:'Applies to all windows and workspaces on this computer.',

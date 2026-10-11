@@ -2,7 +2,7 @@
 
 Graph is a dockable Core plugin. The Action Ribbon opens it in a side dock. Drag its tab into a Main Dock tab strip for a larger view, or drag it back into either side dock. Its toolbar also opens it in the Main Dock; the main tab menu can return it to the side dock. Disable it under Settings → Core plugins → Graph.
 
-Whiteboards are larger hollow circles; cards are solid circles. Nodes use their existing saved colors. The center remains empty for a future icon. Boards sit in inner rings, their descendants farther out, and disconnected cards around the rim. Referenced Slipbox cards and mentioned Journal notes are connected to the working graph without changing their ownership.
+Whiteboards are larger outlined circles with opaque interiors; cards are solid circles. Nodes use their existing saved colors. The mother whiteboard is excluded, and no center placeholder is drawn. Boards sit in inner rings, their descendants farther out, and disconnected cards around the rim. Referenced Slipbox cards and mentioned Journal notes are connected to the working graph without changing their ownership.
 
 Board membership uses solid lines. Board references and mentions use distinct dashed lines; drawn whiteboard edges are also included. Graph options toggle each link type. Hover shows the node name and its neighbors. Click a card for its popup or a board for same-tab navigation; right-click offers other opening options. Find a node uses the same indexed fuzzy search as mentions. Arrow keys select nodes, Enter opens one, and Home fits the graph.
 
