@@ -125,8 +125,15 @@ export type Request =
   | { kind: 'write'; changes: Write[] };
 export interface AppSettings {hardwareAcceleration:boolean;restartRequired:boolean;warning?:string}
 export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features:Record<string,string>|null;electron:string;chromium:string}
-export type WindowAction = 'close' | 'reload';
+export interface UpdateState {currentVersion:string;status:'idle'|'checking'|'up-to-date'|'available'|'downloading'|'ready'|'installing'|'error';canInstall:boolean;version?:string;progress?:number;message?:string}
+export type WindowAction = 'close' | 'reload' | 'update';
 export interface Bridge {
+  updateState():Promise<UpdateState>;
+  checkUpdates():Promise<UpdateState>;
+  downloadUpdate():Promise<UpdateState>;
+  installUpdate():Promise<void>;
+  openDownloadPage():Promise<void>;
+  onUpdateChange(callback:(state:UpdateState)=>void):()=>void;
   resolveImage(notePath:string,source:string):Promise<string[]>;
   importImageLink(notePath:string,url:string):Promise<{src:string;alt:string}>;
   importImage(notePath:string,name:string,type:string,data:Uint8Array):Promise<{src:string;alt:string}>;

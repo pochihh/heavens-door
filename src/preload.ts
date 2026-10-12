@@ -1,8 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Bridge, Snapshot, WindowAction } from './shared';
+import type { Bridge, Snapshot, WindowAction, UpdateState } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
+  updateState:()=>ipcRenderer.invoke('app:update-state'),
+  checkUpdates:()=>ipcRenderer.invoke('app:check-updates'),
+  downloadUpdate:()=>ipcRenderer.invoke('app:download-update'),
+  installUpdate:()=>ipcRenderer.invoke('app:install-update'),
+  openDownloadPage:()=>ipcRenderer.invoke('app:download-page'),
+  onUpdateChange:callback=>{const listener=(_event:Electron.IpcRendererEvent,state:UpdateState)=>callback(state);ipcRenderer.on('app:update-change',listener);return()=>ipcRenderer.removeListener('app:update-change',listener);},
   resolveImage:(notePath,source)=>ipcRenderer.invoke('image:resolve',notePath,source),
   importImageLink:(notePath,url)=>ipcRenderer.invoke('image:link',notePath,url),
   importImage:(path,name,type,data)=>ipcRenderer.invoke('image:import',path,name,type,data),

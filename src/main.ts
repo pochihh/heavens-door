@@ -1,6 +1,9 @@
 import { ui } from './text/ui';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell, clipboard, nativeImage, ClipboardItem } from 'electron';
 import { Worker } from 'node:worker_threads';
+import {loadSparkleBridgeForApp} from 'electron-sparkle-updater';
+import {autoUpdater} from 'electron-updater';
+import {AppUpdates,APP_ID,DOWNLOAD_PAGE,RELEASE_API} from './updates';
 import { join, resolve, sep, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promises as fs } from 'node:fs';
@@ -9,9 +12,10 @@ import {readAppSettings,writeHardwareAcceleration} from './app-settings';
 import {WorkspaceRegistry} from './core/registry';
 import {importImage,resolveImage,MAX_IMAGE_BYTES} from './core/images';
 import {workspacePath} from './core/files';
-import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, GraphicsDiagnostics } from './shared';
+import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, GraphicsDiagnostics, UpdateState } from './shared';
 
-app.setName("Heaven's Door");
+app.setName(ui.common.appName);
+if(process.platform==='win32')app.setAppUserModelId(APP_ID);
 const appSettingsFile=join(app.getPath('userData'),'app-settings.json');
 const initialAppSettings=readAppSettings(appSettingsFile);
 let hardwareAcceleration=initialAppSettings.hardwareAcceleration,settingsWarning=initialAppSettings.warning,gpuReady=false;
@@ -22,6 +26,7 @@ protocol.registerSchemesAsPrivileged([{scheme:'heavens-asset',privileges:{standa
 interface Host { root:string; key:string; worker:Worker; call<T>(request:Request):Promise<T> }
 interface Desktop { window:BrowserWindow; opening?:Promise<Snapshot>; host?:Host; closing:boolean; action:WindowAction|null; timer?:ReturnType<typeof setTimeout> }
 let registry:WorkspaceRegistry;
+let updates:AppUpdates;
 const desktops=new Map<number,Desktop>(), hosts=new Map<string,Promise<Host>>(), assets=new Map<string,Host>();
 // One worker owns a workspace's index and write queue, shared by all its windows.
 // ponytail: retain opened workers until quit; evict idle hosts if many workspaces become common.
@@ -62,11 +67,41 @@ function trusted(event:Electron.IpcMainInvokeEvent|Electron.IpcMainEvent) {
 }
 function clearAction(d:Desktop){clearTimeout(d.timer);d.action=null;}
 function finishAction(d:Desktop,action:WindowAction){
-  clearAction(d);if(action==='reload')d.window.webContents.reload();else{d.closing=true;d.window.close();}
+  clearAction(d);if(action==='update'){if(updates.savedWindow(d.window.id)){for(const desktop of desktops.values())desktop.closing=true;try{updates.install();}catch{for(const desktop of desktops.values())desktop.closing=false;}}return;}if(action==='reload')d.window.webContents.reload();else{d.closing=true;d.window.close();}
+}
+function cancelUpdate(){updates.cancelInstall();for(const desktop of desktops.values())if(desktop.action==='update')clearAction(desktop);}
+function installUpdate(){
+  const windows=[...desktops.values()].filter(d=>!d.window.isDestroyed());if(windows.some(d=>d.action))throw new Error(ui.updates.saveFailed);
+  updates.startInstall(windows.map(d=>d.window.id));for(const d of windows)prepareAction(d,'update');
+}
+async function promptUpdate(state:UpdateState,manual=false){
+  const d=focused()??[...desktops.values()][0];if(!d||d.window.isDestroyed())return;
+  if(state.status==='available'){
+    const buttons=state.canInstall?[ui.updates.download,ui.updates.later,ui.updates.website]:[ui.updates.website,ui.updates.later];
+    const result=await dialog.showMessageBox(d.window,{type:'info',message:ui.updates.available(state.version!),detail:state.canInstall?ui.updates.status.available:ui.updates.manualHelp,buttons,cancelId:1,defaultId:0});
+    if(result.response===(state.canInstall?2:0)){await shell.openExternal(DOWNLOAD_PAGE);return;}
+    if(state.canInstall&&result.response===0){const downloaded=await updates.download();if(downloaded.status==='ready'){const choice=await dialog.showMessageBox(d.window,{type:'info',message:ui.updates.status.ready,buttons:[ui.updates.install,ui.updates.later],cancelId:1});if(choice.response===0)installUpdate();}else await promptUpdate(downloaded,true);}
+  }else if(manual){const result=await dialog.showMessageBox(d.window,{type:state.status==='error'?'warning':'info',message:ui.updates.status[state.status],detail:state.message,buttons:[ui.updates.close,ui.updates.website],cancelId:0});if(result.response===1)await shell.openExternal(DOWNLOAD_PAGE);}
+}
+async function initializeSparkle(){
+  if(!app.isPackaged||process.platform!=='darwin')return;
+  try{
+    const config=JSON.parse(await fs.readFile(join(process.resourcesPath,'sparkle.json'),'utf8'));
+    const feed=new URL(config.feedUrl);
+    if(!(feed.protocol==='https:'||feed.protocol==='http:'&&feed.hostname==='127.0.0.1')||typeof config.publicEdKey!=='string'||!/^[A-Za-z0-9+/]{43}=$/.test(config.publicEdKey))throw new Error('Invalid Sparkle configuration');
+    const bridge=await loadSparkleBridgeForApp(message=>console.error('[updates]',message));
+    if(bridge?.init({appcastUrl:feed.href,publicEdKey:config.publicEdKey}))return bridge;
+  }catch(error){console.error('[updates] Sparkle unavailable; using download fallback.',error);}
+}
+async function latestRelease(){
+  const response=await net.fetch(RELEASE_API,{headers:{Accept:'application/vnd.github+json','User-Agent':ui.common.appName},signal:AbortSignal.timeout(15000)});
+  if(response.status===404)return null;if(!response.ok)throw new Error(ui.updates.checkFailed(response.status));
+  const value:unknown=await response.json();if(!value||typeof value!=='object'||!('tag_name' in value)||typeof value.tag_name!=='string')throw new Error(ui.updates.invalidVersion);return value.tag_name.replace(/^v/,'');
 }
 function prepareAction(d:Desktop,action:WindowAction) {
   if(d.window.isDestroyed()||d.action)return;d.action=action;
   d.timer=setTimeout(()=>{
+    if(action==='update'){cancelUpdate();void dialog.showMessageBox(d.window,{type:'warning',message:ui.updates.saveTimeout});return;}
     void dialog.showMessageBox(d.window,{
       type:'warning',message:action==='reload'?ui.desktop.reloadUnresponsive:ui.desktop.closeUnresponsive,
       detail:ui.desktop.unsavedChangesWarning,
@@ -78,7 +113,7 @@ function prepareAction(d:Desktop,action:WindowAction) {
 function focused(){const win=BrowserWindow.getFocusedWindow();return win?desktops.get(win.id):undefined;}
 async function createWindow(folder?:string){
   const win=new BrowserWindow({
-    width:1440,height:940,minWidth:760,minHeight:500,backgroundColor:'#f3f3f3',title:ui.common.appName,
+    width:1440,height:940,minWidth:760,minHeight:500,icon:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),'build/icon.png'),backgroundColor:'#f3f3f3',title:ui.common.appName,
     titleBarStyle:'hidden',trafficLightPosition:{x:8,y:13},
     ...(process.platform!=='darwin'?{titleBarOverlay:{color:'#f3f3f3',symbolColor:'#555555',height:42}}:{}),
     webPreferences:{preload:join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true},
@@ -87,13 +122,21 @@ async function createWindow(folder?:string){
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',event=>event.preventDefault());
   win.on('close',event=>{if(!d.closing){event.preventDefault();prepareAction(d,'close');}});
-  win.on('closed',()=>{clearAction(d);desktops.delete(win.id);});
+  win.on('closed',()=>{if(d.action==='update')cancelUpdate();clearAction(d);desktops.delete(win.id);});
   // Load the shell while the worker opens/indexes the workspace, so startup has feedback.
   if(folder){d.opening=open(d,folder);void d.opening.catch(()=>undefined);}
   if(process.env.HEAVENS_DOOR_DEV_URL)await win.loadURL(process.env.HEAVENS_DOOR_DEV_URL);
   else await win.loadFile(join(__dirname,'renderer/index.html'));
 }
 void app.whenReady().then(async()=>{
+  app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion(),iconPath:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),'build/icon.png')});
+  const sparkle=await initializeSparkle();
+  updates=new AppUpdates(autoUpdater,app.getVersion(),app.isPackaged&&(process.platform==='win32'||!!sparkle),latestRelease,state=>{for(const d of desktops.values()){if(state.status==='error'){d.closing=false;if(d.action==='update')clearAction(d);}if(!d.window.isDestroyed())d.window.webContents.send('app:update-change',state);}},sparkle);
+  ipcMain.handle('app:update-state',event=>{trusted(event);return updates.state;});
+  ipcMain.handle('app:check-updates',event=>{trusted(event);return updates.check();});
+  ipcMain.handle('app:download-update',event=>{trusted(event);return updates.download();});
+  ipcMain.handle('app:install-update',event=>{trusted(event);installUpdate();});
+  ipcMain.handle('app:download-page',event=>{trusted(event);return shell.openExternal(DOWNLOAD_PAGE);});
   registry=new WorkspaceRegistry(join(app.getPath('userData'),'workspaces.json'));
   ipcMain.handle('app:settings',event=>{trusted(event);return appSettings();});
   ipcMain.handle('app:hardware-acceleration',(event,enabled:unknown)=>{
@@ -209,11 +252,11 @@ void app.whenReady().then(async()=>{
   });
   ipcMain.on('window:reload',event=>prepareAction(trusted(event),'reload'));
   ipcMain.on('window:ready',(event,action:unknown)=>{
-    const d=trusted(event);if((action==='close'||action==='reload')&&action===d.action)finishAction(d,action);
+    const d=trusted(event);if((action==='close'||action==='reload'||action==='update')&&action===d.action)finishAction(d,action);
   });
-  ipcMain.on('window:cancel',(event,action:unknown)=>{const d=trusted(event);if(action===d.action)clearAction(d);});
+  ipcMain.on('window:cancel',(event,action:unknown)=>{const d=trusted(event);if(action===d.action){if(action==='update')cancelUpdate();else clearAction(d);}});
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform==='darwin'?[{label:ui.common.appName,submenu:[{role:'about' as const},{role:'quit' as const}]}]:[]),
+    ...(process.platform==='darwin'?[{label:ui.common.appName,submenu:[{label:ui.updates.about,role:'about' as const},{label:ui.updates.check,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}},{type:'separator' as const},{role:'quit' as const}]}]:[]),
     {label:ui.desktop.file,submenu:[
       {label:ui.desktop.newWindow,accelerator:'CmdOrCtrl+Shift+N',click:()=>{void createWindow();}},
       {label:ui.workspace.newWindow,click:()=>{void createWindow(focused()?.host?.root);}},
@@ -222,8 +265,10 @@ void app.whenReady().then(async()=>{
     {label:ui.desktop.edit,submenu:[{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:ui.desktop.view,submenu:[{label:ui.common.reload,accelerator:'CmdOrCtrl+R',click:()=>{const d=focused();if(d)prepareAction(d,'reload');}},{type:'separator'},{role:'toggleDevTools'},{role:'togglefullscreen'}]},
     {role:'windowMenu'},
+    ...(process.platform!=='darwin'?[{label:ui.desktop.help,submenu:[{label:ui.updates.about,click:()=>app.showAboutPanel()},{label:ui.updates.check,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}}]}]:[]),
   ]));
   await createWindow(process.env.HEAVENS_DOOR_WORKSPACE);
+  if(app.isPackaged)setTimeout(()=>{void updates.check().then(state=>promptUpdate(state)).catch(console.error);},15000).unref();
   app.on('activate',()=>{if(!desktops.size)void createWindow();});
 });
 app.on('window-all-closed',()=>app.quit());

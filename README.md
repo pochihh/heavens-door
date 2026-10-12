@@ -2,6 +2,10 @@
 
 An early desktop workspace for local Markdown cards and whiteboards.
 
+## Install and release
+
+The packaged app is **Heaven's Door 0.1.2**. Build installers with `npm run package:mac -- --arm64` or `npm run package:win -- --x64`; outputs are in `release/`. See [packaging, version bumps and Apple signing](docs/releases.md) for the GitHub Actions draft-release workflow and update setup.
+
 ## Run
 
 Install Node.js 24.21+ and Git 2.38+ (for applying checkpoint changes), then:

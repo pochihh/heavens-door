@@ -1,6 +1,6 @@
 {
   "name": "heavens-door",
-  "version": "0.1.0",
+  "version": "0.1.27",
   "private": true,
   "description": "A local Markdown workspace for connected thinking",
   "type": "module",
@@ -10,9 +10,15 @@
     "build": "node scripts/build.mjs",
     "start": "electron .",
     "lint": "eslint . && tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx tests/*.test.mjs",
     "check": "npm run lint && npm test && npm run build",
-    "benchmark": "node --import tsx scripts/benchmark.ts"
+    "benchmark": "node --import tsx scripts/benchmark.ts",
+    "package:mac": "npm run sparkle:rebuild && npm run build && electron-builder --config electron-builder.config.mjs --mac --publish never",
+    "package:win": "npm run build && electron-builder --config electron-builder.config.mjs --win --publish never",
+    "version:bump": "node scripts/version.mjs",
+    "sparkle:rebuild": "node scripts/sparkle-rebuild.mjs",
+    "sparkle:appcast": "node scripts/sparkle-appcast.mjs",
+    "test:sparkle": "npm run sparkle:rebuild && npm run build && node scripts/test-sparkle.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -26,6 +32,8 @@
     "@tiptap/starter-kit": "^3.31.3",
     "chokidar": "^5.0.0",
     "dompurify": "^3.4.16",
+    "electron-sparkle-updater": "0.5.3",
+    "electron-updater": "6.8.9",
     "emoji-mart": "^5.6.0",
     "lucide-react": "^1.48.0",
     "marked": "^18.0.14",
@@ -42,6 +50,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "electron": "^44.4.5",
+    "electron-builder": "26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "globals": "^17.12.0",
@@ -50,5 +59,13 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.1",
     "vite": "^8.3.1"
-  }
+  },
+  "buildNumber": 2,
+  "productName": "Heaven's Door",
+  "author": "Heaven's Door contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pochihh/heavens-door.git"
+  },
+  "homepage": "https://github.com/pochihh/heavens-door"
 }

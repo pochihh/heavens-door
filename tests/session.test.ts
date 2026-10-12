@@ -43,13 +43,13 @@ test('typing during an in-flight save is retained, and conflicting drafts remain
   assert.match(await w.read('untitled.md'),/An external edit/);
 });
 
-test('reload and quit flush drafts independently of the UI, and refuse to discard a conflicting draft',async t => {
+test('reload, quit and update flush drafts independently of the UI, and refuse to discard a conflicting draft',async t => {
   const folder=await fs.mkdtemp(join(tmpdir(),'heavens-door-reload-'));
   const root=join(folder,'notes');await fs.mkdir(root);
   const w=await Workspace.open(root,join(folder,'cache'));await w.create('','untitled',0,0);
-  let handler:(action:'reload'|'close')=>void=() => undefined;
+  let handler:(action:'reload'|'close'|'update')=>void=() => undefined;
   const completed:string[]=[],cancelled:string[]=[];
-  const bridge={resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),reorderWorkspaces:async()=>[],renameWorkspace:async()=>[],relinkWorkspace:async()=>[],unregisterWorkspace:async()=>[],listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
+  const bridge={updateState:async()=>({currentVersion:'0.1.2',status:'idle',canInstall:false}),checkUpdates:async()=>({currentVersion:'0.1.2',status:'up-to-date',canInstall:false}),downloadUpdate:async()=>({currentVersion:'0.1.2',status:'idle',canInstall:false}),installUpdate:async()=>undefined,openDownloadPage:async()=>undefined,onUpdateChange:()=>()=>undefined,resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),reorderWorkspaces:async()=>[],renameWorkspace:async()=>[],relinkWorkspace:async()=>[],unregisterWorkspace:async()=>[],listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
     if (request.kind === 'card') return w.card(request.path);
     if (request.kind === 'saveCard') return w.saveCard(request.path,request.body,request.expected);
     throw new Error('Unexpected request');
@@ -59,9 +59,10 @@ test('reload and quit flush drafts independently of the UI, and refuse to discar
   await session.resume();await session.select('untitled.md');session.edit('Save before reload');
   handler('reload');await session.run(async () => undefined);
   assert.deepEqual(completed,['reload']);assert.equal((await w.card('untitled.md')).body,'Save before reload');
+  session.edit('Save before updating');handler('update');await session.run(async()=>undefined);assert.deepEqual(completed,['reload','update']);assert.equal((await w.card('untitled.md')).body,'Save before updating');
   await fs.writeFile(join(root,'untitled.md'),(await w.read('untitled.md'))+'\nExternal edit');
   session.edit('Keep my conflicting draft');handler('close');await session.run(async () => undefined);
-  assert.deepEqual(cancelled,['close']);assert.deepEqual(completed,['reload']);
+  assert.deepEqual(cancelled,['close']);assert.deepEqual(completed,['reload','update']);handler('update');await session.run(async()=>undefined);assert.deepEqual(cancelled,['close','update']);
   assert.equal(session.state.draft?.body,'Keep my conflicting draft');assert.equal(session.state.draft?.dirty,true);
 });
 
@@ -151,7 +152,7 @@ test('registered workspace switching saves first and keeps the old workspace whe
 test('pending workspace layout saves before closing or switching and survives a failed write',async t=>{
   const folder=await fs.mkdtemp(join(tmpdir(),'heavens-layout-save-')),root=join(folder,'Notes');await fs.mkdir(root);
   const w=await Workspace.open(root,join(folder,'cache'));
-  let fail=true,closing:(action:'reload'|'close')=>void=()=>undefined;
+  let fail=true,closing:(action:'reload'|'close'|'update')=>void=()=>undefined;
   const completed:string[]=[],cancelled:string[]=[];
   const bridge={request:async(request:Parameters<Bridge['request']>[0])=>{
     if(request.kind==='preferences'){
