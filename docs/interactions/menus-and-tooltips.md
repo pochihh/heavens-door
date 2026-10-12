@@ -17,7 +17,9 @@ An in-document disclosure, such as “Linked from,” is not a floating menu. Na
 
 ## Opening and placement
 
-Only one menu is open in a window. Opening another closes the previous menu and cancels any visible or pending tooltip. Right-clicking another target replaces the menu with that target’s actions. Clicking an already-open dropdown’s trigger closes it without reopening it from the same click.
+Only one menu tree is open in a window. Actions with child choices show a right chevron and open an adjacent submenu on hover, click, or Arrow Right. Keep the parent menu visible and interactive; never replace its contents. Flip the submenu left near the viewport edge. Arrow Left or Escape in a submenu returns to its parent; choosing a leaf action dismisses the whole tree. Moving between the parent row and submenu keeps both open.
+
+Only one root menu is open in a window. Opening another closes the previous menu and cancels any visible or pending tooltip. Right-clicking another target replaces the menu with that target’s actions. Clicking an already-open dropdown’s trigger closes it without reopening it from the same click.
 
 A pointer-opened context menu starts at the right-click location. A dropdown aligns to its trigger, normally below it; the bottom workspace switcher opens above. A keyboard-opened context menu anchors to its triggering item. Flip the opening direction near an edge and keep at least 8 px inside the viewport. Long menus scroll within the viewport; they must not be clipped by a Dock or View.
 

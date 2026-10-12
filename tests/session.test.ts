@@ -49,7 +49,7 @@ test('reload and quit flush drafts independently of the UI, and refuse to discar
   const w=await Workspace.open(root,join(folder,'cache'));await w.create('','untitled',0,0);
   let handler:(action:'reload'|'close')=>void=() => undefined;
   const completed:string[]=[],cancelled:string[]=[];
-  const bridge={resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),unregisterWorkspace:async()=>[],listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
+  const bridge={resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),reorderWorkspaces:async()=>[],renameWorkspace:async()=>[],relinkWorkspace:async()=>[],unregisterWorkspace:async()=>[],listWorkspaces:async()=>[],openWorkspace:async()=>w.snapshot(),revealFile:async()=>undefined,newWindow:async()=>undefined,platform:'darwin',chooseWorkspace:async () => w.snapshot(),demo:async () => w.snapshot(),onChange:() => () => undefined,reload:() => undefined,assetUrl:path => path,currentWorkspace:async () => w.snapshot(),onClosing:callback => {handler=callback;return () => undefined;},finishClosing:action => completed.push(action),cancelClosing:action => cancelled.push(action),request:async request => {
     if (request.kind === 'card') return w.card(request.path);
     if (request.kind === 'saveCard') return w.saveCard(request.path,request.body,request.expected);
     throw new Error('Unexpected request');
@@ -191,7 +191,7 @@ test('renaming flushes drafts, retains edits arriving during rename and follows 
   t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
   await session.select(original.path);session.edit('# Unsaved title');
   const pending=session.renameCard(original.id,'renamed');await renaming;
-  session.edit('# Unsaved title\n\nTyped during rename');release();await pending;
+  session.edit('# Unsaved title\n\nTyped during rename');const queued=session.select(original.path);release();await pending;await queued;
   assert.equal(session.state.draft?.card.path,'Ideas/renamed.md');assert.equal(session.state.draft?.dirty,true);
   await session.run(()=>session.flush());assert.match((await w.card('Ideas/renamed.md')).body,/Typed during rename/);
   await assert.rejects(()=>w.read(original.path),/ENOENT/);
@@ -304,4 +304,33 @@ test('preview view settings preserve Markdown and other drafts, participate in u
   await session.select('other.md');await fs.writeFile(join(root,'owner.md'),(await w.read('owner.md'))+'\nExternal edit');
   await assert.rejects(session.saveViewBlock('owner.md',fresh,0,updated,source),/External changes/);
   assert.match(await w.read('owner.md'),/External edit/);assert.equal(viewBlockRanges((await w.card('owner.md')).body)[0].source,updated.trimEnd());
+});
+
+ test('new card titles name files once, avoid collisions, and manual names remain stable',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-auto-name-')),root=join(folder,'notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));await w.createFolder('','Ideas');await w.create('Ideas','A title',0,0);
+  const bridge={request:async r=>{if(r.kind==='card')return w.card(r.path);if(r.kind==='create')return w.create(r.folder,r.stem,r.x,r.y,r.place);if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected);if(r.kind==='renameCard')return w.renameCard(r.path,r.stem,r.expected);throw new Error('Unexpected '+r.kind);}} as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  await session.create('Ideas','untitled',0,0);const id=session.state.draft!.card.id;
+  session.edit('# A title\n\nBody');await session.run(()=>session.flush());
+  assert.equal(session.state.draft!.card.path,'Ideas/A title_1.md');assert.equal(session.state.draft!.card.id,id);assert.match((await w.card('Ideas/A title_1.md')).body,/Body/);
+  session.edit('# Changed title');await session.run(()=>session.flush());assert.equal(session.state.draft!.card.path,'Ideas/A title_1.md','auto naming happens once');
+  await session.create('Ideas','untitled',0,0);await session.renameCard(session.state.draft!.card.id,'Manual');session.edit('# Another title');await session.run(()=>session.flush());assert.equal(session.state.draft!.card.path,'Ideas/Manual.md');
+});
+
+ test('whiteboard deletion confirms, checks folder changes, keeps references, and restores all contents with undo',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-delete-board-')),root=join(folder,'notes');await fs.mkdir(root);
+  const w=await Workspace.open(root,join(folder,'cache'));await w.createFolder('','Ideas');await w.createFolder('Ideas','Nested');await w.create('Ideas/Nested','note',0,0);await w.createFolder('','Outside');await w.create('Outside','reference',0,0);
+  const local=w.snapshot().cards.find(c=>c.path==='Ideas/Nested/note.md')!,external=w.snapshot().cards.find(c=>c.path==='Outside/reference.md')!;
+  const board=w.snapshot().boards.find(b=>b.folder==='Ideas')!;await w.saveBoard({...board,cards:[...board.cards,{id:'external-placement',cardId:external.id,x:0,y:0,width:200,height:200}]},board.revision);
+  await fs.writeFile(join(root,'Ideas/asset.bin'),Buffer.from([0,1,2,3]));
+  const bridge={request:async r=>{if(r.kind==='prepareBoardTrash')return w.prepareBoardTrash(r.folder);if(r.kind==='fileOperation')return w.fileOperation(r.operation);if(r.kind==='snapshot')return w.snapshot();throw new Error('Unexpected '+r.kind);}} as Bridge;
+  const session=new Session(bridge);session.update({snapshot:w.snapshot()});t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  assert.equal(await session.deleteBoard('Ideas',()=>false),false);assert.ok(w.snapshot().boards.some(b=>b.folder==='Ideas'));assert.equal(session.undoHistory.past.length,0);
+  await assert.rejects(()=>session.deleteBoard('Ideas',async()=>{await fs.writeFile(join(root,'Ideas/asset.bin'),'changed');return true;}),/External/);assert.ok(w.snapshot().boards.some(b=>b.folder==='Ideas'));
+  const mother=w.snapshot().boards.find(b=>!b.folder)!,placement=mother.cards.find(p=>p.folder==='Ideas')!;let confirmed=false;
+  assert.equal(await session.deleteSelection(mother,[placement.id],[],(names,boards)=>{assert.deepEqual(names,['Ideas']);assert.equal(boards,true);confirmed=true;return true;}),true);assert.equal(confirmed,true);
+  assert.ok(!w.snapshot().boards.some(b=>b.folder==='Ideas'));assert.ok(!w.snapshot().cards.some(c=>c.id===local.id));assert.ok(w.snapshot().cards.some(c=>c.id===external.id));assert.ok((await w.trashEntries()).some(e=>e.kind==='folder'&&e.originalPath==='Ideas'));
+  await session.undo();assert.equal(w.snapshot().cards.find(c=>c.id===local.id)?.path,local.path);assert.equal(await fs.readFile(join(root,'Ideas/asset.bin'),'utf8'),'changed');assert.ok(w.snapshot().boards.some(b=>b.folder==='Ideas/Nested'));
+  await session.undo(true);assert.ok(!w.snapshot().boards.some(b=>b.folder==='Ideas'));await assert.rejects(()=>session.deleteBoard('',()=>true));
 });

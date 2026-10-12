@@ -1,7 +1,5 @@
 # Local planning and agent configuration stay outside product history.
-/product-requirements.md
-/implementation-discussion.md
-/research-notes.md
+docs/local
 /.local/
 /.codex/
 

@@ -116,3 +116,7 @@ Unscheduled cards appear in a bottom collapse as wrapping, name-sized timeline b
 Grid and Compact Table use the shared hover/focus grip with grab/grabbing cursors and Alt+Up/Down. Lift after 5px, preserve the measured row and column widths, preview neighbor swaps at the shared thresholds, and clip the floating row to the horizontal viewport. The row stays below Grid headers. On drop, switch to Manual and save `order.rows` in the view owner; keep the rendered rows and scroll position during saving. Escape, blur, cancellation and invalid drops write nothing.
 
 Horizontal drags across displayed cells or empty table space pan the table. Ordinary clicks still open cards or property editors; active inputs and row grips are excluded from panning. Vertical movement remains page scrolling. Escape restores the previous horizontal position. Panning changes no files.
+
+## Registered workspaces
+
+Manage workspaces reuses the shared vertical reorder gesture for every registration, including missing folders. A six-dot handle appears on row hover or keyboard focus and remains visible in the phantom. The current-workspace check occupies a separate leading slot. Drag the handle or folder/status details; name editing and action buttons never start dragging. Alt+Up/Down reorders a focused row. Save registration order only on release; cancellation preserves it.

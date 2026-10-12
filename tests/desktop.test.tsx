@@ -17,7 +17,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   const prefs:Preferences={theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
   let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[{id:'ideas',cardId:'',folder:'Ideas',x:20,y:20,width:340,height:280}],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];let rejectSave=false;
-  window.door={resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
+  window.door={resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),reorderWorkspaces:async()=>[],renameWorkspace:async()=>[],relinkWorkspace:async()=>[],unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
       case 'listFiles':return request.path===''?[{name:'Ideas',path:'Ideas',kind:'folder'},{name:'assets',path:'assets',kind:'folder'}]:request.path==='assets'?[{name:'photo.jpg',path:'assets/photo.jpg',kind:'file'}]:[{name:'A.md',path:'Ideas/A.md',kind:'file'}];
@@ -109,14 +109,19 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('[aria-label="Switch workspace · Workspace"]');
     assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]')?.textContent,'Workspace');
     assert.ok(document.querySelector('[role=menu] [role=separator]'));
+    assert.ok(!document.querySelector('[role=menu]')?.textContent?.includes('Missing workspace'));
+    assert.ok(document.querySelector('[role=menuitemradio][aria-checked=true]>svg:first-child'),'current workspace check precedes its name');
     assert.equal(document.querySelector('[role=menuitem]')?.textContent,'Manage workspaces');
     await click('[role=menuitem]');
     assert.ok(document.querySelector('[role=dialog][aria-label="Manage workspaces"]'));
     assert.ok(document.querySelector('[aria-label^="Unregister Workspace"]')?.hasAttribute('disabled'));
     assert.equal(document.querySelector('.registered-workspace time')?.getAttribute('datetime'),new Date(1700000000000).toISOString());
-    assert.equal(document.querySelectorAll('.workspace-availability')[0]?.textContent,'Available');
-    assert.equal(document.querySelectorAll('.workspace-availability')[1]?.textContent,'Folder not found');
-    assert.ok(document.querySelector('.registered-workspace>button[data-tooltip="/missing/test"]')?.hasAttribute('disabled'));
+    assert.equal(document.querySelector('.registered-workspace[data-status=available] .workspace-availability'),null);
+    assert.equal(document.querySelector('.registered-workspace[data-status=missing] .workspace-availability')?.textContent,'Folder not found');
+    assert.ok(document.querySelector('.registered-workspace-info>.workspace-row-check:first-child>svg'));
+    assert.equal(document.querySelectorAll('.workspace-row-grip>svg').length,2);
+    assert.ok(document.querySelector('[role=dialog].workspace-manager-window'));
+    assert.ok(document.querySelector('.registered-workspace[data-status=missing] button[aria-label="Open workspace"]')?.hasAttribute('disabled'));
     assert.ok(document.querySelector('.workspace-manager')?.textContent?.includes('Last updated: Unknown'));
     assert.equal(document.querySelector('[aria-label^="Unregister Missing workspace"]')?.hasAttribute('disabled'),false);
     await click('[aria-label="Close dialog"]');

@@ -68,6 +68,7 @@ async function dispatch(request: Request) {
     case 'setViewProperty': string(request.path);string(request.expected);string(request.key);return workspace.setViewProperty(request.path,request.expected,request.key,request.value);
     case 'setTagProperty': string(request.path);string(request.expected);string(request.tag);string(request.key);return workspace.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
+    case 'prepareBoardTrash':string(request.folder);return workspace.prepareBoardTrash(request.folder);
     case 'fileOperation': string(request.operation?.path);if(request.operation.destination!==undefined)string(request.operation.destination);if(request.operation.expected!==undefined)string(request.operation.expected);return workspace.fileOperation(request.operation);
     case 'inspectFile': string(request.path);return inspectFile(workspace.root,request.path);
     case 'snapshot': return workspace.snapshot();

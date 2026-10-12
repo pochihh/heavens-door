@@ -90,6 +90,8 @@ export const ui = {
     editLabel:'Edit edge label',delete:'Delete edge',showStyle:'Show Style View',
   },
   whiteboard: {
+    delete:"Delete whiteboard",deleteTitle:"Delete whiteboard",
+    confirmDelete:(names:string[])=>`Delete “${names[0]}”?\n\nThe whiteboard folder, its cards, nested whiteboards, and other files will move to workspace trash. Cards referenced from other folders stay in place. You can undo this action.`,
     cardUnavailable: "Card unavailable",
     contentsCount: (cards: number, boards: number) => `${cards} card${cards === 1 ? "" : "s"} · ${boards} whiteboard${boards === 1 ? "" : "s"}`,
     resize: (name: string) => `Resize ${name}`,
@@ -175,6 +177,7 @@ export const ui = {
     loading: "Loading icons…",
   },
   workspace: {
+    name:"Workspace name",rename:"Rename workspace",relink:"Relink to folder",relinkTitle:"Relink workspace folder",
     switchWorkspace: (name: string) => `Switch workspace · ${name}`,
     workspaceMenu: "Workspace menu",
     status:{available:'Available',missing:'Folder not found',unavailable:'Cannot access','not-folder':'Not a folder'},

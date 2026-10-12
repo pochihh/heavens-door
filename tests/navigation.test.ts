@@ -80,9 +80,9 @@ test('small leading mouse events wait, and variable wheel deltas never alternate
   assert.equal(f.nav.current.zoom, zoom, 'trackpad acceleration and inertia remain pan throughout the gesture');
 });
 
-test('ambiguous input waits at most 48ms; memory expires; explicit navigation cancels pending detection', t => {
+test('ambiguous input waits at most 32ms; memory expires; explicit navigation cancels pending detection', t => {
   const f = setup(t), start = { ...f.nav.current };
-  f.wheel({ deltaY: 4 }); f.advance(47); f.frame();
+  f.wheel({ deltaY: 4 }); f.advance(31); f.frame();
   assert.deepEqual(f.nav.current, start);
   f.advance(1); f.frame();
   assert.deepEqual(f.nav.current, { ...start, y: start.y - 4 });
@@ -91,7 +91,7 @@ test('ambiguous input waits at most 48ms; memory expires; explicit navigation ca
   f.advance(300); f.wheel({ deltaY: 3 }); f.frame();
   assert.ok(f.nav.current.zoom < start.zoom, 'late mouse evidence informs the next gesture even when it starts small');
   f.advance(300); f.wheel({ deltaY: 3, deltaMode: 1 }); f.frame();
-  f.advance(10100);
+  f.advance(5100);
   const before = { ...f.nav.current };
   f.wheel({ deltaY: 2 }); f.frame();
   assert.deepEqual(f.nav.current, before, 'stale mouse memory must not force a device choice');
@@ -157,26 +157,18 @@ test('explicit mouse and trackpad modes bypass detection and switching discards 
 });
 
 
-test('Auto tolerates slower wheel starts, reading pauses, and short gaps without changing a trackpad pan', t => {
-  const f = setup(t), start = { ...f.nav.current };
-  f.wheel({ deltaY: 8 }); f.advance(40); f.frame();
-  assert.deepEqual(f.nav.current, start, 'a slow mouse start waits for evidence instead of moving vertically');
-  f.wheel({ deltaY: 60 }); f.frame();
-  assert.ok(f.nav.current.zoom < start.zoom); assertAnchored(start, f.nav.current);
-  f.advance(8000);
-  const before = { ...f.nav.current };
-  f.wheel({ deltaY: 2 }); f.frame();
-  assert.ok(f.nav.current.zoom < before.zoom, 'mouse memory survives a short reading pause');
-  assertAnchored(start, f.nav.current);
-  f.advance(300);
-  f.wheel({ deltaX: 3, deltaY: 2 }); f.frame();
-  const pan = { ...f.nav.current };
-  f.advance(200); f.wheel({ deltaY: 100 }); f.frame();
-  assert.deepEqual(f.nav.current, { ...pan, y: pan.y - 100 }, 'a brief pause within trackpad input does not switch it to zoom');
-  f.advance(300); f.wheel({ deltaY: 100 }); f.frame();
-  assert.ok(f.nav.current.zoom < pan.zoom, 'a separate mouse gesture can still override trackpad memory');
+test('Auto restores pre-switch timing for ambiguous starts, device memory, and gesture boundaries', t => {
+  const f=setup(t),start={...f.nav.current};
+  f.wheel({deltaY:8});f.advance(31);f.frame();assert.deepEqual(f.nav.current,start);
+  f.advance(1);f.frame();assert.deepEqual(f.nav.current,{...start,y:start.y-8},'ambiguous input pans after 32ms');
+  f.advance(181);f.wheel({deltaY:100});f.frame();assert.ok(f.nav.current.zoom<start.zoom,'181ms starts a new gesture');
+  f.advance(4999);const remembered={...f.nav.current};f.wheel({deltaY:2});f.frame();assert.ok(f.nav.current.zoom<remembered.zoom,'confident memory lasts five seconds');
+  f.advance(5001);const expired={...f.nav.current};f.wheel({deltaY:2});f.frame();assert.deepEqual(f.nav.current,expired,'expired memory does not force zoom');
+  f.advance(32);f.frame();assert.deepEqual(f.nav.current,{...expired,y:expired.y-2});
+  f.advance(181);f.wheel({deltaX:3,deltaY:2});f.frame();const pan={...f.nav.current};
+  f.advance(180);f.wheel({deltaY:100});f.frame();assert.equal(f.nav.current.zoom,pan.zoom,'180ms retains the current pan');
+  f.advance(181);f.wheel({deltaY:100});f.frame();assert.ok(f.nav.current.zoom<pan.zoom,'a later gesture can switch to mouse zoom');
 });
-
 
 test('grid camera variables follow the same frame as the world without rewriting theme styles',t=>{
   const f=setup(t);

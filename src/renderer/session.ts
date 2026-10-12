@@ -26,6 +26,7 @@ export class Session {
   viewScrolls=new Map<string,{left:number;top:number}>();
   tagExpansion=new Map<string,{active?:string;last?:string}>();
   undoHistory = new UndoHistory();
+  private newCards=new Set<string>();
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private preferencesTimer: ReturnType<typeof setTimeout> | undefined;
@@ -47,7 +48,7 @@ export class Session {
       this.update({snapshot,status:ui.status.savedLocally});
     });
   }
-  dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={}; }
+  dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={};this.newCards.clear(); }
   hasPendingPreferences(key:keyof Preferences){return key in this.pendingPreferences;}
   schedulePreferences(patch:Partial<Preferences>,root:string){
     if(root!==this.state.snapshot?.root)return;
@@ -96,7 +97,8 @@ export class Session {
   }
   private accept(result: Mutation,label: string,group=false) {
     this.undoHistory.record(label,result.edits,group,Date.now(),result.move);
-    this.update({snapshot:result.snapshot,status:ui.status.savedLocally,error:''});
+    const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
+    this.update({snapshot:result.snapshot,...(draft&&info&&info.path!==draft.card.path?{draft:{...draft,card:{...draft.card,...info}}}:{}),status:ui.status.savedLocally,error:''});
     clearTimeout(this.checkpointTimer);
     if (result.snapshot.historyAvailable) this.checkpointTimer=setTimeout(() => { void this.checkpoint(ui.history.automaticCheckpoint).catch(() => undefined); },5*60*1000);
   }
@@ -119,14 +121,24 @@ export class Session {
       this.update({status:ui.status.saving});
       const result=await this.bridge.request<Mutation>({kind:'saveCard',path:draft.card.path,body:draft.body,expected:draft.card.revision});
       this.accept(result,label??ui.history.edit(draft.card.path),!label);
-      const info=result.snapshot.cards.find(c => c.path === draft.card.path)!;
+      const info=result.snapshot.cards.find(c => c.id === draft.card.id)!;
       const card={...info,body:draft.body};
       const current=this.state.draft!;
       this.update({draft:{card,body:current.body,dirty:current.body !== draft.body}});
+      if(this.newCards.has(card.id)&&info.title?.trim()&&!this.state.draft?.dirty){
+        const stem=Array.from(info.title.trim()).slice(0,50).join('').replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim();
+        if(stem&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)){
+          const folder=card.path.slice(0,card.path.lastIndexOf('/')+1),names=new Set(this.state.snapshot!.cards.filter(c=>c.id!==card.id).map(c=>c.path.toLocaleLowerCase()));let name=stem,i=0;
+          while(names.has((folder+name+'.md').toLocaleLowerCase()))name=stem+'_'+ ++i;
+          const renamed=await this.bridge.request<Mutation>({kind:'renameCard',path:card.path,stem:name,expected:card.revision});this.accept(renamed,ui.history.edit(draft.card.path),true);this.newCards.delete(card.id);
+        }
+      }
     }
   }
   select(path: string | null) {
+    const id=this.state.snapshot?.cards.find(c=>c.path===path)?.id;
     return this.run(async () => {
+      if(id)path=this.state.snapshot?.cards.find(c=>c.id===id)?.path??path;
       if (path && path === this.state.draft?.card.path) return;
       const card=path ? await this.bridge.request<Card>({kind:'card',path}) : null;
       // Keep accepting edits to the old card while the next card loads, then flush them.
@@ -159,10 +171,19 @@ export class Session {
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;
   });}
   fileOperation(operation:import('../shared').FileOperation,label:string){return this.run(async()=>{
-    await this.flush();await this.flushPreferences();const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});
+    await this.flush();await this.flushPreferences();
+    return this.applyFileOperation(operation,label);
+  });}
+  private async applyFileOperation(operation:import('../shared').FileOperation,label:string){
+    const result=await this.bridge.request<import('../shared').FileMutation>({kind:'fileOperation',operation});
     this.undoHistory.record(label,[],false,Date.now(),undefined,result.inverse);this.update({snapshot:result.snapshot,error:'',status:ui.status.savedLocally});
     const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);if(draft){if(info){const card=await this.bridge.request<Card>({kind:'card',path:info.path}),current=this.state.draft;if(current?.card.id===draft.card.id)this.update({draft:{card,body:current.dirty&&operation.action==='move'?moveCardLinks(current.body,current.card.path,card.path,path=>remapFilePath(path,operation.path,result.path)):current.dirty?current.body:card.body,dirty:current.dirty}});}else if(draft.dirty)throw new Error(ui.errors.externalEdit(draft.card.path));else this.update({draft:null});}
     return result.path;
+  }
+  deleteBoard(folder:string,confirm:(names:string[])=>boolean|Promise<boolean>){return this.run(async()=>{
+    await this.flush();const expected=await this.bridge.request<string>({kind:'prepareBoardTrash',folder});
+    if(!await confirm([folder]))return false;
+    await this.flush();await this.applyFileOperation({action:'trash',path:folder,expected},ui.whiteboard.delete);return true;
   });}
   restoreTrash(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'restoreTrash',path,expected});this.accept(result,'Restore card');return result.snapshot.cards.find(c=>result.edits.some(e=>e.path===c.path&&e.before===null))!;});}
   trashCard(path:string,expected:string){return this.run(async()=>{await this.flush();const result=await this.bridge.request<Mutation>({kind:'trashCard',path,expected});this.accept(result,'Move card to Trash');if(this.state.draft?.card.path===path){if(this.state.draft.dirty)throw new Error(ui.errors.externalEdit(path));this.update({draft:null});}});}
@@ -182,7 +203,7 @@ export class Session {
       this.accept(result,ui.history.createCard);
       const path=result.edits.find(e => e.path.endsWith('.md'))!.path;
       const card=await this.bridge.request<Card>({kind:'card',path});
-      this.update({draft:{card,body:card.body,dirty:false}});
+      this.newCards.add(card.id);this.update({draft:{card,body:card.body,dirty:false}});
     });
   }
   createSlipboxCard(name:string,placement?:{folder:string;x:number;y:number}){return this.run(async()=>{
@@ -200,7 +221,7 @@ export class Session {
       const result=await this.bridge.request<Mutation>({kind:'createViewCard',owner:{...owner,expected:current!.revision},view,choice,column,date});
       this.accept(result,ui.history.createCard);
       const created=result.edits.find(e=>e.before===null&&e.path.endsWith('.md'))!;
-      return result.snapshot.cards.find(c=>c.path===created.path)!;
+      const card=result.snapshot.cards.find(c=>c.path===created.path)!;this.newCards.add(card.id);return card;
     });
   }
   moveSelection(source:string,ids:string[],folder:string,x:number,y:number,base:Board){return this.run(async()=>{
@@ -294,6 +315,7 @@ export class Session {
     });
   }
   renameCard(id:string,stem:string) {
+    this.newCards.delete(id);
     return this.run(async()=>{
       await this.flush();
       const card=this.state.snapshot?.cards.find(c=>c.id===id);
@@ -335,7 +357,13 @@ export class Session {
       if(draft&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
     });
   }
-  deleteSelection(board:Board,placements:string[],edges:string[],confirm:(names:string[])=>boolean|Promise<boolean>) {
+  deleteSelection(board:Board,placements:string[],edges:string[],confirm:(names:string[],boards?:boolean)=>boolean|Promise<boolean>):Promise<boolean> {
+    const folders=board.cards.filter(p=>p.folder&&placements.includes(p.id)).map(p=>p.folder!).sort((a,b)=>a.length-b.length);
+    if(folders.length)return (async()=>{
+      for(const folder of folders){if(!this.state.snapshot?.boards.some(b=>b.folder===folder))continue;if(!await this.deleteBoard(folder,names=>confirm(names,true)))return false;}
+      const current=this.state.snapshot?.boards.find(b=>b.path===board.path),remaining=placements.filter(id=>current?.cards.some(p=>p.id===id&&!p.folder));
+      if(current&&(remaining.length||edges.length))return this.deleteSelection(current,remaining,edges,confirm);return true;
+    })();
     return this.run(async()=>{
       await this.flush();
       const current=this.state.snapshot?.boards.find(b=>b.path===board.path);

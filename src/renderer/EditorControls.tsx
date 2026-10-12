@@ -31,7 +31,11 @@ export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:
     const changed=()=>{update(n=>n+1);if(!dragging.current){const blocks=editorBlocks(editor.state.doc);setBlock(blocks.filter(b=>editor.state.selection.from>=b.from&&editor.state.selection.from<b.to).at(-1)??null);}};
     const hover=(event:PointerEvent)=>{
       if(dragging.current||event.buttons||popupOpen.current)return;
-      const blocks=editorBlocks(editor.state.doc),target=event.target as Node;
+      const target=event.target as Node,modal=document.querySelector('dialog[open],[aria-modal=true]');
+      if(modal&&!modal.contains(editor.view.dom)||controls.current?.contains(target))return;
+      const hoverArea=editor.view.dom.closest('.editor-body')??editor.view.dom;
+      if(!hoverArea.contains(target)){const area=editor.view.dom.getBoundingClientRect(),clip=hoverArea.getBoundingClientRect();if(event.clientX<area.left-(canvas?24:46)||event.clientX>area.left||event.clientY<clip.top||event.clientY>=clip.bottom)return;}
+      const blocks=editorBlocks(editor.state.doc);
       let found=blocks.filter(b=>domFor(b)?.contains(target)).at(-1);
       if(found?.item){
         // The path to the shared gutter crosses ancestor list padding. Keep the
@@ -39,11 +43,12 @@ export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:
         const path=found.path;
         found=blocks.filter(b=>path.every((v,i)=>b.path[i]===v)).filter(b=>{const r=domFor(b)?.getBoundingClientRect();return r&&event.clientY>=r.top&&event.clientY<r.bottom;}).at(-1)??found;
       }
+      if(!found){const area=editor.view.dom.getBoundingClientRect();if(event.clientX>=area.left-46&&event.clientX<=area.right)found=blocks.filter(b=>{const r=domFor(b)?.getBoundingClientRect();return r&&event.clientY>=r.top&&event.clientY<r.bottom;}).at(-1);}
       if(found)setBlock(found);
     };
-    editor.on('transaction',changed);editor.on('blur',changed);editor.on('focus',changed);editor.view.dom.addEventListener('pointermove',hover);
-    return()=>{editor.off('transaction',changed);editor.off('blur',changed);editor.off('focus',changed);editor.view.dom.removeEventListener('pointermove',hover);cancel.current();};
-  },[editor]);
+    editor.on('transaction',changed);editor.on('blur',changed);editor.on('focus',changed);document.addEventListener('pointermove',hover);
+    return()=>{editor.off('transaction',changed);editor.off('blur',changed);editor.off('focus',changed);document.removeEventListener('pointermove',hover);cancel.current();};
+  },[editor,canvas]);
   useLayoutEffect(()=>{
     if(!block&&!bubble.current)return;
     return trackEditorOverlay(editor.view.dom,()=>{
@@ -71,7 +76,7 @@ export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:
     if(!block)return;if(menu){setMenu(null);return;}const r=anchor.getBoundingClientRect();
     const change=(kind:string)=>{const next=changeEditorBlock(editor.getJSON(),block.path,kind);if(next){try{editor.schema.nodeFromJSON(next).check();action(kind==='delete'?'Delete block':kind==='duplicate'?'Duplicate block':'Turn into',()=>editor.commands.setContent(next));}catch{/* Complex structures keep their source. */}}};
     const node=editor.state.doc.nodeAt(block.from),convertible=node&&(['paragraph','heading'].includes(node.type.name)||block.item);
-    setMenu({anchor,x:r.left,y:r.bottom,label:ui.editorTools.blockOptions,actions:[{label:ui.editorTools.duplicateBlock,icon:'copy',run:()=>change('duplicate')},{label:ui.editorTools.deleteBlock,icon:'trash',danger:true,run:()=>change('delete')},...(convertible?[{label:ui.editorTools.turnInto,icon:'format' as const,run:()=>setMenu({anchor,x:r.left,y:r.bottom,label:ui.editorTools.turnIntoLabel,actions:[['paragraph','Text'],['heading1','Heading 1'],['heading2','Heading 2'],['heading3','Heading 3'],['bulletList','Bullet list'],['orderedList','Numbered list'],['taskList','Checklist'],['codeBlock','Code block']].map(([kind,label])=>({label,run:()=>change(kind)}))})}]:[]),{label:ui.editor.moveUp,icon:'up',separatorBefore:true,run:()=>move('up')},{label:ui.editor.moveDown,icon:'arrowDown',run:()=>move('down')},...block.item?[{label:ui.editor.indent,icon:'forward' as const,run:()=>move('indent')},{label:ui.editor.outdent,icon:'back' as const,run:()=>move('outdent')}]:[],{label:ui.editorTools.symbolsAndEmoji,icon:'text',run:()=>setPopup({kind:'symbols',anchor})}]});
+    setMenu({anchor,x:r.left,y:r.bottom,label:ui.editorTools.blockOptions,actions:[{label:ui.editorTools.duplicateBlock,icon:'copy',run:()=>change('duplicate')},{label:ui.editorTools.deleteBlock,icon:'trash',danger:true,run:()=>change('delete')},...(convertible?[{label:ui.editorTools.turnInto,icon:'format' as const,submenu:[['paragraph','Text'],['heading1','Heading 1'],['heading2','Heading 2'],['heading3','Heading 3'],['bulletList','Bullet list'],['orderedList','Numbered list'],['taskList','Checklist'],['codeBlock','Code block']].map(([kind,label])=>({label,run:()=>change(kind)}))}]:[]),{label:ui.editor.moveUp,icon:'up',separatorBefore:true,run:()=>move('up')},{label:ui.editor.moveDown,icon:'arrowDown',run:()=>move('down')},...block.item?[{label:ui.editor.indent,icon:'forward' as const,run:()=>move('indent')},{label:ui.editor.outdent,icon:'back' as const,run:()=>move('outdent')}]:[],{label:ui.editorTools.symbolsAndEmoji,icon:'text',run:()=>setPopup({kind:'symbols',anchor})}]});
   }
   const selection=editor.state.selection,selectedText=!selection.empty&&!(selection instanceof NodeSelection),range={from:selection.from,to:selection.to};
   const format=(apply:()=>void)=>{editor.commands.setTextSelection(range);action(ui.editor.formatting,apply);};

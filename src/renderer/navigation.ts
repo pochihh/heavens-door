@@ -9,9 +9,8 @@ export function normalizedWheelDelta(delta: number, mode: number) {
   return Math.max(-120, Math.min(120, delta));
 }
 type WheelMode = 'pan' | 'zoom';
-// Give slower wheel bursts another frame to identify themselves, and retain recent
-// input through short reading pauses. Clear hints still respond immediately.
-const GESTURE_GAP = 220, SAMPLE_WAIT = 48, INPUT_MEMORY = 10000;
+// Preserve the Auto timing from before the explicit device modes were added.
+const GESTURE_GAP = 180, SAMPLE_WAIT = 32, INPUT_MEMORY = 5000;
 // Session-only memory follows input across whiteboards in the same window.
 const wheelMemory = new WeakMap<Window, { mode: WheelMode; time: number }>();
 function wheelHint(event: WheelEvent): WheelMode | null {

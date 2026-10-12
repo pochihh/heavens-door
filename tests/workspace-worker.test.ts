@@ -29,6 +29,11 @@ test('the desktop worker accepts automatic whiteboard names and preserves reques
   await call({kind:'preferences',patch:{whiteboardName:'Ideas'}});
   const nested=await call<Mutation>({kind:'createFolder',parent:'A new board',position:{x:20,y:30}});
   assert.ok(nested.snapshot.boards.some(b=>b.folder===join('A new board','Ideas')));
+  const stamp=await call<string>({kind:'prepareBoardTrash',folder:'A new board 2'});assert.match(stamp,/^[a-f0-9]{64}$/);
+  const deleted=await call<import('../src/shared').FileMutation>({kind:'fileOperation',operation:{action:'trash',path:'A new board 2',expected:stamp}});
+  assert.ok(!deleted.snapshot.boards.some(b=>b.folder==='A new board 2'));
+  const restored=await call<import('../src/shared').FileMutation>({kind:'fileOperation',operation:deleted.inverse});assert.ok(restored.snapshot.boards.some(b=>b.folder==='A new board 2'));
+  await assert.rejects(call({kind:'prepareBoardTrash',folder:''}),/Whiteboard|whiteboard/);
   await assert.rejects(call({kind:'createFolder',parent:'',name:42 as never}),/Invalid request value/);
   const journal=await call<Mutation&{path:string}>({kind:'openJournal',date:'2026-10-05',period:'daily'});assert.equal(journal.path,'Journal/2026/10/2026-10-05.md');
   assert.equal((await call<Mutation>({kind:'openJournal',date:'2026-10-05',period:'daily'})).edits.length,0);

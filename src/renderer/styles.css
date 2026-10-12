@@ -34,7 +34,7 @@
 /* Native scrolling with a visible thumb and no painted track. Color inherits into embedded widgets. */
 *{box-sizing:border-box;scrollbar-width:thin}
 @media(forced-colors:active){:root{scrollbar-color:auto}}
-body{margin:0;text-rendering:optimizeLegibility}button,input,select,textarea{font:inherit;color:inherit}
+body{user-select:none;-webkit-user-select:none;margin:0;text-rendering:optimizeLegibility}input,textarea,[contenteditable=true],.ProseMirror,.editor-body,.markdown-body{user-select:text;-webkit-user-select:text}button,input,select,textarea{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer;border-radius:var(--control-corner);padding:5px 8px}button:hover{background:var(--hover)}button:disabled{opacity:.4;cursor:default}
 button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,[role=separator]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 button svg,summary svg{flex-shrink:0}input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px 8px;min-width:0}
@@ -195,7 +195,7 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .tab-dragging [data-tab-key]:hover{background:transparent}
 .tab-phantom{contain:layout style}
 
-.statusbar{gap:14px;padding:0 12px 0 0}.window-toolbar>.workspace-switcher{display:flex;align-items:center;gap:8px;padding:4px 8px 4px 13px;min-width:0;width:calc(var(--sidebar-width) + var(--rail-width) - var(--window-left-controls) - 10px);height:28px;color:var(--text);text-align:left}.workspace-switcher>svg{width:16px;flex-shrink:0}.workspace-switcher>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.menu-separator{height:1px;background:var(--border);margin:5px 4px}.registered-workspaces{display:flex;flex-direction:column;gap:3px}.registered-workspace{display:flex;align-items:center}.registered-workspace>button:first-child{flex:1;display:flex;align-items:center;gap:9px;min-width:0;text-align:left}.registered-workspace>button>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}.registered-workspace strong{font-weight:500}.registered-workspace small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.workspace-manager>button{display:flex;align-items:center;gap:8px}
+.statusbar{gap:14px;padding:0 12px 0 0}.window-toolbar>.workspace-switcher{display:flex;align-items:center;gap:8px;padding:4px 8px 4px 13px;min-width:0;width:calc(var(--sidebar-width) + var(--rail-width) - var(--window-left-controls) - 10px);height:28px;color:var(--text);text-align:left}.workspace-switcher>svg{width:16px;flex-shrink:0}.workspace-switcher>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.menu-separator{height:1px;background:var(--border);margin:5px 4px}.registered-workspaces{display:flex;flex-direction:column;gap:3px}.registered-workspace{display:flex;align-items:center}.registered-workspace-info{flex:1;display:flex;align-items:center;gap:9px;min-width:0;text-align:left}.registered-workspace-info>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}.registered-workspace strong{font-weight:500}.registered-workspace small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.workspace-manager>button{display:flex;align-items:center;gap:8px}
 
 /* The same first H1 is the title in previews, editors and collapsed cards. */
 .prose .card-title{position:relative}
@@ -242,7 +242,7 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 @media(forced-colors:active){.settings-toggle input[role=switch]{forced-color-adjust:none;background:Canvas;border-color:ButtonText}.settings-toggle input[role=switch]::before{background:ButtonText}.settings-toggle input[role=switch]:checked{background:Highlight;border-color:Highlight}.settings-toggle input[role=switch]:checked::before{background:HighlightText}.settings-toggle input[role=switch]:focus-visible{outline-color:Highlight}}
 
 .workspace-manager-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px;color:var(--muted)}
-.registered-workspace>button:first-child{padding:10px 8px}
+.registered-workspace-info{padding:10px 8px}
 .registered-workspace>button:first-child:disabled{opacity:1;cursor:default;background:transparent}
 .registered-workspace small{color:var(--muted)}
 .registered-workspace .workspace-availability{color:var(--text)}
@@ -416,15 +416,19 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .journal-open-today{padding:7px 4px;margin-top:8px;font-size:12px;text-align:left;flex-shrink:0}
 .template-dialog{width:480px;max-width:calc(100vw - 32px);max-height:calc(100vh - 48px);padding:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .template-dialog::backdrop{background:#0006}.template-dialog form{padding:12px 18px 18px;display:grid;gap:10px}.template-dialog input{width:100%;min-width:0}.template-list{max-height:230px;overflow:auto;display:flex;flex-direction:column;gap:2px}.template-list button{display:flex;align-items:center;gap:7px;text-align:left;padding:7px 8px;background:transparent}.template-list button[aria-selected=true]{background:var(--selected)}.template-list button span{flex:1}.template-list small{max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}.template-actions{display:flex;justify-content:space-between}.template-actions button{display:flex;align-items:center;gap:5px;background:transparent;font-size:12px;color:var(--muted)}.template-dialog label{display:grid;grid-template-columns:70px 1fr;align-items:center;font-size:12px;gap:8px}.template-dialog [role=alert]{font-size:12px;color:var(--danger)}
+
+.registered-workspace-info{padding:5px 8px;cursor:grab;touch-action:none}.registered-workspace-info>.workspace-name{cursor:text}.workspace-name{text-align:left;font-weight:500;padding:0;width:fit-content}.registered-workspaces{overflow:auto}.registered-workspace[data-status=missing] .workspace-availability{color:var(--warning)}.registered-workspace:is([data-status=unavailable],[data-status=not-folder]) .workspace-availability{color:var(--negative)}
+
+button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-webkit-user-select:none}input,textarea,[contenteditable=true]{user-select:text;-webkit-user-select:text}
+
+.workspace-manager .registered-workspaces{max-height:45vh;flex-shrink:0}
+
 .journal-days{padding-bottom:2px}
+
+
 .journal-settings-section{margin-top:22px}.journal-settings-section h3{font-size:14px;margin:0 0 4px}.journal-format-preview{margin:6px 0 12px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}.journal-format-preview[role=alert]{color:var(--negative)}
 
 /* System libraries and explorer sections share the regular document row style. */
-.explorer-section-heading {gap:8px;padding:6px 8px 4px;min-height:30px;}
-.explorer-section-heading .tool {width:24px;height:24px;}
-.section-rule {height:1px;background:var(--border);flex:1;}
-.section-collapse {display:flex;align-items:center;gap:8px;width:100%;padding:0;background:transparent;color:inherit;font-size:inherit;text-align:left;}
-.system-section {margin-top:12px;}
 .board-sections [data-sort-group] {min-height:8px;}
 .board-sections .sort-placeholder {max-width:100%;}
 .system-library {padding:28px 36px;overflow:auto;height:100%;box-sizing:border-box;}
@@ -446,6 +450,12 @@ body[data-bookmark-drop=remove] .drag-phantom:after{content:'Remove from Starred
 .system-path {color:var(--muted);}
 .system-tags {display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);}
 .system-calendar {max-width:360px;}
+
+.workspace-manager-window{width:min(760px,90vw)}
+.workspace-row-check,.workspace-row-grip{display:flex;align-items:center;justify-content:center;width:16px;flex-shrink:0}
+.workspace-row-grip{color:var(--muted);opacity:0}
+.registered-workspace:is(:hover,:focus-within) .workspace-row-grip,.registered-workspace.drag-phantom .workspace-row-grip{opacity:1}
+.workspace-manager .registered-workspace-info{padding:10px 8px}
 
 .system-record > .system-name-cell {padding:0;}
 .system-name {width:100%;padding:8px 10px;min-height:36px;}

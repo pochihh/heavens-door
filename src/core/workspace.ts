@@ -260,7 +260,7 @@ export class Workspace {
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
     const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:basename(this.root), cards:cards.map(({colorType,fillColor,tagData,...c}) => ({...c,tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map(({colorType,fillColor,tagData,...c}) => ({...c,tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -281,7 +281,7 @@ export class Workspace {
         cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
       }
       const ids=new Set(cards.map(p=>p.id));
-      return {...board,name:board.folder ? basename(board.folder) : basename(this.root),cards,edges:board.edges.filter(e=>ids.has(e.from)&&ids.has(e.to))};
+      return {...board,name:board.folder ? basename(board.folder) : this.preferences.workspaceName??basename(this.root),cards,edges:board.edges.filter(e=>ids.has(e.from)&&ids.has(e.to))};
     });
   }
   private boardPath(folder:string) {return join(folder,(folder?basename(folder):basename(this.root))+'.whiteboard');}
@@ -741,6 +741,10 @@ export class Workspace {
     if(moved)await operateFile(this.root,systemPath('trash',this.preferences),{action:'move',path:journal.to,destination:journal.from});
     for(const edit of journal.edits)await this.atomic(edit.path,edit.before);
     this.preferences=await writePreferences(this.root,current,journal.preferences);await fs.unlink(file);this.renamePending=false;
+  }
+  async prepareBoardTrash(folder:string){
+    this.assertReady();if(!folder||!this.snapshot().boards.some(b=>b.folder===folder))throw new Error(ui.errors.whiteboardMissing);
+    await editablePath(this.root,folder);return fileStamp(this.root,folder);
   }
   async fileOperation(operation:import('../shared').FileOperation):Promise<import('../shared').FileMutation>{
     this.assertReady();

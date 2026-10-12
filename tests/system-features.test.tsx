@@ -64,10 +64,23 @@ test('explorer shares system rows with Boards, Recent and Starred; libraries pro
   const bridge={platform:'darwin',request:async()=>[]} as unknown as Bridge;Object.assign(window,{door:bridge});const session=new Session(bridge),opened:string[]=[],settings:string[]=[];let saved:Preferences=prefs,writes=0;const root=createRoot(document.getElementById('root')!);
   function Harness({bookmarks=false}:{bookmarks?:boolean}){const [p,setPrefs]=useState<Preferences>(prefs),target=useRef<HTMLDivElement>(null);return <Explorer module={bookmarks?'bookmarks':'whiteboards'} snapshot={{...snapshot,preferences:p}} prefs={p} activeKey="system:templates" starredTarget={target} session={session} onOpen={key=>opened.push(key)} onSplit={()=>{}} onFolder={()=>{}} onCard={()=>{}} onIcon={()=>{}} onSettings={page=>settings.push(page)} onPrefs={change=>setPrefs(p=>{writes++;saved={...p,...change(p)};return saved;})}/>;}
   try{
-    await act(async()=>root.render(<Harness/>));const board=document.querySelector('[data-sort-group="boards:"]')!;
+    await act(async()=>root.render(<ConfirmationProvider><Harness/></ConfirmationProvider>));const board=document.querySelector('[data-sort-group="boards:"]')!;
     assert.deepEqual([...board.children].map(e=>(e as HTMLElement).dataset.fileKey),['system:templates','board:Ideas']);assert.ok(document.querySelector('[data-sort-group="system"] [data-file-key="system:tags"]'));
+    const systemRoot=document.querySelector<HTMLElement>('.system-root-row')!;
+    assert.equal(systemRoot.style.paddingLeft,'8px','System and the mother whiteboard share the root level');
+    assert.ok(systemRoot.querySelector('.tree-disclosure'));assert.ok(systemRoot.querySelector('.row-icon>svg'));
+    await act(async()=>systemRoot.querySelector<HTMLButtonElement>('.file-button')!.click());
+    assert.equal(document.querySelector('[data-sort-group="system"]'),null);
+    await act(async()=>systemRoot.querySelector<HTMLButtonElement>('.tree-disclosure')!.click());
+    assert.ok(document.querySelector('[data-sort-group="system"]'));
+    const systemRow=document.querySelector<HTMLElement>('[data-sort-group="system"] .tree-row')!;
+    assert.equal(systemRow.style.paddingLeft,'42px','System rows begin at the child whiteboard icon column');
+    assert.equal(systemRow.querySelector('.tree-spacer,.tree-disclosure'),null,'System items have no collapse-button slot');
     await act(async()=>document.querySelector<HTMLButtonElement>('[data-file-key="board:"] > .tree-row .file-button')!.click());assert.deepEqual(opened,['board:']);assert.equal(document.querySelector('.boards-section > .explorer-section-heading'),null);assert.equal(document.querySelector('.system-folder-label'),null);
     dom.window.HTMLElement.prototype.showPopover=function(){};
+    await act(async()=>document.querySelector('[data-file-key="board:Ideas"] .tree-row')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,cancelable:true})));
+    assert.ok([...document.querySelectorAll('[role=menu] button')].some(b=>b.textContent==='Delete whiteboard'));
+    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     await act(async()=>document.querySelector('[data-file-key="system:slipbox"]')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,cancelable:true})));
     assert.deepEqual([...document.querySelectorAll('[role="menu"] button')].map(b=>b.textContent),['Open in new tab','Add to Starred','Move to Boards','Settings']);
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(b=>b.textContent==='Settings')!.click());assert.deepEqual(settings,['files']);
@@ -97,7 +110,7 @@ test('explorer shares system rows with Boards, Recent and Starred; libraries pro
     await pointer(document.querySelector('[data-file-key="board:Ideas"] .file-button')!,'pointerdown',85);await pointer(document,'pointermove',110);
     await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     assert.equal(JSON.stringify(saved.boardNavigation),orderBefore,'cancel restores the original navigation');assert.equal(document.querySelector('.drag-phantom'),null);
-    await act(async()=>root.render(<Harness bookmarks/>));assert.ok(document.querySelector('.starred [data-file-key="system:templates"]'));assert.ok(document.querySelector('.recent [data-file-key="system:tags"]'));
+    await act(async()=>root.render(<ConfirmationProvider><Harness bookmarks/></ConfirmationProvider>));assert.ok(document.querySelector('.starred [data-file-key="system:templates"]'));assert.ok(document.querySelector('.recent [data-file-key="system:tags"]'));
     await act(async()=>root.render(<ConfirmationProvider><SystemView id="templates" snapshot={snapshot} session={session} onOpen={key=>opened.push(key)} onPreview={key=>opened.push(key)} onTemplate={()=>{}}/></ConfirmationProvider>));
     assert.equal(document.querySelectorAll('.system-name').length,2);await act(async()=>document.querySelector<HTMLButtonElement>('.system-name')!.click());assert.equal(opened.at(-1),'card:one');
     assert.equal(document.querySelectorAll('[role=columnheader]').length,3);

@@ -36,7 +36,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
@@ -78,6 +78,7 @@ export type Request =
   | {kind:'fileOperation';operation:FileOperation}
   | {kind:'moveSelection';source:string;expected:string;ids:string[];destination:string;destinationExpected:string;x:number;y:number}
   | {kind:'transfer';operation:BoardTransfer}
+  | {kind:'prepareBoardTrash';folder:string}
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
   | { kind: 'preferences'; patch: Partial<Preferences> }
@@ -136,6 +137,9 @@ export interface Bridge {
   onAppSettingsChange(callback:()=>void):()=>void;
   graphicsDiagnostics():Promise<GraphicsDiagnostics>;
   listWorkspaces(refresh?:boolean):Promise<RegisteredWorkspace[]>;
+  reorderWorkspaces(roots:string[]):Promise<RegisteredWorkspace[]>;
+  renameWorkspace(root:string,name:string):Promise<RegisteredWorkspace[]>;
+  relinkWorkspace(root:string):Promise<RegisteredWorkspace[]>;
   unregisterWorkspace(root:string):Promise<RegisteredWorkspace[]>;
   openWorkspace(root:string):Promise<Snapshot>;
   revealFile(path:string):Promise<void>;

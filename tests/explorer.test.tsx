@@ -114,3 +114,20 @@ test('bookmark drags use one axis-locked phantom and placeholder, reorder, unsta
     assert.equal(crossed(26,0,100,1),true);assert.equal(crossed(24,0,100,1),false);assert.equal(crossed(74,0,100,-1),true);assert.equal(crossed(76,0,100,-1),false);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
+
+ test('workspace names follow mother boards and registrations persist order and relinking',async t=>{
+  const dir=await fs.realpath(await fs.mkdtemp(join(tmpdir(),'heavens-workspace-management-'))),one=join(dir,'One'),two=join(dir,'Two'),moved=join(dir,'Moved');
+  await fs.mkdir(one);await fs.mkdir(two);
+  const workspace=await Workspace.open(one,join(dir,'cache')),registry=new WorkspaceRegistry(join(dir,'registry.json'));
+  t.after(async()=>{workspace.close();await fs.rm(dir,{recursive:true,force:true});});
+  await registry.register(one);await registry.register(two);
+  await workspace.setPreferences({workspaceName:'My workspace'});
+  assert.equal(workspace.snapshot().name,'My workspace');assert.equal(workspace.snapshot().boards.find(b=>b.folder==='')?.name,'My workspace');
+  assert.equal((await registry.list())[0].name,'My workspace');
+  await registry.reorder([two,one]);assert.deepEqual((await registry.list()).map(w=>w.root),[two,one]);
+  await assert.rejects(()=>registry.reorder([one,one]));assert.deepEqual((await registry.list()).map(w=>w.root),[two,one]);
+  await registry.rename(two,'Renamed missing');await fs.rename(two,moved);
+  assert.equal((await registry.list())[0].name,'Renamed missing');
+  await registry.relink(two,moved);assert.deepEqual((await registry.list()).map(w=>w.root),[moved,one]);
+  await assert.rejects(()=>registry.relink(moved,one));
+});

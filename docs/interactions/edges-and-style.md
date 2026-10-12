@@ -97,3 +97,7 @@ The card's exact Markdown bytes move into `.heavens-door/trash/<uuid>.md`, exclu
 ## Future customization
 
 All Style View choices are default presets, not a permanently fixed menu. Future workspace customization can change the available presets while the theme controls their visual presentation. Preset editors and extension APIs are deferred; no extra settings surface is added now. Documents and the remembered edge style continue storing literal color/width/style values rather than preset references, so changing future options will not restyle existing edges. The current width validator still accepts 0.5–8 and all three supported arrowhead shapes round-trip unchanged.
+
+## Whiteboard deletion
+
+Whiteboard tiles and Whiteboard explorer rows reuse the card Delete menu action and Delete/Backspace selection gesture. Delete whiteboard uses the shared confirmation dialog, then the existing folder-to-Trash operation. It includes every nested board, local card, and asset in that folder; references to cards stored elsewhere do not delete their files. Check the complete folder stamp again after confirmation to reject concurrent changes. Undo restores the folder and its identities; redo returns it to Trash. The mother whiteboard cannot be deleted.

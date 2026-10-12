@@ -107,6 +107,22 @@ void app.whenReady().then(async()=>{
     return {hardwareAcceleration:gpuReady?app.isHardwareAccelerationEnabled():null,features:gpuReady?{...app.getGPUFeatureStatus()}:null,electron:process.versions.electron,chromium:process.versions.chrome};
   });
   ipcMain.handle('workspace:list',(event,refresh:unknown)=>{trusted(event);if(refresh!==undefined&&typeof refresh!=='boolean')throw new Error(ui.errors.invalidWorkspaceRegistry);return registry.list(refresh===true);});
+  ipcMain.handle('workspace:reorder',(event,roots:unknown)=>{trusted(event);if(!Array.isArray(roots)||roots.some(root=>typeof root!=='string'))throw new Error(ui.errors.invalidWorkspaceRegistry);return registry.reorder(roots);});
+  ipcMain.handle('workspace:rename',async(event,root:unknown,name:unknown)=>{
+    trusted(event);if(typeof root!=='string'||typeof name!=='string'||!name.trim()||name.trim().length>120||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.invalidWorkspaceRegistry);
+    if((await registry.list()).find(w=>w.root===root)?.status==='available'){const host=await getHost(root);await host.call({kind:'preferences',patch:{workspaceName:name.trim()}});broadcast(host);}
+    return registry.rename(root,name);
+  });
+  ipcMain.handle('workspace:relink',async(event,root:unknown)=>{
+    const d=trusted(event);if(typeof root!=='string'||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.invalidWorkspaceRegistry);
+    const result=await dialog.showOpenDialog(d.window,{title:ui.workspace.relinkTitle,properties:['openDirectory']});
+    if(result.canceled||!result.filePaths[0])return registry.list();
+    const previous=(await registry.list()).find(w=>w.root===root)!;
+    const host=await getHost(result.filePaths[0]);
+    if((await registry.list()).some(w=>w.root===host.root&&w.root!==root))throw new Error(ui.errors.invalidWorkspaceRegistry);
+    await host.call({kind:'preferences',patch:{workspaceName:previous.name}});await registry.relink(root,host.root);
+    for(const desktop of desktops.values())if(desktop.host?.root===root){await open(desktop,host.root);broadcast(host);}return registry.list();
+  });
   ipcMain.handle('workspace:unregister',async(event,root:unknown)=>{
     const d=trusted(event);if(typeof root!=='string'||root===d.host?.root||!(await registry.list()).some(w=>w.root===root))throw new Error(ui.errors.unregisterWorkspace);
     return registry.unregister(root);

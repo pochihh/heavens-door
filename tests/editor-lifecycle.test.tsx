@@ -247,6 +247,12 @@ test('floating block grips and row tools remain interactive inside a whiteboard'
     [...element.children].forEach((el,i)=>{el.getBoundingClientRect=()=>new DOMRect(100,100+i*60,500,40);});
     const beta=editor.state.doc.child(0).nodeSize+editor.state.doc.child(1).nodeSize;
     await act(async()=>editor.commands.setTextSelection(beta+1));
+    await act(async()=>editor.commands.setTextSelection(editor.state.doc.child(0).nodeSize+1));
+    await act(async()=>pointer(document.querySelector('.editor-body')!,'pointermove',85,225));
+    assert.equal(document.querySelector<HTMLElement>('.editor-block-controls')!.style.top,'219px','the blank handle column finds the row under the pointer');
+    const modal=document.createElement('dialog');modal.setAttribute('open','');document.body.append(modal);
+    await act(async()=>editor.commands.setTextSelection(beta+1));
+    assert.equal(modal.querySelector('.editor-block-controls'),null,'background controls never move into the active popup');modal.remove();
     const grip=document.querySelector('.editor-block-grip')!,before=finishes;
     await act(async()=>pointer(grip,'pointerdown',85,225));
     assert.equal(finishes,before,'portaled grip presses must not finish editing');assert.equal(document.querySelector('.tiptap'),element);
