@@ -1,3 +1,4 @@
+import {splitCardSource} from '../card-source';
 import {tagsFrom} from '../tags';
 import { isHexColor } from '../colors';
 import { ui } from '../text/ui';
@@ -14,20 +15,20 @@ export function splitNote(raw: string) {
   const front = parseDocument(match?.[2] ?? '');
   if (front.errors.length) throw new Error(ui.errors.invalidFrontmatter(front.errors[0].message));
   if (front.contents !== null && !isMap(front.contents)) throw new Error(ui.errors.frontmatterMustBeAMapping);
-  return { front, header: match?.[0] ?? '', body: raw.slice(match?.[0].length ?? 0) };
+  return {front,...splitCardSource(raw)};
 }
 function headingText(heading:Token|undefined) {
   const text=(token:Token):string=>'tokens' in token&&token.tokens?token.tokens.map(text).join(''):token.type==='html'?'':'text' in token?String(token.text):'';
   return heading?text(heading):undefined;
 }
 export function readCard(path: string, raw: string): Card {
-  const { front, body } = splitNote(raw);
+  const { front, header, body } = splitNote(raw);
   const id = front.get('card-id');
   if (id !== undefined && (typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id))) throw new Error(ui.errors.invalidCardId);
   const fillColor=front.has('card-color')?front.get('card-color')??null:undefined;
   if(fillColor!==undefined&&fillColor!==null&&!isHexColor(fillColor))throw new Error(ui.errors.invalidCardColor);
   const heading=leadingTitle(body);
-  return { tags:tagsFrom(front.toJSON()?.tags),...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
+  return { header, tags:tagsFrom(front.toJSON()?.tags),...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
 }
 export function editCard(raw: string, card: Card, body: string) {
   const { front, header } = splitNote(raw);

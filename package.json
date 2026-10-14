@@ -18,7 +18,8 @@
     "version:bump": "node scripts/version.mjs",
     "sparkle:rebuild": "node scripts/sparkle-rebuild.mjs",
     "sparkle:appcast": "node scripts/sparkle-appcast.mjs",
-    "test:sparkle": "npm run sparkle:rebuild && npm run build && node scripts/test-sparkle.mjs"
+    "test:sparkle": "npm run sparkle:rebuild && npm run build && node scripts/test-sparkle.mjs",
+    "test:app": "node scripts/test-app.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -35,6 +36,7 @@
     "electron-sparkle-updater": "0.5.3",
     "electron-updater": "6.8.9",
     "emoji-mart": "^5.6.0",
+    "katex": "0.19.0",
     "lucide-react": "^1.48.0",
     "marked": "^18.0.14",
     "minisearch": "^7.2.0",

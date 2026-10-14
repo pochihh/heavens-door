@@ -248,7 +248,7 @@ test('floating block grips and row tools remain interactive inside a whiteboard'
     const beta=editor.state.doc.child(0).nodeSize+editor.state.doc.child(1).nodeSize;
     await act(async()=>editor.commands.setTextSelection(beta+1));
     await act(async()=>editor.commands.setTextSelection(editor.state.doc.child(0).nodeSize+1));
-    await act(async()=>pointer(document.querySelector('.editor-body')!,'pointermove',85,225));
+    await act(async()=>{pointer(document.querySelector('.editor-body')!,'pointermove',85,225);await new Promise(resolve=>requestAnimationFrame(resolve));});
     assert.equal(document.querySelector<HTMLElement>('.editor-block-controls')!.style.top,'219px','the blank handle column finds the row under the pointer');
     const modal=document.createElement('dialog');modal.setAttribute('open','');document.body.append(modal);
     await act(async()=>editor.commands.setTextSelection(beta+1));
@@ -304,5 +304,14 @@ test('child list handles stay on their row across parent padding and move only s
       assert.deepEqual([...editor.view.dom.children].map(el=>el.textContent),['Title','ParentSibling','End','Child oneChild twoGrandchild'],'only selected children move; their parent stays and their own descendants travel with them');
       assert.ok([...editor.view.dom.querySelectorAll('p')].every(p=>p.textContent),'a move must not add blank paragraphs');
     }
+  }finally{await act(async()=>root.unmount());}
+});
+
+
+test('renaming the same card does not remount its editor or reset its title selection',async()=>{
+  const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});window.door={platform:'darwin',assetUrl:p=>p} as typeof window.door;
+  const {CardEditor}=await import('../src/renderer/Editor'),root=createRoot(document.getElementById('root')!),edits:string[]=[];
+  try{await act(async()=>root.render(<CardEditor id="stable" path="Slipbox/untitled.md" body="# Finished title" cards={[]} onEdit={body=>edits.push(body)}/>));const el=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor};el.editor.commands.setTextSelection(8);const before=el.editor.state.selection.from;
+    await act(async()=>root.render(<CardEditor id="stable" path="Slipbox/Finished title.md" body="# Finished title" cards={[]} onEdit={body=>edits.push(body)}/>));assert.equal(document.querySelector('.tiptap'),el);assert.equal(el.editor.state.selection.from,before);assert.deepEqual(edits,[]);
   }finally{await act(async()=>root.unmount());}
 });

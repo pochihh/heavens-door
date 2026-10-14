@@ -97,7 +97,8 @@ async function dispatch(request: Request) {
       return workspace.renameCard(request.path,request.stem,request.expected);
     case 'saveCard':
       string(request.path); string(request.body); string(request.expected);
-      return workspace.saveCard(request.path,request.body,request.expected);
+      if(request.source!==undefined)string(request.source);
+      return workspace.saveCard(request.path,request.body,request.expected,request.source);
     case 'setFill':
       if(!Array.isArray(request.cards)||request.cards.length>10000)throw new Error(ui.errors.invalidTransaction);
       for(const card of request.cards){string(card.path);string(card.expected);if(!card.path.endsWith('.md'))throw new Error(ui.errors.invalidWorkspacePath);}

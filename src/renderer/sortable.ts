@@ -1,4 +1,4 @@
-import {clearDocumentDrop,documentDrag,dropDocumentAt,previewDocumentDrop} from './card-drop';
+import {clearDocumentNavigation,documentDragNavigated,clearDocumentDrop,documentDrag,dropDocumentAt,previewDocumentDrop} from './card-drop';
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 export type SortAxis='vertical'|'horizontal';
@@ -65,7 +65,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
     };
     const update=()=>{
       if(!active||!phantom)return;
-      if(!source.isConnected){finish(false);return;}
+      if(!source.isConnected&&!documentDragNavigated()){finish(false);return;}
       const coordinate=vertical?y:x,r=area.getBoundingClientRect(),external=drag&&(!inside()||!!source.closest('.file-tree,.saved-files'))&&previewDocumentDrop(drag,x,y,source),inList=inside()&&!external;
       if(!external)clearDocumentDrop();
       if(drag&&!inList){phantom.style.left=rect.left+x-event.clientX+'px';phantom.style.top=rect.top+y-event.clientY+'px';phantom.style.clipPath='none';placeholder?.remove();return;}
@@ -116,7 +116,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
       let index:number|null=null;
       if(save&&active&&inside()&&placeholder?.parentElement===list)index=[...list.children].slice(0,[...list.children].indexOf(placeholder)).filter(el=>el instanceof HTMLElement&&el.dataset.fileKey&&el!==source&&el.dataset.fileKey!==key).length;
       const dropped=!!(save&&active&&drag&&(!inside()||!!source.closest('.file-tree,.saved-files'))&&dropDocumentAt(drag,x,y,source));
-      cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;clearDocumentDrop();
+      cancelAnimationFrame(frame);animations.forEach(a=>a.cancel());source.style.removeProperty('display');duplicate?.style.removeProperty('display');phantom?.remove();placeholder?.remove();document.body.classList.remove('list-dragging');delete document.body.dataset.bookmarkDrop;clearDocumentDrop();clearDocumentNavigation();
       document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',keyboard,true);window.removeEventListener('blur',abort);cancel.current=()=>{};
       if(active){dragging.current?.(false);suppressDragClick();}
       if(save&&active&&!dropped)onCommit.current(key,index,fromStarred,list.dataset.sortGroup);
@@ -124,7 +124,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
     const up=(e:PointerEvent)=>{if(e.pointerId===pointer){x=e.clientX;y=e.clientY;update();finish(x>=0&&y>=0&&x<=window.innerWidth&&y<=window.innerHeight);}};
     const abort=(event?:Event)=>{if(event?.type!=='pointercancel'||(event as PointerEvent).pointerId===pointer)finish(false);};
     const keyboard=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();abort();}};
-    cancel.current=abort;document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',keyboard,true);window.addEventListener('blur',abort);
+    cancel.current=()=>{if(!active||!documentDragNavigated())abort();};document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',keyboard,true);window.addEventListener('blur',abort);
   };
 }
 
@@ -146,7 +146,7 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     const value=target?.dataset.tagColumn,before=rows[index]?.dataset.cardId,after=rows[index-1]?.dataset.cardId;
     const changed=target!==home||reorder&&before!==initialBefore,dragged=!!phantom;
     const dropped=!!(save&&dragged&&drag&&(x<bounds().left||x>bounds().right||y<bounds().top||y>bounds().bottom)&&dropDocumentAt(drag,x,y,source));
-    animations.forEach(a=>a.cancel());target?.classList.remove('kanban-drop');slot?.remove();phantom?.remove();reveal();document.body.classList.remove('list-dragging');clearDocumentDrop();
+    animations.forEach(a=>a.cancel());target?.classList.remove('kanban-drop');slot?.remove();phantom?.remove();reveal();document.body.classList.remove('list-dragging');clearDocumentDrop();clearDocumentNavigation();
     document.removeEventListener('pointermove',motion);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);
     if(dragged)suppressDragClick();
     if(dropped)return;
@@ -154,9 +154,9 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
   }
   function place(scrollY=0){
     if(!phantom||!slot)return;
-    const area=bounds(),outside=x<area.left||x>area.right||y<area.top||y>area.bottom;
+    const area=bounds(),outside=!root.isConnected||x<area.left||x>area.right||y<area.top||y>area.bottom;
     const external=drag&&outside&&previewDocumentDrop(drag,x,y,source);if(!external)clearDocumentDrop();
-    if(outside&&(external||x<area.left||x>area.right)){target?.classList.remove('kanban-drop');target=null;slot.remove();phantom.style.left=rect.left+x-start.x+'px';phantom.style.top=rect.top+y-start.y+'px';phantom.style.width=rect.width+'px';lastY=y;return;}
+    if(outside&&(external||!root.isConnected||x<area.left||x>area.right)){target?.classList.remove('kanban-drop');target=null;slot.remove();phantom.style.left=rect.left+x-start.x+'px';phantom.style.top=rect.top+y-start.y+'px';phantom.style.width=rect.width+'px';lastY=y;return;}
     const hit=columns.filter(column=>accepts(column.dataset.tagColumn!)&&(()=>{const r=column.getBoundingClientRect(),margin=column===target?24:12;return x>=area.left-24&&x<=area.right+24&&x>=r.left-margin&&x<=r.right+margin&&y>=area.top-24&&y<=area.bottom+24;})()).sort((a,b)=>Math.abs(x-(a.getBoundingClientRect().left+a.getBoundingClientRect().right)/2)-Math.abs(x-(b.getBoundingClientRect().left+b.getBoundingClientRect().right)/2))[0]??null;
     const changed=hit!==target;let layoutChanged=changed;
     const beforeRects=new Map([...new Set([target,hit])].flatMap(column=>column?cards(column):[]).map(row=>[row,row.getBoundingClientRect()]));
@@ -188,7 +188,7 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     if(layoutChanged)animateReorder(beforeRects,'vertical',animations);lastY=y;
   }
   function scroll(){
-    if(ended||!phantom)return;if(!root.isConnected){finish(false);return;}
+    if(ended||!phantom)return;if(!root.isConnected){if(!documentDragNavigated()){finish(false);return;}place();frame=requestAnimationFrame(scroll);return;}
     const r=bounds(),speed=(p:number,lo:number,hi:number)=>p<lo+32?-Math.min(14,(lo+32-p)/3):p>hi-32?Math.min(14,(p-hi+32)/3):0;
     const left=horizontal.scrollLeft,top=scroller.scrollTop;
     if(x>=r.left-12&&x<=r.right+12&&y>=r.top-12&&y<=r.bottom+12){horizontal.scrollLeft+=speed(x,r.left,r.right);scroller.scrollTop+=speed(y,r.top,r.bottom);if(left!==horizontal.scrollLeft||top!==scroller.scrollTop)place(scroller.scrollTop-top);}
@@ -200,5 +200,5 @@ export function dragKanban(e:ReactPointerEvent<HTMLElement>,root:HTMLElement,onD
     place();
   }
   const up=(event:PointerEvent)=>{if(event.pointerId===pointer){x=event.clientX;y=event.clientY;place();finish(true);}},abort=()=>finish(false),cancel=(event:PointerEvent)=>{if(event.pointerId===pointer)abort();},key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();abort();}};
-  document.addEventListener('pointermove',motion,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);return abort;
+  document.addEventListener('pointermove',motion,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);return ()=>{if(!phantom||!documentDragNavigated())abort();};
 }

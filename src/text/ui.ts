@@ -1,3 +1,4 @@
+import {APP_NAME} from '../identity';
 import {systemText} from './system';
 import {journalText} from './journal';
 import {editorText} from './editor';
@@ -5,6 +6,10 @@ import {viewText} from './views';
 // App-authored UI copy. Settings copy, user content, and native/dependency-owned labels are excluded.
 // Plain strings and typed formatters only; no rendering or application state.
 export const ui = {
+  hub:{title:'Views',help:'Pin commands here. Drag buttons in the action hub or reorder them below.',add:'Add a command',find:'Find action hub command',search:'Search commands…',reset:'Reset to compact defaults',chooseIcon:'Choose icon',defaultIcon:'Use default icon'},
+  keyboard:{find:'Find keyboard shortcut',search:'Search shortcuts…',help:'Click a shortcut and press the keys. Shift+Home/End extends a text selection.',clear:'Clear',reset:'Reset'},
+  math:{title:'Equation',edit:'Edit equation',latex:'LaTeX',input:'LaTeX equation',add:'Add equation…'},
+  cardWords:(words:number)=>`${words} words`,
   system:systemText,
   journal:journalText,
   editorTools:editorText,
@@ -24,7 +29,7 @@ export const ui = {
     pending:'Graphics information is not ready. Refresh to try again.',electron:'Electron',chromium:'Chromium',
     feature:(name:string)=>name.replaceAll('_',' '),
   },
-  updates:{close:'Close',about:"About Heaven's Door",checkFailed:(status:number)=>`Update check failed (${status}).`,title:'About and updates',check:'Check for updates',download:'Download update',install:'Restart and install',website:'Open download page',later:'Later',loading:'Loading update status…',downloading:'Update download progress',version:(version:string)=>`Version ${version}`,available:(version:string)=>`Heaven’s Door ${version} is available.`,manualHelp:'This build uses website updates. Download the latest installer to update the app.',noRelease:'No published release is available yet.',invalidVersion:'The release has an invalid version.',downloadTimeout:'The update download timed out. Try again or open the download page.',
+  updates:{testBuild:'Temporary test build. Release updates are disabled.',close:'Close',about:"About Heaven's Door",checkFailed:(status:number)=>`Update check failed (${status}).`,title:'About and updates',check:'Check for updates',download:'Download update',install:'Restart and install',website:'Open download page',later:'Later',loading:'Loading update status…',downloading:'Update download progress',version:(version:string)=>`Version ${version}`,available:(version:string)=>`Heaven’s Door ${version} is available.`,manualHelp:'This build uses website updates. Download the latest installer to update the app.',noRelease:'No published release is available yet.',invalidVersion:'The release has an invalid version.',downloadTimeout:'The update download timed out. Try again or open the download page.',
     downloadUnavailable:'Check for an installable update first.',installUnavailable:'Download an update before installing it.',saveFailed:'The update was canceled because an open window could not finish saving. Resolve the save problem and try again.',saveTimeout:'An open window did not finish saving. The update was canceled.',status:{idle:'Updates are checked at startup.',checking:'Checking for updates…','up-to-date':'No newer version found.',available:'An update is available.',downloading:'Downloading update…',ready:'The update is ready to install.',installing:'Saving all open windows…',error:'The update could not be completed. You can use the download page instead.'}},
   navigation:{cardPopup:'Card preview'},
   layout: {
@@ -122,7 +127,7 @@ export const ui = {
     openInNewTab: "Open in new tab",
     newCard: "New card",
     cancel: "Cancel",
-    appName: "Heaven's Door",
+    appName: APP_NAME,
     reload: "Reload",
     openInAnotherTabGroup: "Open in another Tab Group",
     closeViewTab: "Close View tab",

@@ -1,3 +1,4 @@
+import {TEST_BUILD} from '../identity';
 import {useEffect,useState} from 'react';
 import type {UpdateState} from '../shared';
 import {ui} from '../text/ui';
@@ -10,7 +11,8 @@ export function UpdateSettings(){
     <h3>{ui.common.appName}</h3>
     {state?<>
       <p>{ui.updates.version(state.currentVersion)}</p>
-      <p role="status">{state.status==='available'?ui.updates.available(state.version!):ui.updates.status[state.status]}</p>
+      {TEST_BUILD&&<p>{ui.updates.testBuild}</p>}
+      {!TEST_BUILD&&<><p role="status">{state.status==='available'?ui.updates.available(state.version!):ui.updates.status[state.status]}</p>
       {state.status==='downloading'&&<progress max={100} value={state.progress??0} aria-label={ui.updates.downloading}/>}
       {!state.canInstall&&<small>{ui.updates.manualHelp}</small>}
       {state.message&&<p role={state.status==='error'?'alert':'status'}>{state.message}</p>}
@@ -19,7 +21,7 @@ export function UpdateSettings(){
         {state.status==='available'&&state.canInstall&&<button onClick={()=>void run(()=>window.door.downloadUpdate())}>{ui.updates.download}</button>}
         {state.status==='ready'&&<button onClick={()=>void run(()=>window.door.installUpdate())}>{ui.updates.install}</button>}
         <button onClick={()=>void run(()=>window.door.openDownloadPage())}>{ui.updates.website}</button>
-      </div>
+      </div></>}
     </>:<small>{ui.updates.loading}</small>}
     {error&&<p role="alert">{error}</p>}
   </section>;

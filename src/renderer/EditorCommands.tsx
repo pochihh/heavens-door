@@ -1,3 +1,4 @@
+import {matchesBinding} from '../keybindings';
 import {featureEnabled} from '../features';
 import {ui} from '../text/ui';
 import {useContext,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
@@ -26,7 +27,7 @@ export function EditorCommands({editor}:{editor:Editor}){
   };
   useEffect(()=>{const key=(e:KeyboardEvent)=>{
     if(!editor.view.dom.contains(e.target as Node))return;
-    if(e.ctrlKey&&e.shiftKey&&e.code==='Space'){e.preventDefault();e.stopPropagation();setSymbols(editor.view.dom);return;}
+    if(matchesBinding(e,'symbols',context?.snapshot.preferences?.keybindings,window.door.platform)){e.preventDefault();e.stopPropagation();setSymbols(editor.view.dom);return;}
     if(!trigger)return;
     if(['ArrowDown','ArrowUp','Enter','Escape'].includes(e.key)&&!e.isComposing){e.preventDefault();e.stopPropagation();if(e.key==='Escape'){ignored.current='/'+trigger.query;setTrigger(null);}else if(e.key==='Enter'){if(shown[index])insert(shown[index]);}else setIndex(i=>(i+(e.key==='ArrowDown'?1:-1)+Math.max(1,shown.length))%Math.max(1,shown.length));}
   };document.addEventListener('keydown',key,true);return()=>document.removeEventListener('keydown',key,true);});

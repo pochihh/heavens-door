@@ -50,7 +50,7 @@ test('Journal setting routes Calendar and ordinary opens to one split and its br
       default:throw new Error('Unexpected '+request.kind);
     }
   };
-  window.door={platform:'linux',assetUrl:(path:string)=>path,currentWorkspace:async()=>snapshot,onChange:()=>()=>{},onClosing:()=>()=>{},finishClosing:()=>{},cancelClosing:()=>{},request} as unknown as Bridge;
+  window.door={onUpdateChange:()=>()=>{},updateState:async()=>({currentVersion:'0.1.27',status:'idle',canInstall:false}),platform:'linux',assetUrl:(path:string)=>path,currentWorkspace:async()=>snapshot,onChange:()=>()=>{},onClosing:()=>()=>{},finishClosing:()=>{},cancelClosing:()=>{},request} as unknown as Bridge;
   const {App,session}=await import('../src/renderer/App');
   const settle=()=>act(async()=>{await session.run(async()=>{});await new Promise(resolve=>setTimeout(resolve,40));});
   const click=async(selector:string)=>{const el=document.querySelector<HTMLButtonElement>(selector);assert.ok(el,selector);await act(async()=>el.click());await settle();};

@@ -18,7 +18,7 @@ By default, new images are copied to `_assets/` beside the note, with a readable
 
 Existing Markdown images remain Markdown until an image-specific change needs HTML attributes. Resizing stores width and keeps the original asset. Descriptions use `alt`; captions use readable paragraph text inside the HTML image wrapper. Imports accept PNG, JPEG, GIF, WebP, AVIF and SVG, up to 25 MB each. Undoing insertion or removing an image removes the note reference, retaining the asset for recovery and other references. No automatic asset deletion occurs.
 
-General HTML blocks and inline fragments retain their source through unrelated edits. Use their Edit HTML button for source changes. The preview suppresses scripts, embedded browsing contexts, forms and remote resource loads; source is preserved. This is document markup support, not JavaScript execution. Unrecognized Markdown extensions such as footnotes, wiki embeds and math still use the existing protected preview.
+General HTML blocks and inline fragments retain their source through unrelated edits. Use their Edit HTML button for source changes. The preview suppresses scripts, embedded browsing contexts, forms and remote resource loads; source is preserved. This is document markup support, not JavaScript execution. Unrecognized Markdown extensions such as footnotes and wiki embeds still use the existing protected preview. Inline and block math are editable KaTeX nodes.
 
 Block dragging changes Markdown order and indentation. A list item includes its entire subtree; the title is reserved. Valid moves and source edits use the existing revision checks, save flow and undo history. Schema and frontmatter are unaffected.
 
@@ -28,11 +28,11 @@ There is no bulk migration. Existing files remain usable externally, and unknown
 
 The Better Edit migration now includes standalone images, non-destructive crops, image rows and placeholders, contextual block editing, selection styling, configurable slash commands, and Unicode symbol/emoji insertion. These use the current editor and file-saving pipeline rather than importing Obsidian's CodeMirror integration. There is no bulk conversion of existing notes.
 
-Row-to-row merging and exporting a crop as a new file were not supported by the reference plugin and remain outside this migration. Copying the visible crop is available. Obsidian-specific executable command IDs are replaced with the app's own supported commands. Math, wiki links and footnotes retain the existing protected rich preview; Source mode permits editing their Markdown.
+Row-to-row merging and exporting a crop as a new file were not supported by the reference plugin and remain outside this migration. Copying the visible crop is available. Obsidian-specific executable command IDs are replaced with the app's own supported commands. Math and wiki links are editable in the visual editor. Footnotes and wiki embeds retain the protected preview; Source mode permits editing their Markdown.
 
 ## Contextual tools and source mode
 
-Card pages and card popups offer **Source mode** in their More menu. It edits the Markdown body, including the title and raw HTML, through the same draft, revision checks and undo/save pipeline. Tag frontmatter remains managed by the property UI. A page remembers its source-mode choice with its workspace view preferences; popup state is local to that popup. Switching modes alone never writes a card.
+Card pages and card popups offer **Source mode** in their More menu. It edits the entire Markdown file, including YAML frontmatter, title and raw HTML, through the same draft, revision checks and undo/save pipeline. Invalid YAML and card identity changes are rejected without discarding the draft. A page remembers its source-mode choice with its workspace view preferences; popup state is local to that popup. Switching modes alone never writes a card.
 
 The block grip opens Duplicate, Delete, Turn into, and move/indent actions. Option-click Add to insert above. Dragging a text selection moves all intersecting blocks together, retaining their order. List-item moves carry their descendants once, even when the selection includes child text. Moving horizontally while dragging selects the nesting depth; dropping into one's own descendants is rejected. Text selections expose bold, italic, strike, inline code, links, text color and highlighting. Block conversions are in the block menu.
 
@@ -57,3 +57,13 @@ Type `@` after a space or at the start of a line to search cards and whiteboards
 New mentions are ordinary relative Markdown links, such as `[Motor control](../Slipbox/Motor%20control.md)` or `[Research](../Research/Research.whiteboard)`. A card mention opens the reusable popup; a board mention opens its canvas. Existing `card:` links retain their ordinary navigation behavior.
 
 Imported Obsidian `[[Card]]`, `[[folder/Card]]` and `[[Card|label]]` links render and remain editable without conversion to Markdown links. Ambiguous wiki names open a compact choice menu instead of choosing a file silently. Fragments are retained; heading/block scrolling and `![[...]]` embeds are not implemented yet. Portable and unambiguous wiki links participate in backlinks and follow app-driven renames and moves. External file renames cannot be tracked reliably.
+
+## October editor update
+
+Source mode now edits the entire Markdown file, including the exact YAML header. It preserves comments and unknown metadata. Saves validate YAML and retain the card's identity; changing or removing an existing `card-id` is rejected so references remain valid. Invalid or conflicting source drafts remain available to copy or correct.
+
+Inline `$…$` and block `$$…$$` equations render with KaTeX and retain their ordinary Markdown syntax. Type an inline equation or choose Equation from Add block, then click it to edit LaTeX with a live preview. Untrusted LaTeX cannot load links/resources through trusted commands. Opening math no longer blocks the entire visual editor.
+
+Home/End move to the start/end of the displayed line; Shift extends the selection. Command+Home/End moves to card boundaries. Tab/Shift+Tab indents only the current or explicitly selected list/task lines. Unselected children retain their existing depth where the list hierarchy permits it. A first sibling cannot indent without a preceding item to nest under. The caret remains in its original text. Keyboard shortcuts are configurable in Settings.
+
+New card content still autosaves, but automatic filename generation waits for title blur or leaving the card. A same-folder rename retains the editor instance and caret instead of remounting it. Popup cards expose Color, word count, path and board membership; backlinks remain at the bottom. Text color and highlight swatches share compact square geometry.

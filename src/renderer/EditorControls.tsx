@@ -87,6 +87,7 @@ export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:
       <Tool hidden={canvas} icon="plus" label={ui.editor.addBlock} onClick={e=>{addAbove.current=e.altKey;const r=e.currentTarget.getBoundingClientRect();setMenu({anchor:e.currentTarget,x:r.left,y:r.bottom,label:ui.editor.addBlock,actions:[
         {label:ui.editor.text,icon:'format',run:()=>add({type:'paragraph'})},
         {label:tooltips.editor.heading,icon:'h1',run:()=>add({type:'heading',attrs:{level:2}})},
+        {label:ui.math.title,icon:'code',run:()=>add({type:'mathBlock',attrs:{latex:''}})},
         {label:tooltips.editor.bulletList,icon:'list',run:()=>add({type:'bulletList',content:[{type:'listItem',content:[{type:'paragraph'}]}]})},
         {label:tooltips.editor.checklist,icon:'tasks',run:()=>add({type:'taskList',content:[{type:'taskItem',attrs:{checked:false},content:[{type:'paragraph'}]}]})},
         {label:tooltips.editor.quote,icon:'quote',run:()=>add({type:'blockquote',content:[{type:'paragraph'}]})},

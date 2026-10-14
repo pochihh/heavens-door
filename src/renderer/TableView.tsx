@@ -1,7 +1,8 @@
 import {useEffect,useLayoutEffect,useRef,useState,type ReactNode,type PointerEvent as ReactPointerEvent} from 'react';
 import type {Snapshot,TagResult} from '../shared';
 import {DEFAULT_QUERY_PREFERENCES,sameField,type BlockView,type QueryField,type FieldRef} from '../view-block';
-import {suppressDragClick,useBookmarkDrag} from './sortable';
+import {panRecords} from './records-pan';
+import {useBookmarkDrag} from './sortable';
 import {Icon,Tool} from './Icons';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
@@ -26,19 +27,7 @@ export function TableView({view,rows,columns,compact,snapshot,scroll,busy,onEdit
   function pan(event:ReactPointerEvent){
     const el=viewport.current!,target=event.target as HTMLElement;
     if(event.button!==0||busy||el.scrollWidth<=el.clientWidth||target.closest('.view-row-grip,input,textarea,select')||target.closest('[contenteditable]')?.getAttribute('contenteditable')==='true')return;
-    cancel.current();const x=event.clientX,y=event.clientY,left=el.scrollLeft,pointer=event.pointerId;let active=false;
-    const finish=(restore=false)=>{
-      document.removeEventListener('pointermove',motion);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);
-      if(restore){el.scrollLeft=left;if(scroll)scroll.left=left;}document.body.classList.remove('table-panning');cancel.current=()=>{};
-      if(active)suppressDragClick();
-    };
-    const motion=(e:PointerEvent)=>{
-      if(e.pointerId!==pointer)return;
-      if(!active){if(Math.abs(e.clientY-y)>Math.max(5,Math.abs(e.clientX-x))){finish();return;}if(Math.abs(e.clientX-x)<5)return;active=true;document.body.classList.add('table-panning');}
-      e.preventDefault();el.scrollLeft=left+x-e.clientX;if(scroll)scroll.left=el.scrollLeft;
-    };
-    const up=(e:PointerEvent)=>{if(e.pointerId===pointer)finish();},abort=()=>finish(true),key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();abort();}};
-    cancel.current=abort;document.addEventListener('pointermove',motion,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);
+    cancel.current();cancel.current=panRecords(event,el,scroll);
   }
   const widths=columns.map(f=>f.keys[0]==='file.title'?280:f.type==='number'||f.type==='boolean'?120:f.type==='date'?220:f.type==='status'||f.type==='select'?160:180);
   return <>{error&&<p className="change-removed" role="alert">{error}</p>}<div ref={viewport} className={'view-records '+(compact?'view-compact':'view-table')} onPointerDownCapture={pan} onScroll={e=>{if(scroll)scroll.left=e.currentTarget.scrollLeft;}}>

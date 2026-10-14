@@ -1,3 +1,4 @@
+import {splitCardSource} from '../card-source';
 import {remapFilePath} from '../path-remap';
 import {moveCardLinks} from '../card-links';
 import {replaceViewSource,viewBlockRanges} from '../view-block';
@@ -13,7 +14,7 @@ function layout(board: Board) {
 
 interface State {
   snapshot: Snapshot | null;
-  draft: {card:Card;body:string;dirty:boolean} | null;
+  draft: {card:Card;body:string;dirty:boolean;source?:string} | null;
   status: string;
   error: string;
   checkpoints: Checkpoint[];
@@ -102,6 +103,14 @@ export class Session {
     clearTimeout(this.checkpointTimer);
     if (result.snapshot.historyAvailable) this.checkpointTimer=setTimeout(() => { void this.checkpoint(ui.history.automaticCheckpoint).catch(() => undefined); },5*60*1000);
   }
+  private acceptCard(card:Card){
+    const draft=this.state.draft;if(draft?.card.id!==card.id)return;
+    if(draft.source!==undefined){
+      // A concurrent header edit must conflict rather than overwrite newer metadata.
+      if(splitCardSource(draft.source).header!==(draft.card.header??''))return;
+      this.update({draft:{...draft,card,source:(card.header??'')+draft.body}});
+    }else this.update({draft:{...draft,card}});
+  }
   editAction(body:string,label:string){
     this.edit(body);
     return this.run(()=>this.flush(label));
@@ -109,30 +118,36 @@ export class Session {
   edit(body: string) {
     const draft=this.state.draft;
     if (!draft || body === draft.body) return;
-    this.update({draft:{...draft,body,dirty:true},status:ui.status.editing});
+    this.update({draft:{...draft,body,source:draft.source===undefined?undefined:splitCardSource(draft.source).header+body,dirty:true},status:ui.status.editing});
     clearTimeout(this.saveTimer);
-    this.saveTimer=setTimeout(() => { void this.run(() => this.flush()).catch(() => undefined); },600);
+    this.saveTimer=setTimeout(() => { void this.run(() => this.flush(undefined,false)).catch(() => undefined); },600);
   }
-  async flush(label?:string) {
+  editSource(source:string){
+    const draft=this.state.draft;if(!draft||source===(draft.source??(draft.card.header??'')+draft.body))return;
+    this.update({draft:{...draft,body:splitCardSource(source).body,source,dirty:true},status:ui.status.editing});
+    clearTimeout(this.saveTimer);this.saveTimer=setTimeout(()=>{void this.run(()=>this.flush(undefined,false)).catch(()=>undefined);},600);
+  }
+  async flush(label?:string,finalizeTitle=true) {
     await this.flushPreferences();
     clearTimeout(this.saveTimer);
     while (this.state.draft?.dirty) {
       const draft=this.state.draft;
       this.update({status:ui.status.saving});
-      const result=await this.bridge.request<Mutation>({kind:'saveCard',path:draft.card.path,body:draft.body,expected:draft.card.revision});
+      const result=await this.bridge.request<Mutation&{card?:Card}>({kind:'saveCard',path:draft.card.path,body:draft.body,expected:draft.card.revision,...(draft.source===undefined?{}:{source:draft.source})});
       this.accept(result,label??ui.history.edit(draft.card.path),!label);
       const info=result.snapshot.cards.find(c => c.id === draft.card.id)!;
-      const card={...info,body:draft.body};
-      const current=this.state.draft!;
-      this.update({draft:{card,body:current.body,dirty:current.body !== draft.body}});
-      if(this.newCards.has(card.id)&&info.title?.trim()&&!this.state.draft?.dirty){
+      const saved=draft.source===undefined?{header:draft.card.header,body:draft.body}:splitCardSource(draft.source);
+      const card=result.card??{...info,...saved},current=this.state.draft!,dirty=current.body!==draft.body||current.source!==draft.source;
+      this.update({draft:{card,body:current.body,...(dirty&&current.source!==undefined?{source:current.source}:{}),dirty}});
+    }
+    const draft=this.state.draft,card=draft?.card,info=card&&this.state.snapshot?.cards.find(c=>c.id===card.id);
+    if(finalizeTitle&&draft&&card&&info&&this.newCards.has(card.id)&&info.title?.trim()&&!draft.dirty){
         const stem=Array.from(info.title.trim()).slice(0,50).join('').replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim();
         if(stem&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)){
           const folder=card.path.slice(0,card.path.lastIndexOf('/')+1),names=new Set(this.state.snapshot!.cards.filter(c=>c.id!==card.id).map(c=>c.path.toLocaleLowerCase()));let name=stem,i=0;
           while(names.has((folder+name+'.md').toLocaleLowerCase()))name=stem+'_'+ ++i;
           const renamed=await this.bridge.request<Mutation>({kind:'renameCard',path:card.path,stem:name,expected:card.revision});this.accept(renamed,ui.history.edit(draft.card.path),true);this.newCards.delete(card.id);
         }
-      }
     }
   }
   select(path: string | null) {
@@ -297,7 +312,7 @@ export class Session {
       const next=this.state.snapshot!.cards.find(c=>c.path===path)!.revision;
       const result=await this.bridge.request<Mutation>(request(next));this.accept(result,label);
       const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.path===path);
-      if(draft?.card.path===path&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
+      if(draft?.card.path===path&&info){const card=await this.bridge.request<Card>({kind:'card',path});this.acceptCard(card);}
     });
   }
   renameBoard(folder:string,name:string) {
@@ -354,7 +369,7 @@ export class Session {
       const result=await this.bridge.request<Mutation>({kind:'setFill',cards,color:color??null,board:board&&current?{value:board,expected:current.revision}:undefined});
       this.accept(result,ui.history.colorSelection);
       const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
-      if(draft&&info)this.update({draft:{...draft,card:{...draft.card,...info}}});
+      if(draft&&info){const card=await this.bridge.request<Card>({kind:'card',path:info.path});this.acceptCard(card);}
     });
   }
   deleteSelection(board:Board,placements:string[],edges:string[],confirm:(names:string[],boards?:boolean)=>boolean|Promise<boolean>):Promise<boolean> {
@@ -420,7 +435,7 @@ export class Session {
     });
   }
   // Keep a conflicted draft recoverable without automatically replacing someone else's file.
-  copyDraft() { return navigator.clipboard.writeText(this.state.draft?.body ?? ''); }
+  copyDraft() { return navigator.clipboard.writeText(this.state.draft?.source??this.state.draft?.body??''); }
   reloadDraft() {
     return this.run(async () => {
       if (!this.state.draft) return;

@@ -335,3 +335,39 @@ test('preview view settings preserve Markdown and other drafts, participate in u
   await session.undo();assert.equal(w.snapshot().cards.find(c=>c.id===local.id)?.path,local.path);assert.equal(await fs.readFile(join(root,'Ideas/asset.bin'),'utf8'),'changed');assert.ok(w.snapshot().boards.some(b=>b.folder==='Ideas/Nested'));
   await session.undo(true);assert.ok(!w.snapshot().boards.some(b=>b.folder==='Ideas'));await assert.rejects(()=>session.deleteBoard('',()=>true));
 });
+
+
+test('autosave waits to name a new file until title editing ends',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-title-draft-')),root=join(folder,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(folder,'cache'));await w.ensureFolder('Slipbox');
+  const session=new Session({request:async r=>{if(r.kind==='card')return w.card(r.path);if(r.kind==='create')return w.create(r.folder,r.stem,r.x,r.y,r.place);if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected,r.source);if(r.kind==='renameCard')return w.renameCard(r.path,r.stem,r.expected);throw new Error(r.kind);}} as Bridge);session.update({snapshot:w.snapshot()});
+  t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  await session.create('Slipbox','untitled',0,0,false);session.edit('# Half title');await session.run(()=>session.flush(undefined,false));assert.equal(session.state.draft!.card.path,'Slipbox/untitled.md');
+  session.edit('# Finished title');await session.run(()=>session.flush(undefined,false));assert.equal(session.state.draft!.card.path,'Slipbox/untitled.md');await session.run(()=>session.flush());assert.equal(session.state.draft!.card.path,'Slipbox/Finished title.md');
+});
+
+test('full-file source edits preserve comments and unknown metadata, validate IDs/YAML and keep bad drafts recoverable',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-source-')),root=join(folder,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(folder,'cache'));await fs.writeFile(join(root,'Source.md'),'---\n# User comment\ncard-id: source-card\ncustom: original\n---\n# Source\n\nBody');await w.scan();
+  const session=new Session({request:async r=>{if(r.kind==='card')return w.card(r.path);if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected,r.source);throw new Error(r.kind);}} as Bridge);session.update({snapshot:w.snapshot()});await session.select('Source.md');t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  const raw=await w.read('Source.md'),changed=raw.replace('original','edited').replace('Body','New body');session.editSource(changed);await session.run(()=>session.flush());assert.equal(await w.read('Source.md'),changed);assert.match(session.state.draft!.card.header!,/# User comment/);assert.equal(session.state.draft!.body,'# Source\n\nNew body');
+  session.editSource(changed.replace('custom: edited','custom: [broken'));await assert.rejects(()=>session.run(()=>session.flush()),/Invalid frontmatter/);assert.equal(await w.read('Source.md'),changed);assert.ok(session.state.draft!.dirty);assert.match(session.state.draft!.source!,/broken/);
+  session.editSource(changed.replace('source-card','another-id'));await assert.rejects(()=>session.run(()=>session.flush()),/Keep card-id unchanged/);assert.equal(await w.read('Source.md'),changed);
+  session.editSource(changed);await session.run(()=>session.flush());assert.equal(session.state.draft!.dirty,false);session.edit('# Source\n\nRich edit');await session.run(()=>session.flush());assert.equal(await w.read('Source.md'),changed.replace('New body','Rich edit'));
+});
+
+
+test('source typing during a color save preserves the body and never overwrites concurrent header changes',async t=>{
+  const folder=await fs.mkdtemp(join(tmpdir(),'heavens-source-color-')),root=join(folder,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(folder,'cache'));await w.create('','Source',0,0);
+  let release:()=>void=()=>undefined,started:()=>void=()=>undefined;
+  let gate=Promise.resolve(),saving=Promise.resolve();
+  const block=()=>{gate=new Promise<void>(resolve=>{release=resolve;});saving=new Promise<void>(resolve=>{started=resolve;});};
+  const session=new Session({request:async r=>{
+    if(r.kind==='card')return w.card(r.path);
+    if(r.kind==='saveCard')return w.saveCard(r.path,r.body,r.expected,r.source);
+    if(r.kind==='setFill'){started();await gate;return w.setFill(r.cards,r.color,r.board);}
+    throw new Error(r.kind);
+  }} as Bridge);session.update({snapshot:w.snapshot()});await session.select('Source.md');t.after(async()=>{session.dispose();w.close();await fs.rm(folder,{recursive:true,force:true});});
+  block();let raw=await w.read('Source.md');const color=session.fillCards([session.state.draft!.card.id],'#ccaa88');await saving;session.editSource(raw+'\nBody typed during color save');release();await color;await session.run(()=>session.flush());
+  assert.equal((await w.card('Source.md')).fillColor,'#ccaa88');assert.match(await w.read('Source.md'),/Body typed during color save/);
+  block();raw=await w.read('Source.md');const next=session.fillCards([session.state.draft!.card.id],'#aabbcc');await saving;session.editSource(raw.replace('#ccaa88','#112233'));release();await next;
+  await assert.rejects(()=>session.run(()=>session.flush()),/changes|conflict/i);assert.equal((await w.card('Source.md')).fillColor,'#aabbcc');assert.match(session.state.draft!.source!,/#112233/);assert.equal(session.state.draft!.dirty,true);
+});

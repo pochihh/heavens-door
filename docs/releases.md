@@ -102,3 +102,17 @@ The appcast script checks that the signing key matches the app, signs the appcas
 The feed is `https://github.com/pochihh/heavens-door/releases/latest/download/appcast.xml`. Keep each ZIP at its immutable versioned release URL. The app checks GitHub's latest stable release to announce an update; Sparkle checks the corresponding signed feed only after the user chooses Download. Installation requires the user to choose Restart and install and all windows to finish saving. No update installs on ordinary quit.
 
 The currently installed pre-Sparkle build needs one manual replacement with a Sparkle-enabled build. Later versions can update in the app. Publishing and the first real GitHub update remain separate from the local smoke test; a draft or prerelease will not appear in the current latest-stable feed.
+
+## Temporary local test app
+
+Keep the release version unchanged during back-and-forth development. Run:
+
+```sh
+npm run test:app -- /absolute/path/to/workspace
+```
+
+This creates and opens `.local/test-app/mac-arm64/Heaven's Door Test.app` on an Apple Silicon Mac (or `mac/` on Intel). Its name, Test badge icon, bundle ID (`com.pochihh.heavens-door.test`), and app data are separate from the installed release. Temporary versions are `current-release-test.N`; the local counter lives in `.local/test-app/build.json`. Nothing changes `package.json`'s release version, creates a tag or publishes a release. The Test build disables the release updater and automatic update checks. It uses an ad-hoc signature and is for local testing.
+
+Quit Heaven's Door Test normally before rebuilding; the command refuses to overwrite a running Test app. Use `--no-open` to build without launching. Passing a workspace opens its real local files, so edits remain normal persistent edits; use a sample workspace for disposable tests. Avoid opening the same workspace in the stable and Test apps at the same time.
+
+Only after the user confirms a release is ready should the Euler version script bump the regular version. Then use the existing build/sign/release workflow, and test updating the installed regular app through the release feed. The current local Test command targets macOS; it does not publish a Windows test installer.

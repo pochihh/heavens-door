@@ -1,3 +1,6 @@
+import {ActionHub} from './ActionHub';
+import {hubModule,type HubCommand} from '../action-hub';
+import {matchesBinding} from '../keybindings';
 import {isSystemGuide} from '../system-guides';
 import {featureEnabled,systemPath,moduleEnabled,type SystemEntry} from '../features';
 import {SystemView} from './SystemView';
@@ -25,7 +28,7 @@ import { HistoryPanel } from './HistoryView';
 import { SearchDialog, SearchView } from './SearchView';
 import { ConfirmationProvider, useConfirmation } from './Confirmation';
 import { Explorer } from './Explorer';
-import { SideDock, modules, MODULE_IDS } from './Docks';
+import { SideDock, MODULE_IDS } from './Docks';
 import { WorkspaceMenu,WorkspaceManager } from './WorkspaceMenu';
 import {defaultDocks,findModule,revealModule,closeModule,moveModule,activeAfterRemoval,type ModuleId,type Docks,type DocumentsLayout} from '../layout';
 import { ActionMenu,TooltipHost,type MenuState } from './Overlays';
@@ -48,9 +51,9 @@ function Application() {
   useEffect(()=>{
     const remove=window.door.onChange(()=>{if(session.state.snapshot)attempt(session.refresh());});
     const keyboard=(event:KeyboardEvent)=>{
-      if(document.querySelector('dialog[open]:not(.card-popup)')||!(event.metaKey||event.ctrlKey)||event.isComposing)return;
-      if(event.key.toLowerCase()==='s'){event.preventDefault();attempt(session.checkpoint());}
-      if(event.key.toLowerCase()==='z'&&!(event.target instanceof HTMLInputElement&&event.target.type!=='checkbox')){event.preventDefault();attempt(session.undo(event.shiftKey));}
+      if(document.querySelector('dialog[open]:not(.card-popup)')||(event.target as HTMLElement)?.closest('[data-shortcut-record]')||event.isComposing)return;
+      if(matchesBinding(event,'save',session.state.snapshot?.preferences?.keybindings,window.door.platform)){event.preventDefault();attempt(session.checkpoint());}
+      if((matchesBinding(event,'undo',session.state.snapshot?.preferences?.keybindings,window.door.platform)||matchesBinding(event,'redo',session.state.snapshot?.preferences?.keybindings,window.door.platform))&&!(event.target instanceof HTMLInputElement&&event.target.type!=='checkbox')){event.preventDefault();attempt(session.undo(matchesBinding(event,'redo',session.state.snapshot?.preferences?.keybindings,window.door.platform)));}
     };
     window.addEventListener('keydown',keyboard,true);
     return()=>{remove();window.removeEventListener('keydown',keyboard,true);};
@@ -80,7 +83,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [popup,setPopup]=useState<{key:string;pane:string;previousCard?:string}>();
   const [searchOpen,setSearchOpen]=useState(false);
   useEffect(()=>{const search=()=>setSearchOpen(true);window.addEventListener('editor:search',search);return()=>window.removeEventListener('editor:search',search);},[]);
-  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!document.querySelector('dialog[open]')&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
+  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!document.querySelector('dialog[open]')&&!(e.target as HTMLElement)?.closest('[data-shortcut-record]')&&matchesBinding(e,'search',session.state.snapshot?.preferences?.keybindings,window.door.platform)&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   const [layout,setLayout]=useState(()=>removeEmptyPanes(prefs.documents?.tree??restoreLayout(null)));
   const layoutRef=useRef(layout);layoutRef.current=layout;
   const [activeId,setActiveId]=useState(()=>panes(layout).find(p=>p.id===prefs.documents?.active)?.id??panes(layout)[0].id);
@@ -248,6 +251,16 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       if(card){const p=panes(layout).find(p=>p.id===paneId);if(x===undefined||y===undefined||(!p||tabDocument(p)!=='board:'+folder))open('card:'+card.id,paneId);}
     })());
   }
+  function runHubCommand(command:HubCommand){
+    const module=hubModule(command);
+    if(module){const graph=module==='graph'&&panes(layout).find(p=>p.tabs.some(key=>tabDocument(p,key)==='graph:'));if(graph)selectTab(graph,graph.tabs.find(key=>tabDocument(graph,key)==='graph:')!);else changeDocks(revealModule(docks,module));return;}
+    if(command==='newCard')createCard('');
+    else if(command==='newBoard'){const info=documentInfo(tabDocument(active),snapshot);createFolder(info.kind==='board'?info.id:'');}
+    else if(command==='searchWorkspace')setSearchOpen(true);
+    else if(command==='templates'){setTemplatePath(undefined);setTemplateOpen(true);}
+    else if(command==='save')attempt(session.checkpoint());
+    else if(command==='undo'||command==='redo')attempt(session.undo(command==='redo'));
+  }
   function star(key:string){changePrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));}
   function docIcon(key:string){const info=documentInfo(key,snapshot);return <DocumentIcon value={prefs.icons[key]} fallback={info.icon}/>;}
   function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
@@ -290,6 +303,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   }
   async function transferPopup(key:string,mode:NavigationMode){if(await navigate(key,popup!.pane,mode))setPopup(undefined);else throw new Error(session.state.error);}
   function travel(p:Pane,offset:-1|1){attempt((async()=>{const next=travelTab(layout,p.id,offset),key=tabDocument(panes(next).find(group=>group.id===p.id)!);const info=documentInfo(key,session.state.snapshot!);if(!info.exists){session.update({error:ui.errors.fileMissing});return;}await session.select(info.kind==='card'?info.path:null);setLayout(next);setActiveId(p.id);})());}
+  useEffect(()=>{
+    const hover=(event:Event)=>{const {group,key}=(event as CustomEvent<{group:string;key:string}>).detail,p=panes(layoutRef.current).find(p=>p.id===group);if(p&&p.tabs.includes(key)&&p.active!==key&&!popup)selectTab(p,key);};
+    window.addEventListener('door:document-hover-tab',hover);return()=>window.removeEventListener('door:document-hover-tab',hover);
+  },[popup]);
   function selectTab(p:Pane,key:string){attempt((async()=>{const info=documentInfo(tabDocument(p,key),session.state.snapshot!);await session.select(info.kind==='card'&&info.exists?info.path:null);setLayout(current=>updatePane(current,p.id,g=>({...g,active:key})));setActiveId(p.id);})());}
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
@@ -321,7 +338,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <div className="tab-navigation"><Tool icon="back" label={tooltips.navigation.back} disabled={history.index===0} onClick={()=>travel(p,-1)}/><Tool icon="forward" label={tooltips.navigation.forward} disabled={history.index>=history.entries.length-1} onClick={()=>travel(p,1)}/></div>
         <div className="toolbar-spacer"/>
         {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id,undefined,p.id)}/>{!!info.id&&<Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
-        {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.editorTools.sourceMode,icon:'source',checked:!!memory.source,checkType:'checkbox',run:()=>{memory.source=!memory.source;rememberViews();setTabMenu(null);if(!focused)focusPane(p);}},{label:ui.common.openInPopup,icon:'note',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
+        {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.editorTools.sourceMode,icon:'source',checked:!!memory.source,checkType:'checkbox',run:()=>{attempt(session.run(async()=>{await session.flush();memory.source=!memory.source;rememberViews();setLayout(current=>({...current}));setTabMenu(null);if(!focused)focusPane(p);}));}},{label:ui.common.openInPopup,icon:'note',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
         <Tool icon="star" className={prefs.starred.includes(documentKey)?'is-starred':''} label={prefs.starred.includes(documentKey)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(documentKey)}/>
 
       </div>}
@@ -372,7 +389,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     </header>
     <div className={"workspace-body "+(!left?"no-sidebar":"")}>
       <nav className="activity-bar" aria-label={ui.layout.actionRibbon}>
-        {MODULE_IDS.filter(enabledModule).map(module=>{const placed=docks.closed?.[module]?null:findModule(docks,module),selected=!!placed&&!docks[placed.side].collapsed&&placed.group.active===module;return <Tool key={module} icon={modules[module].icon} label={modules[module].title} aria-pressed={selected} className={selected?'selected':''} onClick={()=>{const graph=module==='graph'&&panes(layout).find(p=>p.tabs.some(key=>tabDocument(p,key)==='graph:'));if(graph){selectTab(graph,graph.tabs.find(key=>tabDocument(graph,key)==='graph:')!);}else changeDocks(revealModule(docks,module));}}/>;})}
+        <ActionHub value={prefs.actionHub} onChange={actionHub=>changePrefs(()=>({actionHub}))} enabled={command=>{const module=hubModule(command);return module?enabledModule(module):command!=='templates'||featureEnabled(prefs,'templates');}} selected={command=>{const module=hubModule(command),placed=module&&!docks.closed?.[module]?findModule(docks,module):null;return !!placed&&!docks[placed.side].collapsed&&placed.group.active===module;}} onRun={runHubCommand}/>
         <div className="toolbar-spacer"/><Tool icon="settings" label={tooltips.settings.open} onClick={()=>setModal('settings')}/>
       </nav>
       <SideDock side="left" docks={docks} drag={tabs.drag} onTabDrag={tabs.begin} onChange={changeDocks} onPreview={setDocks} renderModule={renderModule} enabled={enabledModule}/>

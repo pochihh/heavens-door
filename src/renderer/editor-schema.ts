@@ -1,5 +1,8 @@
+import {cardKeyboard} from './editor-keyboard';
+import type {Keybindings} from '../keybindings';
+import {mathHtml,mathToken} from './math';
 import { ui } from '../text/ui';
-import { Extension, Node as TiptapNode, type Editor, type NodeViewRenderer, type JSONContent, type MarkdownRendererHelpers } from '@tiptap/core';
+import { Extension, nodeInputRule, Node as TiptapNode, type Editor, type NodeViewRenderer, type JSONContent, type MarkdownRendererHelpers } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import CodeBlock from '@tiptap/extension-code-block';
@@ -43,9 +46,16 @@ export function cardMarkdown(editor:Editor){
 }
 
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
-export function extensions(path: string,codeView?:NodeViewRenderer,htmlView?:NodeViewRenderer,imageView?:NodeViewRenderer) {
+export function extensions(path: string,codeView?:NodeViewRenderer,htmlView?:NodeViewRenderer,imageView?:NodeViewRenderer,mathView?:NodeViewRenderer,getBindings?:()=>Keybindings|undefined) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
-  return [CardTitle,CardKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,
+  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,
+    ...(['mathInline','mathBlock'] as const).map(name=>TiptapNode.create({name,group:name==='mathBlock'?'block':'inline',inline:name==='mathInline',atom:true,
+      addInputRules(){return name==='mathInline'?[nodeInputRule({find:/\$(?!\$)([^\n$]+)\$$/,type:this.type,getAttributes:match=>{const token=mathToken(match[0]);return token?{latex:token.text}:false;}})]:[];},
+      addAttributes(){return {latex:{default:''}};},parseHTML(){return [{tag:(name==='mathBlock'?'div':'span')+'[data-latex]',getAttrs:element=>({latex:(element as HTMLElement).dataset.latex})}];},renderHTML({node}){return [name==='mathBlock'?'div':'span',{'data-latex':node.attrs.latex}];},
+      markdownTokenName:name,markdownTokenizer:{name,level:name==='mathBlock'?'block':'inline',start:source=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenize:source=>mathToken(source,name==='mathBlock')},
+      parseMarkdown:(token,helpers)=>helpers.createNode(name,{latex:token.text}),renderMarkdown:node=>name==='mathBlock'?'$$\n'+node.attrs?.latex+'\n$$':'$'+node.attrs?.latex+'$',
+      addNodeView(){if(mathView)return mathView;return ({node})=>{const dom=document.createElement(name==='mathBlock'?'div':'span');dom.className='editor-math';dom.innerHTML=mathHtml(node.attrs.latex,name==='mathBlock');return {dom};};},
+    })),
     TiptapNode.create({name:'htmlBlock',group:'block',atom:true,addAttributes(){return {source:{default:''}};},parseHTML(){return [{tag:'div[data-html-source]',getAttrs:element=>({source:(element as HTMLElement).dataset.htmlSource})}];},renderHTML({node}){return ['div',{'data-html-source':node.attrs.source}];},
       markdownTokenName:'html',parseMarkdown(token,helpers){
         const template=document.createElement('template');template.innerHTML=token.raw??'';

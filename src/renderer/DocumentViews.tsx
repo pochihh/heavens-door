@@ -1,3 +1,4 @@
+import {searchDocument} from '../core/search';
 import {featureEnabled} from '../features';
 import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
@@ -19,8 +20,8 @@ import {CardTags} from './TagView';
 export {TagView} from './TagView';
 import { useConfirmation } from './Confirmation';
 
-export function NoteView({path,session,snapshot,active,memory,suspended=false,onActivate,onOpen,onViewChange}:{
-  path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;suspended?:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
+export function NoteView({metadata=false,path,session,snapshot,active,memory,suspended=false,onActivate,onOpen,onViewChange}:{
+  metadata?:boolean;path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;suspended?:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
 }) {
   const [loaded,setLoaded]=useState<Card|null>(null),[focus,setFocus]=useState<EditorFocus>();
   const container=useRef<HTMLDivElement>(null);
@@ -28,8 +29,9 @@ export function NoteView({path,session,snapshot,active,memory,suspended=false,on
   const draft=session.state.draft, info=snapshot.cards.find(c=>c.path===path);
   const editing=active&&draft?.card.path===path;
   const body=draft?.card.path===path?draft.body:loaded?.body??'';
-  const retained=useRef({editing:false,body:''});if(!suspended)retained.current={editing,body};
-  const shown=suspended?retained.current:{editing,body};
+  const source=editing?draft.source??(draft.card.header??'')+draft.body:(loaded?.header??'')+body;
+  const retained=useRef({editing:false,body:'',source:''});if(!suspended)retained.current={editing,body,source};
+  const shown=suspended?retained.current:{editing,body,source};
   useEffect(()=>{
     let live=true;
     void session.bridge.request<Card>({kind:'card',path}).then(card=>{if(live)setLoaded(card);}).catch(error=>{if(live)session.update({error:String(error)});});
@@ -51,8 +53,9 @@ export function NoteView({path,session,snapshot,active,memory,suspended=false,on
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
       setFocus({x:e.clientX,y:e.clientY,scrollTop:memory.scroll??0});onActivate();
     }}>
-    {memory.source?<textarea className="editor-body card-source" aria-label={ui.editorTools.markdownSource} spellCheck={false} value={shown.body} readOnly={suspended||!shown.editing} onFocus={()=>{if(!editing)onActivate();}} onChange={e=>{if(!suspended)session.edit(e.target.value);}}/>:shown.editing?<CardEditor afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
+    {memory.source?<textarea className="editor-body card-source" aria-label={ui.editorTools.markdownSource} spellCheck={false} value={shown.source} readOnly={suspended||!shown.editing} onFocus={()=>{if(!editing)onActivate();}} onChange={e=>{if(!suspended)session.editSource(e.target.value);}}/>:shown.editing?<CardEditor id={info?.id} onTitleDone={()=>void session.run(()=>session.flush()).catch(()=>undefined)} afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
       <TitleContent path={path} className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
+    {metadata&&info&&<div className="card-info-footer"><span>{info.path}</span><span>{ui.cardWords([...new Intl.Segmenter(undefined,{granularity:'word'}).segment(searchDocument(body).text)].filter(s=>s.isWordLike).length)}</span><div className="card-membership">{snapshot.boards.filter(board=>board.cards.some(p=>p.cardId===info.id)).map(board=><button key={board.path} onClick={()=>onOpen('board:'+board.folder)}>{board.folder||snapshot.name}</button>)}</div></div>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}
       {info&&!info.legacy&&<select aria-label={ui.card.placeCardOnWhiteboard} data-tooltip={tooltips.card.placeReference} value="" onChange={e=>{
@@ -84,7 +87,7 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
     onPlaceReference={(id,x,y)=>session.placeCard(id,board.folder,x,y,'reference')}
     onCreateReference={async(name,x,y)=>{await session.createSlipboxCard(name,{folder:board.folder,x,y});}}
     onCreate={onCreate} onCreateBoard={onCreateBoard}
-    draft={active?session.state.draft:null} onEdit={(body,label)=>{if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}
+    onTitleDone={()=>void session.run(()=>session.flush()).catch(()=>undefined)} draft={active?session.state.draft:null} onEdit={(body,label)=>{if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;
 }
 export function FileView({path,snapshot,memory,onViewChange}:{path:string;snapshot:Snapshot;memory:ViewMemory;onViewChange:()=>void}) {

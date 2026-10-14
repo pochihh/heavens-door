@@ -1,3 +1,4 @@
+import {EditorMath} from './EditorMath';
 import {ViewBlockContext} from './ViewBlock';
 import {DEFAULT_EDITOR_SETTINGS} from '../editor-settings';
 import {EditorCommands} from './EditorCommands';
@@ -22,17 +23,17 @@ import { ViewBlockNode } from './ViewBlockNode';
 import { cardMarkdown, extensions, titleMetadata } from './editor-schema';
 
 export interface EditorFocus { x: number; y: number; scrollTop: number; append?:boolean }
-interface Props { afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
+interface Props { id?:string;onTitleDone?:()=>void;afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
 // Changing files remounts the editor: effects must never touch a destroyed instance.
-export function CardEditor(props:Props) { return <EditableCard key={props.path} {...props}/>; }
-function EditableCard({afterTitle,path,body,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
+export function CardEditor(props:Props) { return <EditableCard key={(props.id??props.path)+':'+props.path.split('/').slice(0,-1).join('/')} {...props}/>; }
+function EditableCard({onTitleDone,afterTitle,path,body,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
   const context=useContext(ViewBlockContext),settings=context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS;
-  const links=useDocumentLinks(path);
+  const links=useDocumentLinks(path),bindings=useRef(context?.snapshot.preferences?.keybindings);bindings.current=context?.snapshot.preferences?.keybindings;
   const blocked=unsupported(body);
   const [initialContent]=useState(()=>withCardTitle(body));
   const [imageError,setImageError]=useState(''),imageInput=useRef<HTMLInputElement>(null),actionLabel=useRef<string|undefined>(undefined),imageHandler=useRef<(files:File[],position?:number)=>void>(()=>{});
   const [slot]=useState(titleSlot),hasMetadata=!!afterTitle,metadataVisible=useRef(hasMetadata);metadataVisible.current=hasMetadata;
-  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(props=><ViewBlockNode {...props} path={path}/>),ReactNodeViewRenderer(props=><HtmlContent {...props} path={path}/>),ReactNodeViewRenderer(props=><EditorImage {...props} path={path}/>)),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
+  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(props=><ViewBlockNode {...props} path={path}/>),ReactNodeViewRenderer(props=><HtmlContent {...props} path={path}/>),ReactNodeViewRenderer(props=><EditorImage {...props} path={path}/>),ReactNodeViewRenderer(EditorMath),()=>bindings.current),titleMetadata(slot,()=>metadataVisible.current)],[path,slot]);
   const editor=useEditor({
     extensions:configuredExtensions,
     content:initialContent,contentType:'markdown',editable:!blocked,
@@ -90,7 +91,7 @@ function EditableCard({afterTitle,path,body,onEdit,autofocus=false,focusPoint,zo
     {links.picker}
     <EditorMentions editor={editor} path={path} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
     <EditorControls path={path} zoom={zoom} canvas={canvas} editor={editor} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
-    <EditorContent editor={editor} className="prose editor-body" onClick={links.click} onPointerDownCapture={event=>{
+    <EditorContent editor={editor} className="prose editor-body" onBlur={e=>{const title=editor.view.dom.firstElementChild;if(title?.contains(e.target as Node)&&!title.contains(e.relatedTarget as Node))onTitleDone?.();}} onClick={links.click} onPointerDownCapture={event=>{
       if(!canvas||event.button!==0||event.defaultPrevented||(event.target as HTMLElement).closest('button,a,input,[contenteditable=false]'))return;
       const last=editor.view.dom.lastElementChild;if(!last||event.clientY<=last.getBoundingClientRect().bottom)return;
       event.preventDefault();event.stopPropagation();

@@ -4,6 +4,17 @@ export interface DocumentDrag {key:string;path?:string;source?:string;placement?
 
 export interface DocumentDrop extends DocumentDrag {folder:string;kind:'board'|'folder';intoBoard?:boolean;atPointer?:boolean;x:number;y:number;screenX:number;screenY:number}
 let highlighted:HTMLElement|null=null;
+let hoverTab:HTMLElement|null=null,hoverTimer:ReturnType<typeof setTimeout>|undefined,navigated=false;
+export function documentDragNavigated(){return navigated;}
+export function clearDocumentNavigation(){clearTimeout(hoverTimer);hoverTimer=undefined;hoverTab=null;navigated=false;}
+function hoverDocumentTab(x:number,y:number){
+  const tab=document.elementsFromPoint?.(x,y).map(el=>el.closest<HTMLElement>('[data-tab-family="main"] [data-tab-key]')).find(Boolean)??null;
+  if(tab===hoverTab)return;clearTimeout(hoverTimer);hoverTimer=undefined;hoverTab=tab;
+  if(tab&&!tab.classList.contains('active-tab'))hoverTimer=setTimeout(()=>{
+    if(!tab.isConnected)return;navigated=true;
+    window.dispatchEvent(new CustomEvent('door:document-hover-tab',{detail:{group:tab.closest<HTMLElement>('[data-tab-group]')?.dataset.tabGroup,key:tab.dataset.tabKey}}));
+  },650);
+}
 export function clearDocumentDrop(){highlighted?.classList.remove('document-drop-target');highlighted=null;}
 const dropKind=(target:HTMLElement,drag:DocumentDrag)=>drag.selection&&drag.selection.ids.length>1&&target.dataset.dropBoard==='true'?'board':target.dataset.dropKind;
 export function documentDrag(source:HTMLElement,key=source.dataset.fileKey):DocumentDrag|null {
@@ -30,13 +41,14 @@ export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:
   return null;
 }
 export function previewDocumentDrop(drag:DocumentDrag,x:number,y:number,exclude?:HTMLElement){
+  hoverDocumentTab(x,y);
   const target=documentDropTarget(drag,x,y,exclude);
   if(target!==highlighted){clearDocumentDrop();highlighted=target;target?.classList.add('document-drop-target');}
   return !!target;
 }
 export function dropDocumentAt(drag:DocumentDrag,x:number,y:number,exclude?:HTMLElement){
   const target=documentDropTarget(drag,x,y,exclude),intoBoard=!!target&&target.matches('.board-tile,.canvas');
-  clearDocumentDrop();if(!target)return false;
+  clearDocumentDrop();clearDocumentNavigation();if(!target)return false;
   let point={x:80,y:80};
   if(target.classList.contains('canvas')){
     const world=target.querySelector<HTMLElement>('.board-world'),r=target.getBoundingClientRect();

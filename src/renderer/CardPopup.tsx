@@ -1,3 +1,5 @@
+import {DEFAULT_PALETTE} from '../colors';
+import {Color} from './StyleView';
 import {cardFill,tintColor} from '../colors';
 import {type CSSProperties,useLayoutEffect,useRef,useState} from 'react';
 import type {Snapshot} from '../shared';
@@ -15,7 +17,7 @@ import {tooltips} from '../text/tooltips';
 export function CardPopup({documentKey,snapshot,session,onClose,onNavigate,onPreview}:{documentKey:string;snapshot:Snapshot;session:Session;onClose:()=>Promise<void>;onNavigate:(key:string,mode:NavigationMode)=>Promise<void>;onPreview:(key:string)=>Promise<void>}){
   const confirm=useConfirmation();
   const ref=useRef<HTMLDialogElement>(null),memory=useRef<ViewMemory>({}),pending=useRef(false);
-  const [source,setSource]=useState(false),[busy,setBusy]=useState(false),[menu,setMenu]=useState<HTMLElement|null>(null),[error,setError]=useState('');
+  const [source,setSource]=useState(false),[busy,setBusy]=useState(false),[menu,setMenu]=useState<HTMLElement|null>(null),[error,setError]=useState(''),[colorAnchor,setColorAnchor]=useState<HTMLElement|null>(null);
   memory.current.source=source;
   const backdropDown=useRef(false);
   const card=snapshot.cards.find(c=>'card:'+c.id===documentKey);
@@ -28,14 +30,16 @@ export function CardPopup({documentKey,snapshot,session,onClose,onNavigate,onPre
         <Tool icon="window" label={ui.common.openInNewTab} disabled={busy||!card} onClick={()=>void perform(()=>onNavigate(documentKey,'new'))}/>
         {card&&<div className="card-popup-filename"><DocumentIcon value={snapshot.preferences?.icons[documentKey]} fallback="note"/><InlineName name={card.name.replace(/\.md$/,'')} suffix=".md" tooltip={card.path} onRename={name=>session.renameCard(card.id,name)}/></div>}
         <div className="toolbar-spacer"/>
+        <Tool icon="art" label={ui.style.color} disabled={busy||!card} onClick={e=>setColorAnchor(colorAnchor?null:e.currentTarget)}/>
         <Tool icon="more" label={tooltips.whiteboard.cardActions} aria-expanded={!!menu} onClick={e=>setMenu(menu?null:e.currentTarget)}/>
         <Tool icon="close" label={tooltips.common.closeDialog} disabled={busy} onClick={()=>void perform(onClose)}/>
       </header>
       {card?<ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>void perform(()=>onPreview(key))} onPreview={onPreview} onNavigate={(key,mode)=>void perform(()=>onNavigate(key,mode))}>
-        <NoteView key={card.id} path={card.path} session={session} snapshot={snapshot} active memory={memory.current} onActivate={()=>void perform(()=>session.select(card.path))} onOpen={key=>void perform(()=>onPreview(key))} onViewChange={()=>{}}/>
+        <NoteView metadata key={card.id} path={card.path} session={session} snapshot={snapshot} active memory={memory.current} onActivate={()=>void perform(()=>session.select(card.path))} onOpen={key=>void perform(()=>onPreview(key))} onViewChange={()=>{}}/>
       </ViewBlockProvider>:<p className="notice">{ui.errors.fileMissing}</p>}
       {(error||session.state.error)&&<div className="card-popup-error" role="alert"><span>{error||session.state.error}</span>{session.state.draft?.dirty&&<><button onClick={()=>void perform(()=>session.copyDraft())}>{ui.common.copyDraft}</button><button onClick={()=>void perform(async()=>{if(await confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}))await session.reloadDraft();})}>{ui.common.reloadFromDisk}</button></>}</div>}
     </div>
-    {menu&&<PropertyPopover anchor={menu} align="end" label={ui.whiteboard.cardActions} onClose={()=>setMenu(null)}><div className="view-menu-list"><button role="menuitemcheckbox" aria-checked={source} onClick={()=>{setSource(!source);setMenu(null);}}>{ui.editorTools.sourceMode}{source?'✓':''}</button>{(['same','new','other'] as const).map(mode=><button key={mode} disabled={busy||!card} onClick={()=>{setMenu(null);void perform(()=>onNavigate(documentKey,mode));}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}</div></PropertyPopover>}
+    {colorAnchor&&card&&<PropertyPopover anchor={colorAnchor} align="end" label={ui.style.color} onClose={()=>setColorAnchor(null)}><Color label={ui.style.color} value={cardFill(card)??''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>void perform(()=>session.fillCards([card.id],color))}/></PropertyPopover>}
+    {menu&&<PropertyPopover anchor={menu} align="end" label={ui.whiteboard.cardActions} onClose={()=>setMenu(null)}><div className="view-menu-list"><button role="menuitemcheckbox" aria-checked={source} onClick={()=>{void perform(async()=>{await session.run(()=>session.flush());setSource(!source);setMenu(null);});}}>{ui.editorTools.sourceMode}{source?'✓':''}</button>{(['same','new','other'] as const).map(mode=><button key={mode} disabled={busy||!card} onClick={()=>{setMenu(null);void perform(()=>onNavigate(documentKey,mode));}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}</div></PropertyPopover>}
   </dialog>;
 }

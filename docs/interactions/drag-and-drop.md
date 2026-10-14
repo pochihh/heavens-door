@@ -120,3 +120,5 @@ Horizontal drags across displayed cells or empty table space pan the table. Ordi
 ## Registered workspaces
 
 Manage workspaces reuses the shared vertical reorder gesture for every registration, including missing folders. A six-dot handle appears on row hover or keyboard focus and remains visible in the phantom. The current-workspace check occupies a separate leading slot. Drag the handle or folder/status details; name editing and action buttons never start dragging. Alt+Up/Down reorders a focused row. Save registration order only on release; cancellation preserves it.
+
+Main-tab navigation during document dragging waits 650 ms over an inactive tab, then activates it while retaining the drag. The phantom outlives its originating view when this navigation unmounts that view. Outside Kanban it follows the pointer freely; inside Kanban it keeps its existing column and top/bottom capping behavior. Dropping on the destination canvas uses the shared document transfer flow and does not also write a Kanban order change. Empty Kanban space uses the same horizontal pan gesture as tables.

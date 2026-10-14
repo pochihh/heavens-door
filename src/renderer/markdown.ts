@@ -1,4 +1,6 @@
 import '../document-links';
+import {mathHtml,mathToken} from './math';
+marked.use({extensions:([{name:'mathBlock',level:'block'},{name:'mathInline',level:'inline'}] as const).map(({name,level})=>({name,level,start:(source:string)=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenizer:(source:string)=>mathToken(source,name==='mathBlock'),renderer:(token)=>mathHtml(token.text,name==='mathBlock')}))});
 import {parseImageLayout,imageHtml} from './image-layout';
 import { ui } from '../text/ui';
 import { marked, type Token } from 'marked';
@@ -18,7 +20,7 @@ export function assetPath(notePath: string, source: string) {
 }
 export function unsupported(body: string) {
   let text=body;marked.walkTokens(marked.lexer(body),token=>{if(['html','code','codespan'].includes(token.type))text=text.replace(token.raw,'');});
-  return /!\[\[|\[\^|^\s*\$\$|\$[^\s$][^\n$]*\$/m.test(text);
+  return /!\[\[|\[\^/m.test(text);
 }
 export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.

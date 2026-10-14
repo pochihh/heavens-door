@@ -1,3 +1,4 @@
+import {TEST_BUILD} from './identity';
 import { ui } from './text/ui';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell, clipboard, nativeImage, ClipboardItem } from 'electron';
 import { Worker } from 'node:worker_threads';
@@ -84,7 +85,7 @@ async function promptUpdate(state:UpdateState,manual=false){
   }else if(manual){const result=await dialog.showMessageBox(d.window,{type:state.status==='error'?'warning':'info',message:ui.updates.status[state.status],detail:state.message,buttons:[ui.updates.close,ui.updates.website],cancelId:0});if(result.response===1)await shell.openExternal(DOWNLOAD_PAGE);}
 }
 async function initializeSparkle(){
-  if(!app.isPackaged||process.platform!=='darwin')return;
+  if(TEST_BUILD||!app.isPackaged||process.platform!=='darwin')return;
   try{
     const config=JSON.parse(await fs.readFile(join(process.resourcesPath,'sparkle.json'),'utf8'));
     const feed=new URL(config.feedUrl);
@@ -131,7 +132,7 @@ async function createWindow(folder?:string){
 void app.whenReady().then(async()=>{
   app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion(),iconPath:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),'build/icon.png')});
   const sparkle=await initializeSparkle();
-  updates=new AppUpdates(autoUpdater,app.getVersion(),app.isPackaged&&(process.platform==='win32'||!!sparkle),latestRelease,state=>{for(const d of desktops.values()){if(state.status==='error'){d.closing=false;if(d.action==='update')clearAction(d);}if(!d.window.isDestroyed())d.window.webContents.send('app:update-change',state);}},sparkle);
+  updates=new AppUpdates(autoUpdater,app.getVersion(),!TEST_BUILD&&app.isPackaged&&(process.platform==='win32'||!!sparkle),TEST_BUILD?async()=>null:latestRelease,state=>{for(const d of desktops.values()){if(state.status==='error'){d.closing=false;if(d.action==='update')clearAction(d);}if(!d.window.isDestroyed())d.window.webContents.send('app:update-change',state);}},sparkle);
   ipcMain.handle('app:update-state',event=>{trusted(event);return updates.state;});
   ipcMain.handle('app:check-updates',event=>{trusted(event);return updates.check();});
   ipcMain.handle('app:download-update',event=>{trusted(event);return updates.download();});
@@ -256,7 +257,7 @@ void app.whenReady().then(async()=>{
   });
   ipcMain.on('window:cancel',(event,action:unknown)=>{const d=trusted(event);if(action===d.action){if(action==='update')cancelUpdate();else clearAction(d);}});
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform==='darwin'?[{label:ui.common.appName,submenu:[{label:ui.updates.about,role:'about' as const},{label:ui.updates.check,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}},{type:'separator' as const},{role:'quit' as const}]}]:[]),
+    ...(process.platform==='darwin'?[{label:ui.common.appName,submenu:[{label:ui.updates.about,role:'about' as const},{label:ui.updates.check,enabled:!TEST_BUILD,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}},{type:'separator' as const},{role:'quit' as const}]}]:[]),
     {label:ui.desktop.file,submenu:[
       {label:ui.desktop.newWindow,accelerator:'CmdOrCtrl+Shift+N',click:()=>{void createWindow();}},
       {label:ui.workspace.newWindow,click:()=>{void createWindow(focused()?.host?.root);}},
@@ -265,10 +266,11 @@ void app.whenReady().then(async()=>{
     {label:ui.desktop.edit,submenu:[{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:ui.desktop.view,submenu:[{label:ui.common.reload,accelerator:'CmdOrCtrl+R',click:()=>{const d=focused();if(d)prepareAction(d,'reload');}},{type:'separator'},{role:'toggleDevTools'},{role:'togglefullscreen'}]},
     {role:'windowMenu'},
-    ...(process.platform!=='darwin'?[{label:ui.desktop.help,submenu:[{label:ui.updates.about,click:()=>app.showAboutPanel()},{label:ui.updates.check,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}}]}]:[]),
+    ...(process.platform!=='darwin'?[{label:ui.desktop.help,submenu:[{label:ui.updates.about,click:()=>app.showAboutPanel()},{label:ui.updates.check,enabled:!TEST_BUILD,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}}]}]:[]),
   ]));
-  await createWindow(process.env.HEAVENS_DOOR_WORKSPACE);
-  if(app.isPackaged)setTimeout(()=>{void updates.check().then(state=>promptUpdate(state)).catch(console.error);},15000).unref();
+  const testFolder=TEST_BUILD?process.argv[process.argv.indexOf('--test-workspace')+1]:undefined;
+  await createWindow(TEST_BUILD&&process.argv.includes('--test-workspace')?testFolder:process.env.HEAVENS_DOOR_WORKSPACE);
+  if(app.isPackaged&&!TEST_BUILD)setTimeout(()=>{void updates.check().then(state=>promptUpdate(state)).catch(console.error);},15000).unref();
   app.on('activate',()=>{if(!desktops.size)void createWindow();});
 });
 app.on('window-all-closed',()=>app.quit());

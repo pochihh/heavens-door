@@ -225,3 +225,38 @@ test('portable image rows, hidden captions and crop geometry survive save and re
   const legacy='<div data-better-edit-image="filled" style="width: 100px; overflow: hidden; height: 80px"><img src="a.png" style="width: 200px; margin-left: -10px; margin-top: -20px"></div>';
   assert.deepEqual((parseImageLayout(legacy) as {crop:unknown}).crop,{offsetX:10,offsetY:20,height:80,imgWidth:200});
 });
+
+
+test('math is editable portable Markdown and renders without enabling unsafe LaTeX links',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});window.door={platform:'darwin',assetUrl:path=>path} as typeof window.door;
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema'),{preview,unsupported}=await import('../src/renderer/markdown');
+  const body='# Math\n\nInline $x^2 + y^2 = z^2$ and `literal $x$`.\n\n$$\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n$$';
+  const editor=new Editor({extensions:extensions('Math.md'),content:body,contentType:'markdown'});
+  try{assert.equal(editor.state.doc.child(1).child(1).type.name,'mathInline');assert.equal(editor.state.doc.lastChild!.type.name,'mathBlock');assert.equal(cardMarkdown(editor),body);assert.equal(unsupported(body),false);assert.match(preview(body,'Math.md'),/katex/);assert.match(preview('Cost $20 and $30.','Math.md'),/\$20 and \$30/);assert.doesNotMatch(preview('$\\href{javascript:alert(1)}{x}$','Math.md'),/href="javascript/);editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph',content:[{type:'text',text:'Next'}]});assert.ok(cardMarkdown(editor).startsWith(body));}finally{editor.destroy();}
+});
+
+test('Tab changes only current or selected list lines, retains caret and never focuses other UI',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});window.door={platform:'darwin',assetUrl:path=>path} as typeof window.door;
+  const {extensions}=await import('../src/renderer/editor-schema');
+  for(const task of [false,true]){
+    const prefix=task?'- [ ] ':'- ',body='# Title\n\n'+prefix+'Alpha\n'+prefix+'Beta\n  '+prefix+'Child\n'+prefix+'Gamma';
+    const editor=new Editor({extensions:extensions('List.md'),content:body,contentType:'markdown'});
+    const pos=(text:string)=>{let found=0;editor.state.doc.descendants((node,p)=>{if(node.isText&&node.text===text)found=p;});return found;};
+    const press=(key:string,shiftKey=false)=>editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,shiftKey,bubbles:true,cancelable:true}));
+    try{editor.commands.setTextSelection(pos('Alpha')+2);const before=editor.getJSON();assert.equal(press('Tab'),false);assert.deepEqual(editor.getJSON(),before,'the first item has no preceding parent to indent under');assert.equal(editor.state.selection.$from.parentOffset,2);editor.commands.setTextSelection(pos('Beta')+2);assert.equal(press('Tab'),false);assert.equal(editor.state.selection.$from.parent.textContent,'Beta');assert.equal(editor.state.selection.$from.parentOffset,2);const list=editor.state.doc.child(1),nested=list.child(0).lastChild!;assert.equal(nested.childCount,2);assert.equal(nested.child(0).firstChild!.textContent,'Beta');assert.equal(nested.child(1).firstChild!.textContent,'Child','unselected child stays at its old depth');press('Tab',true);assert.equal(editor.state.selection.$from.parent.textContent,'Beta');
+      editor.commands.setContent(body,{contentType:'markdown'});editor.commands.setTextSelection({from:pos('Beta'),to:pos('Child')+5});press('Tab');const both=editor.state.doc.child(1).child(0).lastChild!;assert.equal(both.childCount,1);assert.equal(both.child(0).lastChild!.firstChild!.textContent,'Child','explicitly selected child indents with its parent');
+    }finally{editor.destroy();}
+  }
+});
+
+test('Home and End use displayed line boundaries and Shift extends selection',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});window.door={platform:'darwin',assetUrl:p=>p} as typeof window.door;
+  const {extensions}=await import('../src/renderer/editor-schema'),editor=new Editor({extensions:extensions('Line.md'),content:'# T\n\nabcdefghij',contentType:'markdown'}),start=editor.state.doc.firstChild!.nodeSize+1;
+  editor.view.coordsAtPos=(pos,side=1)=>({left:0,right:0,top:Math.floor(Math.max(0,pos-start+(side<0?-1:0))/5)*20,bottom:20});
+  const press=(key:string,shiftKey=false,metaKey=false)=>editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,shiftKey,metaKey,bubbles:true,cancelable:true}));
+  try{editor.commands.setTextSelection(start+2);press('End');assert.equal(editor.state.selection.head,start+5);press('Home');assert.equal(editor.state.selection.head,start+5);editor.commands.setTextSelection(start+7);press('Home',true);assert.equal(editor.state.selection.anchor,start+7);assert.equal(editor.state.selection.head,start+5);press('Home',false,true);assert.equal(editor.state.selection.head,1);press('End',false,true);assert.equal(editor.state.selection.head,start+10);}finally{editor.destroy();}
+});

@@ -945,10 +945,16 @@ export class Workspace {
     const changes:Write[]=[{path,content:null,expected},{path:next,content:own?.after??editCard(raw,card,card.body),expected:null},...edits.filter(e=>e.path!==path).map(e=>({path:e.path,content:e.after,expected:revision(e.before)}))];
     return this.write(changes);
   }
-  async saveCard(path: string, body: string, expected: string) {
-    const raw = await this.read(path), card = readCard(path,raw);
-    if (card.revision !== expected) throw new Error(ui.errors.draftConflict(path));
-    return this.write([{path,content:editCard(raw,card,body),expected}]);
+  async saveCard(path: string, body: string, expected: string, source?:string) {
+    const raw=await this.read(path),card=readCard(path,raw);
+    if(card.revision!==expected)throw new Error(ui.errors.draftConflict(path));
+    let content=editCard(raw,card,body);
+    if(source!==undefined){
+      const edited=readCard(path,source);
+      if(!card.legacy&&edited.id!==card.id)throw new Error('Keep card-id unchanged in Source mode; it identifies references to this card.');
+      content=card.legacy?editCard(source,card,edited.body):source;
+    }
+    return {...await this.write([{path,content,expected}]),card:readCard(path,content)};
   }
   async setFill(cards:{path:string;expected:string}[],color:string|null,board?:{value:Board;expected:string}) {
     if(color!==null&&!isHexColor(color))throw new Error(ui.errors.invalidCardColor);
