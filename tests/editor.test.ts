@@ -70,6 +70,7 @@ test('preview and editor share compact list spacing and checkbox structure',asyn
       assert.deepEqual(tasks.map(t=>t.getAttribute('data-checked')),['true','false','false']);
       assert.deepEqual(tasks.map(t=>t.querySelector(':scope>div>p')?.textContent),['Done','Nested task','Pending']);
       assert.ok(tasks.every(t=>t.querySelector(':scope>label>input[type=checkbox]')),'task text and checkbox use the same layout in both modes');
+      const mixed=document.createElement('div');mixed.innerHTML=preview('# Mixed\n\n- Alpha\n- Beta\n\n- [ ] Task','list.md');const lists=[...mixed.children].filter(el=>el.tagName==='UL');assert.equal(lists.length,2,'ordinary bullets and checklist runs have separate containers');assert.equal(lists[0].hasAttribute('data-type'),false);assert.equal(lists[1].getAttribute('data-type'),'taskList');assert.deepEqual([...lists[0].children].map(li=>li.textContent?.trim()),['Alpha','Beta']);
     }
   }finally{editor.destroy();}
 });
