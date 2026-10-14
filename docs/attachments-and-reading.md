@@ -7,13 +7,13 @@ Design proposal for the next implementation pass. This pass implements the UI/ed
 - Read later starts locally: webpage/PDF import, a Chrome extension paired to the open app, and RSS.
 - Each saved item is an ordinary Markdown card. It can have tags and their properties, be placed on a board, or be referenced by other cards.
 - Support both selected-text highlights and general card notes. Store them in their owning card, never a separate annotation database or card.
-- Show expandable margin notes on a card page/popup. On a whiteboard they sit beside the card, outside its content and sizing.
+- Show expandable sticky notes in a right-side annotation rail in card pages and popups. On a whiteboard they sit to the right of the card, outside its content and sizing. At narrow widths, keep a compact right-side rail; expanding a note opens it from that rail over the content, never below the card.
 - A note is not an independent graph node or mention target. Links written in it belong to the owning card.
 - Inbox is the default Read later folder; Slipbox keeps its existing purpose. Read later is an optional core plugin with a configurable folder and editable Markdown guide.
 
 ## Whiteboard objects
 
-Use one text object with a shape option: None, Rectangle, Rounded rectangle, Ellipse or Diamond. None is ordinary text without a box. Keep font size, text/fill/stroke color, and the existing connector labels/arrow styles. Add direct local image/figure objects with resize, alignment and captions using the existing image storage conventions. These objects live in the readable `.whiteboard` layout and refer to local assets; they are not automatically cards.
+Use one text object with a shape option: None, Rectangle, Rounded rectangle, Ellipse or Diamond. None is ordinary text without a box. Keep font size, text/fill/stroke color, and the existing connector labels/arrow styles. Add standalone local image/figure objects directly to the whiteboard. Reuse the note editor’s single-image controls: resize, non-destructive crop, caption, alignment where applicable, replacement, and copy visible/original image. Keep captions with their image and preserve existing asset/crop metadata. Do not offer image rows or row-merging for these whiteboard objects. These objects live in the readable `.whiteboard` layout and refer to local assets; they are not automatically cards.
 
 Reuse multi-select, move, resize, nesting into boards, undo, and connector endpoints. Converting an object into a card should preserve its placement and connections. Do not start with automatic mind-map layout, animation presets or a separate diagramming format. The five shape choices and this styling scope remain a proposal for review.
 
@@ -58,6 +58,8 @@ The Chrome extension saves to Heaven's Door directly; Readwise Reader is the UI/
 RSS subscriptions and collected entries live in the configured Inbox. Fetch while the app is open, deduplicate using feed entry ID/source URL, and retain already saved cards if a feed is removed. Import/export subscription lists as OPML. A local app cannot create an always-on receiving email address by itself: newsletter delivery needs an email provider or a hosted service. Account/sync/background delivery can be considered for Pro later; local reading, import and RSS do not require that server.
 
 ## Reading interface
+
+In a card page or popup, expand the PDF into a continuous vertical document from the start. Stack its pages in order and navigate by vertical scrolling; do not require left/right page switching. Keep annotations in the right-side rail alongside their page or quoted text. General card notes also stay in that rail. Rendering can load nearby pages lazily for large PDFs while retaining stable page positions and continuous scrolling.
 
 Inbox opens the existing searchable table/compact library. A row opens its reading card, with source link, reading state, tags and annotations. Keep the guide collapsed. Use the shared command/shortcut settings for navigation, highlight, annotate, mark read, and return to the library. Reading progress belongs in the Markdown card, and the database is only a rebuildable index.
 

@@ -1,6 +1,6 @@
 # Packaging and releases
 
-The installable app is **Heaven's Door**, with application ID `com.pochihh.heavens-door`. macOS uses a DMG plus update ZIP; Windows uses a per-user NSIS installer with Start menu and desktop shortcuts. The source icon is `build/icon.svg`; the temporary PNG, ICNS and ICO exports live beside it. Packaging includes built code and production dependencies, excluding workspaces, development references and source maps.
+The installable app is **Heaven's Door**, with application ID `com.pochihh.heavens-door`. macOS uses a DMG plus update ZIP; Windows uses a per-user NSIS installer with Start menu and desktop shortcuts. The supplied logo source is `src/assets/logo_v1_black.svg`. `build/icon.svg` uses it unchanged, and the PNG, ICNS and ICO exports live beside it. The Test icon uses the same logo with a deep-purple background (`#433266`) instead of black. Packaging includes built code and production dependencies, excluding workspaces, development references and source maps.
 
 ## Versions
 

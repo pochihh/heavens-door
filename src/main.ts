@@ -114,7 +114,7 @@ function prepareAction(d:Desktop,action:WindowAction) {
 function focused(){const win=BrowserWindow.getFocusedWindow();return win?desktops.get(win.id):undefined;}
 async function createWindow(folder?:string){
   const win=new BrowserWindow({
-    width:1440,height:940,minWidth:760,minHeight:500,icon:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),'build/icon.png'),backgroundColor:'#f3f3f3',title:ui.common.appName,
+    width:1440,height:940,minWidth:760,minHeight:500,icon:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),TEST_BUILD?'build/test-icon.png':'build/icon.png'),backgroundColor:'#f3f3f3',title:ui.common.appName,
     titleBarStyle:'hidden',trafficLightPosition:{x:8,y:13},
     ...(process.platform!=='darwin'?{titleBarOverlay:{color:'#f3f3f3',symbolColor:'#555555',height:42}}:{}),
     webPreferences:{preload:join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true},
@@ -130,7 +130,7 @@ async function createWindow(folder?:string){
   else await win.loadFile(join(__dirname,'renderer/index.html'));
 }
 void app.whenReady().then(async()=>{
-  app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion(),iconPath:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),'build/icon.png')});
+  app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion(),iconPath:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),TEST_BUILD?'build/test-icon.png':'build/icon.png')});
   const sparkle=await initializeSparkle();
   updates=new AppUpdates(autoUpdater,app.getVersion(),!TEST_BUILD&&app.isPackaged&&(process.platform==='win32'||!!sparkle),TEST_BUILD?async()=>null:latestRelease,state=>{for(const d of desktops.values()){if(state.status==='error'){d.closing=false;if(d.action==='update')clearAction(d);}if(!d.window.isDestroyed())d.window.webContents.send('app:update-change',state);}},sparkle);
   ipcMain.handle('app:update-state',event=>{trusted(event);return updates.state;});
