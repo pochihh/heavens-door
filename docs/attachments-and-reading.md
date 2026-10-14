@@ -1,25 +1,106 @@
-# Attachments, annotations and Read later
+# Attachments annotations and reading proposal
 
-Design proposal for the next implementation pass. This pass implements the UI/editor fixes; the attachment reader and Inbox are not implemented yet.
+Updated October 13, 2026. Draft for product review.
 
-## Decisions
+The next features are PDF and webpage reading, highlights and sticky notes, standalone whiteboard images and text shapes, and a local Read later Inbox. They share the existing cards, links, tags, file operations and undo system. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search.
 
-- Read later starts locally: webpage/PDF import, a Chrome extension paired to the open app, and RSS.
-- Each saved item is an ordinary Markdown card. It can have tags and their properties, be placed on a board, or be referenced by other cards.
-- Support both selected-text highlights and general card notes. Store them in their owning card, never a separate annotation database or card.
-- Show expandable sticky notes in a right-side annotation rail in card pages and popups. Start collapsed with a one-line preview of the note text; clicking expands the full note and its quoted context. On a whiteboard they sit to the right of the card, outside its content and sizing. At narrow widths, keep a compact right-side rail; expanding a note opens it from that rail over the content, never below the card.
-- A note is not an independent graph node or mention target. Links written in it belong to the owning card.
-- Inbox is the default Read later folder; Slipbox keeps its existing purpose. Read later is an optional core plugin with a configurable folder and editable Markdown guide.
+The editor fixes are implemented. The readers, annotations, whiteboard objects and Read later features below are not implemented yet. The agreed behavior is sufficient to start after review; three remaining interaction choices are listed at the end with recommended defaults.
 
-## Whiteboard objects
+## Agreed behavior
 
-Use one text object with a shape option: None, Rectangle, Rounded rectangle, Ellipse or Diamond. None is ordinary text without a box. Keep font size, text/fill/stroke color, and the existing connector labels/arrow styles. Add standalone local image/figure objects directly to the whiteboard. Reuse the note editor’s single-image controls: resize, non-destructive crop, caption, alignment where applicable, replacement, and copy visible/original image. Keep captions with their image and preserve existing asset/crop metadata. Do not offer image rows or row-merging for these whiteboard objects. These objects live in the readable `.whiteboard` layout and refer to local assets; they are not automatically cards.
+- Reading material is an ordinary Markdown card with source metadata. It can be tagged, mentioned, searched, placed on a board or displayed as a reference.
+- Support both highlights attached to selected text and general notes about a card. Store annotations in their owning Markdown card.
+- Sticky notes sit on the right in page, popup and whiteboard views. They start collapsed with a one-line preview of the note text and expand when clicked.
+- On a whiteboard, notes sit outside the card and do not increase its width or height. At narrow reader widths, notes expand from a compact right-side rail over the content.
+- PDF cards show the first page on a board. Opening one shows a continuous vertical reader in the popup. The page view also stacks PDF pages vertically from the start.
+- Notes are part of the owning card, rather than separate cards or graph nodes. A mention inside a sticky note creates a link from its owning card.
+- Standalone images on a board reuse the editor's single-image controls, including crop, caption and copying the visible or original image. They do not support image rows.
+- Read later starts with local webpage/PDF import, a Chrome extension connected to the open app, and local RSS. Hosted receiving-email, AI and special blocks remain later work.
+- Inbox is the default Read later folder. Slipbox remains the destination for ordinary cards not placed on a board.
 
-Reuse multi-select, move, resize, nesting into boards, undo, and connector endpoints. Converting an object into a card should preserve its placement and connections. Do not start with automatic mind-map layout, animation presets or a separate diagramming format. The five shape choices and this styling scope remain a proposal for review.
+## PDF and webpage reading
 
-## File format
+### Import and ownership
 
-The PDF remains a PDF. A Markdown wrapper owns title, tags, source metadata, annotations and user-written content:
+Importing a PDF copies the original file into the configured attachment location and creates a Markdown wrapper. Reuse the attachment-folder settings already used for images, including the choice between assets beside each card and a workspace-level folder. Never overwrite an existing asset.
+
+For a webpage, keep its original HTML snapshot and source URL, and produce readable Markdown article content for the card. Download article images into local assets so the captured article works offline. Preserve the snapshot even when extraction is incomplete, and show an import result that lets the user inspect or retry it. Importing arbitrary HTML does not enable webpage scripts or remote resource loading in the app.
+
+The wrapper remains editable: title, summary, tags, properties and general notes use existing card interactions. The source PDF is unchanged. PDF-to-Markdown conversion is a later optional operation.
+
+### Reader layout
+
+Use Readwise Reader as the reference for reading and keyboard workflows, with the app's existing compact menu and toolbar guideline. A page or popup has the card's title and metadata, a reading area, and the annotation rail on its right. PDF pages stack vertically with text selection and search. Page count, current page and zoom belong in compact reader controls. A page control scrolls to the requested page; it does not replace the continuous document with a single-page view.
+
+Render nearby PDF pages lazily while reserving every page's dimensions. Loading a page or opening a note must not move the document underneath the reader. Preserve reading position when opening or closing the popup.
+
+The first page is the board preview. Its appearance follows the card's existing color and placement controls. The full reader opens through the reusable card popup, with the usual same-tab and new-tab options.
+
+## Highlights and sticky notes
+
+### Recommended selection interaction
+
+Selecting text in a reader opens a compact toolbar with **Highlight** and **Add note**. Selection alone does not write anything. Highlight creates an anchor without requiring note text; Add note creates the anchor and focuses an expanded sticky note on the right. Support the same operations through configurable keyboard shortcuts.
+
+In an ordinary Markdown card, add an **Annotate** action to the existing selection toolbar. Keep ordinary text coloring and background highlighting as formatting operations. Creating an annotation must be an explicit action, so existing colored text does not become a sticky note automatically.
+
+### Note behavior
+
+A collapsed note previews its first line, with ellipsis when necessary. If a highlight has no note text, preview the selected quotation instead. Expanding shows the full note and quoted context. Clicking its quotation navigates to the highlighted passage. General card notes have no passage anchor and appear in the same right-side rail.
+
+Notes support normal text formatting and card/board mentions. Editing, deleting and undoing annotations use the same save and revision checks as card editing. Opening, collapsing or hovering a note does not save card content or change board geometry.
+
+Reuse the app's palette and theme colors for highlights. Keep annotation controls compact, keyboard accessible and consistent with existing menus. A highlight color and sticky-note appearance can later be themed without changing the anchor's meaning.
+
+When multiple anchored notes occupy the same part of the page, stack them in the rail without overlap, keeping their connection to the source passage visible. An unresolved anchor stays available in the rail with its quotation and note intact; the app must not silently attach it to different text.
+
+## Standalone whiteboard images and text shapes
+
+These are board objects stored in the readable `.whiteboard` file. They are not automatically Markdown cards.
+
+| Object | Proposed controls |
+| --- | --- |
+| Image or figure | Move, resize, non-destructive crop, caption, replace, copy visible image, copy original image |
+| Text | In-place text editing, font size and text color; no surrounding shape |
+| Text shape | Rectangle, rounded rectangle, ellipse or diamond; text, fill and stroke colors |
+
+Reuse the existing image toolbar and resize affordance. Keep image captions with the object and preserve the original image file. Do not introduce image-row controls or row merging for standalone objects.
+
+Reuse canvas navigation, multi-select, moving selections between boards, connectors, deletion, undo and style controls. Moving a selection must retain the relationships between cards, objects and edges. Resize and crop previews must not write intermediate geometry. Connector endpoints follow the displayed object boundary.
+
+For a first pass at mind maps, users can arrange text shapes and connect them manually. Automatic tree layout, presentation animations and elaborate shape styling stay outside this pass. If conversion into a card is included, it must retain placement and connections; it is not needed to ship the initial object controls.
+
+## Read later Inbox
+
+### Library and reading state
+
+Read later is an optional Core plugin with a configurable folder and an editable Markdown guide. Its System entry, starred/recent items and searchable table/compact library follow the existing special-folder behavior. The guide starts collapsed.
+
+Recommended library fields are title, source type, captured date, reading state and tags. Start with **New**, **Reading** and **Done** states, plus search and filters. These are feature metadata in the card, not a centralized replacement for tag properties. A library row opens the normal reading-card popup.
+
+Keep reading state and progress in the wrapper. Save progress on a pause or when leaving the reader rather than on every scroll pixel. Keyboard actions should cover opening the next item, returning to the library, searching, highlighting, adding a note and marking an item done. Reuse the app's command and shortcut settings.
+
+### Chrome capture
+
+Pair the extension to a chosen workspace and send captures directly to Heaven's Door. The initial capture UI offers the current page or selected text. Show success or an actionable error without creating an empty card on failure.
+
+The app accepts captures through a receiver bound to loopback, with a pairing token and validated workspace IDs. It must not accept arbitrary filesystem paths supplied by a webpage. Capture occurs only when invoked by the user.
+
+When the app is closed, queue captures locally in the extension and deliver them when the paired app opens. A queued capture retains its collected content and source URL. This scope does not require a Readwise account or a hosted service. Direct annotation while browsing the original website is a possible follow-up after capture and in-app annotations work.
+
+### RSS
+
+Subscriptions and saved entries are local files in the configured Inbox. Support OPML import/export, refresh while the app is open, and deduplication by feed-entry ID or source URL. Removing a subscription retains already saved cards.
+
+Recommended first behavior: create cards from the title, link and content or summary supplied by each feed. Fetching the complete article is a separate import operation when the feed only provides a summary. Offer an initial import limit so adding a feed does not unexpectedly fill the Inbox with its entire archive.
+
+RSS is independent of email delivery. An always-available receiving-email address needs an email provider or hosted service; it is deferred. Local reading, import and RSS remain usable without that service.
+
+## Portable storage and recovery
+
+### Example PDF wrapper
+
+The field names below are proposed. The existing `card-id`, tags and card-color contract stays intact.
 
 ```markdown
 ---
@@ -28,7 +109,11 @@ source:
   type: pdf
   file: _assets/paper.pdf
   url: https://example.org/paper
+  captured: 2026-10-13T12:00:00-07:00
   sha256: source-file-checksum
+reading:
+  state: reading
+  page: 3
 tags: [research]
 ---
 # Paper title
@@ -43,26 +128,52 @@ User-written summary.
 [^n1]: A general note about the paper.
 ```
 
-For ordinary Markdown or clipped articles, wrap the selected text in `<mark data-annotation="a1">…</mark>[^a1]`, with the note stored in the same footer section. This combines human-readable HTML/Markdown with local anchor IDs. The footer remains editable and recoverable in other editors.
+PDF anchors use page numbers and normalized rectangles, with quoted text and the source checksum available for verification. Webpage/text anchors also retain surrounding text. For Markdown article content, use readable inline HTML and a Markdown footnote:
 
-PDF rectangles use normalized page coordinates. Include page, quoted text and a source checksum; webpage/text anchors also retain surrounding text. When the source changes and an anchor cannot be resolved confidently, retain the note and mark its location as unresolved rather than attaching it to different text.
+```markdown
+A <mark data-annotation="a1">selected passage</mark>[^a1].
 
-Keep the original HTML snapshot alongside the card and default to readable Markdown article content. Sanitize rendering; do not execute webpage scripts or silently strip the preserved source. Retain source URL and download/capture time. PDF-to-Markdown conversion is a later, optional import operation.
+## Annotations
+[^a1]: My note about that passage.
+```
 
-The attachment implementation must extend file-move/link rewriting to these source references. Moving a card must not break its PDF or snapshot. Copies get a new card ID; annotation IDs only need to be unique within that card. Deleting a card uses the existing app Trash and restore flow. Asset cleanup remains explicit.
+The app displays that annotation footer in the right-side rail instead of duplicating it at the bottom of the visual reader. Source mode shows the complete Markdown. Other editors can recover the quotations, notes and source paths from the file even without the app's UI.
 
-## Local capture and RSS
+The annotation pass must extend the editor's current protected-footnote preview to support editable annotations and preserve their source when saving and reopening. Preserve unrelated footnotes, unknown metadata and HTML through ordinary edits. Empty highlights retain their anchors even when their footnote text is empty.
 
-The Chrome extension saves to Heaven's Door directly; Readwise Reader is the UI/keyboard reference, not an account requirement. The user chooses a workspace when pairing. Use a receiver bound to loopback, a pairing token, bounded input validation, and workspace IDs rather than accepting arbitrary filesystem paths. Capture runs only when invoked on the current page. If the app is closed, queue captures locally in the extension and deliver them when it opens.
+### File operations
 
-RSS subscriptions and collected entries live in the configured Inbox. Fetch while the app is open, deduplicate using feed entry ID/source URL, and retain already saved cards if a feed is removed. Import/export subscription lists as OPML. A local app cannot create an always-on receiving email address by itself: newsletter delivery needs an email provider or a hosted service. Account/sync/background delivery can be considered for Pro later; local reading, import and RSS do not require that server.
+- Renaming or moving a card rewrites its relative PDF, snapshot, image and mention paths through the existing checked transaction.
+- Copying a card creates a new card ID. Annotation IDs need only be unique within their owning card.
+- Deleting a card uses app Trash and restore. Removing an image or attachment reference retains the source asset, as image removal does today; asset cleanup remains explicit.
+- External source changes retain unresolved annotations and their text. External card edits use the existing conflict and recoverable-draft behavior.
+- Rebuilding the database must reconstruct reading metadata, annotations and links from local files. Imported files must remain readable after the database is deleted or the app is unavailable.
 
-## Reading interface
+## Proposed implementation order
 
-On a whiteboard, a PDF card shows its first page as a preview. Opening it shows the continuous reader in a popup.
+1. **Local readers:** PDF import/wrappers, continuous reading, first-page board previews and HTML/article capture. Verify attachment moves and recovery first.
+2. **Annotations:** selection toolbar, highlights, general notes, the right-side rail, portable anchors, ordinary-card support and keyboard actions.
+3. **Whiteboard objects:** standalone images, text shapes, shared styling, connectors and multi-selection transfers.
+4. **Read later capture:** Inbox library and state, paired Chrome capture and its offline queue, then RSS.
 
-In a card page or popup, expand the PDF into a continuous vertical document from the start. Stack its pages in order and navigate by vertical scrolling; do not require left/right page switching. Keep annotations in the right-side rail alongside their page or quoted text. General card notes also stay in that rail. Rendering can load nearby pages lazily for large PDFs while retaining stable page positions and continuous scrolling.
+Each stage should be usable in the temporary Test app before the next is built. Keep the stable version unchanged during iteration; a release bump and the regular update route follow the user's testing approval.
 
-Inbox opens the existing searchable table/compact library. A row opens its reading card, with source link, reading state, tags and annotations. Keep the guide collapsed. Use the shared command/shortcut settings for navigation, highlight, annotate, mark read, and return to the library. Reading progress belongs in the Markdown card, and the database is only a rebuildable index.
+## Checks before a stage is ready to test
 
-Reference behavior: [Readwise content capture](https://docs.readwise.io/reader/docs/faqs/adding-new-content), [highlights and notes](https://docs.readwise.io/reader/docs/faqs/highlights-tags-notes), [RSS](https://docs.readwise.io/reader/docs/faqs/feed), and [email newsletters](https://docs.readwise.io/reader/docs/faqs/email-newsletters).
+- Opening or navigating a reader does not rewrite source content.
+- PDF page loading, annotation expansion and image selection do not resize or jump the surrounding card unexpectedly.
+- Annotations survive editing, undo, reopen, Source mode and a database rebuild.
+- Card moves, copies, board transfers, Trash and restore preserve source paths and mention relationships.
+- Captured content remains readable offline; failed imports retain recoverable information.
+- Capture input is bounded and validated, with no script execution or arbitrary workspace-path access.
+- Wide and narrow layouts work in dark and light themes, with keyboard access to reader and note actions.
+
+## Choices to review
+
+| Choice | Recommended default | Alternative |
+| --- | --- | --- |
+| What happens on text selection? | Show Highlight / Add note; write only when an action is chosen | Automatically highlight selected text |
+| When are board sticky notes visible? | Show the collapsed right-side rail for the selected card; hide it when deselected | Keep collapsed note previews visible beside every card |
+| Initial text shapes and styling | Text plus rectangle, rounded rectangle, ellipse and diamond; simple font size and text/fill/stroke colors | Start with fewer shapes, or add further styling immediately |
+
+The first-page PDF preview and collapsed one-line sticky-note preview are already settled. The rows above and the proposed library/storage defaults are available for correction during review; no further design input is required to draft the implementation plan.
