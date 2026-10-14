@@ -7,7 +7,7 @@ Design proposal for the next implementation pass. This pass implements the UI/ed
 - Read later starts locally: webpage/PDF import, a Chrome extension paired to the open app, and RSS.
 - Each saved item is an ordinary Markdown card. It can have tags and their properties, be placed on a board, or be referenced by other cards.
 - Support both selected-text highlights and general card notes. Store them in their owning card, never a separate annotation database or card.
-- Show expandable sticky notes in a right-side annotation rail in card pages and popups. On a whiteboard they sit to the right of the card, outside its content and sizing. At narrow widths, keep a compact right-side rail; expanding a note opens it from that rail over the content, never below the card.
+- Show expandable sticky notes in a right-side annotation rail in card pages and popups. Start collapsed with a one-line preview of the note text; clicking expands the full note and its quoted context. On a whiteboard they sit to the right of the card, outside its content and sizing. At narrow widths, keep a compact right-side rail; expanding a note opens it from that rail over the content, never below the card.
 - A note is not an independent graph node or mention target. Links written in it belong to the owning card.
 - Inbox is the default Read later folder; Slipbox keeps its existing purpose. Read later is an optional core plugin with a configurable folder and editable Markdown guide.
 
@@ -58,6 +58,8 @@ The Chrome extension saves to Heaven's Door directly; Readwise Reader is the UI/
 RSS subscriptions and collected entries live in the configured Inbox. Fetch while the app is open, deduplicate using feed entry ID/source URL, and retain already saved cards if a feed is removed. Import/export subscription lists as OPML. A local app cannot create an always-on receiving email address by itself: newsletter delivery needs an email provider or a hosted service. Account/sync/background delivery can be considered for Pro later; local reading, import and RSS do not require that server.
 
 ## Reading interface
+
+On a whiteboard, a PDF card shows its first page as a preview. Opening it shows the continuous reader in a popup.
 
 In a card page or popup, expand the PDF into a continuous vertical document from the start. Stack its pages in order and navigate by vertical scrolling; do not require left/right page switching. Keep annotations in the right-side rail alongside their page or quoted text. General card notes also stay in that rail. Rendering can load nearby pages lazily for large PDFs while retaining stable page positions and continuous scrolling.
 

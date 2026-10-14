@@ -245,6 +245,8 @@ test('floating block grips and row tools remain interactive inside a whiteboard'
     element.getBoundingClientRect=()=>new DOMRect(100,100,500,500);Object.defineProperty(element,'offsetWidth',{value:500});
     document.querySelector('.canvas')!.getBoundingClientRect=()=>new DOMRect(0,0,1000,900);document.querySelector('.editor-body')!.getBoundingClientRect=()=>new DOMRect(80,80,540,560);
     [...element.children].forEach((el,i)=>{el.getBoundingClientRect=()=>new DOMRect(100,100+i*60,500,40);});
+    // Let Tiptap's delayed autofocus finish before simulating hover.
+    await act(async()=>{await new Promise(resolve=>dom.window.requestAnimationFrame(resolve));});
     const beta=editor.state.doc.child(0).nodeSize+editor.state.doc.child(1).nodeSize;
     await act(async()=>editor.commands.setTextSelection(beta+1));
     await act(async()=>editor.commands.setTextSelection(editor.state.doc.child(0).nodeSize+1));
