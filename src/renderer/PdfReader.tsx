@@ -36,8 +36,19 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
   </div>;
 }
 function PdfPage({pdf,page,size,scale,annotations}:{pdf:PDFDocumentProxy;page:number;size:{width:number;height:number};scale:number;annotations:Annotation[]}){
-  const ref=useRef<HTMLDivElement>(null),canvas=useRef<HTMLCanvasElement>(null),text=useRef<HTMLDivElement>(null),[visible,setVisible]=useState(false),[error,setError]=useState('');
+  const ref=useRef<HTMLDivElement>(null),[visible,setVisible]=useState(false);
   useEffect(()=>{const observer=new IntersectionObserver(entries=>setVisible(entries[0].isIntersecting),{root:ref.current?.closest('.pdf-reader'),rootMargin:'800px'});observer.observe(ref.current!);return()=>observer.disconnect();},[]);
-  useEffect(()=>{if(!visible){canvas.current!.width=0;canvas.current!.height=0;text.current!.replaceChildren();return;}let live=true,render:ReturnType<PDFPageProxy['render']>|undefined,textLayer:{cancel:()=>void}|undefined;void(async()=>{const pdfjs=await library(),item=await pdf.getPage(page),viewport=item.getViewport({scale});if(!live)return;const ratio=Math.min(devicePixelRatio,2),el=canvas.current!;el.width=Math.ceil(viewport.width*ratio);el.height=Math.ceil(viewport.height*ratio);el.style.width=viewport.width+'px';el.style.height=viewport.height+'px';render=item.render({canvas:el,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});await render.promise;if(!live)return;text.current!.replaceChildren();const layer=new pdfjs.TextLayer({textContentSource:await item.getTextContent(),container:text.current!,viewport});textLayer=layer;await layer.render();})().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));});return()=>{live=false;render?.cancel();textLayer?.cancel();};},[pdf,page,visible,scale]);
-  return <div className="pdf-page" data-pdf-page={page} ref={ref} style={{width:size.width*scale,height:size.height*scale,'--scale-factor':scale,'--total-scale-factor':scale,'--user-unit':1} as CSSProperties}><canvas ref={canvas}/><div ref={text} className="textLayer"/>{annotations.flatMap(a=>(a.anchors?.find(v=>v.page===page)?.rects??(a.page===page?a.rects:[])??[]).map((r,i)=><span key={a.id+':'+i} data-annotation={a.id} className="pdf-highlight" style={{left:r[0]*100+'%',top:r[1]*100+'%',width:r[2]*100+'%',height:r[3]*100+'%',background:a.color??'#e6bb50'}}/>))}{error&&<p role="alert">{error}</p>}</div>;
+  return <div className="pdf-page" data-pdf-page={page} ref={ref} style={{width:size.width*scale,height:size.height*scale,'--scale-factor':scale,'--total-scale-factor':scale,'--user-unit':1} as CSSProperties}>
+    {visible&&<PdfCanvas key={scale} pdf={pdf} page={page} scale={scale}/>}
+    {annotations.flatMap(a=>(a.anchors?.find(v=>v.page===page)?.rects??(a.page===page?a.rects:[])??[]).map((r,i)=><span key={a.id+':'+i} data-annotation={a.id} className="pdf-highlight" style={{left:r[0]*100+'%',top:r[1]*100+'%',width:r[2]*100+'%',height:r[3]*100+'%',background:a.color??'#e6bb50'}}/>))}
+  </div>;
+}
+function PdfCanvas({pdf,page,scale}:{pdf:PDFDocumentProxy;page:number;scale:number}){
+  const canvas=useRef<HTMLCanvasElement>(null),text=useRef<HTMLDivElement>(null),[error,setError]=useState('');
+  useEffect(()=>{
+    let live=true,render:ReturnType<PDFPageProxy['render']>|undefined,textLayer:{cancel:()=>void}|undefined;
+    void(async()=>{const pdfjs=await library(),item=await pdf.getPage(page),viewport=item.getViewport({scale});if(!live)return;const ratio=Math.min(devicePixelRatio,2),el=canvas.current!;el.width=Math.ceil(viewport.width*ratio);el.height=Math.ceil(viewport.height*ratio);el.style.width=viewport.width+'px';el.style.height=viewport.height+'px';render=item.render({canvas:el,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});await render.promise;if(!live)return;const layer=new pdfjs.TextLayer({textContentSource:await item.getTextContent(),container:text.current!,viewport});textLayer=layer;await layer.render();})().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));});
+    return()=>{live=false;render?.cancel();textLayer?.cancel();};
+  },[pdf,page,scale]);
+  return <><canvas ref={canvas}/><div ref={text} className="textLayer"/>{error&&<p role="alert">{error}</p>}</>;
 }
