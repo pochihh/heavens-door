@@ -1,3 +1,4 @@
+import {readingText} from '../text/reading';
 import {featureEnabled} from '../features';
 import {trackEditorOverlay} from './editor-overlay';
 import {EditorSymbols} from './EditorSymbols';
@@ -20,7 +21,7 @@ import {createDragPhantom} from './sortable';
 import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
-export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:{editor:Editor;path:string;onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
+export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,canvas=false}:{onAnnotate?:()=>void;editor:Editor;path:string;onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
   const context=useContext(ViewBlockContext);
   const [revision,update]=useState(0),[block,setBlock]=useState<EditorBlock|null>(null),[menu,setMenu]=useState<MenuState|null>(null),[popup,setPopup]=useState<{kind:'color'|'link'|'symbols';anchor:HTMLElement}|null>(null);
   const controls=useRef<HTMLDivElement>(null),bubble=useRef<HTMLDivElement>(null),cancel=useRef<()=>void>(()=>{}),dragging=useRef(false);
@@ -142,6 +143,7 @@ export function EditorControls({editor,path,onImage,action,zoom=1,canvas=false}:
       }}/>
     </div>}
     {selectedText&&(editor.isFocused||popup)&&<div ref={bubble} className="editor-selection-tools" role="toolbar" aria-label={ui.editor.formatting} onPointerDown={e=>e.preventDefault()}>
+      {onAnnotate&&<Tool icon="quote" label={readingText.annotateSelectedText} onClick={onAnnotate}/>}
       <Tool icon="bold" label={tooltips.editor.bold} aria-pressed={editor.isActive('bold')} onClick={()=>format(()=>editor.chain().focus().toggleBold().run())}/>
       <Tool icon="italic" label={tooltips.editor.italic} aria-pressed={editor.isActive('italic')} onClick={()=>format(()=>editor.chain().focus().toggleItalic().run())}/>
       <Tool icon="strike" label={ui.editorTools.strikethrough} aria-pressed={editor.isActive('strike')} onClick={()=>format(()=>editor.chain().focus().toggleStrike().run())}/>

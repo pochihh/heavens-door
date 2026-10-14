@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Heaven's Door Capture",
+  "version": "0.1.0",
+  "description": "Save the current page or selected text to a local Heaven's Door Inbox.",
+  "permissions": ["activeTab", "scripting", "storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "action": {"default_popup": "popup.html"},
+  "background": {"service_worker": "worker.js"}
+}

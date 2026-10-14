@@ -112,7 +112,7 @@ Saves check the last observed file revision before writing. A conflicting draft 
 
 For a folder outside an existing repository, the app initializes a local Git repository and marks it as app-managed. Existing repositories are not adopted automatically. App history pauses if there are staged changes or an unfinished Git operation. Checkpoints include the workspace’s non-ignored files, including attachments. Nothing is pushed or synced. Automatic pruning is disabled; the history panel currently shows the latest 200 reachable checkpoints.
 
-Basic headings, emphasis, lists, checklists, quotes, code, tables, links and local images are supported. Opening a card alone does not rewrite it. HTML renders with source editing; colors, highlights and local images have visual controls. Wiki links, footnotes and math stay in protected preview to avoid losing unsupported content. Ordinary Markdown formatting may normalize on editing. Remote images are not fetched. The formatted editor has not yet been exhaustively tested across Markdown dialects or IME input methods.
+Basic headings, emphasis, lists, checklists, quotes, code, tables, links and local images are supported. Opening a card alone does not rewrite it. HTML renders with source editing; colors, highlights and local images have visual controls. Unrelated footnotes stay in protected preview to avoid losing unsupported content; annotations have an editable right-side rail. Ordinary Markdown formatting may normalize on editing. Remote images are not fetched. The formatted editor has not yet been exhaustively tested across Markdown dialects or IME input methods.
 
 ## Checks
 
@@ -140,3 +140,10 @@ Settings now has a searchable sidebar with separate feature pages. **Views and q
 Use **Add block → Add view block** beside a card content block, or **Add view block** in a tag page. One file-backed YAML query can feed multiple named Table, Kanban, Gallery and Timeline views, each with its own additional filter. Results open their source cards; Table cells and Kanban/Timeline moves can edit source properties. See the [view-block file format and usage](docs/view-blocks.md).
 
 The card editor supports source mode, contextual block moves and styling, configurable slash commands, symbols/emoji, and portable HTML image layouts with captions, crops and rows. See [Editor storage and controls](docs/editor.md).
+
+
+### Reading material and board objects
+
+**System → Read later** imports PDF/HTML files or captures webpages into Inbox. Source files and article images remain local; Markdown wrappers hold reading progress, highlights and notes. PDFs use a continuous reader and first-page board preview. The library supports New/Reading/Done states, OPML and local RSS. The optional Chrome capture extension has a paired loopback receiver and an offline queue.
+
+Boards also support standalone images, plain text and simple text shapes. They share selection, movement, connectors, undo and transfers. See [Attachments, annotations and reading](docs/attachments-and-reading.md) for controls, storage and testing limits, and [Chrome capture setup](extensions/chrome/README.md).

@@ -1,4 +1,10 @@
 export const KEY_COMMANDS=[
+  {id:'readerLibrary',name:'Return to Inbox',key:'Shift-j',scope:'Reader'},
+  {id:'readerSearch',name:'Search PDF text',key:'Mod-f',scope:'Reader'},
+  {id:'readerHighlight',name:'Highlight selected text',key:'h',scope:'Reader'},
+  {id:'readerNote',name:'Add reader note',key:'n',scope:'Reader'},
+  {id:'readerNext',name:'Next Inbox item',key:'j',scope:'Reader'},
+  {id:'readerDone',name:'Mark reading done',key:'d',scope:'Reader'},
   {id:'search',name:'Search workspace',key:'Mod-k',scope:'App'},
   {id:'save',name:'Save checkpoint',key:'Mod-s',scope:'App'},
   {id:'undo',name:'Undo',key:'Mod-z',scope:'App'},

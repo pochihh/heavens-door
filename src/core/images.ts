@@ -10,7 +10,7 @@ export const MAX_IMAGE_BYTES=25*1024*1024;
 export async function importImage(root:string,notePath:string,name:string,type:string,data:Uint8Array){
   if(typeof notePath!=='string'||typeof name!=='string'||!formats[type]||!(data instanceof Uint8Array)||!data.byteLength||data.byteLength>MAX_IMAGE_BYTES)throw new Error('Choose an image smaller than 25 MB.');
   const note=await workspacePath(root,notePath);
-  if(extname(note).toLowerCase()!=='.md'||!(await fs.stat(note)).isFile())throw new Error('The destination card is unavailable.');
+  if(!['.md','.whiteboard'].includes(extname(note).toLowerCase())||!(await fs.stat(note)).isFile())throw new Error('The destination card is unavailable.');
   const settings=(await readPreferences(root)).editor??DEFAULT_EDITOR_SETTINGS;
   const folder=join(settings.imageLocation==='workspace'?'':dirname(notePath),settings.imageFolder);
   // Validate the parent and refuse an existing symlink before writing any bytes.

@@ -1,3 +1,4 @@
+import {readingText} from '../text/reading';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Arrowhead, Board, CardInfo, Edge, PaletteColor, Stroke } from '../shared';
 import { DEFAULT_PALETTE, cardFill, isHexColor } from '../colors';
@@ -74,8 +75,8 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
     <Choice label={ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={DEFAULT_EDGE_WIDTHS.map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
   </>;
   const fill=(fillColor:string|undefined)=>{
-    const ids=card?[card.id]:cards.filter(p=>!p.folder).map(p=>p.cardId);
-    const updated=board&&cards.some(p=>p.folder)?{...board,cards:board.cards.map(p=>p.folder&&cards.includes(p)?{...p,fillColor}:p)}:undefined;
+    const ids=card?[card.id]:cards.filter(p=>!p.folder&&!p.object).map(p=>p.cardId);
+    const updated=board&&cards.some(p=>p.folder||p.object)?{...board,cards:board.cards.map(p=>(p.folder||p.object)&&cards.includes(p)?{...p,fillColor}:p)}:undefined;
     void session.fillCards(ids,fillColor,updated,board).catch(()=>undefined);
   };
   return <div className="style-view">
@@ -87,9 +88,10 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
     </>}
     {(card||!!cards.length)&&<section className="style-group" aria-label={fillTitle}>
       <h3 className="style-selection">{fillTitle}</h3>
-      {color(ui.style.color,card?cardFill(card)??'':common(cards.map(p=>p.folder?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
+      {color(ui.style.color,card?cardFill(card)??'':common(cards.map(p=>p.folder||p.object?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
       {card&&<small>{ui.style.cardFillHelp}</small>}
     </section>}
+    {!!cards.filter(p=>p.object?.type==='text').length&&<section className="style-group"><h3>{readingText.textObjects}</h3><Choice label={readingText.shape} value={common(cards.filter(p=>p.object?.type==='text').map(p=>p.object!.type==='text'?p.object!.shape:''))} choices={['none','rectangle','rounded','ellipse','diamond'].map(v=>[v,v==='none'?'Text':v])} onChange={shape=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?.type==='text'?{...p,object:{...p.object,shape:shape as 'none'|'rectangle'|'rounded'|'ellipse'|'diamond'}}:p)},'Change text shape',board).catch(()=>undefined);}}/><label className="style-label">{readingText.fontSize}<input type="number" min="8" max="120" defaultValue={cards.find(p=>p.object?.type==='text')?.object?.type==='text'?(cards.find(p=>p.object?.type==='text')!.object as {fontSize?:number}).fontSize??20:20} onBlur={e=>{const fontSize=Number(e.target.value);if(board&&fontSize>=8&&fontSize<=120)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?.type==='text'?{...p,object:{...p.object,fontSize}}:p)},'Text font size',board).catch(()=>undefined);}}/></label>{color('Text color',common(cards.filter(p=>p.object?.type==='text').map(p=>p.object?.type==='text'?p.object.textColor:undefined)),textColor=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?.type==='text'?{...p,object:{...p.object,textColor}}:p)},'Text color',board).catch(()=>undefined);})}{color('Stroke color',common(cards.map(p=>p.strokeColor)),strokeColor=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?{...p,strokeColor}:p)},'Object stroke color',board).catch(()=>undefined);})}</section>}
     {!!edges.length&&<section className="style-group" aria-label={edgeTitle}>
       <h3 className="style-selection">{edgeTitle}</h3>
         {color(ui.style.color,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}

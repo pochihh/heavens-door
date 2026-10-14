@@ -11,3 +11,5 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 *.log
+
+public/pdf-assets/

@@ -2,7 +2,7 @@ import js from '@eslint/js';
 import ts from 'typescript-eslint';
 import globals from 'globals';
 export default ts.config(
-  { ignores: ['dist/**', 'node_modules/**', '.local/**', 'docs/local/reference_design/**'] },
+  { ignores: ['public/pdf-assets/**', 'dist/**', 'node_modules/**', '.local/**', 'docs/local/reference_design/**'] },
   js.configs.recommended, ...ts.configs.recommended,
   { languageOptions: { globals: { ...globals.node, ...globals.browser } } },
 );

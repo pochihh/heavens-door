@@ -4,12 +4,13 @@ import type {JournalSettings,TemplateSettings} from './journal';
 import type {EditorSettings} from './editor-settings';
 import type {QueryPreferences} from './view-block';
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
-export interface Card { header?:string; tags?:string[]; fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
+export interface Card { source?:import('./reading').ReadingSource; reading?:import('./reading').ReadingProgress; header?:string; tags?:string[]; fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'|'header'>;
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
 export interface Stroke { strokeColor?:string; strokeWidth?:number; strokeStyle?:'solid'|'dashed'|'dotted'|'none' }
-export interface Placement extends Stroke { fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
+export type BoardObject={type:'text';text:string;shape:'none'|'rectangle'|'rounded'|'ellipse'|'diamond';fontSize?:number;textColor?:string}|{type:'image';html:string};
+export interface Placement extends Stroke {object?:BoardObject; fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
 export interface Edge extends Stroke { id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:number }
 export type EdgeStyle = Pick<Edge,'strokeColor'|'strokeWidth'|'strokeStyle'|'fromArrowhead'|'toArrowhead'|'labelSize'>;
 export function edgeStyle(edge:EdgeStyle):EdgeStyle {
@@ -36,7 +37,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { actionHub?:import('./action-hub').HubButton[]; keybindings?:import('./keybindings').Keybindings; graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { reading?:import('./reading').ReadingSettings; actionHub?:import('./action-hub').HubButton[]; keybindings?:import('./keybindings').Keybindings; graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
@@ -61,7 +62,12 @@ export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:stri
 export interface FileMutation extends Mutation {path:string;inverse:FileOperation}
 export interface BoardTransfer {moves:{from:string;to:string;expected:string}[];changes:Write[]}
 export interface TransferMutation extends Mutation {inverse:BoardTransfer}
+export interface ReadingImport {missingImages?:string[];name:string;type:'pdf'|'web';data:Uint8Array;url?:string;body?:string;folder?:string;feed?:string;entry?:string}
 export type Request =
+  | {kind:'importReading';value:ReadingImport}
+  | {kind:'readingProgress';path:string;expected:string;value:import('./reading').ReadingProgress}
+  | {kind:'readingFeeds'}
+  | {kind:'saveReadingFeeds';source:string;expected:string|null}
   | { kind: 'open'; root: string; cache: string }
   | { kind: 'snapshot' }
   | { kind:'trashEntries' }
@@ -128,6 +134,12 @@ export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features
 export interface UpdateState {currentVersion:string;status:'idle'|'checking'|'up-to-date'|'available'|'downloading'|'ready'|'installing'|'error';canInstall:boolean;version?:string;progress?:number;message?:string}
 export type WindowAction = 'close' | 'reload' | 'update';
 export interface Bridge {
+  chooseReadingFiles():Promise<{imports:(Mutation&{path:string})[];errors:string[]}>;
+  importReading(value:ReadingImport):Promise<Mutation&{path:string}>;
+  capturePage(url:string):Promise<Mutation&{path:string}>;
+  capturePairing():Promise<{port:number;token:string;workspace:string;name:string}>;
+  refreshFeed(url:string,limit:number):Promise<{imported:number}>;
+  attachmentData(path:string):Promise<Uint8Array>;
   updateState():Promise<UpdateState>;
   checkUpdates():Promise<UpdateState>;
   downloadUpdate():Promise<UpdateState>;

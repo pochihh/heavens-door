@@ -3,6 +3,12 @@ import type { Bridge, Snapshot, WindowAction, UpdateState } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
+  chooseReadingFiles:()=>ipcRenderer.invoke('reading:choose'),
+  importReading:value=>ipcRenderer.invoke('reading:import',value),
+  capturePage:url=>ipcRenderer.invoke('reading:capture',url),
+  capturePairing:()=>ipcRenderer.invoke('reading:pair'),
+  refreshFeed:(url,limit)=>ipcRenderer.invoke('reading:feed',url,limit),
+  attachmentData:path=>ipcRenderer.invoke('reading:data',path),
   updateState:()=>ipcRenderer.invoke('app:update-state'),
   checkUpdates:()=>ipcRenderer.invoke('app:check-updates'),
   downloadUpdate:()=>ipcRenderer.invoke('app:download-update'),

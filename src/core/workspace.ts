@@ -1,3 +1,6 @@
+import {readingAsset,validateImport,readFeeds} from './reading';
+import {annotationView,splitAnnotations,withAnnotations} from '../reading';
+import {readingMetadata} from '../reading';
 import {operateFile,fileTrashEntries,fileStamp,editablePath,vacant,availableFilePath} from './files';
 import {systemFolder,systemPath} from '../features';
 import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
@@ -116,7 +119,7 @@ export class Workspace {
     this.assertReady();
     const board=readBoard(path,await this.read(path));
     if(board.revision!==expected)throw new Error(ui.errors.externalEdit(path));
-    const selected=board.cards.filter(p=>!p.folder&&placements.includes(p.id));
+    const selected=board.cards.filter(p=>!p.folder&&!p.object&&placements.includes(p.id));
     const ids=new Set(selected.map(p=>p.cardId));
     const changes:Write[]=[],nonEmpty:string[]=[];
     for(const card of this.snapshot().cards.filter(c=>ids.has(c.id))){
@@ -126,7 +129,7 @@ export class Workspace {
       if(body.replace(/^\s*#(?:[ \t]+#*)?\s*$/,'').trim()||Object.keys(front.toJSON()??{}).some(key=>!['card-id','card-color'].includes(key)))nonEmpty.push(card.path);
       changes.push(...trashWrites(systemPath('trash',this.preferences),card.path,raw,revision(raw)));
     }
-    const removed=new Set(board.cards.filter(p=>!p.folder&&ids.has(p.cardId)).map(p=>p.id));
+    const removed=new Set(board.cards.filter(p=>p.object?placements.includes(p.id):!p.folder&&ids.has(p.cardId)).map(p=>p.id));
     const next={...board,cards:board.cards.filter(p=>!removed.has(p.id)),edges:board.edges.filter(e=>!edges.includes(e.id)&&!removed.has(e.from)&&!removed.has(e.to))};
     if(removed.size||next.edges.length!==board.edges.length)changes.push({path,content:writeBoard(next),expected});
     return {changes,nonEmpty};
@@ -245,7 +248,7 @@ export class Workspace {
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
         for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,target);}
         this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
-        marked.walkTokens(marked.lexer(card.body), token => {
+        const annotations=annotationView(card.body);marked.walkTokens(marked.lexer(annotations.content+'\n\n'+annotations.annotations.map(a=>a.text).join('\n\n')), token => {
           if(token.type!=='link')return;
           const target=token.href.startsWith('card:')?token.href.slice(5):token.href.startsWith('wiki:')?token.href:referencePath(path,token.href);
           if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.startsWith('card:')||token.href.startsWith('wiki:')?target:'file:'+target);
@@ -258,9 +261,9 @@ export class Workspace {
   snapshot(): Snapshot {
     // ponytail: full metadata snapshots; switch to deltas if IPC dominates large-vault saves.
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
-    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string})[];
+    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType,json_quote(json_extract(frontmatter,'$.source')) AS sourceData,json_quote(json_extract(frontmatter,'$.reading')) AS readingData FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string;sourceData:string;readingData:string})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map(({colorType,fillColor,tagData,...c}) => ({...c,tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map(({colorType,fillColor,tagData,sourceData,readingData,...c}) => ({...c,...readingMetadata({source:JSON.parse(sourceData),reading:JSON.parse(readingData)}),tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -515,21 +518,14 @@ export class Workspace {
     const changes: Write[]=[];
     for (const info of cards) {
       const raw=await this.read(info.path), card=readCard(info.path,raw);
-      let body=card.body;
       const rewrite=(href: string) => {
         if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href)) return href;
         const target=href.replace(/^\.\//,'').split(/[?#]/)[0];
         return moving.has(decodeURIComponent(target)) ? href : '../'+href;
       };
-      const tokens=marked.lexer(body);
-      marked.walkTokens(tokens,token => {
-        if ((token.type === 'image' || token.type === 'link') && token.raw.includes('](')) {
-          const next=rewrite(token.href);
-          if (next !== token.href) body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));
-        }
-      });
-      body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(_all,lead,href) => lead+'<'+rewrite(href)+'>');
-      changes.push({path:join(folder,info.path),content:editCard(raw,card,body),expected:null},{path:info.path,content:null,expected:info.revision});
+      const body=moveCardLinks(card.body,info.path,join(folder,info.path),target=>moving.has(target)?join(folder,target):target);
+      const movedRaw=editCard(raw,card,body),parsed=splitNote(movedRaw),file=parsed.front.getIn(['source','file']);if(typeof file==='string')parsed.front.setIn(['source','file'],rewrite(file));
+      changes.push({path:join(folder,info.path),content:typeof file==='string'?`---\n${parsed.front.toString()}---\n${parsed.body}`:movedRaw,expected:null},{path:info.path,content:null,expected:info.revision});
     }
     const path=join(folder,folder+'.whiteboard'),board=source?{...source,path,folder,name:folder,cards:source.cards.filter(p=>!p.folder)}:emptyBoard(path);
     const placements=new Set(board.cards.map(p=>p.id));
@@ -697,10 +693,14 @@ export class Workspace {
         const next=relative(dirname(nextPath),mapped).split(sep).map(encodeURIComponent).join('/');
         return next===relative(dirname(path),target).split(sep).map(encodeURIComponent).join('/')?href:next+tail;
       };
-      let body=card.body;
+      const rewriteBody=(input:string)=>{let body=input;
       marked.walkTokens(marked.lexer(body),token=>{if(token.type==='link'&&token.href.startsWith('wiki:')){const matches=resolveReference(path,token.href),target=matches.length===1?matches[0].path:undefined;if(target&&remap(target)!==target){const original=decodeURIComponent(token.href.slice(5)),fragment=original.includes('#')?original.slice(original.indexOf('#')):'',alias=token.raw.includes('|')?'|'+token.raw.slice(token.raw.indexOf('|')+1,-2):'';body=body.replace(token.raw,'[['+remap(target).replace(/\.md$/i,'')+fragment+alias+']]');}}else if((token.type==='image'||token.type==='link')&&token.raw.includes('](')){const next=rewrite(token.href);if(next!==token.href)body=body.replace(token.raw,token.raw.replace(']('+token.href,']('+next).replace('](<'+token.href+'>','](<'+next+'>'));}else if(token.type==='html')body=body.replace(token.raw,rewriteHtmlLinks(token.raw,rewrite));});
       body=body.replace(/^( {0,3}\[[^\]\n]+\]:\s*)<?([^\s>]+)>?/gm,(all,lead,href)=>{const next=rewrite(href);return next===href?all:lead+'<'+next+'>';});
-      const after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remap(value));
+      return body;};
+      const annotations=splitAnnotations(card.body),content=rewriteBody(annotations.content),notes=annotations.annotations.map(a=>({...a,text:rewriteBody(a.text)}));
+      const body=annotations.footer?content===annotations.content&&notes.every((a,i)=>a.text===annotations.annotations[i].text)?card.body:withAnnotations(content,notes):content;
+      let after=remapTagReferences(body!==card.body||nextPath!==path&&card.legacy?editCard(before,card,body):before,path,[...this.tags.values()],value=>remap(value));
+      const parsed=splitNote(after),file=parsed.front.getIn(['source','file']);if(typeof file==='string'){const nextFile=rewrite(file);if(nextFile!==file){parsed.front.setIn(['source','file'],nextFile);after=`---\n${parsed.front.toString()}---\n${parsed.body}`;}}
       if(after!==before)edits.push({path,before,after});
     }
     for(const tag of this.tags.values()){
@@ -717,7 +717,7 @@ export class Workspace {
     const movingCard=this.snapshot().cards.find(c=>c.path===from),home=dirname(from)==='.'?'':dirname(from),cardFolder=dirname(to)==='.'?'':dirname(to),owned=displayed.find(b=>b.folder===home)?.cards.find(p=>p.cardId===movingCard?.id);
     for(const b of this.boards.values()){
       const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error(ui.errors.renameRefresh(b.path));
-      const cards=b.cards.filter(p=>!(movingBoard&&p.folder===from&&b.folder!==destination)&&!(movingCard&&b.folder===home&&home!==dirname(to)&&p.cardId===movingCard.id)).map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p);
+      const cards=b.cards.filter(p=>!(movingBoard&&p.folder===from&&b.folder!==destination)&&!(movingCard&&b.folder===home&&home!==dirname(to)&&p.cardId===movingCard.id)).map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p.object?.type==='image'?{...p,object:{...p.object,html:moveCardLinks(p.object.html,b.path,remapFilePath(b.path,from,to),target=>remapPath(target,from,to))}}:p);
       if(movingBoard&&b.folder===destination){
         const existing=cards.find(p=>p.folder===to);
         if(existing){if(position){existing.x=position.x;existing.y=position.y;}}
@@ -828,7 +828,7 @@ export class Workspace {
     const snapshot=this.snapshot(),paths=new Set<string>();
     for(const p of items){
       if(p.folder){if(!snapshot.boards.some(b=>b.folder===p.folder))throw new Error(ui.errors.whiteboardMissing);paths.add(p.folder);}
-      else{const card=snapshot.cards.find(c=>c.id===p.cardId);if(!card)throw new Error(ui.errors.cardMissing);if(dirname(card.path)===source)paths.add(card.path);}
+      else if(!p.object){const card=snapshot.cards.find(c=>c.id===p.cardId);if(!card)throw new Error(ui.errors.cardMissing);if(dirname(card.path)===source)paths.add(card.path);}
     }
     const moves:import('../shared').BoardTransfer['moves']=[];
     for(const from of paths){
@@ -842,7 +842,7 @@ export class Workspace {
     const placementIds=new Set(target.cards.map(p=>p.id)),edgeIds=new Set(target.edges.map(e=>e.id)),mappedIds=new Map<string,string>();
     const incoming=items.map(p=>{
       const id=placementIds.has(p.id)?randomUUID():p.id;placementIds.add(id);mappedIds.set(p.id,id);
-      return {...p,id,x:p.x-left+x,y:p.y-top+y,...(p.folder?{folder:remap(p.folder)}:{})};
+      return {...p,id,x:p.x-left+x,y:p.y-top+y,...(p.folder?{folder:remap(p.folder)}:p.object?.type==='image'?{object:{...p.object,html:moveCardLinks(p.object.html,origin.path,target.path,remap)}}:{})};
     });
     const connections=origin.edges.filter(e=>selected.has(e.from)&&selected.has(e.to)).map(e=>{const id=edgeIds.has(e.id)?randomUUID():e.id;edgeIds.add(id);return {...e,id,from:mappedIds.get(e.from)!,to:mappedIds.get(e.to)!};});
     for(const board of this.boards.values()){
@@ -945,6 +945,16 @@ export class Workspace {
     const changes:Write[]=[{path,content:null,expected},{path:next,content:own?.after??editCard(raw,card,card.body),expected:null},...edits.filter(e=>e.path!==path).map(e=>({path:e.path,content:e.after,expected:revision(e.before)}))];
     return this.write(changes);
   }
+  async importReading(value:import('../shared').ReadingImport){
+    validateImport(value);const folder=value.folder??systemPath('reading',this.preferences);if(!validNotePath(folder))throw new Error('Invalid import folder.');await this.ensureFolder(folder);
+    if(value.entry){const existing=this.db.prepare("SELECT path FROM cards WHERE coalesce(json_extract(frontmatter,'$.source.feed'),'')=? AND json_extract(frontmatter,'$.source.entry')=?").get(value.feed??'',value.entry);if(existing)return {snapshot:this.snapshot(),edits:[],path:String(existing.path)};}
+    const stem=value.name.replace(/[<>:"/\\|?*]/g,' ').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim()||'Reading item',path=await this.newCardPath(folder,stem),asset=await readingAsset(this.root,path,value.name,value.type==='pdf'?'.pdf':'.html',value.data);
+    const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});front.set('reading',{state:'new'});
+    return {...await this.write([{path,content:`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`,expected:null}]),path};
+  }
+  async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);const raw=await this.read(path),{front,body}=splitNote(raw);front.set('reading',value);return this.write([{path,expected,content:`---\n${front.toString()}---\n${body}`}]);}
+  async readingFeeds(){const path=systemPath('reading',this.preferences)+'/Feeds.opml',source=await this.raw(path);return {source:source??'',expected:source===null?null:revision(source)};}
+  async saveReadingFeeds(source:string,expected:string|null){readFeeds(source);const path=systemPath('reading',this.preferences)+'/Feeds.opml';await this.ensureFolder(systemPath('reading',this.preferences));return this.write([{path,content:source,expected}]);}
   async saveCard(path: string, body: string, expected: string, source?:string) {
     const raw=await this.read(path),card=readCard(path,raw);
     if(card.revision!==expected)throw new Error(ui.errors.draftConflict(path));

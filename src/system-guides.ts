@@ -1,9 +1,21 @@
 import {systemPath,type SystemEntry} from './features';
 import type {Preferences} from './shared';
-const filenames={templates:'template.md',journal:'journal.md',slipbox:'slipbox.md',tags:'tags.md',trash:'trash.md'};
+const filenames={reading:'inbox.md',templates:'template.md',journal:'journal.md',slipbox:'slipbox.md',tags:'tags.md',trash:'trash.md'};
 export const systemGuidePath=(id:SystemEntry,prefs?:Preferences)=>systemPath(id,prefs)+'/'+filenames[id];
 export const isSystemGuide=(path:string,prefs?:Preferences)=>Object.keys(filenames).some(id=>systemGuidePath(id as SystemEntry,prefs)===path);
 export const systemGuideBody:Record<SystemEntry,string>={
+ reading:`# Inbox
+
+Import a PDF or HTML file, capture a webpage, or add an RSS feed. Every saved item is an ordinary Markdown card with its original source stored in local assets.
+
+Select text in the reader to Highlight or Add note. Sticky notes appear on the right, initially collapsed with a one-line preview. General notes use Add note without selecting text.
+
+Source mode shows the entire wrapper, including source metadata and annotations. Images, snapshots and PDFs stay local. Use New, Reading and Done to manage reading progress.
+
+The Chrome extension pairs to this workspace using the connection information in Inbox. It queues captures when the app is closed. RSS refreshes while the app is open; removing a feed retains saved cards.
+
+This guide is editable.
+`,
  templates:`# Templates
 
 Templates are ordinary Markdown notes. Create one here, then use **New from template** in the top bar. Choose a filename and folder; the template is copied once into an independent note.

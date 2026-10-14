@@ -1,0 +1,61 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {promises as fs} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve,dirname} from 'node:path';
+import {splitAnnotations,withAnnotations,updateAnnotation,validateAnnotation,readingMetadata,type Annotation} from '../src/reading';
+import {readFeeds,writeFeeds,feedArticles} from '../src/feeds';
+import {Workspace} from '../src/core/workspace';
+import {extractArticle} from '../src/core/article';
+import {captureServer} from '../src/core/capture';
+import {readBoard,writeBoard} from '../src/core/format';
+import {imageHtml} from '../src/renderer/image-layout';
+const html='<html><head><title>Research article</title></head><body><article><h1>Research article</h1><p>A useful paper about control systems and their design. This should remain readable offline.</p><p><a href="/related">Related reading</a></p><script>throw Error("never execute")</script></article></body></html>';
+test('annotation source round trips, keeps blank lines and ordering, and deletes only its own highlight',()=>{
+ const content='# Card\n\nA <mark data-annotation="a1">passage</mark>[^a1].\n\n\n',annotations:Annotation[]=[{id:'a1',kind:'highlight',text:'First line\n**Second** [Related](Other.md)',quote:'Text --> remains safe',page:1,rects:[[.1,.2,.3,.04]],anchors:[{page:1,rects:[[.1,.2,.3,.04]]}],source:'checksum'},{id:'n1',kind:'note',text:'General note'}];
+ const raw=withAnnotations(content,annotations),split=splitAnnotations(raw);assert.equal(split.content,content);assert.deepEqual(split.annotations,annotations);assert.match(raw,/\\u002d\\u002d/);
+ const changed=updateAnnotation(raw,{...annotations[0],text:'Edited',color:'#abcdef'});assert.deepEqual(splitAnnotations(changed).annotations.map(a=>a.id),['a1','n1']);assert.match(changed,/data-color="#abcdef"/);
+ const removed=updateAnnotation(changed,null,'a1');assert.doesNotMatch(removed,/data-annotation="a1"|\[\^a1\]/);assert.match(removed,/passage/);assert.equal(splitAnnotations(removed).annotations[0].id,'n1');
+ assert.throws(()=>validateAnnotation({...annotations[0],anchors:[{page:1,rects:[[0,0,2,1]]}]}));assert.throws(()=>splitAnnotations(raw.replace('"page":1','"page":-1')));assert.deepEqual(readingMetadata({source:'legacy custom property',reading:42}),{});
+});
+test('article extraction strips executable content, keeps relative source links, and feeds stay portable',()=>{
+ const article=extractArticle(html,'https://example.org/paper');assert.equal(article.name,'Research article');assert.match(article.body,/https:\/\/example.org\/related/);assert.doesNotMatch(article.body,/never execute|<script/);
+ const feeds=[{name:'Research',url:'https://example.org/feed.xml'}];assert.deepEqual(readFeeds(writeFeeds(feeds)),feeds);assert.throws(()=>readFeeds('<opml><body><outline xmlUrl="file:///private/file"/></body></opml>'));
+ const rss='<rss version="2.0"><channel><item><title>A</title><link>https://example.org/a</link><guid>one</guid><description><![CDATA[<p>Excerpt</p>]]></description></item></channel></rss>';
+ assert.deepEqual(feedArticles(rss,feeds[0].url,20),[{name:'A',url:'https://example.org/a',entry:'one',html:'<p>Excerpt</p>'}]);assert.throws(()=>feedArticles(rss,feeds[0].url,10000));
+});
+test('reading imports preserve original bytes, identity, undo, moves, copies and a rebuilt index',async t=>{
+ const base=await fs.mkdtemp(join(tmpdir(),'heavens-reading-')),root=join(base,'notes'),cache=join(base,'index');await fs.mkdir(root);let w=await Workspace.open(root,cache);t.after(async()=>{w.close();await fs.rm(base,{recursive:true,force:true});});
+ const data=new Uint8Array(Buffer.from('%PDF-1.4\noriginal binary source\n%%EOF')),imported=await w.importReading({name:'Paper',type:'pdf',data,entry:'capture-one'}),card=await w.card(imported.path);assert.equal(card.source?.type,'pdf');assert.equal(card.reading?.state,'new');const asset=resolve(root,dirname(card.path),card.source!.file!);assert.deepEqual(new Uint8Array(await fs.readFile(asset)),data);
+ const repeated=await w.importReading({name:'Paper',type:'pdf',data,entry:'capture-one'});assert.equal(repeated.path,card.path);assert.equal(repeated.edits.length,0);
+ await w.createFolder('','Research');await w.fileOperation({action:'move',path:card.path,destination:'Research/Paper.md'});const moved=await w.card('Research/Paper.md');assert.equal(resolve(root,dirname(moved.path),decodeURIComponent(moved.source!.file!)),asset);assert.equal(moved.id,card.id);
+ const related=(await w.createSlipboxCard('Other')).snapshot.cards.find(c=>c.name==='Other')!;await w.fileOperation({action:'move',path:related.path,destination:'Inbox/Other.md'});
+ const annotated=await w.saveCard(moved.path,withAnnotations('# Paper\n\nSummary',[{id:'n1',kind:'note',text:'[Related](../Inbox/Other.md)'}]),moved.revision);assert.equal(annotated.snapshot.cards.find(c=>c.id===card.id)?.source?.type,'pdf');assert.deepEqual(w.query('backlinks:'+related.id),[{path:moved.path}]);
+ const copied=await w.fileOperation({action:'copy',path:moved.path,destination:'Inbox/Copy.md'});const copy=await w.card(copied.path);assert.notEqual(copy.id,moved.id);assert.equal(resolve(root,dirname(copy.path),decodeURIComponent(copy.source!.file!)),asset);assert.equal(splitAnnotations(copy.body).annotations[0].text,'[Related](Other.md)');
+ const progress=await w.readingProgress(copy.path,copy.revision,{state:'done',page:2});assert.equal(progress.snapshot.cards.find(c=>c.id===copy.id)?.reading?.state,'done');await w.write(progress.edits.map(e=>({path:e.path,expected:(progress.snapshot.cards.find(c=>c.path===e.path)?.revision)??null,content:e.before})));assert.equal((await w.card(copy.path)).reading?.state,'new');
+ const archived=await w.trashCard(copy.path,(await w.card(copy.path)).revision),trash=archived.edits.find(e=>e.path.endsWith('.md')&&e.after)!;const raw=await w.read(trash.path);await w.restoreTrash(trash.path,(await import('../src/core/format')).revision(raw));const recovered=await w.card(copy.path);assert.equal(recovered.id,copy.id);assert.equal(splitAnnotations(recovered.body).annotations[0].text,'[Related](Other.md)');assert.equal(resolve(root,dirname(recovered.path),decodeURIComponent(recovered.source!.file!)),asset);
+ await assert.rejects(()=>w.readingProgress('Inbox/Feeds.opml','bad',{state:'done'}));await assert.rejects(()=>w.importReading({name:'bad',type:'pdf',data:new Uint8Array([1,2])}));
+ w.close();await fs.rm(cache,{recursive:true,force:true});w=await Workspace.open(root,cache);assert.equal(w.snapshot().cards.find(c=>c.id===card.id)?.source?.file,moved.source?.file);assert.equal(splitAnnotations((await w.card(moved.path)).body).annotations[0].id,'n1');
+});
+test('standalone board objects keep their edges and local image paths across transfer and deletion',async t=>{
+ const base=await fs.mkdtemp(join(tmpdir(),'heavens-objects-')),root=join(base,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(base,'index'));t.after(async()=>{w.close();await fs.rm(base,{recursive:true,force:true});});await w.createFolder('','A');await w.createFolder('','B');const a=w.snapshot().boards.find(b=>b.folder==='A')!,b=w.snapshot().boards.find(b=>b.folder==='B')!;
+ const objects=[{id:'t',cardId:'',x:10,y:20,width:240,height:120,object:{type:'text' as const,text:'Idea',shape:'diamond' as const}},{id:'i',cardId:'',x:400,y:100,width:340,height:280,object:{type:'image' as const,html:imageHtml({kind:'single',src:'_assets/picture.png',width:'100%',alignment:'left'})}}],next={...a,cards:objects,edges:[{id:'edge',from:'t',to:'i'}]};assert.deepEqual(readBoard(a.path,writeBoard(next)).cards,objects);
+ await w.saveBoard(next,a.revision);const actual=w.snapshot().boards.find(board=>board.folder==='A')!;await w.moveSelection('A',actual.revision,['t','i'],'B',b.revision,100,200);const target=w.snapshot().boards.find(board=>board.folder==='B')!;assert.equal(target.cards[1].x-target.cards[0].x,390);assert.equal(target.cards[1].y-target.cards[0].y,80);assert.equal(target.edges[0].from,'t');assert.match(target.cards[1].object!.type==='image'?target.cards[1].object!.html:'',/\.\.\/A\/_assets\/picture.png/);
+ const deletion=await w.prepareDeletion(target.path,['t'],[],target.revision);await w.write(deletion.changes);assert.deepEqual(w.snapshot().boards.find(board=>board.folder==='B')!.cards.map(p=>p.id),['i']);
+});
+test('loopback capture rejects unpaired clients and webpage origins, then accepts a bounded paired capture',async t=>{
+ const token='a'.repeat(64),received:unknown[]=[],server=captureServer(token,async value=>{received.push(value);});await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())));const port=(server.address() as {port:number}).port,url=`http://127.0.0.1:${port}/capture`,value={id:'12345678-1234-1234-1234-123456789abc',workspace:'b'.repeat(64),url:'https://example.org',html:'<p>Local capture</p>'};
+ assert.equal((await fetch(url,{method:'POST',body:JSON.stringify(value)})).status,403);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,Origin:'https://malicious.example'},body:JSON.stringify(value)})).status,403);assert.equal(received.length,0);
+ assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({...value,workspace:'../../outside'})})).status,400);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(value)})).status,200);assert.equal(received.length,1);
+});
+
+test('local article imports copy images only within the explicitly chosen document folder',async t=>{
+ const {localArticleImage}=await import('../src/core/reading'),{pathToFileURL}=await import('node:url');const base=await fs.mkdtemp(join(tmpdir(),'heavens-local-article-'));t.after(()=>fs.rm(base,{recursive:true,force:true}));const folder=join(base,'chosen');await fs.mkdir(folder);const file=join(folder,'article.html'),image=join(folder,'photo.png'),outside=join(base,'private.png');await fs.writeFile(file,'<article><h1>Local reading</h1><p>Keep this article and its image offline.</p><img src="photo.png"></article>');await fs.writeFile(image,'image bytes');await fs.writeFile(outside,'outside');
+ const article=extractArticle(await fs.readFile(file,'utf8'),pathToFileURL(file).href);assert.deepEqual(article.images,[pathToFileURL(image).href]);assert.equal((await localArticleImage(article.images[0],file)).data.toString(),'image bytes');await assert.rejects(()=>localArticleImage(pathToFileURL(outside).href,file));await fs.symlink(outside,join(folder,'escape.png'));await assert.rejects(()=>localArticleImage(pathToFileURL(join(folder,'escape.png')).href,file));
+});
+
+test('annotation recovery supports Windows line endings and leaves fenced examples untouched',async t=>{
+ const {annotationView,annotationReferences}=await import('../src/reading'),raw=withAnnotations('# Test\n\nText',[{id:'n1',kind:'note',text:'First\nSecond'},{id:'n2',kind:'note',text:'Another note'}]),windows=raw.replaceAll('\n','\r\n');assert.deepEqual(splitAnnotations(windows).annotations,splitAnnotations(raw).annotations);const literal='# Guide\n\n```markdown\n'+raw+'\n```\n';assert.equal(splitAnnotations(literal).content,literal);assert.equal(splitAnnotations(literal).annotations.length,0);const code='```md\n<mark data-annotation="a1">passage</mark>[^a1]\n```';assert.equal(annotationReferences(code),code);
+ const broken=raw.replace('card-note:n1 {}','card-note:n1 {broken}');assert.ok(annotationView(broken).error);assert.equal(annotationView(broken).content,broken);assert.throws(()=>updateAnnotation(broken,{id:'n1',kind:'note',text:'Must not replace unreadable data'}));
+ const base=await fs.mkdtemp(join(tmpdir(),'heavens-annotation-recovery-')),root=join(base,'notes');await fs.mkdir(root);const w=await Workspace.open(root,join(base,'cache'));t.after(async()=>{w.close();await fs.rm(base,{recursive:true,force:true});});await w.write([{path:'Recover.md',content:'---\ncard-id: recover\n---\n'+broken,expected:null}]);assert.ok(w.snapshot().cards.some(c=>c.id==='recover'),'malformed annotations must remain reachable for repair');assert.equal((await w.card('Recover.md')).body,broken);
+});

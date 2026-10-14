@@ -1,3 +1,4 @@
+import {isHexColor} from '../colors';
 import {Mark} from '@tiptap/core';
 
 export function htmlAttribute(value:unknown){return String(value??'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');}
@@ -13,11 +14,13 @@ export function textColors(style:string){
   return Object.keys(attributes).length?attributes:null;
 }
 export function supportedHtml(raw:string){
+  if(/^\s*<\/mark\s*>\s*$/i.test(raw))return true;
   if(/^\s*<\/span\s*>\s*$/i.test(raw))return true;
   const template=document.createElement('template');template.innerHTML=raw;
   const elements=[...template.content.querySelectorAll('*')];
   return elements.length>0&&elements.every(element=>{
     const keys=element.getAttributeNames();
+    if(element.tagName==='MARK')return keys.every(k=>['data-annotation','data-color'].includes(k))&&/^[\w-]+$/.test(element.getAttribute('data-annotation')??'');
     if(element.tagName==='SPAN')return keys.every(k=>k==='style')&&!!textColors(element.getAttribute('style')??'');
     if(element.tagName==='IMG')return keys.every(k=>['src','alt','title','width','height'].includes(k))&&!!element.getAttribute('src')&&['width','height'].every(k=>!element.hasAttribute(k)||/^\d+$/.test(element.getAttribute(k)!));
     return false;
@@ -50,6 +53,7 @@ export function inlineHtmlToken(src:string){
   const comment=/^<!--[\s\S]*?-->/.exec(src);if(comment)return comment[0];
   const open=/^<([a-z][\w:-]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/i.exec(src);
   if(!open)return /^<\/[a-z][\w:-]*\s*>/i.exec(src)?.[0];
+  if(/^<mark\s+data-annotation="[\w-]+"/.test(open[0]))return;
   if(/^<span\s+style=("[^"]*"|'[^']*')\s*>/i.test(open[0])&&supportedHtml(open[0]))return;
   if(/\/>$/.test(open[0])||/^(br|hr|img|input|meta|link|source|wbr)$/i.test(open[1]))return open[0];
   let depth=1;
@@ -60,3 +64,13 @@ export function inlineHtmlToken(src:string){
   }
   return open[0];
 }
+
+export const AnnotationMark=Mark.create({
+ name:'annotation',inclusive:false,
+ addAttributes(){return {id:{default:null,parseHTML:el=>el.dataset.annotation},color:{default:'#e6bb50',parseHTML:el=>isHexColor(el.getAttribute('data-color'))?el.getAttribute('data-color'):'#e6bb50'}};},
+ parseHTML(){return [{tag:'mark[data-annotation]'}];},
+ renderHTML({mark}){return ['mark',{'data-annotation':mark.attrs.id,'data-color':mark.attrs.color,style:`background-color: ${mark.attrs.color}`},0];},
+ markdownTokenName:'annotation',markdownTokenizer:{name:'annotation',level:'inline',start:src=>src.indexOf('<mark'),tokenize(src,_tokens,lexer){const match=/^<mark\s+data-annotation="([\w-]+)"(?:\s+data-color="(#[a-f\d]{3}(?:[a-f\d]{3})?)")?\s*>([\s\S]*?)<\/mark>(?:\[\^\1\])?/i.exec(src);if(match)return {type:'annotation',raw:match[0],attrs:{id:match[1],color:match[2]??'#e6bb50'},tokens:lexer.inlineTokens(match[3])};}},
+ parseMarkdown(token,helpers){return helpers.applyMark('annotation',helpers.parseInline(token.tokens??[]),token.attrs as Record<string,string>);},
+ renderMarkdown(node,helpers){return `<mark data-annotation="${node.attrs?.id}" data-color="${node.attrs?.color??'#e6bb50'}">${helpers.renderChildren(node)}</mark>[^${node.attrs?.id}]`;},
+});

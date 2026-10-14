@@ -1,3 +1,4 @@
+import {readingMetadata} from '../reading';
 import {splitCardSource} from '../card-source';
 import {tagsFrom} from '../tags';
 import { isHexColor } from '../colors';
@@ -28,7 +29,7 @@ export function readCard(path: string, raw: string): Card {
   const fillColor=front.has('card-color')?front.get('card-color')??null:undefined;
   if(fillColor!==undefined&&fillColor!==null&&!isHexColor(fillColor))throw new Error(ui.errors.invalidCardColor);
   const heading=leadingTitle(body);
-  return { header, tags:tagsFrom(front.toJSON()?.tags),...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
+  return { ...readingMetadata(front.toJSON()??{}),header, tags:tagsFrom(front.toJSON()?.tags),...(fillColor!==undefined?{fillColor:fillColor as string|null}:{}),id: id as string || revision(path).slice(0,32), path, name: basename(path, '.md'), title:headingText(heading), titleMarkdown:heading?.text, body, revision: revision(raw), legacy: !id };
 }
 export function editCard(raw: string, card: Card, body: string) {
   const { front, header } = splitNote(raw);
@@ -46,7 +47,7 @@ export function readBoard(path: string, raw: string): Board {
   const layout = JSON.parse(block[1]);
   if (layout.version !== 1 || !Array.isArray(layout.cards) || !Array.isArray(layout.edges)) throw new Error(ui.errors.unsupportedBoardFormat);
   const membership = new Map([...raw.matchAll(/^- \[[^\n]*\]\((card|board):([^\s)]+)\) \^([\w-]+)$/gm)].map(m => [m[3], m[1] === 'card' ? {cardId:m[2]} : {cardId:'',folder:decodeURIComponent(m[2])}]));
-  const board = { ...emptyBoard(path), revision: revision(raw), cards: layout.cards.map((c: Placement) => {const member=membership.get(c.id);if(!member)throw new Error(ui.errors.missingBoardMembership);return {...c,folder:undefined,...member};}), edges: layout.edges, inbox:layout.inbox, showMentions:layout.showMentions, mentionStyle:layout.mentionStyle, canvasColor:layout.canvasColor, gridColor:layout.gridColor };
+  const board = { ...emptyBoard(path), revision: revision(raw), cards: layout.cards.map((c: Placement) => {if(c.object)return {...c,cardId:''};const member=membership.get(c.id);if(!member)throw new Error(ui.errors.missingBoardMembership);return {...c,folder:undefined,...member};}), edges: layout.edges, inbox:layout.inbox, showMentions:layout.showMentions, mentionStyle:layout.mentionStyle, canvasColor:layout.canvasColor, gridColor:layout.gridColor };
   validateBoard(board);
   return board;
 }
@@ -66,7 +67,8 @@ export function validateBoard(board: Board) {
   const ids = new Set<string>();
   for (const p of board.cards) {
     validateStroke(p);if(!validColor(p.fillColor))throw new Error(ui.errors.invalidBoardStyle);
-    if (!p.id || (!p.cardId && !p.folder) || ids.has(p.id) || ![p.x,p.y,p.width,p.height].every(Number.isFinite) || p.width < 120 || p.height < 80) throw new Error(ui.errors.invalidBoardPlacement);
+    if (!p.id || (!p.cardId && !p.folder && !p.object) || ids.has(p.id) || ![p.x,p.y,p.width,p.height].every(Number.isFinite) || p.width < 120 || p.height < 80) throw new Error(ui.errors.invalidBoardPlacement);
+    if(p.object){const object=p.object;if(!['text','image'].includes(object.type)||p.folder||p.cardId)throw new Error('Invalid whiteboard object.');if(object.type==='text'&&(typeof object.text!=='string'||object.text.length>100000||!['none','rectangle','rounded','ellipse','diamond'].includes(object.shape)||object.fontSize!==undefined&&(!Number.isFinite(object.fontSize)||object.fontSize<8||object.fontSize>120)||!validColor(object.textColor))||object.type==='image'&&(typeof object.html!=='string'||object.html.length>1024*1024||(object.html.match(/data-better-edit-image=/g)??[]).length!==1||(object.html.match(/<img\b/gi)??[]).length!==1||object.html.includes('data-better-edit-image-row')))throw new Error('Invalid whiteboard object content.');}
     if (p.folder !== undefined && (typeof p.folder !== 'string' || !p.folder || p.folder.startsWith('/') || p.folder.split(/[\\/]/).some(part => !part || part.startsWith('.')))) throw new Error(ui.errors.invalidWhiteboardReference);
     if(p.collapsed!==undefined&&typeof p.collapsed!=='boolean')throw new Error(ui.errors.invalidCollapsedState);
     if(p.autoHeight!==undefined&&typeof p.autoHeight!=='boolean')throw new Error(ui.errors.invalidAutoHeightMode);
@@ -82,7 +84,7 @@ export function validateBoard(board: Board) {
 }
 export function writeBoard(board: Board) {
   validateBoard(board);
-  const members = board.cards.map(c => c.folder ? `- [Whiteboard](board:${encodeURIComponent(c.folder)}) ^${c.id}` : `- [Card](card:${c.cardId}) ^${c.id}`).join('\n');
-  const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,x:p.x,y:p.y,width:p.width,height:p.height,...(p.collapsed!==undefined?{collapsed:p.collapsed}:{}),...(p.autoHeight!==undefined?{autoHeight:p.autoHeight}:{}),fillColor:p.fillColor,strokeColor:p.strokeColor,strokeWidth:p.strokeWidth,strokeStyle:p.strokeStyle})), edges: board.edges, showMentions:board.showMentions, mentionStyle:board.mentionStyle, canvasColor:board.canvasColor, gridColor:board.gridColor, ...(board.inbox?{inbox:board.inbox}:{}) };
+  const members = board.cards.map(c => c.object?`- [${c.object.type==='image'?'Image':'Text'}](object:${c.id}) ^${c.id}`:c.folder ? `- [Whiteboard](board:${encodeURIComponent(c.folder)}) ^${c.id}` : `- [Card](card:${c.cardId}) ^${c.id}`).join('\n');
+  const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,...(p.object?{object:p.object}:{}),x:p.x,y:p.y,width:p.width,height:p.height,...(p.collapsed!==undefined?{collapsed:p.collapsed}:{}),...(p.autoHeight!==undefined?{autoHeight:p.autoHeight}:{}),fillColor:p.fillColor,strokeColor:p.strokeColor,strokeWidth:p.strokeWidth,strokeStyle:p.strokeStyle})), edges: board.edges, showMentions:board.showMentions, mentionStyle:board.mentionStyle, canvasColor:board.canvasColor, gridColor:board.gridColor, ...(board.inbox?{inbox:board.inbox}:{}) };
   return `---\nwhiteboard: true\nwhiteboard_version: 1\n---\n# ${board.name}\n\n## Cards\n${members}\n\n%% whiteboard-layout\n${JSON.stringify(layout, null, 2)}\n%%\n`;
 }

@@ -1,6 +1,8 @@
+import {splitAnnotations,withAnnotations} from './reading';
 import {marked} from 'marked';
 // Rebase only the moved note's conventional relative links and images.
-export function moveCardLinks(body:string,from:string,to:string,map?:(path:string)=>string){
+export function moveCardLinks(body:string,from:string,to:string,map?:(path:string)=>string):string{
+  const parts=splitAnnotations(body);if(parts.footer){const content=moveCardLinks(parts.content,from,to,map),annotations=parts.annotations.map(a=>({...a,text:moveCardLinks(a.text,from,to,map)}));return content===parts.content&&annotations.every((a,i)=>a.text===parts.annotations[i].text)?body:withAnnotations(content,annotations);}
   from=from.replace(/\\/g,'/');to=to.replace(/\\/g,'/');
   const rewrite=(href:string)=>{
     if(/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href))return href;

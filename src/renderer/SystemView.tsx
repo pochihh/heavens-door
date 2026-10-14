@@ -1,3 +1,4 @@
+import {ReadingLibrary} from './ReadingLibrary';
 import {ui} from '../text/ui';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {systemPath,systemEntries,type SystemEntry} from '../features';
@@ -33,6 +34,7 @@ export function SystemView({id,snapshot,session,onOpen,onJournalOpen=onOpen,onPr
   return <section className="system-library" data-drop-folder={['slipbox','templates','journal'].includes(id)?path:undefined} data-drop-kind="folder" data-drop-name={entry.name} aria-label={entry.name} aria-busy={busy}>
     <div className="system-heading"><Icon name={entry.icon}/><h1>{id==='journal'?'Journal':entry.name}</h1><div className="toolbar-spacer"/>{id==='templates'?<button onClick={()=>void perform(async()=>{const c=await session.createTemplate();onOpen('card:'+c.id);})}><Icon name="plus"/>{ui.journal.newTemplate}</button>:id==='slipbox'?<button onClick={()=>void perform(async()=>{await session.create(path,snapshot.preferences?.stem??'untitled',0,0,false);const card=session.state.draft?.card;if(card)onOpen('card:'+card.id);})}><Icon name="plus"/>{ui.common.newCard}</button>:null}</div>
     <details className="system-guide"><summary>{ui.system.guide}</summary>{guideError&&<p role="alert">{guideError}</p>}{guide&&<><div className="prose system-guide-content" dangerouslySetInnerHTML={{__html:preview(guide.body,guide.path,false)}} onClick={e=>{const href=(e.target as HTMLElement).closest('a')?.getAttribute('href');if(href?.startsWith('card:')){e.preventDefault();onPreview(href);}}}/><button className="system-guide-edit" onClick={()=>onPreview('card:'+guide.id)}><Icon name="edit"/>{ui.system.editGuide}</button></>}</details>
+    {id==='reading'?<ReadingLibrary snapshot={snapshot} session={session} onOpen={onPreview}/>:<>
     {id==='journal'&&<div className="system-calendar"><CalendarView snapshot={snapshot} session={session} onOpen={onJournalOpen}/></div>}
     <div className="system-search"><Icon name="search"/><input aria-label={ui.system.searchIn(entry.name)} placeholder={ui.system.search} value={search} onChange={e=>setSearch(e.target.value)}/><small>{shown.length}</small></div>
     {id==='tags'&&<NewTag session={session} onCreated={path=>onOpen('tag:'+path)}/>}
@@ -43,6 +45,7 @@ export function SystemView({id,snapshot,session,onOpen,onJournalOpen=onOpen,onPr
         <span role="cell" className="system-path" data-tooltip={row.path}>{row.path}</span><span role="cell" className="system-tags">{row.tags.map(tag=><span key={tag}>#{tag}</span>)}</span><span role="cell"><Tool icon="more" label={ui.system.actions(row.name)} onClick={e=>actions(row,e.currentTarget)}/></span>
       </div>)}
     </div>{!shown.length&&!busy&&<p className="muted">{search?ui.system.noMatches:ui.system.noItems}</p>}
+    </>}
     {menu&&<ActionMenu menu={menu} onClose={closeMenu}/>}
   </section>;
 }

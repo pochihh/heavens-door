@@ -15,7 +15,7 @@ const CardKit=StarterKit.extend({addExtensions(){return (this.parent?.()??[]).ma
 
 import { Markdown } from '@tiptap/markdown';
 import Image from '@tiptap/extension-image';
-import {TextColors,htmlAttribute,inlineHtmlToken,supportedHtml} from './editor-html';
+import {AnnotationMark,TextColors,htmlAttribute,inlineHtmlToken,supportedHtml} from './editor-html';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
@@ -48,7 +48,7 @@ export function cardMarkdown(editor:Editor){
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
 export function extensions(path: string,codeView?:NodeViewRenderer,htmlView?:NodeViewRenderer,imageView?:NodeViewRenderer,mathView?:NodeViewRenderer,getBindings?:()=>Keybindings|undefined) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
-  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,
+  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,AnnotationMark,
     ...(['mathInline','mathBlock'] as const).map(name=>TiptapNode.create({name,group:name==='mathBlock'?'block':'inline',inline:name==='mathInline',atom:true,
       addInputRules(){return name==='mathInline'?[nodeInputRule({find:/\$(?!\$)([^\n$]+)\$$/,type:this.type,getAttributes:match=>{const token=mathToken(match[0]);return token?{latex:token.text}:false;}})]:[];},
       addAttributes(){return {latex:{default:''}};},parseHTML(){return [{tag:(name==='mathBlock'?'div':'span')+'[data-latex]',getAttrs:element=>({latex:(element as HTMLElement).dataset.latex})}];},renderHTML({node}){return [name==='mathBlock'?'div':'span',{'data-latex':node.attrs.latex}];},

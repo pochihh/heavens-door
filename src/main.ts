@@ -1,3 +1,9 @@
+import {extractArticle} from './core/article';
+import {captureServer} from './core/capture';
+import {boundedDownload,readFeeds,feedArticles,webAddress,MAX_READING_BYTES,validateImport,localArticleImage} from './core/reading';
+import {featureEnabled} from './features';
+import {randomBytes} from 'node:crypto';
+import type {ReadingImport} from './shared';
 import {TEST_BUILD} from './identity';
 import { ui } from './text/ui';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell, clipboard, nativeImage, ClipboardItem } from 'electron';
@@ -26,6 +32,7 @@ const appSettings=():AppSettings=>({hardwareAcceleration,restartRequired:hardwar
 protocol.registerSchemesAsPrivileged([{scheme:'heavens-asset',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 interface Host { root:string; key:string; worker:Worker; call<T>(request:Request):Promise<T> }
 interface Desktop { window:BrowserWindow; opening?:Promise<Snapshot>; host?:Host; closing:boolean; action:WindowAction|null; timer?:ReturnType<typeof setTimeout> }
+let captureToken='',captureError='';const capturePort=TEST_BUILD?27319:27318;
 let registry:WorkspaceRegistry;
 let updates:AppUpdates;
 const desktops=new Map<number,Desktop>(), hosts=new Map<string,Promise<Host>>(), assets=new Map<string,Host>();
@@ -57,6 +64,29 @@ async function getHost(folder:string):Promise<Host> {
 function broadcast(host:Host) {
   for(const d of desktops.values())if(d.host===host&&!d.window.isDestroyed())d.window.webContents.send('workspace:change');
 }
+async function importReading(host:Host,value:ReadingImport){
+  validateImport(value);if(value.type==='web'&&value.body===undefined){const url=value.url??'https://local.invalid/',article=extractArticle(Buffer.from(value.data).toString('utf8'),url);value={...value,name:value.name||article.name,body:article.body};}
+  const result=await host.call<Mutation&{path:string}>({kind:'importReading',value});broadcast(host);return result;
+}
+async function captureArticle(host:Host,url:string,html?:string,name?:string,feed?:string,entry?:string){
+  webAddress(url);const snapshot=await host.call<Snapshot>({kind:'snapshot'});if(!featureEnabled(snapshot.preferences,'reading'))throw new Error('Enable Read later for this workspace.');
+  if(entry){const existing=snapshot.cards.find(c=>c.source?.entry===entry&&(c.source.feed??'')===(feed??''));if(existing)return {snapshot,edits:[],path:existing.path};}
+  const download=html===undefined?await boundedDownload(url,10*1024*1024):null;if(download?.type.includes('application/pdf')||download?.data.subarray(0,5).toString()==='%PDF-')return importReading(host,{name:name??'PDF',url,type:'pdf',data:download.data});
+  const raw=html??download!.data.toString('utf8'),article=extractArticle(raw,url);
+  const localized=await articleImages(host,article,image=>boundedDownload(image,25*1024*1024));
+  return importReading(host,{name:name??article.name,url,type:'web',data:Buffer.from(raw),...localized,feed,entry});
+}
+async function articleImages(host:Host,article:ReturnType<typeof extractArticle>,load:(url:string)=>Promise<{data:Buffer;type:string}>){
+  const snapshot=await host.call<Snapshot>({kind:'snapshot'}),id=randomBytes(8).toString('hex');let body=article.body;
+  const images=[...new Set(article.images)],missingImages:string[]=[];let totalBytes=0;
+  for(let offset=0;offset<images.length;offset+=4)await Promise.all(images.slice(offset,offset+4).map(async image=>{try{if(totalBytes>=50*1024*1024)throw new Error('Image budget reached.');const downloaded=await load(image),extension=downloaded.type.includes('png')?'.png':downloaded.type.includes('jpeg')?'.jpg':downloaded.type.includes('webp')?'.webp':downloaded.type.includes('gif')?'.gif':downloaded.type.includes('svg')?'.svg':downloaded.type.includes('avif')?'.avif':null;if(!extension)throw new Error('Unsupported image.');totalBytes+=downloaded.data.length;if(totalBytes>50*1024*1024)throw new Error('Image budget reached.');
+    const assetFolder=(snapshot.preferences?.editor?.imageLocation==='workspace'?'':(snapshot.preferences?.reading?.folder??'Inbox')+'/')+(snapshot.preferences?.editor?.imageFolder??'_assets');
+    const assetPath=assetFolder+'/capture-'+id+'-'+randomBytes(4).toString('hex')+extension;await host.call({kind:'ensureFolder',path:assetFolder});await fs.writeFile(join(await workspacePath(host.root,assetFolder),assetPath.split('/').at(-1)!),downloaded.data,{flag:'wx'});body=body.replaceAll(image,relativeReading(snapshot.preferences?.reading?.folder??'Inbox',assetPath));
+  }catch{missingImages.push(image);}}));
+  return {body,missingImages};
+}
+function relativeReading(folder:string,target:string){const base=folder.split('/'),parts=target.split('/');while(base.length&&base[0]===parts[0]){base.shift();parts.shift();}return [...base.map(()=>'..'),...parts].map(encodeURIComponent).join('/');}
+async function refreshFeed(host:Host,url:string,limit:number){webAddress(url);const snapshot=await host.call<Snapshot>({kind:'snapshot'});if(!featureEnabled(snapshot.preferences,'reading'))throw new Error('Enable Read later.');const data=await boundedDownload(url,5*1024*1024),articles=feedArticles(data.data.toString('utf8'),url,limit);let imported=0;for(const article of articles){if((await host.call<Snapshot>({kind:'snapshot'})).cards.some(c=>c.source?.feed===url&&c.source.entry===article.entry))continue;await captureArticle(host,article.url,article.html,article.name,url,article.entry);imported++;}return {imported};}
 async function snapshot(d:Desktop) {
   if(!d.host)return null;
   return {...await d.host.call<Snapshot>({kind:'snapshot'}),assetKey:d.host.key};
@@ -177,6 +207,21 @@ void app.whenReady().then(async()=>{
     if(workspace.status!=='available')throw new Error(ui.workspace.cannotOpen(workspace.name,ui.workspace.status[workspace.status]));
     return open(d,workspace.root);
   });
+  ipcMain.handle('reading:choose',async event=>{
+    const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');
+    const chosen=await dialog.showOpenDialog(d.window,{title:'Import reading material',properties:['openFile','multiSelections'],filters:[{name:'PDF and HTML',extensions:['pdf','html','htm']}]});
+    if(chosen.canceled)return {imports:[],errors:[]};if(chosen.filePaths.length>20)throw new Error('Import at most 20 files at a time.');
+    const results:(Mutation&{path:string})[]=[],errors:string[]=[];
+    for(const file of chosen.filePaths){try{const type=extname(file).toLowerCase()==='.pdf'?'pdf':'web',stat=await fs.stat(file);if(!stat.isFile()||stat.size>(type==='pdf'?MAX_READING_BYTES:10*1024*1024))throw new Error('The attachment is too large.');
+      const data=await fs.readFile(file),name=file.split(/[\\/]/).at(-1)!.replace(/\.(pdf|html?)$/i,'');
+      if(type==='pdf')results.push(await importReading(d.host,{name,type,data}));else{const article=extractArticle(data.toString('utf8'),pathToFileURL(file).href),localized=await articleImages(d.host,article,image=>localArticleImage(image,file));results.push(await importReading(d.host,{name,type,data,...localized}));}
+    }catch(e){errors.push(file.split(/[\\/]/).at(-1)+': '+String(e));}}return {imports:results,errors};
+  });
+  ipcMain.handle('reading:import',async(event,value:ReadingImport)=>{const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');return importReading(d.host,value);});
+  ipcMain.handle('reading:capture',async(event,url:string)=>{const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');return captureArticle(d.host,url);});
+  ipcMain.handle('reading:feed',async(event,url:string,limit:number)=>{const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');return refreshFeed(d.host,url,limit);});
+  ipcMain.handle('reading:pair',async event=>{const d=trusted(event);if(!d.host||captureError)throw new Error(captureError||'Open a workspace.');return {port:capturePort,token:captureToken,workspace:d.host.key,name:(await d.host.call<Snapshot>({kind:'snapshot'})).name};});
+  ipcMain.handle('reading:data',async(event,path:unknown)=>{const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error('Invalid attachment.');const file=await workspacePath(d.host.root,path),stat=await fs.stat(file);if(!stat.isFile()||stat.size>MAX_READING_BYTES||!['.pdf','.html'].includes(extname(file).toLowerCase()))throw new Error('Unsupported attachment.');return new Uint8Array(await fs.readFile(file));});
   ipcMain.handle('image:resolve',(event,notePath:string,source:string)=>{const d=trusted(event);if(!d.host)throw new Error(ui.errors.unknownWorkspace);return resolveImage(d.host.root,notePath,source);});
   ipcMain.handle('image:link',async(event,notePath:unknown,url:unknown)=>{
     const d=trusted(event);if(!d.host||typeof notePath!=='string'||typeof url!=='string'||url.length>4096)throw new Error('Invalid image link');
@@ -213,7 +258,7 @@ void app.whenReady().then(async()=>{
     try{
       const url=new URL(request.url),host=assets.get(url.host);if(!host)throw new Error(ui.errors.unknownWorkspace);
       const target=await fs.realpath(resolve(host.root,decodeURIComponent(url.pathname).slice(1)));
-      if(!target.startsWith(host.root+sep)||!['.png','.jpg','.jpeg','.gif','.webp','.avif','.svg'].includes(extname(target).toLowerCase()))throw new Error(ui.errors.unsupportedAsset);
+      if(!target.startsWith(host.root+sep)||!['.png','.jpg','.jpeg','.gif','.webp','.avif','.svg','.pdf'].includes(extname(target).toLowerCase()))throw new Error(ui.errors.unsupportedAsset);
       return net.fetch(pathToFileURL(target).href);
     }catch{return new Response(ui.desktop.assetUnavailable,{status:404});}
   });
@@ -244,7 +289,7 @@ void app.whenReady().then(async()=>{
     // ponytail: block cross-window history switches until a shared draft-flush barrier exists.
     if(['restore','applyCheckpoint'].includes(request.kind)&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.historyOtherWindows);
     const result=await d.host.call(request);
-    if(['createSlipboxCard','fileOperation','moveSelection','transfer','placeCard','ensureFolder','createEntry','createFromTemplate','createTemplate','openJournal','trashCard','restoreTrash','create','createFolder','saveCard','saveBoard','setFill','moveViewCard','setViewProperty','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
+    if(['importReading','readingProgress','saveReadingFeeds','createSlipboxCard','fileOperation','moveSelection','transfer','placeCard','ensureFolder','createEntry','createFromTemplate','createTemplate','openJournal','trashCard','restoreTrash','create','createFolder','saveCard','saveBoard','setFill','moveViewCard','setViewProperty','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
     return result;
   });
   ipcMain.handle('workspace:current',async event=>{const d=trusted(event),opening=d.opening;try{if(opening)await opening;return await snapshot(d);}finally{d.opening=undefined;}});
@@ -268,6 +313,9 @@ void app.whenReady().then(async()=>{
     {role:'windowMenu'},
     ...(process.platform!=='darwin'?[{label:ui.desktop.help,submenu:[{label:ui.updates.about,click:()=>app.showAboutPanel()},{label:ui.updates.check,enabled:!TEST_BUILD,click:()=>{void updates.check().then(state=>promptUpdate(state,true)).catch(console.error);}}]}]:[]),
   ]));
+  const tokenFile=join(app.getPath('userData'),'capture-token');try{captureToken=(await fs.readFile(tokenFile,'utf8')).trim();if(!/^[a-f0-9]{64}$/.test(captureToken))throw new Error('Invalid capture pairing key.');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT'){captureToken=randomBytes(32).toString('hex');await fs.writeFile(tokenFile,captureToken,{flag:'wx',mode:0o600});}else captureError=String(e);}
+  if(!captureError){const receiver=captureServer(captureToken,async value=>{const host=assets.get(value.workspace);if(!host)throw new Error('Open the paired workspace in Heaven\'s Door.');await captureArticle(host,value.url,value.html,value.name,undefined,value.id);});receiver.on('error',e=>{captureError=String(e);});receiver.listen(capturePort,'127.0.0.1');app.on('will-quit',()=>receiver.close());}
+  const feedsTimer=setInterval(()=>{for(const host of assets.values())void (async()=>{const snapshot=await host.call<Snapshot>({kind:'snapshot'});if(!featureEnabled(snapshot.preferences,'reading'))return;const {source}=await host.call<{source:string}>({kind:'readingFeeds'});if(source)for(const feed of readFeeds(source))await refreshFeed(host,feed.url,20);})().catch(console.error);},15*60*1000);feedsTimer.unref();app.on('will-quit',()=>clearInterval(feedsTimer));
   const testFolder=TEST_BUILD?process.argv[process.argv.indexOf('--test-workspace')+1]:undefined;
   await createWindow(TEST_BUILD&&process.argv.includes('--test-workspace')?testFolder:process.env.HEAVENS_DOOR_WORKSPACE);
   if(app.isPackaged&&!TEST_BUILD)setTimeout(()=>{void updates.check().then(state=>promptUpdate(state)).catch(console.error);},15000).unref();

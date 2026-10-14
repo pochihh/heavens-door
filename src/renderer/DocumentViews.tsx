@@ -1,3 +1,10 @@
+import {readingText} from '../text/reading';
+import {matchesBinding} from '../keybindings';
+import {AnnotationRail} from './Annotations';
+import {PdfReader} from './PdfReader';
+import {annotationView,splitAnnotations,updateAnnotation,type Annotation} from '../reading';
+import {Icon} from './Icons';
+import {assetPath} from './markdown';
 import {searchDocument} from '../core/search';
 import {featureEnabled} from '../features';
 import { cardFill, tintColor } from '../colors';
@@ -23,10 +30,13 @@ import { useConfirmation } from './Confirmation';
 export function NoteView({metadata=false,path,session,snapshot,active,memory,suspended=false,onActivate,onOpen,onViewChange}:{
   metadata?:boolean;path:string;session:Session;snapshot:Snapshot;active:boolean;memory:ViewMemory;suspended?:boolean;onActivate:()=>void;onOpen:(key:string)=>void;onViewChange:()=>void;
 }) {
-  const [loaded,setLoaded]=useState<Card|null>(null),[focus,setFocus]=useState<EditorFocus>();
+  const [loaded,setLoaded]=useState<Card|null>(null),[focus,setFocus]=useState<EditorFocus>(),[expanded,setExpanded]=useState<string>(),[jump,setJump]=useState<string>(),[titleEdit,setTitleEdit]=useState(false),[sourceHash,setSourceHash]=useState('');
+  const progressTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),pendingPage=useRef<number|undefined>(undefined),readingState=useRef<'new'|'reading'|'done'>('new');
+  useEffect(()=>()=>{clearTimeout(progressTimer.current);if(pendingPage.current!==undefined)void session.updateReading(path,{state:readingState.current==='done'?'done':'reading',page:pendingPage.current}).catch(()=>undefined);},[session,path]);
   const container=useRef<HTMLDivElement>(null);
   const [backlinks,setBacklinks]=useState<{path:string}[]>([]);
   const draft=session.state.draft, info=snapshot.cards.find(c=>c.path===path);
+  readingState.current=info?.reading?.state??'new';
   const editing=active&&draft?.card.path===path;
   const body=draft?.card.path===path?draft.body:loaded?.body??'';
   const source=editing?draft.source??(draft.card.header??'')+draft.body:(loaded?.header??'')+body;
@@ -47,14 +57,24 @@ export function NoteView({metadata=false,path,session,snapshot,active,memory,sus
     void session.bridge.request<{path:string}[]>({kind:'query',text:'backlinks:'+info.id}).then(rows=>{if(live)setBacklinks(rows);}).catch(error=>{if(live)session.update({error:String(error)});});
     return()=>{live=false;};
   },[info?.id,snapshot,session]);
+  const changeAnnotation=(value:Annotation|null,id:string)=>{void session.select(path).then(()=>{const current=session.state.draft;if(current?.card.path===path)session.edit(updateAnnotation(current.body,value,id));}).catch(e=>session.update({error:String(e)}));};
+  const addAnnotation=(attrs:Omit<Annotation,'id'|'kind'|'text'>={},note=true)=>{const id=(attrs.quote?'a-':'n-')+crypto.randomUUID();changeAnnotation({id,kind:attrs.quote?'highlight':'note',text:'',...attrs},id);if(note)setExpanded(id);};
+  const parts=annotationView(body),annotations=parts.annotations,sourceMode=memory.source||!!parts.error;
+  const jumpTo=(id:string)=>{setJump(id);container.current?.querySelector(`[data-annotation="${id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});};
   const tags=info&&featureEnabled(snapshot.preferences,'tags')?<CardTags card={info} snapshot={snapshot} session={session} onOpen={onOpen}/>:undefined;
-  return <section className="document-editor" ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
+  return <section className="document-editor" ref={container} style={{background:tintColor(cardFill(info))}} onScrollCapture={e=>{if((e.target as HTMLElement).closest('.annotation-rail'))return;memory.scroll=(e.target as HTMLElement).scrollTop;onViewChange();}}
+    onKeyDown={e=>{if(e.defaultPrevented||!info?.source||(e.target as HTMLElement).closest('input,textarea,[contenteditable=true]'))return;if(matchesBinding(e.nativeEvent,'readerLibrary',snapshot.preferences?.keybindings,session.bridge.platform)){e.preventDefault();onOpen('system:reading');}if(matchesBinding(e.nativeEvent,'readerDone',snapshot.preferences?.keybindings,session.bridge.platform)){e.preventDefault();void session.updateReading(path,{...info.reading,state:'done'}).catch(()=>undefined);}if(matchesBinding(e.nativeEvent,'readerNext',snapshot.preferences?.keybindings,session.bridge.platform)){e.preventDefault();const entries=snapshot.cards.filter(c=>c.source&&c.path.startsWith((snapshot.preferences?.reading?.folder??'Inbox')+'/'));const next=entries[(entries.findIndex(c=>c.id===info.id)+1)%entries.length];if(next)onOpen('card:'+next.id);}if(matchesBinding(e.nativeEvent,'readerNote',snapshot.preferences?.keybindings,session.bridge.platform)&&window.getSelection()?.isCollapsed){e.preventDefault();addAnnotation();}}}
     onPointerDown={e=>{
       if(editing||(e.target as HTMLElement).closest('button,a,summary,select,input'))return;
       setFocus({x:e.clientX,y:e.clientY,scrollTop:memory.scroll??0});onActivate();
     }}>
-    {memory.source?<textarea className="editor-body card-source" aria-label={ui.editorTools.markdownSource} spellCheck={false} value={shown.source} readOnly={suspended||!shown.editing} onFocus={()=>{if(!editing)onActivate();}} onChange={e=>{if(!suspended)session.editSource(e.target.value);}}/>:shown.editing?<CardEditor id={info?.id} onTitleDone={()=>void session.run(()=>session.flush()).catch(()=>undefined)} afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
+    {!sourceMode&&<div className="reading-actions"><button onClick={()=>addAnnotation()}><Icon name="plus"/>{readingText.addNote}</button>{info?.source&&<>{featureEnabled(snapshot.preferences,'reading')&&<button onClick={()=>onOpen('system:reading')}>{readingText.inbox}</button>}<select aria-label={readingText.readingState} value={info.reading?.state??'new'} onChange={e=>void session.updateReading(path,{...info.reading,state:e.target.value as 'new'|'reading'|'done'}).catch(()=>undefined)}><option value="new">{readingText.new}</option><option value="reading">{readingText.reading}</option><option value="done">{readingText.done}</option></select><button onClick={()=>void session.bridge.revealFile(assetPath(path,info.source!.file??'')).catch(e=>session.update({error:String(e)}))}>{readingText.sourceFile}</button></>}</div>}
+    {!sourceMode&&!!info?.source?.missingImages?.length&&<p className="reader-message">{readingText.someArticleImagesCouldNotBeDownloadedThe}</p>}
+    {parts.error&&<p role="alert" className="reader-message">{parts.error} {readingText.repairAnnotationSource}</p>}
+    <div className="document-reading-layout"><div className="reading-main">
+    {sourceMode?<textarea className="editor-body card-source" aria-label={ui.editorTools.markdownSource} spellCheck={false} value={shown.source} readOnly={suspended||!shown.editing} onFocus={()=>{if(!editing)onActivate();}} onChange={e=>{if(!suspended)session.editSource(e.target.value);}}/>:info?.source?.type==='pdf'?<>{titleEdit?<div className="reader-title-edit"><input autoFocus aria-label={readingText.title} defaultValue={info.title??info.name} onBlur={e=>{const title=e.target.value.replace(/[\r\n]/g,' ');setTitleEdit(false);void session.select(path).then(()=>{const current=session.state.draft;if(current)session.edit(current.body.replace(/^#[^\n]*/,'# '+title));});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape')setTitleEdit(false);}}/>{tags}</div>:<TitleContent onClick={e=>{if((e.target as HTMLElement).closest('h1'))setTitleEdit(true);}} path={path} className="prose reader-title" html={preview(body.split('\n\n')[0],path)} afterTitle={tags}/> }<PdfReader onSource={setSourceHash} source={info.source} path={path} annotations={annotations} initialPage={info.reading?.page??1} onJump={jump} onAnnotate={addAnnotation} onPage={page=>{pendingPage.current=page;clearTimeout(progressTimer.current);progressTimer.current=setTimeout(()=>{pendingPage.current=undefined;void session.updateReading(path,{state:readingState.current==='done'?'done':'reading',page}).catch(()=>undefined);},1500);}}/><details className="reader-summary"><summary>{readingText.summary}</summary><CardEditor noteOnly path={path} body={splitAnnotations(body).content.replace(/^#[^\n]*\n*/, '')} cards={snapshot.cards} onEdit={summary=>{void session.select(path).then(()=>{const current=session.state.draft;if(current)session.edit(current.body.split('\n')[0]+'\n\n'+summary+splitAnnotations(current.body).footer);});}}/></details></>:shown.editing?<CardEditor id={info?.id} onAnnotation={setExpanded} onTitleDone={()=>void session.run(()=>session.flush()).catch(()=>undefined)} afterTitle={tags} path={path} body={shown.body} cards={snapshot.cards} onEdit={(body,label)=>{if(!suspended){if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}} autofocus={!suspended} focusPoint={focus}/>:
       <TitleContent path={path} className="prose editor-body document-preview" html={preview(body,path)} afterTitle={tags}/>}
+    </div>{!sourceMode&&(annotations.length>0||expanded||info?.source)&&<AnnotationRail sourceHash={sourceHash} body={body} path={path} cards={snapshot.cards} expanded={expanded} onExpanded={setExpanded} onChange={changeAnnotation} onJump={jumpTo} onAdd={()=>addAnnotation()}/>}</div>
     {metadata&&info&&<div className="card-info-footer"><span>{info.path}</span><span>{ui.cardWords([...new Intl.Segmenter(undefined,{granularity:'word'}).segment(searchDocument(body).text)].filter(s=>s.isWordLike).length)}</span><div className="card-membership">{snapshot.boards.filter(board=>board.cards.some(p=>p.cardId===info.id)).map(board=><button key={board.path} onClick={()=>onOpen('board:'+board.folder)}>{board.folder||snapshot.name}</button>)}</div></div>}
     <details className="card-details"><summary data-tooltip={tooltips.card.backlinks}>{ui.card.linkedFrom(backlinks.length)}</summary>
       {backlinks.map(link=>{const card=snapshot.cards.find(c=>c.path===link.path);return card&&<button key={card.id} data-tooltip={tooltips.files.open(card.path)} onClick={()=>onOpen('card:'+card.id)}>{card.path}</button>;})}

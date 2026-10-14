@@ -1,3 +1,5 @@
+import {isHexColor} from '../colors';
+import {annotationView,annotationReferences} from '../reading';
 import '../document-links';
 import {mathHtml,mathToken} from './math';
 marked.use({extensions:([{name:'mathBlock',level:'block'},{name:'mathInline',level:'inline'}] as const).map(({name,level})=>({name,level,start:(source:string)=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenizer:(source:string)=>mathToken(source,name==='mathBlock'),renderer:(token)=>mathHtml(token.text,name==='mathBlock')}))});
@@ -19,11 +21,12 @@ export function assetPath(notePath: string, source: string) {
   return parts.join('/');
 }
 export function unsupported(body: string) {
-  let text=body;marked.walkTokens(marked.lexer(body),token=>{if(['html','code','codespan'].includes(token.type))text=text.replace(token.raw,'');});
+  const parts=annotationView(body);if(parts.error)return true;let text=annotationReferences(parts.content);marked.walkTokens(marked.lexer(body),token=>{if(['html','code','codespan'].includes(token.type))text=text.replace(token.raw,'');});
   return /!\[\[|\[\^/m.test(text);
 }
 export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.
+  body=annotationReferences(annotationView(body).content);
   const tokens=extractAbsorbedBlankLines(marked.lexer(reservedTitle?withCardTitle(body):body)) as Token[];
   const first=tokens.findIndex(token=>token.type!=='space'),last=tokens.findLastIndex(token=>token.type!=='space');
   const rendered=tokens.map((token,index)=>{
@@ -44,6 +47,7 @@ export function previewHtml(html:string,path:string){return renderPreview(html,p
 function renderPreview(html:string,path:string,reservedTitle=true) {
   const clean=DOMPurify.sanitize(html,{FORBID_TAGS:['script','style','iframe','object','embed','form','button','textarea','select','video','audio','source','link','meta'],ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|wiki:[^\s]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
+  for(const mark of template.content.querySelectorAll<HTMLElement>('mark[data-annotation]'))if(isHexColor(mark.dataset.color))mark.style.backgroundColor=mark.dataset.color!;
   if(reservedTitle){let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
   title.classList.add('card-title');

@@ -1,10 +1,34 @@
-# Attachments annotations and reading proposal
+# Attachments, annotations and reading
 
-Updated October 13, 2026. Draft for product review.
+Updated October 14, 2026. Implemented for review in the temporary Test app.
 
-The next features are PDF and webpage reading, highlights and sticky notes, standalone whiteboard images and text shapes, and a local Read later Inbox. They share the existing cards, links, tags, file operations and undo system. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search.
+This pass adds PDF and webpage reading, highlights and sticky notes, standalone whiteboard images and text shapes, and a local Read later Inbox. They share the existing cards, links, tags, file operations and undo system. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search.
 
-The editor fixes are implemented. The readers, annotations, whiteboard objects and Read later features below are not implemented yet. The agreed behavior is sufficient to start after review; three remaining interaction choices are listed at the end with recommended defaults.
+The approved scope is implemented: local readers and annotations, standalone board images/text shapes, an Inbox library, a paired Chrome capture extension and local RSS. The stable release version remains unchanged. Use the Test app for review before deciding on a release bump.
+
+## Try it
+
+- Open **System → Read later** to import PDF/HTML files or capture a webpage by URL. The folder defaults to Inbox and can be changed in **Settings → Core plugins → Read later**.
+- Open a PDF to read continuous pages. Select text and choose **Highlight** or **Add note**. Search, page jump and zoom stay in the reader toolbar.
+- In an ordinary card or captured article, select text and use **Annotate**. General notes are available through **Add note**. Source mode shows the complete portable file.
+- Notes start collapsed with a one-line preview on the right. Expand one to edit, change its color, jump to its quote or delete it. A selected board card shows the same rail outside its geometry.
+- Right-click an empty board area to add an image, plain text or a rectangle, rounded rectangle, ellipse or diamond. Double-click a text object to edit it. Use the Style dock for text/fill/stroke controls.
+- Expand **RSS feeds** in the library to add a feed, set an initial import limit, refresh or import/export OPML. Removing a feed keeps its saved cards.
+- Chrome setup is described in [extensions/chrome/README.md](../extensions/chrome/README.md). The unpacked extension must be loaded manually. Test and stable apps use separate ports and pairing keys.
+
+The existing local UI test workspace now includes a **Reading review** board, a two-page PDF, article captures and annotation examples. Existing test notes were retained.
+
+### Reader shortcuts
+
+PDF text selection: **H** highlights and **N** adds a note. **Command/Ctrl+F** focuses PDF search. With focus outside an editable field, **J** opens the next Inbox item, **Shift+J** returns to Inbox, **D** marks it done and **N** adds a general note. Change these in Keyboard shortcuts. Normal text editing keeps its normal typing behavior.
+
+### Validation and limits
+
+Automated checks cover portable annotations, editing/reopening, mention indexing, source moves/copies, Trash/restore, index rebuild, board-object transfers and edges, local-image path bounds, receiver authentication and the extension's offline queue. The packaged macOS Test app was checked for PDF rendering/search/highlight notes, local HTML import, URL capture, RSS deduplication and dark/light layouts.
+
+Chrome installation and live extension popup interaction, Windows packaging and long-document performance still need manual testing. PDFs are limited to 50 MB and 5,000 pages; HTML captures to 10 MB. Failed image downloads are reported while retaining their URLs and the original snapshot. Local HTML images outside the selected document's folder are not copied. The original snapshot is retained as evidence; the extracted Markdown and copied images are the offline reading surface. Scripts never run in the reader.
+
+The release remains **0.1.27**. A temporary Test build does not enter the stable update feed.
 
 ## Agreed behavior
 
@@ -100,7 +124,7 @@ RSS is independent of email delivery. An always-available receiving-email addres
 
 ### Example PDF wrapper
 
-The field names below are proposed. The existing `card-id`, tags and card-color contract stays intact.
+The field names below are implemented. The existing `card-id`, tags and card-color contract stays intact.
 
 ```markdown
 ---
@@ -121,10 +145,11 @@ tags: [research]
 User-written summary.
 
 ## Annotations
+<!-- heavens-door:annotations -->
 <!-- annotation:a1 {"page":3,"rects":[[0.1,0.3,0.8,0.05]],"quote":"Selected text"} -->
 [^a1]: A highlight note. [Related card](../Research/Controller.md)
 
-<!-- card-note:n1 -->
+<!-- card-note:n1 {} -->
 [^n1]: A general note about the paper.
 ```
 
@@ -136,6 +161,8 @@ A <mark data-annotation="a1">selected passage</mark>[^a1].
 ## Annotations
 [^a1]: My note about that passage.
 ```
+
+Malformed annotation metadata opens as editable source with an error instead of hiding or rewriting the note. Fenced examples are ordinary code, and Windows line endings are supported.
 
 The app displays that annotation footer in the right-side rail instead of duplicating it at the bottom of the visual reader. Source mode shows the complete Markdown. Other editors can recover the quotations, notes and source paths from the file even without the app's UI.
 
@@ -149,7 +176,7 @@ The annotation pass must extend the editor's current protected-footnote preview 
 - External source changes retain unresolved annotations and their text. External card edits use the existing conflict and recoverable-draft behavior.
 - Rebuilding the database must reconstruct reading metadata, annotations and links from local files. Imported files must remain readable after the database is deleted or the app is unavailable.
 
-## Proposed implementation order
+## Implementation stages
 
 1. **Local readers:** PDF import/wrappers, continuous reading, first-page board previews and HTML/article capture. Verify attachment moves and recovery first.
 2. **Annotations:** selection toolbar, highlights, general notes, the right-side rail, portable anchors, ordinary-card support and keyboard actions.
@@ -168,7 +195,7 @@ Each stage should be usable in the temporary Test app before the next is built. 
 - Capture input is bounded and validated, with no script execution or arbitrary workspace-path access.
 - Wide and narrow layouts work in dark and light themes, with keyboard access to reader and note actions.
 
-## Choices to review
+## Confirmed interaction choices
 
 | Choice | Recommended default | Alternative |
 | --- | --- | --- |
@@ -176,4 +203,4 @@ Each stage should be usable in the temporary Test app before the next is built. 
 | When are board sticky notes visible? | Show the collapsed right-side rail for the selected card; hide it when deselected | Keep collapsed note previews visible beside every card |
 | Initial text shapes and styling | Text plus rectangle, rounded rectangle, ellipse and diamond; simple font size and text/fill/stroke colors | Start with fewer shapes, or add further styling immediately |
 
-The first-page PDF preview and collapsed one-line sticky-note preview are already settled. The rows above and the proposed library/storage defaults are available for correction during review; no further design input is required to draft the implementation plan.
+The recommended defaults above were approved for this pass. The Test app is ready for product feedback before a stable release.

@@ -1,3 +1,8 @@
+import {readingText} from '../text/reading';
+import {BoardObject} from './BoardObject';
+import {BoardAnnotations} from './Annotations';
+import {PdfPreview} from './PdfReader';
+import {imageHtml} from './image-layout';
 import {clearDocumentDrop,dropDocumentAt,previewDocumentDrop,type DocumentDrag} from './card-drop';
 import {createDragPhantom} from './sortable';
 import { cardFill, tintColor } from '../colors';
@@ -51,6 +56,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }, [card.path, card.revision, key, cache, collapsed]);
   const summary=useMemo(()=>collapsed?titlePreview(card):'',[collapsed,card.title,card.titleMarkdown,card.path]);
   useLayoutEffect(()=>{if(ready||collapsed)onReady();},[html,ready,collapsed,onReady]);
+  if(!collapsed&&card.source?.type==='pdf')return <div className="prose card-preview" data-ready="true"><h1>{card.title||card.name}</h1><PdfPreview path={card.path} source={card.source} onReady={onReady}/></div>;
   return <TitleContent path={card.path} data-ready={ready||collapsed} className="prose card-preview" onClick={e => {
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href');
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
@@ -76,10 +82,12 @@ interface Gesture {
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
 
-const autoHeight=(p:Placement)=>!p.folder&&p.autoHeight!==false;
+const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
 export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
+  const [annotationFocus,setAnnotationFocus]=useState<{card:string;id:string}>();
+  const imageInput=useRef<HTMLInputElement>(null),objectPosition=useRef({x:120,y:120});
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -109,7 +117,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
   const [dragged, setDragged] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedEdges,setSelectedEdges]=useState<string[]>([]);
-  const [editingPlacement, setEditingPlacement] = useState('');
+  const [editingPlacement, setEditingPlacement] = useState(''),[editingObject,setEditingObject]=useState('');
   const [focusPoint, setFocusPoint] = useState<EditorFocus>();
   const current = working ?? board;
   const draftTitle=useMemo(()=>draft?leadingTitle(draft.body)?.text??'':undefined,[draft?.body]);
@@ -237,6 +245,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
       e.preventDefault(); e.stopPropagation(); return;
     }
     if(!selected.includes(id))setSelectedEdges([]);
+    if(latest.current.board.cards.find(p=>p.id===id)?.object&&(e.target as HTMLElement).closest('textarea'))return;
     const element=e.currentTarget,body=element.querySelector<HTMLElement>('.card-preview,.card-editor .editor-body');
     const last=body?.querySelector('.tiptap')?.lastElementChild??body?.lastElementChild;
     const append=!!last&&e.clientY>last.getBoundingClientRect().bottom&&!(e.target as HTMLElement).closest('.card-drag-strip,.card-top-row');
@@ -383,6 +392,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,height:expandedHeight(p),collapsed:!p.collapsed}:card)},p.collapsed?ui.history.expandCard:ui.history.collapseCard);
   }
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
+    if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')},...(onDelete?[{label:ui.whiteboard.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]:
       [...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,submenu:addTagActions(lookup.get(p.cardId)!)}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'note' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
@@ -397,6 +407,8 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     setMenu({label:ui.whiteboard.canvasActions,x:clientX,y:clientY,actions:[
       {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
       {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
+      ...(['none','rectangle','rounded','ellipse','diamond'] as const).map(shape=>({label:shape==='none'?'Text':shape==='rounded'?'Rounded rectangle':shape[0].toUpperCase()+shape.slice(1),icon:'text' as const,disabled:!board.folder,run:()=>{save({...current,cards:[...current.cards,{id:crypto.randomUUID(),cardId:'',x,y,width:240,height:120,autoHeight:false,object:{type:'text' as const,text:'',shape}}]},'Add text object');}})),
+      {label:readingText.imageOrFigure,icon:'image',disabled:!board.folder,run:()=>{objectPosition.current={x,y};imageInput.current?.click();}},
       ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
   }
@@ -431,6 +443,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
+    <input ref={imageInput} type="file" accept="image/*" hidden aria-label={readingText.importWhiteboardImage} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;void(async()=>{const image=await window.door.importImage(board.path,file.name,file.type,new Uint8Array(await file.arrayBuffer())),next=latest.current.board;await save({...next,cards:[...next.cards,{id:crypto.randomUUID(),cardId:'',...objectPosition.current,width:340,height:280,autoHeight:false,object:{type:'image',html:imageHtml({kind:'single',...image,width:'100%',alignment:'left'})}}]},'Add image object');})().catch(e=>console.error(e));}}/>
     <div className="canvas" data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
@@ -455,11 +468,12 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
-          return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder ? 'missing' : ''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:tintColor(p.folder?p.fillColor:cardFill(savedCard,p)) }}
+          return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-card ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${autoHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: p.width, height: p.collapsed||autoHeight(p)?'auto':p.height, background:p.object?.type==='text'&&p.object.shape==='none'?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)) } as React.CSSProperties}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;
-              if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
+              if(p.object?.type==='text'){e.stopPropagation();setEditingObject(p.id);}
+              else if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
             {!p.folder&&<div className="card-drag-strip" data-tooltip={tooltips.whiteboard.dragCard}/>}
@@ -471,8 +485,8 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
                 const rect=e.currentTarget.getBoundingClientRect();openMenu(p,e.currentTarget,rect.right,rect.bottom+4);
               }}/>
             </div>
-            {!p.folder && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
+            {p.object?<BoardObject editing={editingObject===p.id} onEditing={()=>setEditingObject(p.id)} onDone={()=>setEditingObject('')} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={p} path={board.path} onChange={object=>{void save({...current,cards:current.cards.map(item=>item.id===p.id?{...item,object}:item)},'Edit whiteboard object');}}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
@@ -483,11 +497,13 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
                   {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id} style={{background:tintColor(child.folder?child.fillColor:cardFill(lookup.get(child.cardId),child))}}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
-                <CardEditor id={draft.card.id} onTitleDone={onTitleDone} canvas zoom={view.zoom} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
+                <CardEditor id={draft.card.id} onAnnotation={id=>setAnnotationFocus({card:draft.card.id,id})} onTitleDone={onTitleDone} canvas zoom={view.zoom} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
                 {cardDetails}
               </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
               <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
             </>}
+            {p.object&&<button className="resize-handle" aria-label={ui.whiteboard.resize(p.object.type)} onPointerDown={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}}/>}
+            {selected.includes(p.id)&&selected.length===1&&savedCard&&!p.collapsed&&view.zoom>=.65&&<BoardAnnotations card={savedCard} openNote={annotationFocus?.card===savedCard.id?annotationFocus.id:undefined}/>}
           </article>;
         })}
       </div>
