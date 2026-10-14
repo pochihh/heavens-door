@@ -1,5 +1,5 @@
 import {readingAsset,validateImport,readFeeds} from './reading';
-import {annotationView,splitAnnotations,withAnnotations} from '../reading';
+import {annotationView,splitAnnotations,withAnnotations,updateAnnotation} from '../reading';
 import {readingMetadata} from '../reading';
 import {operateFile,fileTrashEntries,fileStamp,editablePath,vacant,availableFilePath} from './files';
 import {systemFolder,systemPath} from '../features';
@@ -1050,6 +1050,22 @@ export class Workspace {
       ...this.db.prepare('SELECT path FROM cards ORDER BY name').all().map(row=>String(row.path)),...boards.keys()
     ].filter(path=>!omitted.has(path)).sort((a,b)=>a.localeCompare(b)).slice(0,30);
     return paths.flatMap<import('../shared').ReferenceTarget>(path=>{const b=boards.get(path);if(b)return [{kind:'board' as const,key:'board:'+b.folder,path,name:b.name}];const c=cardAt.get(path);return c?[{kind:'card' as const,key:'card:'+c.id,path,name:String(c.title||c.name)}]:[];});
+  }
+  async extractAssetNote(path:string,expected:string,note:string,folder:string,boardExpected:string,x:number,y:number){
+    if(typeof path!=='string'||typeof expected!=='string'||typeof note!=='string'||typeof folder!=='string'||!folder||typeof boardExpected!=='string'||!Number.isFinite(x)||!Number.isFinite(y))throw new Error(ui.errors.invalidQuery);
+    const raw=await this.read(path),asset=readCard(path,raw),board=this.boards.get(this.boardPath(folder));
+    if(asset.revision!==expected)throw new Error(ui.errors.draftConflict(path));
+    if(!asset.source)throw new Error('Only imported assets have extractable notes.');
+    if(!board||board.revision!==boardExpected)throw new Error(ui.errors.whiteboardChanged(this.boardPath(folder)));
+    const annotation=splitAnnotations(asset.body).annotations.find(a=>a.id===note);
+    if(!annotation||!(annotation.text.trim()||annotation.quote?.trim()))throw new Error('Write a note before moving it onto a whiteboard.');
+    const title=(searchDocument(annotation.text||annotation.quote!).text.split('\n').find(line=>line.trim())??'Asset note').trim().slice(0,80),stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Asset note';
+    const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
+    const quote=annotation.quote?annotation.quote.split('\n').map(line=>'> '+line).join('\n')+'\n\n':'';
+    const body='# '+escape(title)+'\n\n'+quote+moveCardLinks(annotation.text,path,destination)+'\n\n[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+')\n',created=newNote()+body;
+    // Keep the original highlighted passage, replacing its sticky note with a link to the new card.
+    const updated=updateAnnotation(asset.body,annotation.kind==='highlight'?{...annotation,text:'['+escape(title)+']('+referenceHref(path,destination)+')'}:null,note);
+    return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,asset,updated),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:readCard(destination,created).id,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async createSlipboxCard(name:string,placement?:{folder:string;expected:string;x:number;y:number}){
     if(typeof name!=='string')throw new Error(ui.errors.invalidFilename);

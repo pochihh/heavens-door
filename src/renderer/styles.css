@@ -512,3 +512,15 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .pdf-reader{scroll-padding-top:44px}.sticky-note .card-editor .editor-body{padding:8px 10px 16px}
 
 .board-object-image:not(:focus-within) .editor-image.selected .image-media::after{content:none}
+
+/* Image placements and PDF assets have no card shell. Their bounds follow the actual preview. */
+.board-media{position:absolute;display:flex;flex-direction:column;transform-origin:top left;cursor:grab;overflow:visible;border:0;padding:0;box-shadow:none;background:transparent}
+.board-media.selected{z-index:1;outline:2px solid var(--accent);outline-offset:2px}.board-media.dragging{z-index:3;pointer-events:none;cursor:grabbing}.board-media.dragging *{cursor:grabbing!important}
+.board-media .board-object-image{height:auto;overflow:visible}.board-media .editor-image{margin:0}.board-media .image-clip img{display:block;width:100%;height:auto;max-width:none}.board-media .image-clip{border-radius:0}.board-media .image-caption{font-size:13px;background:transparent;cursor:text}
+.board-media .pdf-preview{display:block;width:100%;height:auto;max-height:none;object-fit:contain;border-radius:0}.board-asset-caption{font-size:13px;color:var(--muted);text-align:center;padding:5px 0;overflow-wrap:anywhere}
+.board-media>.resize-handle{opacity:0;background:transparent}.board-media:hover>.resize-handle,.board-media.selected>.resize-handle{opacity:1}
+.asset-note-grip{cursor:grab;width:22px;height:22px;flex-shrink:0;background:transparent!important}.asset-note-grip:active{cursor:grabbing}.sticky-note-heading{display:flex;align-items:center}.sticky-note-heading .sticky-preview{flex:1;min-width:0}
+.asset-note-dragging .card-popup-surface{opacity:.2;pointer-events:none}.asset-note-dragging .card-popup::backdrop{background:transparent}.asset-note-dragging,.asset-note-dragging *{cursor:grabbing!important}
+
+.board-image.selected{outline:none}.board-image.selected .image-media::after{content:"";position:absolute;inset:0;border:2px solid var(--accent);border-radius:0;pointer-events:none;z-index:2}
+.board-text{width:max-content;height:auto}.board-text .board-object-text.shape-none{display:block;width:auto;height:auto;padding:0}.board-text .board-object-text>span{display:block}

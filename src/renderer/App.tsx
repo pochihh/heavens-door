@@ -98,6 +98,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   useEffect(()=>{
     const drop=(event:Event)=>{
       const d=(event as CustomEvent<DocumentDrop>).detail,current=session.state.snapshot;if(!current)return;
+      if(d.note&&d.path){attempt(session.extractAssetNote(d.path,d.note.expected,d.note.id,d.folder,d.x,d.y));return;}
       if(d.selection&&d.kind==='board'&&d.source!==undefined){
         const destination=current.boards.find(b=>b.folder===d.folder);if(!destination)return;
         const point=d.atPointer?{x:d.x-d.selection.offset.x,y:d.y-d.selection.offset.y}:{x:80,y:Math.max(48,...destination.cards.map(p=>p.y+p.height))+32};

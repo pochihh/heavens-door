@@ -119,6 +119,7 @@ export type Request =
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }
   | { kind: 'searchWorkspace'; text:string }
   | { kind: 'queryReferences';text:string;cardsOnly?:boolean;exclude?:string[] }
+  | {kind:'extractAssetNote';path:string;expected:string;note:string;folder:string;boardExpected:string;x:number;y:number}
   | { kind: 'createSlipboxCard';name:string;board?:{folder:string;expected:string;x:number;y:number} }
   | { kind: 'checkpoint'; label: string }
   | { kind: 'history'; limit?:number }

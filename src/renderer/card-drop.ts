@@ -1,6 +1,6 @@
 import type {Board} from '../shared';
 
-export interface DocumentDrag {key:string;path?:string;source?:string;placement?:string;selection?:{ids:string[];folders:string[];board:Board;offset:{x:number;y:number}}}
+export interface DocumentDrag {note?:{id:string;expected:string};key:string;path?:string;source?:string;placement?:string;selection?:{ids:string[];folders:string[];board:Board;offset:{x:number;y:number}}}
 
 export interface DocumentDrop extends DocumentDrag {folder:string;kind:'board'|'folder';intoBoard?:boolean;atPointer?:boolean;x:number;y:number;screenX:number;screenY:number}
 let highlighted:HTMLElement|null=null;
@@ -25,11 +25,14 @@ export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:
   if(!document.elementsFromPoint)return null;
   const board=drag.key.startsWith('board:'),path=board?drag.key.slice(6):drag.path??(drag.key.startsWith('file:')?drag.key.slice(5):undefined);
   if(board&&!path)return null;
-  const targets=[...new Set(document.elementsFromPoint(x,y).filter(hit=>!exclude?.contains(hit)&&!hit.closest('.drag-phantom,.board-card.dragging')).map(hit=>hit.closest<HTMLElement>('[data-drop-folder]')).filter((target):target is HTMLElement=>!!target&&!exclude?.contains(target)))];
+  const targets=[...new Set(document.elementsFromPoint(x,y).filter(hit=>!exclude?.contains(hit)&&!hit.closest('.drag-phantom,.board-placement.dragging')).map(hit=>hit.closest<HTMLElement>('[data-drop-folder]')).filter((target):target is HTMLElement=>!!target&&!exclude?.contains(target)))];
+  // A modal asset reader covers the board during note extraction; hit-test the board beneath it.
+  if(drag.note)for(const target of document.querySelectorAll<HTMLElement>('.canvas[data-drop-folder],.board-tile[data-drop-folder]')){const r=target.getBoundingClientRect(),clip=target.closest('.canvas')?.getBoundingClientRect();if(clip&&(x<clip.left||x>clip.right||y<clip.top||y>clip.bottom))continue;if(r.width&&r.height&&x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom&&!targets.includes(target))targets.push(target);}
   // The containing canvas must not win over a child board underneath the dragged item.
   targets.sort((a,b)=>Number(a.classList.contains('canvas'))-Number(b.classList.contains('canvas')));
   for(const target of targets){
     const folder=target.dataset.dropFolder!,kind=dropKind(target,drag);
+    if(drag.note&&(kind!=='board'||!folder))continue;
     if(kind!=='board'&&kind!=='folder'||folder===drag.source&&kind==='board'&&(!!drag.placement||!board||!target.classList.contains('canvas'))||kind==='board'&&!folder&&!board)continue;
     if(drag.selection&&(kind!=='board'&&drag.selection.ids.length>1||folder===drag.source||!folder&&drag.selection.ids.length!==drag.selection.folders.length||drag.selection.folders.some(p=>folder===p||folder.startsWith(p+'/'))))continue;
     if(path&&(folder===path||folder.startsWith(path+'/')||kind==='folder'&&folder===path.split('/').slice(0,-1).join('/')))continue;

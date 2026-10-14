@@ -2,7 +2,7 @@
 
 Updated October 14, 2026. Implemented for review in the temporary Test app.
 
-This pass adds PDF and webpage reading, highlights and sticky notes, standalone whiteboard images and text shapes, and a local Read later Inbox. They share the existing cards, links, tags, file operations and undo system. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search.
+This pass adds PDF and webpage reading, highlights and sticky notes, standalone whiteboard images and text shapes, and a local Read later Inbox. Assets share the existing links, tags, file operations and undo system. Ordinary cards remain directly editable without reading controls. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search.
 
 The approved scope is implemented: local readers and annotations, standalone board images/text shapes, an Inbox library, a paired Chrome capture extension and local RSS. The stable release version remains unchanged. Use the Test app for review before deciding on a release bump.
 
@@ -32,7 +32,7 @@ The release remains **0.1.27**. A temporary Test build does not enter the stable
 
 ## Agreed behavior
 
-- Reading material is an ordinary Markdown card with source metadata. It can be tagged, mentioned, searched, placed on a board or displayed as a reference.
+- Reading material is an asset: a Markdown wrapper with source metadata. Ordinary cards are user-authored notes and keep their simple editor without annotation controls. It can be tagged, mentioned, searched, placed on a board or displayed as a reference.
 - Support both highlights attached to selected text and general notes about a card. Store annotations in their owning Markdown card.
 - Sticky notes sit on the right in page, popup and whiteboard views. They start collapsed with a one-line preview of the note text and expand when clicked.
 - On a whiteboard, notes sit outside the card and do not increase its width or height. At narrow reader widths, notes expand from a compact right-side rail over the content.
@@ -204,3 +204,13 @@ Each stage should be usable in the temporary Test app before the next is built. 
 | Initial text shapes and styling | Text plus rectangle, rounded rectangle, ellipse and diamond; simple font size and text/fill/stroke colors | Start with fewer shapes, or add further styling immediately |
 
 The recommended defaults above were approved for this pass. The Test app is ready for product feedback before a stable release.
+
+## Cards and assets
+
+A card is user-authored Markdown. An asset is externally imported content (PDF or webpage) identified by its `source` metadata. Sticky notes and passage annotations are available only on assets. Existing annotation footers in old ordinary cards are preserved for recovery in Source mode, without showing a note rail or adding new annotations.
+
+Standalone board images live in the `.whiteboard` layout, with a local image path and the existing portable crop/caption HTML. They have no Markdown wrapper or card editor. Images and first-page PDF previews float directly on the board, without a card shell; PDF assets retain their Markdown source wrapper. Their preview bounds follow their image/page dimensions.
+
+Dragging an asset note to a board creates an ordinary Markdown card in that board’s folder, rebases relative links and images, and includes a link back to the source. A general note moves out of the asset. A highlighted note keeps the original passage and replaces its note text with a link to the new card. The source edit, new card and board placement are one undoable, revision-checked operation.
+
+Standalone image resize uses only its vertical image handle. The selection outline and connection anchors cover the image without its caption. Plain text objects likewise use their text bounds, with no card chrome or corner handle.

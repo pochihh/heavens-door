@@ -8,7 +8,7 @@ import { UndoHistory } from './history';
 
 function layout(board: Board) {
   return JSON.stringify([board.name,board.inbox,board.showMentions,board.mentionStyle,board.canvasColor,board.gridColor,
-    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false,p.autoHeight??true,p.fillColor,p.strokeColor,p.strokeWidth,p.strokeStyle]),
+    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false,p.autoHeight??true,p.object,p.fillColor,p.strokeColor,p.strokeWidth,p.strokeStyle]),
     board.edges]);
 }
 
@@ -221,6 +221,15 @@ export class Session {
       this.newCards.add(card.id);this.update({draft:{card,body:card.body,dirty:false}});
     });
   }
+  extractAssetNote(path:string,expected:string,note:string,folder:string,x:number,y:number){return this.run(async()=>{
+    const before=this.state.snapshot?.cards.find(c=>c.path===path);if(before?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+    await this.flush();
+    const asset=this.state.snapshot?.cards.find(c=>c.id===before.id),board=this.state.snapshot?.boards.find(b=>b.folder===folder);
+    if(!asset||!board)throw new Error(ui.errors.whiteboardMissing);
+    const result=await this.bridge.request<Mutation>({kind:'extractAssetNote',path:asset.path,expected:asset.revision,note,folder,boardExpected:board.revision,x,y});this.accept(result,'Move asset note to card');
+    if(this.state.draft?.card.id===asset.id){const card=await this.bridge.request<Card>({kind:'card',path:asset.path});this.update({draft:{card,body:card.body,dirty:false}});}
+    return result.snapshot.cards.find(c=>result.edits.some(e=>e.before===null&&e.path===c.path))!;
+  });}
   createSlipboxCard(name:string,placement?:{folder:string;x:number;y:number}){return this.run(async()=>{
     await this.flush();await this.flushPreferences();
     const board=placement&&this.state.snapshot?.boards.find(b=>b.folder===placement.folder);if(placement&&!board)throw new Error(ui.errors.whiteboardMissing);

@@ -1,5 +1,6 @@
+import {dragAssetNote} from './asset-note-drag';
 import {readingText} from '../text/reading';
-import {useContext,useEffect,useState} from 'react';
+import {useContext,useEffect,useRef,useState} from 'react';
 import {annotationView,updateAnnotation,type Annotation} from '../reading';
 import type {Card,CardInfo} from '../shared';
 import {CardEditor} from './Editor';
@@ -9,11 +10,12 @@ import {DEFAULT_PALETTE} from '../colors';
 import {ViewBlockContext} from './ViewBlock';
 import {useConfirmation} from './Confirmation';
 export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd:()=>void;sourceHash?:string;compact?:boolean}){
+ const cancelDrag=useRef(()=>{});useEffect(()=>()=>cancelDrag.current(),[]);
  const {annotations}=annotationView(body),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
  return <aside className={'annotation-rail'+(compact?' board-annotation-rail':'')} aria-label={readingText.annotations} onPointerDown={e=>e.stopPropagation()}>
   <div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span><Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/></div>
   {annotations.map(a=><section key={a.id} className={'sticky-note'+(expanded===a.id?' expanded':'')} style={{'--note-color':a.color??'#e6bb50'} as React.CSSProperties}>
-    <button className="sticky-preview" aria-expanded={expanded===a.id} aria-label={'Open note: '+(a.text||a.quote||'Empty note').split('\n')[0]} onClick={()=>onExpanded(expanded===a.id?undefined:a.id)}><Icon name={a.kind==='highlight'?'quote':'note'} size={13}/><span>{(a.text||a.quote||'Empty note').replace(/[#*_`]/g,'').split('\n')[0]}</span></button>
+    <div className="sticky-note-heading">{context&&(a.text.trim()||a.quote?.trim())&&<Tool icon="grip" className="asset-note-grip" label={readingText.moveNoteToBoard} onPointerDown={e=>{cancelDrag.current();cancelDrag.current=dragAssetNote(e,()=>({key:'asset-note:'+a.id,path,note:{id:a.id,expected:context.session.state.snapshot?.cards.find(c=>c.path===path)?.revision??''}}));}}/>}<button className="sticky-preview" aria-expanded={expanded===a.id} aria-label={'Open note: '+(a.text||a.quote||'Empty note').split('\n')[0]} onClick={()=>onExpanded(expanded===a.id?undefined:a.id)}><Icon name={a.kind==='highlight'?'quote':'note'} size={13}/><span>{(a.text||a.quote||'Empty note').replace(/[#*_`]/g,'').split('\n')[0]}</span></button></div>
     {expanded===a.id&&<><div className="sticky-actions">{a.quote&&<button className="sticky-quote" onClick={()=>onJump?.(a.id)}>{a.quote}</button>}<Tool icon="close" label={readingText.collapseNote} onClick={()=>onExpanded(undefined)}/><Tool icon="trash" className="danger" label={readingText.deleteAnnotation} onClick={()=>{void confirm({title:readingText.deleteAnnotation,message:a.text||a.quote||'Remove this note?',accept:'Delete',danger:true}).then(yes=>{if(yes)onChange(null,a.id);});}}/></div>
       <CardEditor id={path+':'+a.id} path={path} body={a.text} cards={cards} noteOnly autofocus onEdit={text=>onChange({...a,text},a.id)}/>
       <details className="annotation-color"><summary>{readingText.highlightColor}</summary><Color label={readingText.highlightColor} palette={palette} value={a.color} onChange={color=>onChange({...a,color:color??'#e6bb50'},a.id)}/></details>

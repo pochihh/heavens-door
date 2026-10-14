@@ -25,21 +25,21 @@ import { ViewBlockNode } from './ViewBlockNode';
 import { cardMarkdown, extensions, titleMetadata } from './editor-schema';
 
 export interface EditorFocus { x: number; y: number; scrollTop: number; append?:boolean }
-interface Props {noteOnly?:boolean;imageOnly?:boolean;onAnnotation?:(id:string)=>void; id?:string;onTitleDone?:()=>void;afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
+interface Props {noteOnly?:boolean;onAnnotation?:(id:string)=>void; id?:string;onTitleDone?:()=>void;afterTitle?:ReactNode;path:string; body:string; cards:CardInfo[]; onEdit:(body:string,label?:string)=>void; autofocus?:boolean; focusPoint?:EditorFocus; zoom?:number; canvas?:boolean }
 // Changing files remounts the editor: effects must never touch a destroyed instance.
 export function CardEditor(props:Props) { return <EditableCard key={(props.id??props.path)+':'+props.path.split('/').slice(0,-1).join('/')} {...props}/>; }
-function EditableCard({noteOnly=false,imageOnly=false,onAnnotation,onTitleDone,afterTitle,path,body,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
+function EditableCard({noteOnly=false,onAnnotation,onTitleDone,afterTitle,path,body,onEdit,autofocus=false,focusPoint,zoom=1,canvas=false}:Props) {
   const context=useContext(ViewBlockContext),settings=context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS;
   const links=useDocumentLinks(path),bindings=useRef(context?.snapshot.preferences?.keybindings);bindings.current=context?.snapshot.preferences?.keybindings;
   const parsed=annotationView(body),footer=useRef(parsed.footer);footer.current=parsed.footer;
-  const content=parsed.content,blocked=!!parsed.error||unsupported(content);const initial=(text:string)=>(noteOnly||imageOnly)?text:withCardTitle(text);
+  const content=parsed.content,blocked=!!parsed.error||unsupported(content);const initial=(text:string)=>noteOnly?text:withCardTitle(text);
   const [initialContent]=useState(()=>initial(content));
   const [imageError,setImageError]=useState(''),imageInput=useRef<HTMLInputElement>(null),actionLabel=useRef<string|undefined>(undefined),imageHandler=useRef<(files:File[],position?:number)=>void>(()=>{});
   const [slot]=useState(titleSlot),hasMetadata=!!afterTitle,metadataVisible=useRef(hasMetadata);metadataVisible.current=hasMetadata;
-  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(props=><ViewBlockNode {...props} path={path}/>),ReactNodeViewRenderer(props=><HtmlContent {...props} standalone={imageOnly} path={path}/>),ReactNodeViewRenderer(props=><EditorImage {...props} standalone={imageOnly} path={path}/>),ReactNodeViewRenderer(EditorMath),()=>bindings.current),titleMetadata(slot,()=>metadataVisible.current)].filter(e=>!(noteOnly||imageOnly)||e.name!=='cardTitle'),[path,slot,noteOnly,imageOnly]);
+  const configuredExtensions=useMemo(() => [...extensions(path,ReactNodeViewRenderer(props=><ViewBlockNode {...props} path={path}/>),ReactNodeViewRenderer(props=><HtmlContent {...props} path={path}/>),ReactNodeViewRenderer(props=><EditorImage {...props} path={path}/>),ReactNodeViewRenderer(EditorMath),()=>bindings.current),titleMetadata(slot,()=>metadataVisible.current)].filter(e=>!noteOnly||e.name!=='cardTitle'),[path,slot,noteOnly]);
   const editor=useEditor({
     extensions:configuredExtensions,
-    content:initialContent,contentType:'markdown',editable:!blocked&&!imageOnly,
+    content:initialContent,contentType:'markdown',editable:!blocked,
     editorProps:{attributes:{'aria-label':ui.editor.cardContent,spellcheck:'true'},handlePaste:(_view,event)=>{
       const files=[...event.clipboardData?.files??[]].filter(file=>file.type.startsWith('image/'));if(!files.length)return false;event.preventDefault();imageHandler.current(files);return true;
     },handleDrop:(view,event)=>{
@@ -72,7 +72,7 @@ function EditableCard({noteOnly=false,imageOnly=false,onAnnotation,onTitleDone,a
   useEffect(() => {
     if (editor && !editor.isDestroyed && cardMarkdown(editor) !== content) editor.commands.setContent(initial(content),{contentType:'markdown',emitUpdate:false});
   },[editor,content]);
-  useEffect(() => { if (editor && !editor.isDestroyed) editor.setEditable(!blocked&&!imageOnly,false); },[editor,blocked,imageOnly]);
+  useEffect(() => { if (editor && !editor.isDestroyed) editor.setEditable(!blocked,false); },[editor,blocked]);
   useEffect(() => {
     if (!editor || editor.isDestroyed || !autofocus || blocked) return;
     const scroll=editor.view.dom.closest('.editor-body');
@@ -91,12 +91,12 @@ function EditableCard({noteOnly=false,imageOnly=false,onAnnotation,onTitleDone,a
   return <>
     <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml" multiple hidden onChange={e=>{const files=[...e.target.files??[]];e.target.value='';void insertImages(files);}}/>
     {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}
-    {!imageOnly&&<EditorCommands editor={editor}/>}
+    <EditorCommands editor={editor}/>
     {links.picker}
-    {!imageOnly&&<EditorMentions editor={editor} path={path} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>}
-    {!imageOnly&&<EditorControls onAnnotate={!noteOnly?()=>{const selection=editor.state.selection;if(selection.empty)return;const id='a-'+crypto.randomUUID(),quote=editor.state.doc.textBetween(selection.from,selection.to,' '),value:Annotation={id,kind:'highlight',text:'',quote,color:'#e6bb50'};footer.current=splitAnnotations(withAnnotations(cardMarkdown(editor),[...splitAnnotations(body).annotations,value])).footer;actionLabel.current='Add annotation';try{editor.chain().focus().setMark('annotation',{id,color:value.color}).run();}finally{actionLabel.current=undefined;}onAnnotation?.(id);}:undefined} path={path} zoom={zoom} canvas={canvas} editor={editor} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>}
+    <EditorMentions editor={editor} path={path} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
+    <EditorControls onAnnotate={!noteOnly&&onAnnotation?()=>{const selection=editor.state.selection;if(selection.empty)return;const id='a-'+crypto.randomUUID(),quote=editor.state.doc.textBetween(selection.from,selection.to,' '),value:Annotation={id,kind:'highlight',text:'',quote,color:'#e6bb50'};footer.current=splitAnnotations(withAnnotations(cardMarkdown(editor),[...splitAnnotations(body).annotations,value])).footer;actionLabel.current='Add annotation';try{editor.chain().focus().setMark('annotation',{id,color:value.color}).run();}finally{actionLabel.current=undefined;}onAnnotation?.(id);}:undefined} path={path} zoom={zoom} canvas={canvas} editor={editor} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
     <EditorContent editor={editor} className="prose editor-body" onBlur={e=>{const title=editor.view.dom.firstElementChild;if(title?.contains(e.target as Node)&&!title.contains(e.relatedTarget as Node))onTitleDone?.();}} onClick={links.click} onPointerDownCapture={event=>{
-      if(imageOnly||!canvas||event.button!==0||event.defaultPrevented||(event.target as HTMLElement).closest('button,a,input,[contenteditable=false]'))return;
+      if(!canvas||event.button!==0||event.defaultPrevented||(event.target as HTMLElement).closest('button,a,input,[contenteditable=false]'))return;
       const last=editor.view.dom.lastElementChild;if(!last||event.clientY<=last.getBoundingClientRect().bottom)return;
       event.preventDefault();event.stopPropagation();
       if(editor.state.doc.lastChild?.type.name!=='paragraph'||editor.state.doc.lastChild.content.size)editor.commands.insertContentAt(editor.state.doc.content.size,{type:'paragraph'});
