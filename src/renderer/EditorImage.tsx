@@ -109,4 +109,6 @@ export function ImageItemView({standalone,item,index,inRow,onChange,onRemove,onD
     {error&&<small role="alert" className="editor-image-error">{error}</small>}
   </div>;
 }
-export function resized(item:Picture,width:number,previous:number):Picture{const scale=width/(item.width.endsWith('px')?parseFloat(item.width):previous);return {...item,width:width+'px',...(item.crop?{crop:{...item.crop,imgWidth:item.crop.imgWidth*scale,height:item.crop.height*scale,offsetX:item.crop.offsetX*scale,offsetY:item.crop.offsetY*scale}}:{})};}
+export function resized(item:Picture,width:number,previous:number):Picture{const stored=item.width.endsWith('px')?parseFloat(item.width):previous;
+  // Older crops could keep a frame wider than the source pixels remaining inside it.
+  const scale=width/Math.min(stored,item.crop?Math.max(1,item.crop.imgWidth-item.crop.offsetX):stored);return {...item,width:width+'px',...(item.crop?{crop:{...item.crop,imgWidth:item.crop.imgWidth*scale,height:item.crop.height*scale,offsetX:item.crop.offsetX*scale,offsetY:item.crop.offsetY*scale}}:{})};}

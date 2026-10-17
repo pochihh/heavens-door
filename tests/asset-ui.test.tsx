@@ -69,3 +69,40 @@ test('the standalone image bar expands beyond its initial width, previews live, 
   const before=changes.length;await act(async()=>pointer(bar,'pointerdown',110));await act(async()=>pointer(document,'pointermove',410));await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));assert.equal(changes.length,before,'cancel never persists a partial resize');assert.equal(previews.at(-1),undefined);
  }finally{await act(async()=>root.unmount());}
 });
+
+
+test('legacy crop bounds never extend past the source image, including after resize and reload',async()=>{
+ const {resized}=await import('../src/renderer/EditorImage'),{imageHtml,parseImageLayout}=await import('../src/renderer/image-layout');
+ const legacy={kind:'single' as const,src:'figure.png',width:'540px',alignment:'left' as const,crop:{imgWidth:317.66251815980627,offsetX:44.11290072639225,offsetY:30.250460048426145,height:231.69138014527843}};
+ const fixed=resized(legacy,540,540),crop=fixed.crop!;assert.ok(Math.abs(crop.imgWidth-crop.offsetX-540)<.001);assert.ok(crop.height>450);
+ const stored=parseImageLayout(imageHtml(fixed));assert.equal(stored?.kind,'single');if(stored?.kind!=='single')throw new Error('Missing image');
+ const again=resized(stored,540,540);for(const key of ['imgWidth','offsetX','offsetY','height'] as const)assert.ok(Math.abs(again.crop![key]-crop[key])<.000001,'rendering again does not repeatedly enlarge the crop');
+ const smaller=resized(again,270,540);assert.ok(Math.abs(smaller.crop!.height-crop.height/2)<.000001);assert.ok(Math.abs(smaller.crop!.imgWidth-smaller.crop!.offsetX-270)<.001);
+ const percentage=resized({...legacy,width:'100%'},540,540);assert.deepEqual(percentage.crop,crop);
+});
+
+test('whiteboard imports dropped and pasted images in world coordinates without hijacking text fields',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react');
+ const initial={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[],edges:[]},imports:string[]=[],saves:string[]=[];
+ const original=window.door;window.door={...original,importImage:async(path,name)=>{imports.push(path+':'+name);if(name==='bad.png')throw new Error('Image import failed');return {src:'_assets/'+name,alt:name};},importImageLink:async(_path,url)=>({src:'_assets/remote.png',alt:url})};
+ const root=createRoot(document.getElementById('root')!);
+ function Board(){const [board,setBoard]=useState<import('../src/shared').Board>(initial);return <Whiteboard board={board} cards={[]} initialCamera={{x:20,y:40,zoom:.5}} onSave={(next,label)=>{saves.push(label);setBoard({...next,revision:'r'+saves.length});}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const file=(name:string)=>new File(['image'],name,{type:'image/png'}),transfer=(files:File[],html='')=>({files,items:files.map(f=>({kind:'file',type:f.type})),types:files.length?['Files']:['text/html'],getData:(type:string)=>type==='text/html'?html:'',dropEffect:'none'});
+ const dispatch=(target:Element,type:string,data:ReturnType<typeof transfer>)=>{const event=new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,clientX:180,clientY:160});Object.defineProperty(event,type==='paste'?'clipboardData':'dataTransfer',{value:data});target.dispatchEvent(event);return event;};
+ try{await act(async()=>root.render(<Board/>));const canvas=document.querySelector<HTMLElement>('.canvas')!;canvas.getBoundingClientRect=()=>({left:10,top:20,width:800,height:600} as DOMRect);
+  await act(async()=>{dispatch(canvas,'dragover',transfer([file('drop.png')]));});assert.ok(canvas.classList.contains('document-drop-target'));
+  await act(async()=>{assert.equal(dispatch(canvas,'drop',transfer([file('drop.png')])).defaultPrevented,true);});
+  assert.equal(document.querySelectorAll('.board-image').length,1);const dropped=document.querySelector<HTMLElement>('.board-image')!;assert.equal(dropped.style.left,'300px');assert.equal(dropped.style.top,'200px');assert.equal(canvas.classList.contains('document-drop-target'),false);
+  await act(async()=>{dispatch(canvas,'paste',transfer([file('paste.png'),file('second.png')]));});assert.equal(document.querySelectorAll('.board-image').length,3);const pasted=[...document.querySelectorAll<HTMLElement>('.board-image')].slice(1);assert.equal(pasted[0].style.left,'760px');assert.equal(pasted[0].style.top,'520px');assert.equal(pasted[1].style.left,'1120px');assert.equal(saves.length,2,'one undo action per batch');
+  const textarea=document.createElement('textarea');canvas.append(textarea);await act(async()=>{assert.equal(dispatch(textarea,'paste',transfer([file('ignored.png')])).defaultPrevented,false);});assert.equal(imports.length,3);textarea.remove();
+  await act(async()=>{dispatch(canvas,'drop',transfer([], '<img src="https://example.com/photo.png">'));});assert.equal(document.querySelectorAll('.board-image').length,4);
+  await act(async()=>{dispatch(canvas,'drop',transfer([file('good.png'),file('bad.png')]));});assert.match(document.querySelector('[role=alert]')!.textContent!,/Image import failed/);assert.equal(document.querySelectorAll('.board-image').length,5,'a failed later import preserves earlier images');
+ }finally{await act(async()=>root.unmount());window.door=original;}
+});
+
+test('shared image transfer recognizes Finder images and browser image drags, without importing arbitrary links or HTML',async()=>{
+ const {imageFiles,imageTransferUrl}=await import('../src/renderer/editor-images');
+ const files=imageFiles({files:[new File(['png'],'image.PNG'),new File(['text'],'other.txt')] as unknown as FileList});assert.equal(files.length,1);assert.equal(files[0].type,'image/png');
+ const url=(html:string,uri='')=>imageTransferUrl({getData:(type:string)=>type==='text/html'?html:uri} as DataTransfer);
+ assert.equal(url('<img src="https://example.com/image?id=1">'),'https://example.com/image?id=1');assert.equal(url('', '# comment\nhttps://example.com/picture.webp'),'https://example.com/picture.webp');assert.equal(url('<img src="file:///private/image.png">'),undefined);assert.equal(url('<a href="https://example.com">Site</a>'),undefined);assert.equal(url('','https://example.com/page'),undefined);
+});

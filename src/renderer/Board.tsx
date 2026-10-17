@@ -3,6 +3,7 @@ import {BoardObject} from './BoardObject';
 import {BoardAnnotations} from './Annotations';
 import {PdfPreview} from './PdfReader';
 import {imageHtml} from './image-layout';
+import {imageFiles,imageTransferUrl} from './editor-images';
 import {clearDocumentDrop,dropDocumentAt,previewDocumentDrop,type DocumentDrag} from './card-drop';
 import {createDragPhantom} from './sortable';
 import { cardFill, tintColor } from '../colors';
@@ -86,7 +87,9 @@ const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
 export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
-  const imageInput=useRef<HTMLInputElement>(null),objectPosition=useRef({x:120,y:120});
+  const imageInput=useRef<HTMLInputElement>(null),objectPosition=useRef({x:120,y:120}),imageImportLive=useRef(true);
+  const [imageError,setImageError]=useState(''),[imageDrop,setImageDrop]=useState(false);
+  useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -415,6 +418,25 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
       ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
   }
+  function imagePosition(clientX?:number,clientY?:number) {
+    const element=viewport.current!,nav=navigation.current!;nav.flush();
+    const rect=element.getBoundingClientRect(),camera=nav.current;
+    return {x:((clientX??rect.left+rect.width/2)-rect.left-camera.x)/camera.zoom,y:((clientY??rect.top+rect.height/2)-rect.top-camera.y)/camera.zoom};
+  }
+  async function addImages(files:File[],position:{x:number;y:number},url?:string) {
+    setImageError('');const additions:Placement[]=[];
+    try {
+      for(const source of files.length?files:[url!]) {
+        const image=typeof source==='string'?await window.door.importImageLink(board.path,source):await window.door.importImage(board.path,source.name,source.type,new Uint8Array(await source.arrayBuffer()));
+        if(!imageImportLive.current)return;
+        additions.push({id:crypto.randomUUID(),cardId:'',x:position.x+additions.length*360,y:position.y,width:340,height:280,autoHeight:false,object:{type:'image',html:imageHtml({kind:'single',...image,width:'340px',alignment:'left'})}});
+      }
+    } catch(error) {if(imageImportLive.current)setImageError(String(error));}
+    if(additions.length&&imageImportLive.current){const base=pendingSave.current??latest.current.board;save({...base,cards:[...base.cards,...additions]},'Add image object',base);setSelected(additions.map(p=>p.id));setSelectedEdges([]);viewport.current?.focus({preventScroll:true});}
+  }
+  function acceptsImage(target:EventTarget|null) {
+    return enabled&&!!board.folder&&target instanceof Node&&!!viewport.current?.contains(target)&&!editable(target)&&!(target as HTMLElement).closest('.card-editor,[role="dialog"]');
+  }
   function fit() {
     const nav = navigation.current, element = viewport.current;
     if (!nav || !element) return;
@@ -446,8 +468,13 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <input ref={imageInput} type="file" accept="image/*" hidden aria-label={readingText.importWhiteboardImage} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;void(async()=>{const image=await window.door.importImage(board.path,file.name,file.type,new Uint8Array(await file.arrayBuffer())),next=latest.current.board;await save({...next,cards:[...next.cards,{id:crypto.randomUUID(),cardId:'',...objectPosition.current,width:340,height:280,autoHeight:false,object:{type:'image',html:imageHtml({kind:'single',...image,width:'100%',alignment:'left'})}}]},'Add image object');})().catch(e=>console.error(e));}}/>
-    <div className="canvas" data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
+    <input ref={imageInput} type="file" accept="image/*" multiple hidden aria-label={readingText.importWhiteboardImage} onChange={e=>{const files=imageFiles(e.target);e.target.value='';if(files.length)void addImages(files,objectPosition.current);}}/>
+    {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}
+    <div className={"canvas"+(imageDrop?" document-drop-target":"")} data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
+      onPaste={e=>{if(e.defaultPrevented||!acceptsImage(e.target))return;const files=imageFiles(e.clipboardData),url=files.length?undefined:imageTransferUrl(e.clipboardData);if(!files.length&&!url)return;e.preventDefault();void addImages(files,imagePosition(),url);}}
+      onDragOver={e=>{if(!acceptsImage(e.target)||(e.target as HTMLElement).closest('.editor-image'))return;if([...e.dataTransfer.items].some(item=>item.kind==='file'&&(!item.type||item.type.startsWith('image/')))||e.dataTransfer.types.includes('text/html')||e.dataTransfer.types.includes('text/uri-list')){e.preventDefault();e.dataTransfer.dropEffect='copy';setImageDrop(true);}}}
+      onDragLeave={e=>{if(!(e.relatedTarget instanceof Node)||!e.currentTarget.contains(e.relatedTarget))setImageDrop(false);}}
+      onDropCapture={()=>setImageDrop(false)} onDrop={e=>{setImageDrop(false);if(e.defaultPrevented||!acceptsImage(e.target))return;const files=imageFiles(e.dataTransfer),url=files.length?undefined:imageTransferUrl(e.dataTransfer);if(!files.length&&!url)return;e.preventDefault();e.stopPropagation();void addImages(files,imagePosition(e.clientX,e.clientY),url);}}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
@@ -514,6 +541,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
       <div className="selection-box" ref={selectionBox}/>
       {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={e=>{const button=e.currentTarget.getBoundingClientRect(),r=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current;onCreate((button.left+button.width/2-r.left-camera.x)/camera.zoom-(board.folder?170:160),(button.top+button.height/2-r.top-camera.y)/camera.zoom-(board.folder?60:80));}}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
       <div className="canvas-controls">
+        <Tool icon="image" label={readingText.importWhiteboardImage} disabled={!board.folder} onClick={()=>{const center=imagePosition();objectPosition.current={x:center.x-170,y:center.y-140};imageInput.current?.click();}}/>
         <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
         <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
         <button ref={zoomLabel} className="zoom-level" aria-label={ui.whiteboard.zoomToFit} data-tooltip={tooltips.whiteboard.zoomToFit} onClick={fit}>85%</button>

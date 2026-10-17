@@ -12,3 +12,14 @@ export async function copyImage(path:string,crop?:{offsetX:number;offsetY:number
     await window.door.copyImage(new Uint8Array(await png.arrayBuffer()));
   }finally{URL.revokeObjectURL(url);}
 }
+
+// Finder may leave the MIME type empty; the same allowlist is enforced again by the main process.
+export function imageFiles(data:{files:FileList|null}|null):File[]{
+  const types:Record<string,string>={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',avif:'image/avif',svg:'image/svg+xml'};
+  return [...data?.files??[]].flatMap(file=>file.type.startsWith('image/')?[file]:!file.type&&types[file.name.split('.').at(-1)?.toLowerCase()??'']?[new File([file],file.name,{type:types[file.name.split('.').at(-1)!.toLowerCase()]})]:[]);
+}
+export function imageTransferUrl(data:DataTransfer):string|undefined{
+  const html=data.getData('text/html'),template=document.createElement('template');template.innerHTML=html;
+  const source=template.content.querySelector('img')?.getAttribute('src')??data.getData('text/uri-list').split(/\r?\n/).find(line=>!line.startsWith('#')&&/\.(png|jpe?g|gif|webp|avif|svg)(?:[?#]|$)/i.test(line));
+  return source&&/^https?:\/\//i.test(source)?source:undefined;
+}

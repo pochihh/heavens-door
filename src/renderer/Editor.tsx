@@ -5,7 +5,7 @@ import {ViewBlockContext} from './ViewBlock';
 import {DEFAULT_EDITOR_SETTINGS} from '../editor-settings';
 import {EditorCommands} from './EditorCommands';
 import {imageLayout,imageHtml} from './image-layout';
-import {copyImage} from './editor-images';
+import {copyImage,imageFiles} from './editor-images';
 import { ui } from '../text/ui';
 import { useEffect, useContext, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import {createPortal} from 'react-dom';
@@ -41,9 +41,9 @@ function EditableCard({noteOnly=false,onAnnotation,onTitleDone,afterTitle,path,b
     extensions:configuredExtensions,
     content:initialContent,contentType:'markdown',editable:!blocked,
     editorProps:{attributes:{'aria-label':ui.editor.cardContent,spellcheck:'true'},handlePaste:(_view,event)=>{
-      const files=[...event.clipboardData?.files??[]].filter(file=>file.type.startsWith('image/'));if(!files.length)return false;event.preventDefault();imageHandler.current(files);return true;
+      const files=imageFiles(event.clipboardData);if(!files.length)return false;event.preventDefault();imageHandler.current(files);return true;
     },handleDrop:(view,event)=>{
-      const files=[...event.dataTransfer?.files??[]].filter(file=>file.type.startsWith('image/'));if(!files.length)return false;event.preventDefault();imageHandler.current(files,view.posAtCoords({left:event.clientX,top:event.clientY})?.pos);return true;
+      const files=imageFiles(event.dataTransfer);if(!files.length)return false;event.preventDefault();imageHandler.current(files,view.posAtCoords({left:event.clientX,top:event.clientY})?.pos);return true;
     },handleDOMEvents:{copy:(view,event)=>{
       const selection=view.state.selection;if(!(selection instanceof NodeSelection)||!imageLayout(selection.node))return false;
       const item=imageLayout(selection.node);if(item?.kind!=='single')return false;
