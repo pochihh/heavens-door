@@ -148,4 +148,4 @@ The card editor supports source mode, contextual block moves and styling, config
 
 Boards also support standalone images, plain text and simple text shapes. They share selection, movement, connectors, undo and transfers. See [Attachments, annotations and reading](docs/attachments-and-reading.md) for controls, storage and testing limits, and [Chrome capture setup](extensions/chrome/README.md).
 
-Topics support compact in-place text editing, connected creation from an unfinished arrow, Tab/Enter child/sibling creation and conversion into ordinary Markdown cards. See [Topic interactions](docs/interactions/topics.md).
+Whiteboard Text supports compact in-place editing, connected creation from an unfinished arrow, Tab/Enter child/sibling creation directly while editing, Alt+Enter line breaks, and conversion into ordinary Markdown cards. Defaults live under Settings → Whiteboard → Text. See [Text interactions](docs/interactions/topics.md).

@@ -4,7 +4,8 @@ export const sides:AnchorSide[]=['top','right','bottom','left'];
 const vectors:Record<AnchorSide,Point>={top:{x:0,y:-1},right:{x:1,y:0},bottom:{x:0,y:1},left:{x:-1,y:0}};
 export const opposite:Record<AnchorSide,AnchorSide>={top:'bottom',right:'left',bottom:'top',left:'right'};
 export function anchor(p:Placement,side:AnchorSide,height:number):Point {
-  return {x:p.x+(side==='left'?0:side==='right'?p.width:p.width/2),y:p.y+(side==='top'?0:side==='bottom'?height:height/2)};
+  const gap=p.object?.type==='text'&&p.object.shape==='none'?8:0;
+  return {x:p.x+(side==='left'?0:side==='right'?p.width:p.width/2)+vectors[side].x*gap,y:p.y+(side==='top'?0:side==='bottom'?height:height/2)+vectors[side].y*gap};
 }
 export function nearestSide(p:Placement,point:Point,height:number):AnchorSide {
   const distances=[Math.abs(point.y-p.y),Math.abs(point.x-p.x-p.width),Math.abs(point.y-p.y-height),Math.abs(point.x-p.x)];

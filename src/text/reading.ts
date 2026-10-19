@@ -16,7 +16,7 @@ export const readingText={
   delete:"Delete",
   imageOrFigure:"Image or figure",
   importWhiteboardImage:"Import whiteboard image",
-  textObject:"Text object",
+  textObject:"Text",
   editWhiteboardText:"Edit whiteboard text",
   addNote:"Add note",
   inbox:"Inbox",
@@ -63,7 +63,7 @@ export const readingText={
   webpageUrl:"Webpage URL",
   https:"https://…",
   saveToInbox:"Save to Inbox",
-  textObjects:"Text objects",
+  textObjects:"Text",
   shape:"Shape",
   fontSize:"Font size",
 } as const;

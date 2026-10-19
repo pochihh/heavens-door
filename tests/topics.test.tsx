@@ -50,21 +50,31 @@ test('a released connector stays live on empty canvas and double-click creates a
  try{await act(async()=>root.render(<Harness/>));const canvas=document.querySelector<HTMLElement>('.canvas')!;canvas.getBoundingClientRect=()=>({left:40,top:30,width:1000,height:700} as DOMRect);
   await act(async()=>press(document.querySelector('[data-placement="root"]')!));const anchor=document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!;
   await act(async()=>{pointer(anchor,'pointerdown',220,100);pointer(document,'pointermove',800,400);pointer(document,'pointerup',800,400);});assert.ok(document.querySelector('.edge-handles.connecting'));assert.equal(writes,0);
-  await act(async()=>document.querySelector('[aria-label="New topic"]')!.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:800,clientY:400})));assert.equal(writes,0,'double-clicking a control is not empty-canvas creation');
+  await act(async()=>document.querySelector('[aria-label="New text"]')!.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:800,clientY:400})));assert.equal(writes,0,'double-clicking a control is not empty-canvas creation');
   await act(async()=>{pointer(canvas,'pointerdown',800,400);pointer(document,'pointerup',800,400);canvas.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:800,clientY:400}));});
   assert.equal(writes,1);assert.equal(ordinary,0);assert.equal(saved.cards.length,2);assert.equal(saved.edges.length,1);assert.equal(saved.edges[0].kind,'branch');assert.equal(saved.edges[0].from,'root');assert.equal(saved.edges[0].to,saved.cards[1].id);assert.equal(saved.cards[1].x,1500);assert.equal(saved.cards[1].y,700);assert.ok(document.querySelector('textarea[aria-label="Edit whiteboard text"]'));assert.equal(document.querySelector('.edge-handles.connecting'),null);
  }finally{await act(async()=>root.unmount());}
 });
 
-test('selected topics create children and siblings, while typing keeps ordinary Tab/Enter behavior',async()=>{
+test('editing text creates children and siblings directly, preserving drafts, focus, line breaks and IME input',async()=>{
  const {Whiteboard}=await import('../src/renderer/Board');let saved=fixture(),writes=0;const root=createRoot(document.getElementById('root')!);
- function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} onSave={next=>{saved=next;writes++;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
- const key=(target:Element,key:string)=>target.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard textDefaults={{fontSize:28,textColor:'#e96a45'}} board={board} cards={[]} onSave={(next,_label,base)=>{assert.deepEqual(base,saved,'each edit starts from the actual saved layout');saved=next;writes++;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const key=(target:Element,key:string,options:KeyboardEventInit={})=>target.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
+ const editor=()=>document.querySelector<HTMLTextAreaElement>('textarea')!;
+ const type=(text:string)=>{const input=editor();Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,text);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
  try{await act(async()=>root.render(<Harness/>));const canvas=document.querySelector('.canvas')!;await act(async()=>press(document.querySelector('[data-placement="root"]')!));await act(async()=>key(canvas,'Tab'));
-  const child=saved.cards[1];assert.equal(writes,1);assert.equal(saved.edges[0].from,'root');assert.equal(saved.edges[0].to,child.id);
-  const editor=document.querySelector('textarea')!;await act(async()=>{key(editor,'Enter');key(editor,'Tab');});assert.equal(writes,1,'text editing never creates branches');await act(async()=>key(editor,'Escape'));assert.equal(document.activeElement,canvas,'finishing an edit returns focus to the board');await act(async()=>key(canvas,'Enter'));
-  assert.equal(saved.cards.length,3);assert.equal(saved.edges[1].from,'root','a sibling shares its parent');assert.ok(saved.cards[2].y>child.y);assert.equal(saved.edges[1].kind,'branch');
-  const measured=document.querySelector('.topic-measure');assert.ok(measured,'edit mode retains the text mirror that defines compact bounds');
+  const child=saved.cards[1];assert.equal(child.object?.type==='text'&&child.object.fontSize,28);assert.equal(child.object?.type==='text'&&child.object.textColor,'#e96a45');assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.fontSize,undefined,'existing text is unchanged');assert.equal(writes,1);assert.equal(saved.edges[0].from,'root');assert.equal(saved.edges[0].to,child.id);
+  await act(async()=>type('Child draft'));editor().setSelectionRange(5,5);
+  await act(async()=>key(editor(),'Enter',{altKey:true}));assert.equal(editor().value,'Child\n draft');assert.equal(writes,1,'Alt+Enter stays in the current text');
+  await act(async()=>key(editor(),'Enter',{isComposing:true}));await act(async()=>key(editor(),'Tab',{isComposing:true}));await act(async()=>key(editor(),'Enter',{repeat:true}));assert.equal(writes,1,'composition and held shortcuts never create text');
+  await act(async()=>key(editor(),'Tab'));
+  const grandchild=saved.cards[2];assert.equal(writes,2,'saving the draft and creating the child is one operation');assert.equal(saved.cards[1].object?.type==='text'&&saved.cards[1].object.text,'Child\n draft');assert.equal(saved.edges[1].from,child.id);assert.equal(saved.edges[1].to,grandchild.id);assert.equal(document.activeElement,editor());
+  await act(async()=>type('Grandchild draft'));await act(async()=>key(editor(),'Enter'));
+  assert.equal(writes,3);assert.equal(saved.cards.length,4);assert.equal(saved.cards[2].object?.type==='text'&&saved.cards[2].object.text,'Grandchild draft');assert.equal(saved.edges[2].from,child.id,'a sibling shares its parent');assert.equal(saved.edges[2].to,saved.cards[3].id);assert.ok(saved.cards[3].y>grandchild.y);assert.equal(document.activeElement,editor());
+  assert.ok(document.querySelector('.topic-measure'),'editing retains compact bounds');
+  await act(async()=>key(editor(),'Escape'));assert.equal(document.activeElement,canvas);await act(async()=>press(document.querySelector('[data-placement="root"]')!));await act(async()=>document.querySelector('[data-placement="root"]')!.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true})));
+  await act(async()=>type('Updated root'));await act(async()=>key(editor(),'Enter'));assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'Updated root');assert.equal(saved.edges.length,3,'a root sibling is independent');assert.equal(saved.cards.length,5);
+  await act(async()=>type('Commit only'));await act(async()=>key(editor(),'Enter',{metaKey:true}));assert.equal(saved.cards.length,5);assert.equal(saved.cards[4].object?.type==='text'&&saved.cards[4].object.text,'Commit only');assert.equal(document.activeElement,canvas);
  }finally{await act(async()=>root.unmount());}
 });
 
@@ -79,7 +89,29 @@ test('normal Quit commits a focused topic control before closing the window',asy
 test('manual connectors use compact topic bounds without persisting their narrow display widths',async()=>{
  const {Whiteboard}=await import('../src/renderer/Board');let saved:Board={...fixture(),cards:[topic('root','A'),{...topic('other','B'),x:500}]};const root=createRoot(document.getElementById('root')!);
  function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} initialCamera={{x:0,y:0,zoom:1}} onSave={next=>{assert.doesNotThrow(()=>writeBoard(next));saved=next;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
- try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="root"]')!;Object.defineProperty(node,'offsetWidth',{value:40});Object.defineProperty(node,'offsetHeight',{value:23});await act(async()=>observers.find(o=>o.target===node)!.callback([],{} as ResizeObserver));await act(async()=>press(node,110,110));assert.equal(document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!.getAttribute('cx'),'140');
+ try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="root"]')!;Object.defineProperty(node,'offsetWidth',{value:40});Object.defineProperty(node,'offsetHeight',{value:23});await act(async()=>observers.find(o=>o.target===node)!.callback([],{} as ResizeObserver));await act(async()=>press(node,110,110));assert.equal(document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!.getAttribute('cx'),'148');
   await act(async()=>press(document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!,140,111));await act(async()=>press(document.querySelector('[data-anchor-card="other"][data-anchor-side="left"]')!,500,111));assert.equal(saved.edges.length,1);assert.equal(saved.cards[0].width,240);assert.equal(saved.cards[1].width,240);
  }finally{await act(async()=>root.unmount());}
+});
+
+
+test('plain text connectors leave an eight-pixel gap on all sides without changing card or shape anchors',async()=>{
+ const {anchor,edgeGeometry}=await import('../src/renderer/edge-geometry');
+ const a=topic('text'),b={...topic('next'),x:500};
+ assert.deepEqual(anchor(a,'left',40),{x:92,y:120});assert.deepEqual(anchor(a,'right',40),{x:348,y:120});
+ assert.deepEqual(anchor(a,'top',40),{x:220,y:92});assert.deepEqual(anchor(a,'bottom',40),{x:220,y:148});
+ const edge=edgeGeometry({id:'e',from:a.id,to:b.id,fromSide:'right',toSide:'left'},a,b,()=>40);
+ assert.deepEqual(edge.start,{x:348,y:120});assert.deepEqual(edge.end,{x:492,y:120});
+ assert.deepEqual(anchor({...a,object:undefined},'right',40),{x:340,y:120});
+ assert.deepEqual(anchor({...a,object:{...a.object,shape:'rectangle'}},'right',40),{x:340,y:120});
+});
+
+
+test('whiteboard text defaults round-trip through settings and reject invalid sizes and colors',async()=>{
+ const {defaultPreferences,validatePreferences}=await import('../src/core/preferences');
+ const prefs=validatePreferences({...defaultPreferences(),whiteboardText:{fontSize:28,textColor:'#e96a45'}});
+ assert.deepEqual(validatePreferences(JSON.parse(JSON.stringify(prefs))).whiteboardText,{fontSize:28,textColor:'#e96a45'});
+ assert.equal(validatePreferences(defaultPreferences()).whiteboardText,undefined);
+ assert.deepEqual(validatePreferences({...defaultPreferences(),whiteboardText:{fontSize:28,type:'image',shape:'diamond'}}).whiteboardText,{fontSize:28,textColor:undefined},'extra settings keys cannot change the object kind');
+ for(const value of [null,[],{fontSize:7},{fontSize:121},{fontSize:NaN},{fontSize:'20'},{textColor:'red'},{textColor:'url(https://example.com)'}])assert.throws(()=>validatePreferences({...defaultPreferences(),whiteboardText:value}),/Invalid whiteboard text defaults/);
 });

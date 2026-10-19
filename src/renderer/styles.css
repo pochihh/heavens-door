@@ -530,3 +530,5 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .board-text .board-object-text>textarea{position:absolute;inset:0;margin:0;overflow:hidden;box-sizing:border-box}
 .board-text .board-object-text>span{min-width:1px;white-space:pre-wrap}.board-text .board-object-text>textarea{white-space:pre-wrap;cursor:text}
 .canvas-connector-hint{position:absolute;left:50%;bottom:62px;transform:translateX(-50%);padding:6px 10px;border-radius:6px;background:var(--surface);color:var(--muted);font-size:12px;pointer-events:none}
+
+.settings-subsection{margin-top:24px;border-top:1px solid var(--border);padding-top:20px}.settings-subsection h3{font-size:14px;margin:0 0 8px}.settings-subsection>.style-color{margin:12px 0}

@@ -226,7 +226,7 @@ export class Session {
   convertTopic(base:Board,placement:string){return this.run(async()=>{
     await this.flush();const board=this.state.snapshot?.boards.find(b=>b.path===base.path);
     if(!board||layout(board)!==layout(base))throw new Error(ui.errors.whiteboardChanged(base.path));
-    const result=await this.bridge.request<Mutation>({kind:'convertTopic',path:board.path,expected:board.revision,placement});this.accept(result,'Convert topic to card');
+    const result=await this.bridge.request<Mutation>({kind:'convertTopic',path:board.path,expected:board.revision,placement});this.accept(result,'Convert text to card');
     return result.snapshot.cards.find(c=>result.edits.some(e=>e.before===null&&e.path===c.path))!;
   });}
   extractAssetNote(path:string,expected:string,note:string,folder:string,x:number,y:number){return this.run(async()=>{
