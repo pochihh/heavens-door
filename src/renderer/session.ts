@@ -38,6 +38,8 @@ export class Session {
   // Registered outside the React tree so renderer errors cannot strand Quit/Reload.
   connectWindow() {
     return this.bridge.onClosing(action => {
+      // Commit focused controls before their saves join the close/refresh queue.
+      if(typeof document!=='undefined'&&document.activeElement instanceof HTMLElement)document.activeElement.blur();
       void this.run(async () => { await this.flush(); this.bridge.finishClosing(action); })
         .catch(() => this.bridge.cancelClosing(action));
     });
@@ -221,6 +223,12 @@ export class Session {
       this.newCards.add(card.id);this.update({draft:{card,body:card.body,dirty:false}});
     });
   }
+  convertTopic(base:Board,placement:string){return this.run(async()=>{
+    await this.flush();const board=this.state.snapshot?.boards.find(b=>b.path===base.path);
+    if(!board||layout(board)!==layout(base))throw new Error(ui.errors.whiteboardChanged(base.path));
+    const result=await this.bridge.request<Mutation>({kind:'convertTopic',path:board.path,expected:board.revision,placement});this.accept(result,'Convert topic to card');
+    return result.snapshot.cards.find(c=>result.edits.some(e=>e.before===null&&e.path===c.path))!;
+  });}
   extractAssetNote(path:string,expected:string,note:string,folder:string,x:number,y:number){return this.run(async()=>{
     const before=this.state.snapshot?.cards.find(c=>c.path===path);if(before?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
     await this.flush();

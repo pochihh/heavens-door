@@ -1,3 +1,4 @@
+import {validateBranches} from '../topics';
 import {readingMetadata} from '../reading';
 import {splitCardSource} from '../card-source';
 import {tagsFrom} from '../tags';
@@ -77,10 +78,12 @@ export function validateBoard(board: Board) {
   const edges = new Set<string>();
   for (const e of board.edges) {
     if (!e.id || edges.has(e.id) || !ids.has(e.from) || !ids.has(e.to)) throw new Error(ui.errors.invalidBoardConnection);
+    if(e.kind!==undefined&&e.kind!=='branch')throw new Error(ui.errors.invalidBoardConnection);
     validateEdgeStyle(e);
     if([e.fromSide,e.toSide].some(side=>side!==undefined&&!['top','right','bottom','left'].includes(side))||e.label!==undefined&&(typeof e.label!=='string'||e.label.length>2000))throw new Error(ui.errors.invalidBoardStyle);
     edges.add(e.id);
   }
+  validateBranches(board.edges);
 }
 export function writeBoard(board: Board) {
   validateBoard(board);

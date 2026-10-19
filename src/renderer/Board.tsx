@@ -1,3 +1,4 @@
+import {topicText} from '../topics';
 import {readingText} from '../text/reading';
 import {BoardObject} from './BoardObject';
 import {BoardAnnotations} from './Annotations';
@@ -12,6 +13,7 @@ import { tooltips } from '../text/tooltips';
 import { Edges } from './Edges';
 import { edgeGeometry } from './edge-geometry';
 import type { BoardSelection } from './StyleView';
+import type {AnchorSide,Edge} from '../shared';
 import type { Mention } from '../shared';
 import type { NavigationMode } from '../layout';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
@@ -64,6 +66,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} html={collapsed?summary:html||preview('',card.path)} />;
 });
 interface Props {
+  onConvertTopic?:(base:Board,id:string)=>Promise<CardInfo>;
   addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,mode?:import('../layout').NavigationMode|'popup')=>void;
   edgeDefaults?:EdgeStyle;
   mentions?:Mention[]; onSelection?:(selection:BoardSelection)=>void; onStyle?:()=>void;
@@ -86,9 +89,9 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
+export const Whiteboard = memo(function Whiteboard({ onConvertTopic,addTagActions,reveal,onRevealed,onOpenCard,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
   const imageInput=useRef<HTMLInputElement>(null),objectPosition=useRef({x:120,y:120}),imageImportLive=useRef(true);
-  const [imageError,setImageError]=useState(''),[imageDrop,setImageDrop]=useState(false);
+  const [objectError,setObjectError]=useState(''),[imageDrop,setImageDrop]=useState(false);
   useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
@@ -398,10 +401,10 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,height:expandedHeight(p),collapsed:!p.collapsed}:card)},p.collapsed?ui.history.expandCard:ui.history.collapseCard);
   }
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
-    if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
+    if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[...(p.object.type==='text'?[{label:topicText.edit,icon:'edit' as const,run:()=>setEditingObject(p.id)},{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(onConvertTopic?[{label:topicText.convert,icon:'note' as const,separatorBefore:true,run:()=>{void convertTopic(p.id);}}]:[])]:[]),{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')},...(onDelete?[{label:ui.whiteboard.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]:
-      [...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,submenu:addTagActions(lookup.get(p.cardId)!)}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'note' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
+      [{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,submenu:addTagActions(lookup.get(p.cardId)!)}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'note' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
       }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,danger:true,run:()=>removeReference(p)}]:[]),
       ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
@@ -413,10 +416,33 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     setMenu({label:ui.whiteboard.canvasActions,x:clientX,y:clientY,actions:[
       {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
       {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
-      ...(['none','rectangle','rounded','ellipse','diamond'] as const).map(shape=>({label:shape==='none'?'Text':shape==='rounded'?'Rounded rectangle':shape[0].toUpperCase()+shape.slice(1),icon:'text' as const,disabled:!board.folder,run:()=>{save({...current,cards:[...current.cards,{id:crypto.randomUUID(),cardId:'',x,y,width:240,height:120,autoHeight:false,object:{type:'text' as const,text:'',shape}}]},'Add text object');}})),
+      ...(['none','rectangle','rounded','ellipse','diamond'] as const).map(shape=>({label:shape==='none'?topicText.new:shape==='rounded'?'Rounded rectangle':shape[0].toUpperCase()+shape.slice(1),icon:'text' as const,disabled:!board.folder,run:()=>{if(shape==='none'){addTopic(x,y);return;}save({...current,cards:[...current.cards,{id:crypto.randomUUID(),cardId:'',x,y,width:240,height:120,autoHeight:false,object:{type:'text' as const,text:'',shape}}]},'Add text object');}})),
       {label:readingText.imageOrFigure,icon:'image',disabled:!board.folder,run:()=>{objectPosition.current={x,y};imageInput.current?.click();}},
       ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
+  }
+  function addTopic(x:number,y:number,from?:string,side:AnchorSide='right') {
+    const base=pendingSave.current??latest.current.board;if(!base.folder)return;
+    const id=crypto.randomUUID(),topic:Placement={id,cardId:'',x,y,width:240,height:80,autoHeight:false,object:{type:'text',text:'',shape:'none'}};
+    const edge:Edge|undefined=from?{id:crypto.randomUUID(),kind:'branch',from,to:id,fromSide:side,toSide:side==='right'?'left':side==='left'?'right':side==='top'?'bottom':'top',fromArrowhead:'none',toArrowhead:'arrow',...edgeDefaults}:undefined;
+    onFinish?.();save({...base,cards:[...base.cards,topic],edges:edge?[...base.edges,edge]:base.edges},'Create topic',base);setSelected([id]);setSelectedEdges([]);setEditingObject(id);
+  }
+  function addRelatedTopic(id:string,mode:'child'|'sibling') {
+    const base=pendingSave.current??latest.current.board,selected=base.cards.find(p=>p.id===id);if(!selected||!base.folder)return;
+    const parent=mode==='sibling'?base.edges.find(e=>e.kind==='branch'&&e.to===id):undefined,source=parent?base.cards.find(p=>p.id===parent.from)!:selected;
+    const from=mode==='child'?source.id:parent?.from,side=parent?.fromSide??'right',vertical=side==='top'||side==='bottom';
+    let x=from?(side==='left'?source.x-330:side==='right'?source.x+widthOf(source)+90:source.x):selected.x;
+    let y=from?(side==='top'?source.y-120:side==='bottom'?source.y+heightOf(source)+90:source.y+heightOf(source)/2-14):selected.y+heightOf(selected)+32;
+    const siblingIds=new Set(from?base.edges.filter(e=>e.kind==='branch'&&e.from===from).map(e=>e.to):[id]),siblings=base.cards.filter(p=>siblingIds.has(p.id));
+    if(siblings.length){if(vertical)x=Math.max(x,...siblings.map(p=>p.x+widthOf(p)+48));else y=Math.max(y,...siblings.map(p=>p.y+heightOf(p)+32));}
+    // Place only the new topic; existing manual positions remain untouched.
+    const blockers=base.cards.filter(p=>x<p.x+widthOf(p)+16&&x+240>p.x-16).sort((a,b)=>a.y-b.y);
+    for(const p of blockers)if(y<p.y+heightOf(p)+16&&y+28>p.y-16)y=p.y+heightOf(p)+32;
+    addTopic(x,y,from,side);
+  }
+  async function convertTopic(id:string) {
+    if(!onConvertTopic)return;setObjectError('');
+    try{const card=await onConvertTopic(pendingSave.current??latest.current.board,id);setEditingObject('');setSelected([id]);onOpen(card.path);}catch(error){setObjectError(String(error));}
   }
   function imagePosition(clientX?:number,clientY?:number) {
     const element=viewport.current!,nav=navigation.current!;nav.flush();
@@ -424,14 +450,14 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
     return {x:((clientX??rect.left+rect.width/2)-rect.left-camera.x)/camera.zoom,y:((clientY??rect.top+rect.height/2)-rect.top-camera.y)/camera.zoom};
   }
   async function addImages(files:File[],position:{x:number;y:number},url?:string) {
-    setImageError('');const additions:Placement[]=[];
+    setObjectError('');const additions:Placement[]=[];
     try {
       for(const source of files.length?files:[url!]) {
         const image=typeof source==='string'?await window.door.importImageLink(board.path,source):await window.door.importImage(board.path,source.name,source.type,new Uint8Array(await source.arrayBuffer()));
         if(!imageImportLive.current)return;
         additions.push({id:crypto.randomUUID(),cardId:'',x:position.x+additions.length*360,y:position.y,width:340,height:280,autoHeight:false,object:{type:'image',html:imageHtml({kind:'single',...image,width:'340px',alignment:'left'})}});
       }
-    } catch(error) {if(imageImportLive.current)setImageError(String(error));}
+    } catch(error) {if(imageImportLive.current)setObjectError(String(error));}
     if(additions.length&&imageImportLive.current){const base=pendingSave.current??latest.current.board;save({...base,cards:[...base.cards,...additions]},'Add image object',base);setSelected(additions.map(p=>p.id));setSelectedEdges([]);viewport.current?.focus({preventScroll:true});}
   }
   function acceptsImage(target:EventTarget|null) {
@@ -469,7 +495,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
     <input ref={imageInput} type="file" accept="image/*" multiple hidden aria-label={readingText.importWhiteboardImage} onChange={e=>{const files=imageFiles(e.target);e.target.value='';if(files.length)void addImages(files,objectPosition.current);}}/>
-    {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}
+    {objectError&&<p className="editor-image-error" role="alert">{objectError}</p>}
     <div className={"canvas"+(imageDrop?" document-drop-target":"")} data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPaste={e=>{if(e.defaultPrevented||!acceptsImage(e.target))return;const files=imageFiles(e.clipboardData),url=files.length?undefined:imageTransferUrl(e.clipboardData);if(!files.length&&!url)return;e.preventDefault();void addImages(files,imagePosition(),url);}}
       onDragOver={e=>{if(!acceptsImage(e.target)||(e.target as HTMLElement).closest('.editor-image'))return;if([...e.dataTransfer.items].some(item=>item.kind==='file'&&(!item.type||item.type.startsWith('image/')))||e.dataTransfer.types.includes('text/html')||e.dataTransfer.types.includes('text/uri-list')){e.preventDefault();e.dataTransfer.dropEffect='copy';setImageDrop(true);}}}
@@ -479,7 +505,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
         if(!rightPress.current&&!(e.target as HTMLElement).closest('[data-placement],.edge-layer,.edge-handles,button,input'))openCanvasMenu(e.clientX,e.clientY);
-      }} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}}}
+      }} onKeyDown={e=>{if(!e.defaultPrevented&&enabled&&board.folder&&!editable(e.target)&&!(e.target as HTMLElement).closest('button,a,select')&&selected.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!e.shiftKey){const p=current.cards.find(p=>p.id===selected[0]);if(p&&!p.folder&&(p.object?.type==='text'||!p.object)){if(e.key==='Tab'||e.key==='Enter'){e.preventDefault();e.stopPropagation();addRelatedTopic(p.id,e.key==='Tab'?'child':'sibling');return;}if(e.key==='F2'&&p.object?.type==='text'){e.preventDefault();setEditingObject(p.id);return;}}}if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}}}
       onDoubleClick={e => {
         if (e.target === viewport.current) {
           const rect = viewport.current.getBoundingClientRect(), camera = navigation.current!.current;
@@ -487,8 +513,9 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
         }
       }}>
       <div className="canvas-grid" ref={grid}/>
-        <Edges edgeDefaults={edgeDefaults} board={{...current,cards:current.cards.map(p=>({...p,width:widthOf(p)}))}} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
-          selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={save} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
+        {/* Measured text widths are for edge geometry; keep stored placement sizes on save. */}
+        <Edges onCreateTopic={board.folder?addTopic:undefined} edgeDefaults={edgeDefaults} board={{...current,cards:current.cards.map(p=>({...p,width:widthOf(p)}))}} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
+          selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={(next,label)=>save({...next,cards:current.cards},label)} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
       <div className="board-world" ref={world}>
         {visible.map(p => {
           const savedCard = lookup.get(p.cardId);
@@ -517,7 +544,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
               }}/>
             </div>}
             {!media&&!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.object?<BoardObject onResizePreview={width=>setImageResize(width===undefined?undefined:{id:p.id,width})} editing={editingObject===p.id} onEditing={()=>setEditingObject(p.id)} onDone={()=>setEditingObject('')} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={p} path={board.path} onChange={(object,width)=>{void save({...current,cards:current.cards.map(item=>item.id===p.id?{...item,object,...(width?{width}:{})}:item)},'Edit whiteboard object');}}/>:card?.source?.type==='pdf'?<><PdfPreview path={card.path} source={card.source} onReady={contentReady}/><div className="board-asset-caption">{card.title||card.name}</div></>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {p.object?<BoardObject onResizePreview={width=>setImageResize(width===undefined?undefined:{id:p.id,width})} editing={editingObject===p.id} onEditing={()=>setEditingObject(p.id)} onDone={focus=>{setEditingObject('');if(focus)viewport.current?.focus({preventScroll:true});}} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={p} path={board.path} onChange={(object,width)=>{void save({...current,cards:current.cards.map(item=>item.id===p.id?{...item,object,...(width?{width}:{})}:item)},'Edit whiteboard object');}}/>:card?.source?.type==='pdf'?<><PdfPreview path={card.path} source={card.source} onReady={contentReady}/><div className="board-asset-caption">{card.title||card.name}</div></>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
@@ -541,6 +568,7 @@ export const Whiteboard = memo(function Whiteboard({ addTagActions,reveal,onReve
       <div className="selection-box" ref={selectionBox}/>
       {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={e=>{const button=e.currentTarget.getBoundingClientRect(),r=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current;onCreate((button.left+button.width/2-r.left-camera.x)/camera.zoom-(board.folder?170:160),(button.top+button.height/2-r.top-camera.y)/camera.zoom-(board.folder?60:80));}}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
       <div className="canvas-controls">
+        <Tool icon="text" label={topicText.new} disabled={!board.folder} onClick={()=>{const p=imagePosition();addTopic(p.x,p.y);}}/>
         <Tool icon="image" label={readingText.importWhiteboardImage} disabled={!board.folder} onClick={()=>{const center=imagePosition();objectPosition.current={x:center.x-170,y:center.y-140};imageInput.current?.click();}}/>
         <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
         <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>

@@ -147,3 +147,5 @@ The card editor supports source mode, contextual block moves and styling, config
 **System → Read later** imports PDF/HTML files or captures webpages into Inbox. Source files and article images remain local; Markdown wrappers hold reading progress, highlights and notes. PDFs use a continuous reader and first-page board preview. The library supports New/Reading/Done states, OPML and local RSS. The optional Chrome capture extension has a paired loopback receiver and an offline queue.
 
 Boards also support standalone images, plain text and simple text shapes. They share selection, movement, connectors, undo and transfers. See [Attachments, annotations and reading](docs/attachments-and-reading.md) for controls, storage and testing limits, and [Chrome capture setup](extensions/chrome/README.md).
+
+Topics support compact in-place text editing, connected creation from an unfinished arrow, Tab/Enter child/sibling creation and conversion into ordinary Markdown cards. See [Topic interactions](docs/interactions/topics.md).

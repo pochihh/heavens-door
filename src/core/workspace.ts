@@ -991,6 +991,20 @@ export class Workspace {
     try { this.db.prepare("INSERT OR REPLACE INTO ui_cache(key,value) VALUES('edge-style',?)").run(JSON.stringify(this.lastEdgeStyle)); }
     catch { /* Cache failure must not turn a successful document save into an error. */ }
   }
+  async convertTopic(path:string,expected:string,placement:string){
+    if(typeof path!=='string'||typeof expected!=='string'||typeof placement!=='string')throw new Error(ui.errors.invalidRequestValue);
+    const board=this.boards.get(path);if(!board||!board.folder)throw new Error(ui.errors.whiteboardMissing);
+    if(board.revision!==expected)throw new Error(ui.errors.whiteboardChanged(path));
+    const topic=board.cards.find(p=>p.id===placement);if(topic?.object?.type!=='text')throw new Error('Choose a text topic to convert.');
+    const lines=topic.object.text.replace(/\r\n?/g,'\n').split('\n'),title=lines[0].trim()||'Topic';
+    let stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Topic';
+    if(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem))stem='Topic '+stem;
+    const destination=await this.newCardPath(board.folder,stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
+    const raw=newNote(),{front}=splitNote(raw);if(topic.fillColor)front.set('card-color',topic.fillColor);
+    const created=`---\n${front.toString()}---\n# ${escape(title)}\n\n${lines.slice(1).map(escape).join('\n')}\n`,card=readCard(destination,created);
+    const next={...board,cards:board.cards.map(p=>p.id===placement?{...p,object:undefined,cardId:card.id,width:Math.max(340,p.width),height:280,autoHeight:true}:p)};
+    return this.write([{path:destination,content:created,expected:null},{path,content:writeBoard(next),expected}]);
+  }
   async saveBoard(board: Board, expected: string) {
     const before=this.boards.get(board.path);
     const result=await this.write([{path:board.path,content:writeBoard(board),expected:expected || null}]);

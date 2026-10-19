@@ -11,7 +11,7 @@ export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
 export interface Stroke { strokeColor?:string; strokeWidth?:number; strokeStyle?:'solid'|'dashed'|'dotted'|'none' }
 export type BoardObject={type:'text';text:string;shape:'none'|'rectangle'|'rounded'|'ellipse'|'diamond';fontSize?:number;textColor?:string}|{type:'image';html:string};
 export interface Placement extends Stroke {object?:BoardObject; fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
-export interface Edge extends Stroke { id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:number }
+export interface Edge extends Stroke { kind?:'branch'; id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:number }
 export type EdgeStyle = Pick<Edge,'strokeColor'|'strokeWidth'|'strokeStyle'|'fromArrowhead'|'toArrowhead'|'labelSize'>;
 export function edgeStyle(edge:EdgeStyle):EdgeStyle {
   return {strokeColor:edge.strokeColor,strokeWidth:edge.strokeWidth??2,strokeStyle:edge.strokeStyle==='none'?'solid':edge.strokeStyle??'solid',fromArrowhead:edge.fromArrowhead??'none',toArrowhead:edge.toArrowhead??'none',labelSize:edge.labelSize??14};
@@ -103,6 +103,7 @@ export type Request =
   | { kind:'addTagProperty';path:string;expected:string;tag:string;tagExpected:string;field:TagField;value:TagValue }
   | { kind:'setViewProperty';path:string;expected:string;key:string;value:TagValue }
   | { kind:'setTagProperty';path:string;expected:string;tag:string;key:string;value:TagValue }
+  | {kind:'convertTopic';path:string;expected:string;placement:string}
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
   | { kind: 'renameBoard'; folder:string; name:string; expected:string }
   | { kind: 'renameCard'; path:string; stem:string; expected:string }

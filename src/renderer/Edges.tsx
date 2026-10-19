@@ -1,3 +1,4 @@
+import {canReconnectBranch,topicText} from '../topics';
 import { tintColor } from '../colors';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { AnchorSide, Arrowhead, Board, Edge, EdgeStyle, Mention, Placement } from '../shared';
@@ -8,6 +9,7 @@ import { tooltips } from '../text/tooltips';
 import { ActionMenu, type MenuState } from './Overlays';
 
 interface Props {
+  onCreateTopic?:(x:number,y:number,from:string,side:AnchorSide)=>void;
   edgeDefaults?:EdgeStyle;
   board:Board;mentions:Mention[];heightOf:(p:Placement)=>number;camera:()=>Camera;viewport:RefObject<HTMLDivElement|null>;
   selectedCards:string[];selectedEdges:string[];enabled:boolean;onSelect:(ids:string[],add:boolean,toggle?:boolean)=>void;
@@ -40,9 +42,10 @@ export function Edges(props:Props) {
     preview.current?.setAttribute('d',g.endpoint==='from'?curve(end,start,side,g.side).path:curve(start,end,g.side,side).path);
   }
   function complete(x:number,y:number,exact?:{card:Placement;side:AnchorSide}){
-    const g=pending.current,target=exact??targetAt(x,y);if(!g||!target||target.card.id===g.from){clear();return;}
+    const g=pending.current,target=exact??targetAt(x,y);if(!g)return;if(!target&&!g.edge&&latest.current.onCreateTopic){g.pointerId=undefined;point.current={x,y};draw(x,y);return;}if(!target||target.card.id===g.from){clear();return;}
     const {board,onSave,onSelect}=latest.current;
     const next:Edge=g.edge?{...g.edge,[g.endpoint!]:target.card.id,[g.endpoint!+'Side']:target.side}:{id:crypto.randomUUID(),from:g.from,to:target.card.id,fromSide:g.side,toSide:target.side,fromArrowhead:'none',toArrowhead:'arrow',...latest.current.edgeDefaults};
+    if(next.kind==='branch'&&!canReconnectBranch(board,next)){clear();return;}
     onSave({...board,edges:g.edge?board.edges.map(e=>e.id===next.id?next:e):[...board.edges,next]},g.edge?ui.history.reconnectEdge:ui.history.createEdge);
     onSelect([next.id],false);
     clear();
@@ -74,16 +77,20 @@ export function Edges(props:Props) {
     const down=(e:PointerEvent)=>{
       if(!pending.current||!viewport.current?.contains(e.target as Node))return;
       if(e.button===2){e.preventDefault();e.stopPropagation();clear();return;}
+      if((e.target as Element).closest('.canvas-controls,button,input,textarea,a')&&!(e.target as Element).closest('[data-anchor-card]'))return;
       if(pending.current.pointerId===undefined&&e.button===0){
-        e.preventDefault();e.stopPropagation();
+        e.stopPropagation();
+        if(!targetAt(e.clientX,e.clientY)&&latest.current.onCreateTopic){point.current={x:e.clientX,y:e.clientY};draw(e.clientX,e.clientY);return;}
+        e.preventDefault();
         const anchor=(e.target as Element).closest('[data-anchor-card]'),card=latest.current.board.cards.find(p=>p.id===anchor?.getAttribute('data-anchor-card'));
         complete(e.clientX,e.clientY,card?{card,side:anchor!.getAttribute('data-anchor-side') as AnchorSide}:undefined);
       }
     };
+    const double=(e:MouseEvent)=>{const g=pending.current;if(!g||g.edge||!latest.current.onCreateTopic||!viewport.current?.contains(e.target as Node)||(e.target as Element).closest('[data-placement],.canvas-controls,.edge-layer,.edge-handles,button,input,textarea,a')||targetAt(e.clientX,e.clientY))return;e.preventDefault();e.stopPropagation();const p=worldPoint(e.clientX,e.clientY);latest.current.onCreateTopic(p.x,p.y,g.from,g.side);clear();};
     const key=(e:KeyboardEvent)=>{if(e.key==='Escape')clear();};
     const cancel=()=>clear();
-    doc.addEventListener('pointerdown',down,true);doc.addEventListener('pointermove',move,true);doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',cancel,true);doc.addEventListener('keydown',key);window.addEventListener('blur',cancel);
-    return()=>{doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointermove',move,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',cancel,true);doc.removeEventListener('keydown',key);window.removeEventListener('blur',cancel);if(frame.current!==null)doc.defaultView?.cancelAnimationFrame(frame.current);};
+    doc.addEventListener('dblclick',double,true);doc.addEventListener('pointerdown',down,true);doc.addEventListener('pointermove',move,true);doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',cancel,true);doc.addEventListener('keydown',key);window.addEventListener('blur',cancel);
+    return()=>{doc.removeEventListener('dblclick',double,true);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointermove',move,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',cancel,true);doc.removeEventListener('keydown',key);window.removeEventListener('blur',cancel);if(frame.current!==null)doc.defaultView?.cancelAnimationFrame(frame.current);};
   },[]);
   useEffect(()=>{if(!props.enabled)clear();},[props.enabled]);
   useLayoutEffect(()=>{if(connecting)draw(point.current.x,point.current.y);},[connecting]);
@@ -115,6 +122,7 @@ export function Edges(props:Props) {
       {board.cards.filter(p=>connecting||selectedCards.includes(p.id)).flatMap(p=>sides.map(side=>{const a=anchor(p,side,heightOf(p));return <circle className="edge-anchor" key={p.id+side} cx={a.x} cy={a.y} r={5/props.camera().zoom} data-anchor-card={p.id} data-anchor-side={side} tabIndex={0} role="button" aria-label={ui.edges.anchor(side)} data-tooltip={tooltips.edges.anchor} onPointerDown={e=>start(e,p,side)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(p,side,a);}}}/>;}))}
       {geometries.filter(g=>selectedEdges.includes(g.edge.id)).flatMap(g=>(['from','to'] as const).map(endpoint=>{const at=endpoint==='from'?g.start:g.end,fixed=endpoint==='from'?'to':'from',card=placements.get(g.edge[fixed])!,side=fixed==='from'?g.fromSide:g.toSide;return <circle className="edge-endpoint" key={g.edge.id+endpoint} cx={at.x} cy={at.y} r={6/props.camera().zoom} role="button" tabIndex={0} aria-label={ui.edges.endpoint(endpoint)} data-tooltip={tooltips.edges.reconnect} onPointerDown={e=>start(e,card,side,g.edge,endpoint)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(card,side,at,g.edge,endpoint);}}}/>;}))}
     </g></svg>
+    {connecting&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </>;
 }

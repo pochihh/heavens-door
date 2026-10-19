@@ -524,3 +524,9 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 
 .board-image.selected{outline:none}.board-image.selected .image-media::after{content:"";position:absolute;inset:0;border:2px solid var(--accent);border-radius:0;pointer-events:none;z-index:2}
 .board-text{width:max-content;height:auto}.board-text .board-object-text.shape-none{display:block;width:auto;height:auto;padding:0}.board-text .board-object-text>span{display:block}
+
+/* The text mirror owns the same compact footprint in display and edit states. */
+.board-object-text{position:relative}.board-object-text .topic-measure{visibility:hidden;pointer-events:none;white-space:pre-wrap}
+.board-text .board-object-text>textarea{position:absolute;inset:0;margin:0;overflow:hidden;box-sizing:border-box}
+.board-text .board-object-text>span{min-width:1px;white-space:pre-wrap}.board-text .board-object-text>textarea{white-space:pre-wrap;cursor:text}
+.canvas-connector-hint{position:absolute;left:50%;bottom:62px;transform:translateX(-50%);padding:6px 10px;border-radius:6px;background:var(--surface);color:var(--muted);font-size:12px;pointer-events:none}
