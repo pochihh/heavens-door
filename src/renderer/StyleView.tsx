@@ -1,3 +1,4 @@
+import {FONT_SIZE_PRESETS,type FontSize,type FontSizePreset} from '../font-size';
 import {readingText} from '../text/reading';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Arrowhead, Board, BoardObject, CardInfo, Edge, PaletteColor, Placement, Stroke } from '../shared';
@@ -30,6 +31,10 @@ function Choice({label,value,choices,onChange,sample,tip,disabled=false}:{label:
   return <fieldset className="style-choice"><legend>{label}</legend><div className="style-buttons" role="group" aria-label={label}>
     {choices.map(([v,name])=><button key={String(v)} type="button" disabled={disabled} aria-label={name} aria-pressed={value!==undefined&&String(value)===String(v)} data-tooltip={tip?.(String(v))??name} onClick={()=>onChange(String(v))}>{sample?sample(String(v)):name}</button>)}
   </div></fieldset>;
+}
+export function FontSizeButtons({label=readingText.fontSize,values,onChange}:{label?:string;values:FontSize[];onChange:(value:FontSizePreset)=>void}) {
+  const value=common(values);
+  return <div className="style-buttons" role="group" aria-label={label}>{(Object.keys(FONT_SIZE_PRESETS) as FontSizePreset[]).map(size=><button key={size} type="button" aria-label={size.toUpperCase()} aria-pressed={value===size} data-tooltip={size.toUpperCase()} onClick={()=>onChange(size)}>{size.toUpperCase()}</button>)}</div>;
 }
 function LineSample({width=2,style='solid',arrow,end='end'}:{width?:number;style?:string;arrow?:Arrowhead;end?:'start'|'end'}) {
   return <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true"><g transform={end==='start'?'translate(28 0) scale(-1 1)':undefined}>
@@ -69,7 +74,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   const [editingPalette,setEditingPalette]=useState(false);
   const selected=board?.cards.filter(p=>selection?.cards.includes(p.id))??[],edges=board?.edges.filter(e=>selection?.edges.includes(e.id))??[];
   const cards=selected.filter(p=>!p.folder&&!p.object),boards=selected.filter(p=>p.folder),texts=selected.filter(p=>p.object?.type==='text'),images=selected.filter(p=>p.object?.type==='image');
-  const textValues=texts.flatMap(p=>p.object?.type==='text'?[p.object]:[]),shapes=texts.filter(p=>p.object?.type==='text'&&p.object.shape!=='none'),fontSize=common(textValues.map(p=>p.fontSize??20));
+  const textValues=texts.flatMap(p=>p.object?.type==='text'?[p.object]:[]),shapes=texts.filter(p=>p.object?.type==='text'&&p.object.shape!=='none');
   const count=card?1:selected.length+edges.length;
   const apply=(patch:Partial<Edge>|((edge:Edge)=>Partial<Edge>))=>{if(board)void session.board({...board,edges:board.edges.map(e=>edges.includes(e)?{...e,...(typeof patch==='function'?patch(e):patch)}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
   const placements=(items:Placement[],change:(p:Placement)=>Placement)=>{if(board)void session.board({...board,cards:board.cards.map(p=>items.includes(p)?change(p):p)},ui.history.styleSelection,board).catch(()=>undefined);};
@@ -98,7 +103,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
     </SelectionGroup>}
     {!!texts.length&&<SelectionGroup name={readingText.textObjects} icon="text" count={texts.length}>
       {color(ui.style.textColor,common(textValues.map(p=>p.textColor??'')),textColor=>textStyle({textColor}))}
-      <label className="style-label"><span>{readingText.fontSize}</span><input key={texts.map(p=>p.id).join(',')+':'+fontSize} aria-label={readingText.fontSize} type="number" min="8" max="120" placeholder={ui.style.mixed} defaultValue={fontSize??''} onBlur={e=>{const fontSize=e.target.valueAsNumber;if(fontSize>=8&&fontSize<=120&&textValues.some(value=>(value.fontSize??20)!==fontSize))textStyle({fontSize});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>
+      <fieldset className="style-choice"><legend>{readingText.fontSize}</legend><FontSizeButtons values={textValues.map(p=>p.fontSize??'m')} onChange={fontSize=>textStyle({fontSize})}/></fieldset>
       <Choice label={readingText.shape} value={common(textValues.map(p=>p.shape==='rectangle'?'rounded':p.shape))} choices={['none','rounded','ellipse','diamond'].map(v=>[v,({none:'Text',rectangle:'Rectangle',rounded:'Rectangle',ellipse:'Ellipse',diamond:'Diamond'} as Record<string,string>)[v]])} sample={shape=><ShapeSample shape={shape}/>} onChange={shape=>textStyle({shape:shape as Extract<BoardObject,{type:'text'}>['shape']})}/>
       {!!shapes.length&&<div className="style-subgroup" role="group" aria-label={ui.style.shapeAppearance}><h4>{ui.style.shapeAppearance}<small>{shapes.length}</small></h4>
         {color(ui.style.lineColor,common(shapes.map(p=>p.strokeColor??'')),strokeColor=>placements(shapes,p=>({...p,strokeColor})))}
@@ -116,7 +121,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
         </div></fieldset>
         <Choice label={ui.style.arrowheadStyle} value={common(arrowheads)} disabled={!arrowheads.length} choices={ARROWHEAD_STYLES.map(v=>[v,ui.style.arrowheads[v]])} tip={v=>tooltips.style.arrowheads[v as typeof ARROWHEAD_STYLES[number]]} onChange={value=>apply(e=>({...(hasArrow(e.fromArrowhead)?{fromArrowhead:value as Arrowhead}:{}),...(hasArrow(e.toArrowhead)?{toArrowhead:value as Arrowhead}:{})}))} sample={v=><LineSample arrow={v as Arrowhead}/>}/>
         {stroke(edges,apply)}
-        <Choice label={ui.style.labelSize} value={common(edges.map(e=>e.labelSize??14))} choices={[12,14,18,24].map((n,i)=>[n,ui.style.labelSizes[i]])} tip={v=>tooltips.style.size(Number(v))} onChange={v=>apply({labelSize:Number(v)})}/>
+        <fieldset className="style-choice"><legend>{readingText.fontSize}</legend><FontSizeButtons values={edges.map(e=>e.labelSize??'s')} onChange={labelSize=>apply({labelSize})}/></fieldset>
         {edges.length===1&&<label className="style-label"><span>{ui.style.label}</span><input key={edges[0].id+':'+(edges[0].label??'')} aria-label={ui.style.label} maxLength={2000} defaultValue={edges[0].label??''} onBlur={e=>{if(e.target.value!==(edges[0].label??''))apply({label:e.target.value});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>}
     </SelectionGroup>}
     </>}

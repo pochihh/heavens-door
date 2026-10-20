@@ -112,7 +112,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
     assert.equal(document.querySelectorAll('select').length,0);
     const groups=()=>[...document.querySelectorAll<HTMLElement>('.style-group')];
     assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards · 1 selected','Whiteboards · 1 selected','Edges · 1 selected']);
-    assert.deepEqual(labels(),['Fill color','Color','Line color','Arrows','Arrowhead style','Line style','Line width','Label size']);
+    assert.deepEqual(labels(),['Fill color','Color','Line color','Arrows','Arrowhead style','Line style','Line width','Font size']);
     const beforeCards=board.cards;
     await act(async()=>groups()[2].querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(board.edges[0].strokeColor,'#91aa8b');assert.deepEqual(board.cards,beforeCards);
@@ -197,14 +197,21 @@ test('Style separates card, plain Text, shapes, images and edges, including mixe
   try{
     await render();assert.deepEqual([...document.querySelectorAll('.style-group')].map(g=>g.getAttribute('aria-label')),['Cards · 1 selected','Text · 2 selected','Images · 1 selected','Edges · 1 selected']);
     assert.equal(group('Images · 1 selected').querySelector('fieldset,input'),null);
-    const size=group('Text · 2 selected').querySelector<HTMLInputElement>('[aria-label="Font size"]')!;assert.equal(size.value,'');assert.equal(size.placeholder,'Mixed');
-    await act(async()=>{size.value='24';size.dispatchEvent(new dom.window.FocusEvent('focusout',{bubbles:true}));});assert.deepEqual(board.cards.flatMap(p=>p.object?.type==='text'?[p.object.fontSize]:[]),[24,24]);
+    const size=()=>group('Text · 2 selected').querySelector('[aria-label="Font size"]')!;
+    assert.equal(size().querySelectorAll('[aria-pressed=true]').length,0,'mixed and legacy sizes are not converted on selection');
+    assert.equal(group('Text · 2 selected').querySelector('input[type=number]'),null);
+    const edgeSize=()=>group('Edges · 1 selected').querySelector('[aria-label="Font size"]')!;
+    assert.deepEqual([...size().querySelectorAll('button')].map(b=>b.textContent),['S','M','L','XL']);
+    assert.deepEqual([...edgeSize().querySelectorAll('button')].map(b=>b.textContent),['S','M','L','XL']);
+    await act(async()=>size().querySelector<HTMLButtonElement>('[aria-label="L"]')!.click());assert.deepEqual(board.cards.flatMap(p=>p.object?.type==='text'?[p.object.fontSize]:[]),['l','l']);assert.equal(board.edges[0].labelSize,undefined);
+    await render();assert.equal(size().querySelector('[aria-pressed=true]')?.textContent,'L');
+    await act(async()=>edgeSize().querySelector<HTMLButtonElement>('[aria-label="L"]')!.click());assert.equal(board.edges[0].labelSize,'l');assert.deepEqual(board.cards.flatMap(p=>p.object?.type==='text'?[p.object.fontSize]:[]),['l','l']);
     await render();await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Text color"] [aria-label="Rose"]')!.click());
     assert.ok(board.cards.filter(p=>p.object?.type==='text').every(p=>p.object?.type==='text'&&p.object.textColor==='#c9838a'));assert.equal(board.edges[0].strokeColor,undefined);
     await render();await act(async()=>group('Cards · 1 selected').querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());assert.deepEqual(filled,['source']);
     assert.equal(group('Text · 2 selected').querySelector('[aria-label="Fill color"]'),null,'Text has no fill editor');
     await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Line color"] [aria-label="Rose"]')!.click());assert.equal(board.cards[1].strokeColor,undefined);assert.equal(board.cards[2].strokeColor,'#c9838a');assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(board.cards[2].fillColor,'#91aa8b','editing a border preserves the saved fill');
-    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color','Shape']);
+    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color','Font size','Shape']);
     await act(async()=>text.querySelector<HTMLButtonElement>('[aria-label="Rectangle"]')!.click());await render(['card','plain']);assert.ok(group('Text · 1 selected').querySelector('[aria-label="Line color"]'));assert.equal(board.cards[1].object?.type==='text'&&board.cards[1].object.shape,'rounded');assert.equal(group('Text · 1 selected').querySelector('[aria-label="Rounded rectangle"]'),null);assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(group('Cards · 1 selected').querySelector('[aria-label="Line color"]'),null);assert.deepEqual(readBoard(board.path,writeBoard(board)).cards.filter(p=>p.object),board.cards.filter(p=>p.object),'both fill and border data survive the restricted UI');
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
@@ -216,7 +223,7 @@ test('last edited edge style is cached per workspace, survives restart, and igno
   await w.createFolder('','Ideas');await w.create('Ideas','a',0,0);await w.create('Ideas','b',500,0);
   let board=w.snapshot().boards.find(b=>b.folder==='Ideas')!;
   board=(await w.saveBoard({...board,edges:[{id:'e',from:board.cards[0].id,to:board.cards[1].id,toArrowhead:'arrow'}]},board.revision)).snapshot.boards.find(b=>b.folder==='Ideas')!;
-  const styled={...board,edges:[{...board.edges[0],strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed' as const,fromArrowhead:'arrow' as const,toArrowhead:'arrow' as const,labelSize:18,label:'Do not copy me'}]};
+  const styled={...board,edges:[{...board.edges[0],strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed' as const,fromArrowhead:'arrow' as const,toArrowhead:'arrow' as const,labelSize:'l' as const,label:'Do not copy me'}]};
   const result=await w.saveBoard(styled,board.revision),expected=edgeStyle(styled.edges[0]);
   assert.deepEqual(result.snapshot.lastEdgeStyle,expected);assert.ok(!('label' in expected));assert.ok(!('from' in expected));
   board=result.snapshot.boards.find(b=>b.folder==='Ideas')!;

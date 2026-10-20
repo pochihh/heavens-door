@@ -84,7 +84,7 @@ export const ui = {
     solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
     arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',
     arrowheadStyle:'Arrowhead style',arrowheads:{arrow:'Open arrow',triangle:'Filled triangle','triangle-outline':'Outlined triangle'},
-    label:'Label',labelSize:'Label size',labelSizes:['S','M','L','XL'],showMentions:'Show mention links',
+    label:'Label',showMentions:'Show mention links',
     palette:'Workspace palette',editPalette:'Edit palette',addColor:'Add color',resetPalette:'Reset palette',
     colorName:'Color name',colorValue:'Hex color',newColor:'New color',invalidColor:'Each color needs a name and a six-digit hex value, such as #8aa5c5.',
     paletteHelp:'Palette edits affect future selections. Existing items keep their colors.',

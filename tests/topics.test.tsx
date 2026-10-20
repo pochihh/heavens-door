@@ -273,3 +273,18 @@ test('style shortcuts and menus use the active selection, respect bindings, and 
   await act(async()=>render(false));const n=copied.length;await act(async()=>key(canvas,'c'));assert.equal(copied.length,n);
  }finally{await act(async()=>root.unmount());}
 });
+
+
+test('Command/Ctrl+Enter accepts edited Text once without creating a sibling',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');let saved:Board={...fixture(),cards:[topic('root','Original')]},writes=0;const root=createRoot(document.getElementById('root')!);
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} onSave={next=>{saved=next;writes++;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const key=(target:Element,key:string,options:KeyboardEventInit={})=>target.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
+ try{await act(async()=>root.render(<Harness/>));await act(async()=>press(document.querySelector('[data-placement="root"]')!));
+  for(const modifier of ['metaKey','ctrlKey']){
+   await act(async()=>key(document.querySelector('.canvas')!,' '));const editor=document.querySelector<HTMLTextAreaElement>('textarea')!;
+   await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(editor,'Accepted '+modifier);editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+   await act(async()=>key(editor,'Enter',{[modifier]:true}));assert.equal(document.querySelector('textarea'),null);assert.equal(saved.cards.length,1);assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'Accepted '+modifier);assert.equal(saved.edges.length,0);
+  }
+  assert.equal(writes,2,'each acceptance is one save');
+ }finally{await act(async()=>root.unmount());}
+});

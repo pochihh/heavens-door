@@ -1,3 +1,4 @@
+import type {FontSize} from './font-size';
 import type {TemplateValues} from './templates';
 import type {CoreFeature,BoardNavigation} from './features';
 import type {JournalSettings,TemplateSettings} from './journal';
@@ -9,12 +10,12 @@ export type CardInfo = Omit<Card, 'body'|'header'>;
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
 export interface Stroke { strokeColor?:string; strokeWidth?:number; strokeStyle?:'solid'|'dashed'|'dotted'|'none' }
-export type BoardObject={type:'text';text:string;shape:'none'|'rectangle'|'rounded'|'ellipse'|'diamond';fontSize?:number;textColor?:string}|{type:'image';html:string};
+export type BoardObject={type:'text';text:string;shape:'none'|'rectangle'|'rounded'|'ellipse'|'diamond';fontSize?:FontSize;textColor?:string}|{type:'image';html:string};
 export interface Placement extends Stroke {object?:BoardObject; fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
-export interface Edge extends Stroke { kind?:'branch'; id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:number }
+export interface Edge extends Stroke { kind?:'branch'; id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:FontSize }
 export type EdgeStyle = Pick<Edge,'strokeColor'|'strokeWidth'|'strokeStyle'|'fromArrowhead'|'toArrowhead'|'labelSize'>;
 export function edgeStyle(edge:EdgeStyle):EdgeStyle {
-  return {strokeColor:edge.strokeColor,strokeWidth:edge.strokeWidth??2,strokeStyle:edge.strokeStyle==='none'?'solid':edge.strokeStyle??'solid',fromArrowhead:edge.fromArrowhead??'none',toArrowhead:edge.toArrowhead??'none',labelSize:edge.labelSize??14};
+  return {strokeColor:edge.strokeColor,strokeWidth:edge.strokeWidth??2,strokeStyle:edge.strokeStyle==='none'?'solid':edge.strokeStyle??'solid',fromArrowhead:edge.fromArrowhead??'none',toArrowhead:edge.toArrowhead??'none',labelSize:edge.labelSize??'s'};
 }
 export interface Mention { from:string; to:string }
 export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; showMentions?:boolean; mentionStyle?:Stroke; canvasColor?:string; gridColor?:string; inbox?:{x:number;y:number} }
@@ -37,7 +38,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { whiteboardText?:{fontSize?:number;textColor?:string}; reading?:import('./reading').ReadingSettings; actionHub?:import('./action-hub').HubButton[]; keybindings?:import('./keybindings').Keybindings; graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { whiteboardText?:{fontSize?:FontSize;textColor?:string}; reading?:import('./reading').ReadingSettings; actionHub?:import('./action-hub').HubButton[]; keybindings?:import('./keybindings').Keybindings; graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;

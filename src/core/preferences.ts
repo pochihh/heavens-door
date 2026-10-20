@@ -1,3 +1,4 @@
+import {isFontSize} from '../font-size';
 import {validateActionHub} from '../action-hub';
 import {validateKeybindings} from '../keybindings';
 import {CORE_FEATURES} from '../features';
@@ -28,7 +29,7 @@ export function validatePreferences(value: unknown): Preferences {
   if (!p.icons || typeof p.icons !== 'object' || Array.isArray(p.icons) || Object.keys(p.icons).length > 20000 || Object.entries(p.icons).some(([k,v]) => k.length > 2048 || typeof v !== 'string' || [...v].length > 16)) throw new Error('Invalid document icons');
   if(p.graphMode!==undefined&&!['2d','3d'].includes(p.graphMode))throw new Error('Invalid graph mode');
   if(p.explorerMode!==undefined&&!['whiteboards','files'].includes(p.explorerMode))throw new Error('Invalid explorer mode');
-  if(p.whiteboardText!==undefined&&(!p.whiteboardText||typeof p.whiteboardText!=='object'||Array.isArray(p.whiteboardText)||p.whiteboardText.fontSize!==undefined&&(!Number.isFinite(p.whiteboardText.fontSize)||p.whiteboardText.fontSize<8||p.whiteboardText.fontSize>120)||p.whiteboardText.textColor!==undefined&&!isHexColor(p.whiteboardText.textColor)))throw new Error('Invalid whiteboard text defaults');
+  if(p.whiteboardText!==undefined&&(!p.whiteboardText||typeof p.whiteboardText!=='object'||Array.isArray(p.whiteboardText)||p.whiteboardText.fontSize!==undefined&&!isFontSize(p.whiteboardText.fontSize)||p.whiteboardText.textColor!==undefined&&!isHexColor(p.whiteboardText.textColor)))throw new Error('Invalid whiteboard text defaults');
   if(p.whiteboardInput!==undefined&&!['auto','mouse','trackpad'].includes(p.whiteboardInput))throw new Error('Invalid whiteboard input mode');
   if(p.newSplitDirection!==undefined&&!['row','column'].includes(p.newSplitDirection))throw new Error('Invalid navigation settings');
   if(p.query!==undefined&&(!p.query||typeof p.query!=='object'||Array.isArray(p.query)||typeof p.query.mergeProperties!=='boolean'||typeof p.query.caseSensitive!=='boolean'))throw new Error('Invalid query settings');
