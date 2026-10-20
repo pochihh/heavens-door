@@ -55,7 +55,7 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
     await press(document.querySelector('[data-placement="p0"]')!,100,100);
     await press(anchor('p0','right'),340,140);assert.equal(writes,0);
     assert.equal(document.querySelectorAll('.edge-anchor').length,0,'distant destinations do not reveal anchors');
-    await hover(500,140);assert.equal(document.querySelectorAll('.edge-anchor').length,4,'only the nearby destination reveals anchors');
+    await hover(500,140);assert.equal(document.querySelectorAll('[data-anchor-visible=true]').length,1,'only the nearby individual anchor appears');
     await press(anchor('p1','left'),500,140);assert.equal(current.edges.length,1);assert.equal(current.edges[0].fromSide,'right');assert.equal(current.edges[0].toSide,'left');
     assert.deepEqual(edgeStyle(current.edges[0]),{strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed',fromArrowhead:'arrow',toArrowhead:'arrow',labelSize:18},'new edges copy the complete cached style');
     assert.equal(current.edges[0].label,undefined);

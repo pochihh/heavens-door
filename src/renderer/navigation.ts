@@ -1,5 +1,6 @@
 import type { WhiteboardInput } from '../shared';
 // Navigation adapted from Toby's obsidian-whiteboard (MIT); see THIRD_PARTY_NOTICES.md.
+export const BOARD_CAMERA_EVENT='board-camera-change';
 export interface Camera { x: number; y: number; zoom: number }
 export const MIN_ZOOM = 0.2;
 export const MAX_ZOOM = 3;
@@ -159,6 +160,7 @@ export class BoardNavigation {
       group.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${c.zoom})`);
       group.style.setProperty('--edge-zoom', String(c.zoom));
     }
+    this.viewport.dispatchEvent(new this.viewport.ownerDocument.defaultView!.Event(BOARD_CAMERA_EVENT));
     // Geometry stays in world coordinates; the grid and SVG share this camera frame.
     this.grid.style.setProperty('--board-zoom', String(c.zoom));
     this.grid.style.setProperty('--grid-x', `${c.x}px`);

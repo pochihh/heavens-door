@@ -141,20 +141,20 @@ test('Text branch endpoints reconnect to any element and leave their former text
 });
 
 
-test('dragging shows anchors only for the nearest candidate and clears them on empty canvas',async()=>{
+test('selection and dragging reveal individual anchors around the cursor across nearby elements',async()=>{
  const {Whiteboard}=await import('../src/renderer/Board');const root=createRoot(document.getElementById('root')!);
- const board:Board={...fixture(),cards:[{...topic('source'),x:0,y:0},{...topic('near'),x:500,y:0},{...topic('far'),x:900,y:0}],edges:[]};
- const shown=()=>[...new Set([...document.querySelectorAll('[data-anchor-card]')].map(el=>el.getAttribute('data-anchor-card')))];
+ const board:Board={...fixture(),cards:[{...topic('source'),x:0,y:0},{...topic('near'),x:500,y:0},{...topic('far'),x:900,y:0},{...topic('neighbor'),x:500,y:160}],edges:[]};
+ const shown=()=>[...new Set([...document.querySelectorAll('[data-anchor-visible=true]')].map(el=>el.getAttribute('data-anchor-card')))];
  const move=async(x:number,y:number)=>act(async()=>{pointer(document,'pointermove',x,y);await new Promise(r=>setTimeout(r,25));});
  try{await act(async()=>root.render(<Whiteboard board={board} cards={[]} initialCamera={{x:0,y:0,zoom:.5}} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>));
   await act(async()=>press(document.querySelector('[data-placement="source"]')!,20,20));const source=document.querySelector('[data-anchor-card="source"][data-anchor-side="right"]')!;
   await act(async()=>pointer(source,'pointerdown',124,20));await move(400,200);assert.deepEqual(shown(),[],'distant elements stay uncluttered');
-  await move(240,20);assert.deepEqual(shown(),['near'],'nearby means screen pixels and appears before the actual drop snap');assert.equal(document.querySelectorAll('.edge-anchor').length,4);
-  await move(440,20);assert.deepEqual(shown(),['far'],'moving between candidates replaces their anchors');
+  await move(240,20);assert.deepEqual(shown(),['near'],'nearby means screen pixels and appears before the actual drop snap');assert.equal(document.querySelectorAll('[data-anchor-visible=true]').length,1);await move(310,60);assert.deepEqual(shown(),['near','neighbor']);for(const id of shown())assert.ok(document.querySelectorAll(`[data-anchor-visible=true][data-anchor-card="${id}"]`).length<4,'proximity is per connector, not per element');
+  await move(440,20);assert.deepEqual(shown(),['near','far'],'connectors on two different elements can be visible together');
   await move(400,200);assert.deepEqual(shown(),[]);
   await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.deepEqual(shown(),[],'cancel clears selection and target hints');
   await act(async()=>press(document.querySelector('[data-placement="source"]')!,20,20));assert.deepEqual(shown(),['source'],'idle selection still exposes its own anchors');
-  const keyboardSource=document.querySelector('[data-anchor-card="source"][data-anchor-side="right"]')!;await act(async()=>keyboardSource.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));assert.deepEqual(shown(),['source','near','far'],'keyboard users can still tab through destinations');assert.equal(keyboardSource.isConnected,true,'the focused keyboard anchor is never unmounted');
+  const keyboardSource=document.querySelector('[data-anchor-card="source"][data-anchor-side="right"]')!;await act(async()=>keyboardSource.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));assert.deepEqual([...new Set([...document.querySelectorAll('[data-anchor-card][tabindex="0"]')].map(n=>n.getAttribute('data-anchor-card')))],['source','near','far','neighbor'],'keyboard users can still reach every destination');assert.equal(keyboardSource.isConnected,true,'the focused keyboard anchor is never unmounted');
  }finally{await act(async()=>root.unmount());}
 });
 

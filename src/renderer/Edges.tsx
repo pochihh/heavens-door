@@ -1,10 +1,12 @@
+import {EdgeAnchors} from './EdgeAnchors';
+import {connectorScene,closestConnector} from './connector-proximity';
 import {fontSizeCSS} from '../font-size';
 import {canReconnectBranch,topicText} from '../topics';
 import { tintColor } from '../colors';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { AnchorSide, Arrowhead, Board, Edge, EdgeStyle, Mention, Placement } from '../shared';
-import type { Camera } from './navigation';
-import { anchor, curve, edgeGeometry, nearestSide, opposite, sides, strokeDash, type Point } from './edge-geometry';
+import {BOARD_CAMERA_EVENT,type Camera} from './navigation';
+import { anchor, curve, edgeGeometry, nearestSide, opposite, strokeDash, type Point } from './edge-geometry';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import { ActionMenu, type MenuState } from './Overlays';
@@ -22,34 +24,20 @@ export function Edges(props:Props) {
   const {board,mentions,heightOf,selectedCards,selectedEdges,viewport,onSelect,onSave,onFinish,onStyle}=props;
   const markerId=useId().replaceAll(':',''),latest=useRef(props);latest.current=props;
   const preview=useRef<SVGPathElement>(null),pending=useRef<Pending|null>(null),frame=useRef<number|null>(null),point=useRef({x:0,y:0});
-  const [nearby,setNearby]=useState(''),[connecting,setConnecting]=useState(false),[menu,setMenu]=useState<MenuState|null>(null),[label,setLabel]=useState<{id:string;text:string}|null>(null);
+  const [connecting,setConnecting]=useState(false),[menu,setMenu]=useState<MenuState|null>(null),[label,setLabel]=useState<{id:string;text:string}|null>(null);
   const placements=new Map(board.cards.map(p=>[p.id,p]));
-  function clear(){pending.current=null;setConnecting(false);setNearby('');preview.current?.setAttribute('d','');if(frame.current!==null)viewport.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame.current);frame.current=null;}
+  const scene=useMemo(()=>connectorScene(board.cards,heightOf),[board.cards,heightOf]),sceneRef=useRef(scene);sceneRef.current=scene;
+  function clear(){pending.current=null;setConnecting(false);preview.current?.setAttribute('d','');if(frame.current!==null)viewport.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame.current);frame.current=null;}
   function worldPoint(x:number,y:number):Point {const r=viewport.current!.getBoundingClientRect(),c=latest.current.camera();return {x:(x-r.left-c.x)/c.zoom,y:(y-r.top-c.y)/c.zoom};}
   function targetAt(x:number,y:number) {
-    const {board,heightOf,camera}=latest.current,p=worldPoint(x,y),source=pending.current?.from;
-    const element=viewport.current!.ownerDocument.elementFromPoint?.(x,y),button=element?.closest('[data-anchor-card]');
-    const exact=board.cards.find(c=>c.id===button?.getAttribute('data-anchor-card'));
-    if(exact&&exact.id!==source)return {card:exact,side:button!.getAttribute('data-anchor-side') as AnchorSide};
-    const hit=[...board.cards].reverse().find(c=>c.id!==source&&p.x>=c.x&&p.x<=c.x+c.width&&p.y>=c.y&&p.y<=c.y+heightOf(c));
-    if(hit)return {card:hit,side:nearestSide(hit,p,heightOf(hit))};
-    let near:{card:Placement;side:AnchorSide;distance:number}|undefined;
-    for(const card of board.cards)if(card.id!==source)for(const side of sides){const a=anchor(card,side,heightOf(card)),distance=Math.hypot(p.x-a.x,p.y-a.y)*camera().zoom;if(distance<=14&&(!near||distance<near.distance))near={card,side,distance};}
-    return near;
-  }
-  function nearbyAt(x:number,y:number){
-    const {board,heightOf,camera}=latest.current,p=worldPoint(x,y);let id='',distance=32;
-    for(const card of board.cards)if(card.id!==pending.current?.from){
-      const dx=Math.max(card.x-p.x,0,p.x-card.x-card.width),dy=Math.max(card.y-p.y,0,p.y-card.y-heightOf(card)),d=Math.hypot(dx,dy)*camera().zoom;
-      if(d<=distance){id=card.id;distance=d;}
-    }
-    return id;
+    const p=worldPoint(x,y),source=pending.current?.from,geometry=sceneRef.current,near=closestConnector(geometry.points,p,latest.current.camera().zoom,source);
+    if(near)return {card:near.card,side:near.side};
+    for(let i=geometry.rects.length-1;i>=0;i--){const {card,height}=geometry.rects[i];if(card.id!==source&&p.x>=card.x&&p.x<=card.x+card.width&&p.y>=card.y&&p.y<=card.y+height)return {card,side:nearestSide(card,p,height)};}
   }
   function draw(x:number,y:number){
     const g=pending.current;if(!g)return;
     const {board,heightOf}=latest.current,from=board.cards.find(p=>p.id===g.from);if(!from){clear();return;}
     const target=targetAt(x,y),start=anchor(from,g.side,heightOf(from)),end=target?anchor(target.card,target.side,heightOf(target.card)):worldPoint(x,y),side=target?.side??opposite[g.side];
-    setNearby(target?.card.id??nearbyAt(x,y));
     const style=g.edge??{fromArrowhead:'none',toArrowhead:'arrow',...latest.current.edgeDefaults} as const;
     preview.current?.setAttribute('d',g.endpoint==='from'?curve(end,start,side,g.side,style).path:curve(start,end,g.side,side,style).path);
   }
@@ -77,10 +65,11 @@ export function Edges(props:Props) {
   }
   useEffect(()=>{
     const doc=viewport.current!.ownerDocument;
+    const redraw=()=>{if(pending.current&&frame.current===null)frame.current=doc.defaultView!.requestAnimationFrame(()=>{frame.current=null;draw(point.current.x,point.current.y);});};
     const move=(e:PointerEvent)=>{
       const g=pending.current;if(!g||g.pointerId!==undefined&&g.pointerId!==e.pointerId)return;
       g.moved||=Math.abs(e.clientX-g.x)+Math.abs(e.clientY-g.y)>3;point.current={x:e.clientX,y:e.clientY};
-      if(frame.current===null)frame.current=viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(()=>{frame.current=null;draw(point.current.x,point.current.y);});
+      redraw();
     };
     const up=(e:PointerEvent)=>{
       const g=pending.current;if(!g||g.pointerId!==e.pointerId)return;
@@ -102,8 +91,8 @@ export function Edges(props:Props) {
     const double=(e:MouseEvent)=>{const g=pending.current;if(!g||g.edge||!latest.current.onCreateTopic||!viewport.current?.contains(e.target as Node)||(e.target as Element).closest('[data-placement],.canvas-controls,.edge-layer,.edge-handles,button,input,textarea,a')||targetAt(e.clientX,e.clientY))return;e.preventDefault();e.stopPropagation();const p=worldPoint(e.clientX,e.clientY);latest.current.onCreateTopic(p.x,p.y,g.from,g.side);clear();};
     const key=(e:KeyboardEvent)=>{if(e.key==='Escape')clear();};
     const cancel=()=>clear();
-    doc.addEventListener('dblclick',double,true);doc.addEventListener('pointerdown',down,true);doc.addEventListener('pointermove',move,true);doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',cancel,true);doc.addEventListener('keydown',key);window.addEventListener('blur',cancel);
-    return()=>{doc.removeEventListener('dblclick',double,true);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointermove',move,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',cancel,true);doc.removeEventListener('keydown',key);window.removeEventListener('blur',cancel);if(frame.current!==null)doc.defaultView?.cancelAnimationFrame(frame.current);};
+    viewport.current!.addEventListener(BOARD_CAMERA_EVENT,redraw);doc.addEventListener('dblclick',double,true);doc.addEventListener('pointerdown',down,true);doc.addEventListener('pointermove',move,true);doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',cancel,true);doc.addEventListener('keydown',key);window.addEventListener('blur',cancel);
+    return()=>{viewport.current?.removeEventListener(BOARD_CAMERA_EVENT,redraw);doc.removeEventListener('dblclick',double,true);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointermove',move,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',cancel,true);doc.removeEventListener('keydown',key);window.removeEventListener('blur',cancel);if(frame.current!==null)doc.defaultView?.cancelAnimationFrame(frame.current);};
   },[]);
   useEffect(()=>{if(!props.enabled)clear();},[props.enabled]);
   useLayoutEffect(()=>{if(connecting)draw(point.current.x,point.current.y);},[connecting]);
@@ -131,8 +120,7 @@ export function Edges(props:Props) {
       </g>;})}
       <path ref={preview} className="edge-preview"/>
     </g></svg>
-    <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><g className="edge-camera" transform={transform} style={{'--edge-zoom':camera.zoom} as React.CSSProperties}>
-      {board.cards.filter(p=>connecting?pending.current?.keyboard||p.id!==pending.current?.from&&p.id===nearby:selectedCards.includes(p.id)).flatMap(p=>sides.map(side=>{const a=anchor(p,side,heightOf(p));return <circle className="edge-anchor" key={p.id+side} cx={a.x} cy={a.y} r={5/props.camera().zoom} data-anchor-card={p.id} data-anchor-side={side} tabIndex={0} role="button" aria-label={ui.edges.anchor(side)} data-tooltip={tooltips.edges.anchor} onPointerDown={e=>start(e,p,side)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(p,side,a);}}}/>;}))}
+    <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><EdgeAnchors points={scene.points} selected={selectedCards} connecting={connecting} keyboard={!!pending.current?.keyboard} source={pending.current?.from} enabled={props.enabled} viewport={viewport} camera={props.camera} onStart={start} onKeyboardStart={keyboardStart}/><g className="edge-camera" transform={transform} style={{'--edge-zoom':camera.zoom} as React.CSSProperties}>
       {geometries.filter(g=>selectedEdges.includes(g.edge.id)).flatMap(g=>(['from','to'] as const).map(endpoint=>{const at=endpoint==='from'?g.start:g.end,fixed=endpoint==='from'?'to':'from',card=placements.get(g.edge[fixed])!,side=fixed==='from'?g.fromSide:g.toSide;return <circle className="edge-endpoint" key={g.edge.id+endpoint} cx={at.x} cy={at.y} r={6/props.camera().zoom} role="button" tabIndex={0} aria-label={ui.edges.endpoint(endpoint)} data-tooltip={tooltips.edges.reconnect} onPointerDown={e=>start(e,card,side,g.edge,endpoint)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(card,side,at,g.edge,endpoint);}}}/>;}))}
     </g></svg>
     {connecting&&!pending.current?.edge&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}

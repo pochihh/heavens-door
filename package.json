@@ -13,6 +13,7 @@
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx tests/*.test.mjs",
     "check": "npm run lint && npm test && npm run build",
     "benchmark": "node --import tsx scripts/benchmark.ts",
+    "benchmark:connectors": "node --import tsx scripts/benchmark-connectors.ts",
     "package:mac": "npm run sparkle:rebuild && npm run build && electron-builder --config electron-builder.config.mjs --mac --publish never",
     "package:win": "npm run build && electron-builder --config electron-builder.config.mjs --win --publish never",
     "version:bump": "node scripts/version.mjs",
