@@ -251,3 +251,22 @@ test('facing edge curves stay inside their gap for deep sibling fans in every di
  const backward=curve({x:100,y:0},{x:0,y:300},'right','left');assert.ok(backward.samples.some(p=>p.x>100),'backward connections retain room to turn');
  const sameSide=curve({x:0,y:0},{x:0,y:300},'right','right');assert.ok(sameSide.samples.some(p=>p.x>0),'same-side manual connections keep their outside curve');
 });
+
+
+test('arrowheads have a continuous straight shaft in deep fans, with bounded leads and unchanged anchors',async()=>{
+ const {curve,edgeGeometry,anchor,opposite}=await import('../src/renderer/edge-geometry');
+ for(const side of ['right','left','top','bottom'] as const)for(const width of [.5,1,2,4,8])for(const head of ['arrow','triangle','triangle-outline'] as const){
+  const horizontal=side==='right'||side==='left',sign=side==='right'||side==='bottom'?1:-1,start={x:100,y:200},end={x:100+(horizontal?sign*400:800),y:200+(horizontal?800:sign*400)};
+  const g=curve(start,end,side,opposite[side],{strokeWidth:width,fromArrowhead:head,toArrowhead:head}),first=g.samples[1],last=g.samples.at(-2)!;
+  assert.equal(horizontal?first.y:first.x,horizontal?start.y:start.x);assert.equal(horizontal?last.y:last.x,horizontal?end.y:end.x);
+  assert.ok(Math.abs(Math.hypot(first.x-start.x,first.y-start.y)-width*10)<1e-8);assert.ok(Math.abs(Math.hypot(last.x-end.x,last.y-end.y)-width*10)<1e-8);
+  assert.match(g.path,/ L /);assert.ok(g.path.endsWith(`L ${end.x} ${end.y}`));assert.deepEqual(g.samples[0],start);assert.deepEqual(g.samples.at(-1),end);
+ }
+ for(const gap of [0,1,16,66,74])for(const width of [.5,2,8])for(const dy of [-800,0,336,800]){
+  const start={x:0,y:0},end={x:gap,y:dy},g=curve(start,end,'right','left',{strokeWidth:width,fromArrowhead:'arrow',toArrowhead:'arrow'});
+  let x=0;for(const p of g.samples){assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y));assert.ok(p.x>=x-1e-8&&p.x<=gap+1e-8,'tight gaps remain monotone instead of looping outside their anchors');x=p.x;}
+ }
+ const a={id:'a',cardId:'',x:0,y:0,width:70,height:28,object:{type:'text' as const,text:'original',shape:'none' as const}},b={...a,id:'b',x:152,y:336},edge:Edge={id:'e',from:'a',to:'b',fromSide:'right',toSide:'left',toArrowhead:'arrow',strokeWidth:2};
+ const g=edgeGeometry(edge,a,b,p=>p.height);assert.deepEqual(g.start,anchor(a,'right',28));assert.deepEqual(g.end,anchor(b,'left',28));assert.equal(g.samples.at(-2)!.y,g.end.y);assert.equal(g.end.x-g.samples.at(-2)!.x,20,'the reported short, deep branch gets a full 20-unit approach');
+ const bare=curve(g.start,g.end,'right','left');assert.ok(!bare.path.includes(' L '),'edges without arrowheads retain the original cubic');
+});

@@ -50,7 +50,8 @@ export function Edges(props:Props) {
     const {board,heightOf}=latest.current,from=board.cards.find(p=>p.id===g.from);if(!from){clear();return;}
     const target=targetAt(x,y),start=anchor(from,g.side,heightOf(from)),end=target?anchor(target.card,target.side,heightOf(target.card)):worldPoint(x,y),side=target?.side??opposite[g.side];
     setNearby(target?.card.id??nearbyAt(x,y));
-    preview.current?.setAttribute('d',g.endpoint==='from'?curve(end,start,side,g.side).path:curve(start,end,g.side,side).path);
+    const style=g.edge??{fromArrowhead:'none',toArrowhead:'arrow',...latest.current.edgeDefaults} as const;
+    preview.current?.setAttribute('d',g.endpoint==='from'?curve(end,start,side,g.side,style).path:curve(start,end,g.side,side,style).path);
   }
   function complete(x:number,y:number,exact?:{card:Placement;side:AnchorSide}){
     const g=pending.current,target=exact??targetAt(x,y);if(!g)return;if(!target&&!g.edge&&latest.current.onCreateTopic){g.pointerId=undefined;point.current={x,y};draw(x,y);return;}if(!target||target.card.id===g.from){clear();return;}
