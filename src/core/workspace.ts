@@ -1,6 +1,6 @@
 import {readingAsset,validateImport,readFeeds} from './reading';
 import {annotationView,splitAnnotations,withAnnotations,updateAnnotation} from '../reading';
-import {readingMetadata} from '../reading';
+import {READLATER_STATUS,DEFAULT_READING_STATUS,legacyReadingStatus,readingMetadata} from '../reading';
 import {operateFile,fileTrashEntries,fileStamp,editablePath,vacant,availableFilePath} from './files';
 import {systemFolder,systemPath} from '../features';
 import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
@@ -95,6 +95,7 @@ export class Workspace {
       await workspace.history.initialize();
       await workspace.scan();
       if (workspace.history.available && !(await workspace.history.list()).length) await workspace.history.checkpoint(ui.history.workspaceOpened);
+      try{await workspace.migrateReadingStatuses();}catch(error){workspace.issues.set('Read later',String(error));}
       return workspace;
     } catch(error) { workspace.close(); throw error; }
   }
@@ -261,9 +262,9 @@ export class Workspace {
   snapshot(): Snapshot {
     // ponytail: full metadata snapshots; switch to deltas if IPC dominates large-vault saves.
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
-    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType,json_quote(json_extract(frontmatter,'$.source')) AS sourceData,json_quote(json_extract(frontmatter,'$.reading')) AS readingData FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string;sourceData:string;readingData:string})[];
+    const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType,json_quote(json_extract(frontmatter,'$.source')) AS sourceData,json_quote(json_extract(frontmatter,'$.reading')) AS readingData,json_quote(json_extract(frontmatter,'$."readlater/status"')) AS statusData FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string;sourceData:string;readingData:string;statusData:string})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map(({colorType,fillColor,tagData,sourceData,readingData,...c}) => ({...c,...readingMetadata({source:JSON.parse(sourceData),reading:JSON.parse(readingData)}),tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map(({colorType,fillColor,tagData,sourceData,readingData,statusData,...c}) => ({...c,...readingMetadata({source:JSON.parse(sourceData),reading:JSON.parse(readingData),[READLATER_STATUS]:JSON.parse(statusData)}),tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
@@ -945,14 +946,32 @@ export class Workspace {
     const changes:Write[]=[{path,content:null,expected},{path:next,content:own?.after??editCard(raw,card,card.body),expected:null},...edits.filter(e=>e.path!==path).map(e=>({path:e.path,content:e.after,expected:revision(e.before)}))];
     return this.write(changes);
   }
+  private async readingStatusSchema():Promise<{field:TagField;changes:Write[]}>{
+    const existing=[...this.tags.values()].find(t=>t.tag==='readlater');
+    if(existing){const field=resolveTag([...this.tags.values()],'readlater').fields.find(f=>f.propertyKey===READLATER_STATUS);if(field)return {field,changes:[] as Write[]};const raw=await this.read(existing.path);return {field:DEFAULT_READING_STATUS,changes:[{path:existing.path,expected:existing.revision,content:editTag(raw,[...existing.fields,DEFAULT_READING_STATUS],existing.inherits)}]};}
+    const change=await this.newTagChange('readlater');change.content=editTag(change.content,[DEFAULT_READING_STATUS],[]);return {field:DEFAULT_READING_STATUS,changes:[change]};
+  }
+  private readingStatusContent(raw:string,field:TagField){
+    const {front,body}=splitNote(raw),data=front.toJSON()??{},tags=tagsFrom(data.tags);let changed=false;
+    if(!tags.includes('readlater')){front.set('tags',[...tags,'readlater']);changed=true;}
+    if(!front.has(READLATER_STATUS)){const value=legacyReadingStatus(data.reading?.state,field);validateTagValue(field,value);front.set(READLATER_STATUS,value);changed=true;}
+    if(['new','reading','done'].includes(data.reading?.state)){const {state:_,...bookmark}=data.reading;void _;if(Object.keys(bookmark).length)front.set('reading',bookmark);else front.delete('reading');changed=true;}
+    return changed?`---\n${front.toString()}---\n${body}`:raw;
+  }
+  async migrateReadingStatuses(){
+    const cards=this.snapshot().cards.filter(c=>c.source);if(!cards.length)return;
+    const {field,changes}=await this.readingStatusSchema();
+    for(const card of cards){const raw=await this.read(card.path),content=this.readingStatusContent(raw,field);if(content!==raw)changes.push({path:card.path,expected:card.revision,content});}
+    if(changes.length){if(this.history.available)await this.history.checkpoint('Before attachment status migration');else await fs.writeFile(join(this.cache,'reading-status-backup-'+randomUUID()+'.json'),JSON.stringify(await Promise.all(changes.map(async change=>({...change,before:await this.raw(change.path)})))),{flag:'wx'});await this.write(changes);}
+  }
   async importReading(value:import('../shared').ReadingImport){
     validateImport(value);const folder=value.folder??systemPath('reading',this.preferences);if(!validNotePath(folder))throw new Error('Invalid import folder.');await this.ensureFolder(folder);
     if(value.entry){const existing=this.db.prepare("SELECT path FROM cards WHERE coalesce(json_extract(frontmatter,'$.source.feed'),'')=? AND json_extract(frontmatter,'$.source.entry')=?").get(value.feed??'',value.entry);if(existing)return {snapshot:this.snapshot(),edits:[],path:String(existing.path)};}
     const stem=value.name.replace(/[<>:"/\\|?*]/g,' ').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim()||'Reading item',path=await this.newCardPath(folder,stem),asset=await readingAsset(this.root,path,value.name,value.type==='pdf'?'.pdf':'.html',value.data);
-    const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});front.set('reading',{state:'new'});
-    return {...await this.write([{path,content:`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`,expected:null}]),path};
+    const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});const {field,changes}=await this.readingStatusSchema();front.set('tags',['readlater']);front.set(READLATER_STATUS,legacyReadingStatus('new',field));
+    return {...await this.write([...changes,{path,content:`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`,expected:null}]),path};
   }
-  async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);const raw=await this.read(path),{front,body}=splitNote(raw);front.set('reading',value);return this.write([{path,expected,content:`---\n${front.toString()}---\n${body}`}]);}
+  async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);const raw=await this.read(path),{field,changes}=await this.readingStatusSchema(),{front,body}=splitNote(this.readingStatusContent(raw,field));const {state,...bookmark}=value;if(state!==undefined){const status=legacyReadingStatus(state,field);validateTagValue(field,status);front.set(READLATER_STATUS,status);}front.set('reading',{...(front.toJSON()?.reading??{}),...bookmark});return this.write([...changes,{path,expected,content:`---\n${front.toString()}---\n${body}`}]);}
   async readingFeeds(){const path=systemPath('reading',this.preferences)+'/Feeds.opml',source=await this.raw(path);return {source:source??'',expected:source===null?null:revision(source)};}
   async saveReadingFeeds(source:string,expected:string|null){readFeeds(source);const path=systemPath('reading',this.preferences)+'/Feeds.opml';await this.ensureFolder(systemPath('reading',this.preferences));return this.write([{path,content:source,expected}]);}
   async saveCard(path: string, body: string, expected: string, source?:string) {

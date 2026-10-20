@@ -65,8 +65,8 @@ function InlineTagInput({tags,attached,busy,onAttach,session,label=ui.tags.add}:
   </div>,overlayContainer(input.current))}</>;
 }
 
-export function CardTags({card,snapshot,session,onOpen,allowAdd=true}:{card:CardInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;allowAdd?:boolean}) {
-  const tags=card.tags??[],memory=session.tagExpansion.get(card.id),active=tags.includes(memory?.active??'')?memory?.active:undefined;
+export function CardTags({card,snapshot,session,onOpen,allowAdd=true,defaultTag}:{defaultTag?:string;card:CardInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;allowAdd?:boolean}) {
+  const tags=card.tags??[],memory=session.tagExpansion.get(card.id),preferred=memory?memory.active:defaultTag,active=tags.includes(preferred??'')?preferred:undefined;
   const [properties,setProperties]=useState<CardProperties>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[menu,setMenu]=useState<MenuState|null>(null),confirm=useConfirmation(),list=useRef<HTMLDivElement>(null),id=useId();
   useEffect(()=>{let live=true;if(!active)return;void session.bridge.request<CardProperties>({kind:'cardProperties',path:card.path}).then(p=>{if(live){setProperties(p);setError('');}}).catch(e=>{if(live)setError(String(e));});return()=>{live=false;};},[active,card.path,card.revision,session]);
   function toggle(tag?:string){session.tagExpansion.set(card.id,{active:tag===active?undefined:tag,last:tag??memory?.last});session.update({});}

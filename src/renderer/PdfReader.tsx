@@ -1,10 +1,11 @@
+import type {PdfPageBox} from './annotation-layout';
 import {createPortal} from 'react-dom';
 import {BOARD_CAMERA_EVENT} from './navigation';
 import {overlayContainer} from './Overlays';
 import {readingText} from '../text/reading';
 import {matchesBinding} from '../keybindings';
 import {ViewBlockContext} from './ViewBlock';
-import {useContext,useEffect,useRef,useState,type CSSProperties} from 'react';
+import {useContext,useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import type {PDFDocumentProxy,PDFPageProxy} from 'pdfjs-dist';
 import type {Annotation,ReadingSource} from '../reading';
 import {assetPath} from './markdown';
@@ -15,7 +16,7 @@ export function visiblePdfPage(reader:HTMLElement,viewport=reader){
   for(const el of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=el.getBoundingClientRect();if(r.top>=box.bottom)break;const amount=Math.max(0,Math.min(r.bottom,box.bottom)-Math.max(r.top,top));if(amount>overlap){visible=el;overlap=amount;}}
   return visible?Number(visible.dataset.pdfPage):undefined;
 }
-export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSource,initialPage=1,singlePage=false,renderZoom=1,onAnnotation,onRevealPage}:{source:ReadingSource;path:string;annotations:Annotation[];onAnnotate:(annotation:Omit<Annotation,'id'|'kind'|'text'>,note:boolean)=>void;onPage:(page:number)=>void;onJump?:string;onSource?:(checksum:string)=>void;initialPage?:number;singlePage?:boolean;renderZoom?:number;onAnnotation?:(id:string)=>void;onRevealPage?:(page:HTMLElement)=>void}){
+export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSource,initialPage=1,singlePage=false,renderZoom=1,onAnnotation,onRevealPage,onLayout}:{source:ReadingSource;path:string;annotations:Annotation[];onAnnotate:(annotation:Omit<Annotation,'id'|'kind'|'text'>)=>void;onPage:(page:number)=>void;onJump?:string;onSource?:(checksum:string)=>void;initialPage?:number;singlePage?:boolean;renderZoom?:number;onAnnotation?:(id:string)=>void;onRevealPage?:(page:HTMLElement)=>void;onLayout?:(pages:PdfPageBox[])=>void}){
   const context=useContext(ViewBlockContext);const bindings=useRef(context?.snapshot.preferences?.keybindings);bindings.current=context?.snapshot.preferences?.keybindings;
   const root=useRef<HTMLDivElement>(null),[document,setDocument]=useState<PDFDocumentProxy|null>(null),[sizes,setSizes]=useState<{width:number;height:number}[]>([]),[error,setError]=useState(''),[width,setWidth]=useState(600),[zoom,setZoom]=useState(1),[page,setPage]=useState(initialPage),[query,setQuery]=useState(''),[searching,setSearching]=useState(false),[reload,setReload]=useState(0),[checksum,setChecksum]=useState('');
   const pageRef=useRef(page);pageRef.current=page;
@@ -38,13 +39,20 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
     viewport.addEventListener(BOARD_CAMERA_EVENT,update);return()=>viewport.removeEventListener(BOARD_CAMERA_EVENT,update);
   },[document,singlePage,onPage,onRevealPage]);
   const choose=()=>{const sel=window.getSelection();if(!sel||sel.isCollapsed||!sel.rangeCount||!root.current?.contains(sel.anchorNode)||!root.current.contains(sel.focusNode)){setSelection(null);return;}const range=sel.getRangeAt(0),quote=sel.toString().trim();if(!quote){setSelection(null);return;}const anchors=[...root.current.querySelectorAll<HTMLElement>('[data-pdf-page]')].flatMap(el=>{const p=el.getBoundingClientRect(),rects=[...range.getClientRects()].filter(r=>r.width>0&&r.height>0&&r.top<p.bottom&&r.bottom>p.top&&r.left<p.right&&r.right>p.left).map(r=>[(Math.max(r.left,p.left)-p.left)/p.width,(Math.max(r.top,p.top)-p.top)/p.height,(Math.min(r.right,p.right)-Math.max(r.left,p.left))/p.width,(Math.min(r.bottom,p.bottom)-Math.max(r.top,p.top))/p.height]);return rects.length?[{page:Number(el.dataset.pdfPage),rects}]:[];});if(!anchors.length)return;const r=range.getBoundingClientRect();setSelection({quote,...anchors[0],anchors,x:r.left,y:r.top});};
-  const annotate=(note:boolean)=>{const value=selectionRef.current;if(!value)return;onAnnotate({quote:value.quote,page:value.page,rects:value.rects,anchors:value.anchors,source:checksum,color:'#e6bb50'},note);setSelection(null);window.getSelection()?.removeAllRanges();};
-  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(matchesBinding(e,'readerSearch',bindings.current,window.door.platform)){e.preventDefault();searchInput.current?.focus();searchInput.current?.select();return;}if(!(e.target instanceof HTMLElement)||e.target.closest('input,textarea,[contenteditable=true]'))return;if(matchesBinding(e,'readerHighlight',bindings.current,window.door.platform)&&selectionRef.current){e.preventDefault();e.stopPropagation();annotate(false);}if(matchesBinding(e,'readerNote',bindings.current,window.door.platform)&&selectionRef.current){e.preventDefault();e.stopPropagation();annotate(true);}};root.current?.addEventListener('keydown',key);return()=>root.current?.removeEventListener('keydown',key);},[checksum]);
+  const annotate=()=>{const value=selectionRef.current;if(!value)return;onAnnotate({quote:value.quote,page:value.page,rects:value.rects,anchors:value.anchors,source:checksum,color:'#e6bb50'});setSelection(null);window.getSelection()?.removeAllRanges();};
+  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(matchesBinding(e,'readerSearch',bindings.current,window.door.platform)){e.preventDefault();searchInput.current?.focus();searchInput.current?.select();return;}if(!(e.target instanceof HTMLElement)||e.target.closest('input,textarea,[contenteditable=true]'))return;if(matchesBinding(e,'readerHighlight',bindings.current,window.door.platform)&&selectionRef.current){e.preventDefault();e.stopPropagation();annotate();}if(matchesBinding(e,'readerNote',bindings.current,window.door.platform)&&selectionRef.current){e.preventDefault();e.stopPropagation();annotate();}};root.current?.addEventListener('keydown',key);return()=>root.current?.removeEventListener('keydown',key);},[checksum]);
   const search=async()=>{if(!document||!query.trim())return;setSearching(true);try{for(let i=page;i<=document.numPages+page-1;i++){const number=(i-1)%document.numPages+1,p=await document.getPage(number),content=await p.getTextContent();if(content.items.map(item=>'str' in item?item.str:'').join(' ').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())){jump(number);setError('');return;}}setError('No matching text.');}catch(e){setError(String(e));}finally{setSearching(false);}};
   useEffect(()=>{const clear=()=>{if(window.getSelection()?.isCollapsed)setSelection(null);};window.document.addEventListener('selectionchange',clear);return()=>window.document.removeEventListener('selectionchange',clear);},[]);
   const board=!!root.current?.closest('.board-pdf'),scale=(board?width/Math.max(1,...sizes.map(p=>p.width)):Math.min(width/Math.max(1,...sizes.map(p=>p.width)),1.5))*zoom;
   const pixelRatio=Math.ceil(Math.max(1,Math.min(4,(window.devicePixelRatio||1)*renderZoom))*2)/2;
 
+  useLayoutEffect(()=>{if(document&&!onRevealPage&&!singlePage)jump(page,false);},[width]);
+  const layoutCallback=useRef(onLayout);layoutCallback.current=onLayout;
+  useLayoutEffect(()=>{
+    const el=root.current!,container=el.closest<HTMLElement>('.board-pdf,.reading-main');if(!container||!layoutCallback.current)return;
+    let frame=0;const measure=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{const origin=container.getBoundingClientRect(),ratio=origin.width/container.offsetWidth||1;layoutCallback.current?.([...el.querySelectorAll<HTMLElement>('[data-pdf-page]')].map(p=>({page:Number(p.dataset.pdfPage),top:(p.getBoundingClientRect().top-origin.top)/ratio,height:p.offsetHeight})));});};
+    const observer=new ResizeObserver(measure);observer.observe(el);el.querySelectorAll('[data-pdf-page]').forEach(p=>observer.observe(p));el.addEventListener('scroll',measure);measure();return()=>{cancelAnimationFrame(frame);observer.disconnect();el.removeEventListener('scroll',measure);};
+  },[document,singlePage,page,scale]);
   return <div className="pdf-reader" ref={root} tabIndex={0} onKeyDown={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()} onWheel={e=>{if(!e.ctrlKey&&!e.metaKey&&e.currentTarget.scrollHeight>e.currentTarget.clientHeight)e.stopPropagation();}} onMouseUp={choose} onKeyUp={choose} onClick={e=>{
       if(!window.getSelection()?.isCollapsed)return;const el=(e.target as HTMLElement).closest<HTMLElement>('[data-pdf-page]');if(!el)return;const box=el.getBoundingClientRect(),x=(e.clientX-box.left)/box.width,y=(e.clientY-box.top)/box.height;
       const annotation=annotations.find(a=>(!a.source||a.source===checksum)&&(a.anchors?.find(p=>p.page===Number(el.dataset.pdfPage))?.rects??(a.page===Number(el.dataset.pdfPage)?a.rects:[])??[]).some(r=>x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3]));if(annotation)onAnnotation?.(annotation.id);
@@ -53,7 +61,7 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
     {error&&<p role="alert" className="reader-message">{error}</p>}{source.sha256&&checksum&&source.sha256!==checksum&&<p className="reader-message">{readingText.theSourceChangedEarlierHighlightPositionsAreUnresolved}</p>}
     {!document&&!error&&<p className="reader-message">{readingText.loadingPdf}</p>}
     {document&&sizes.map((size,i)=>!singlePage||i+1===page?<PdfPage key={reload+':'+i} pdf={document} page={i+1} size={size} scale={scale} pixelRatio={pixelRatio} annotations={annotations.filter(a=>!a.source||a.source===checksum)}/>:null)}
-    {selection&&createPortal(<div className="reader-selection-tools" style={{left:Math.max(8,selection.x),top:Math.max(8,selection.y-38)}} onPointerDown={e=>{e.preventDefault();e.stopPropagation();}}><button onClick={()=>annotate(false)}>{readingText.highlight}</button><button onClick={()=>annotate(true)}>{readingText.addNote}</button></div>,overlayContainer(root.current))}
+    {selection&&createPortal(<div className="reader-selection-tools" style={{left:Math.max(8,selection.x),top:Math.max(8,selection.y-38)}} onPointerDown={e=>{e.preventDefault();e.stopPropagation();}}><button onClick={()=>annotate()}>{readingText.highlight}</button></div>,overlayContainer(root.current))}
   </div>;
 }
 function PdfPage({pdf,page,size,scale,pixelRatio,annotations}:{pdf:PDFDocumentProxy;page:number;size:{width:number;height:number};scale:number;pixelRatio:number;annotations:Annotation[]}){
@@ -61,7 +69,7 @@ function PdfPage({pdf,page,size,scale,pixelRatio,annotations}:{pdf:PDFDocumentPr
   useEffect(()=>{const observer=new IntersectionObserver(entries=>setVisible(entries[0].isIntersecting),{root:ref.current?.closest('.board-pdf')?.closest('.canvas')??ref.current?.closest('.pdf-reader'),rootMargin:'800px'});observer.observe(ref.current!);return()=>observer.disconnect();},[]);
   return <div className="pdf-page" data-pdf-page={page} ref={ref} style={{width:size.width*scale,height:size.height*scale,'--scale-factor':scale,'--total-scale-factor':scale,'--user-unit':1} as CSSProperties}>
     {visible&&<PdfCanvas key={scale} pdf={pdf} page={page} scale={scale} pixelRatio={pixelRatio}/>}
-    {annotations.flatMap(a=>(a.anchors?.find(v=>v.page===page)?.rects??(a.page===page?a.rects:[])??[]).map((r,i)=><span key={a.id+':'+i} data-annotation={a.id} className="pdf-highlight" style={{left:r[0]*100+'%',top:r[1]*100+'%',width:r[2]*100+'%',height:r[3]*100+'%',background:a.color??'#e6bb50'}}/>))}
+    <div className="pdf-highlights">{annotations.flatMap(a=>(a.anchors?.find(v=>v.page===page)?.rects??(a.page===page?a.rects:[])??[]).map((r,i)=><span key={a.id+':'+i} data-annotation={a.id} className="pdf-highlight" style={{left:r[0]*100+'%',top:r[1]*100+'%',width:r[2]*100+'%',height:r[3]*100+'%',background:a.color??'#e6bb50'}}/>))}</div>
   </div>;
 }
 function PdfCanvas({pdf,page,scale,pixelRatio}:{pdf:PDFDocumentProxy;page:number;scale:number;pixelRatio:number}){

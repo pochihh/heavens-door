@@ -5,7 +5,7 @@ import type {JournalSettings,TemplateSettings} from './journal';
 import type {EditorSettings} from './editor-settings';
 import type {QueryPreferences} from './view-block';
 import type {Docks,DocumentsLayout,ModuleId,NavigationMemory} from './layout';
-export interface Card { source?:import('./reading').ReadingSource; reading?:import('./reading').ReadingProgress; header?:string; tags?:string[]; fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
+export interface Card { readLaterStatus?:unknown; source?:import('./reading').ReadingSource; reading?:import('./reading').ReadingProgress; header?:string; tags?:string[]; fillColor?:string|null; id: string; path: string; name: string; title?:string; titleMarkdown?:string; body: string; revision: string; legacy: boolean }
 export type CardInfo = Omit<Card, 'body'|'header'>;
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';

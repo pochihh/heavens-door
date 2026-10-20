@@ -1,7 +1,11 @@
+import type {TagField} from './shared';
 import {marked} from 'marked';
 import {isHexColor} from './colors';
 export interface ReadingSource {type:'pdf'|'web';file?:string;url?:string;captured?:string;sha256?:string;feed?:string;entry?:string;missingImages?:string[]}
-export interface ReadingProgress {state:'new'|'reading'|'done';page?:number;scroll?:number}
+export const READLATER_STATUS='readlater/status';
+export const DEFAULT_READING_STATUS:TagField={key:'status',label:'Status',type:'status',statusGroups:{todo:['New'],inProgress:['Reading'],done:['Done']},default:'New'};
+export function legacyReadingStatus(state:ReadingProgress['state'],field:TagField){const group=state==='done'?'done':state==='reading'?'inProgress':'todo';return field.statusGroups?.[group]?.[0]??field.default??field.options?.[0]??(state==='done'?'Done':state==='reading'?'Reading':'New');}
+export interface ReadingProgress {state?:'new'|'reading'|'done';page?:number;scroll?:number}
 export interface ReadingSettings {folder:string}
 export interface Annotation {id:string;kind:'highlight'|'note';text:string;quote?:string;color?:string;page?:number;rects?:number[][];anchors?:{page:number;rects:number[][]}[];source?:string;context?:string;unresolved?:boolean}
 export function annotationOnPage(annotation:Annotation,page?:number){
@@ -11,14 +15,14 @@ const marker='\n\n## Annotations\n<!-- heavens-door:annotations -->\n';
 const idPattern=/^[\w-]{1,128}$/;
 export function readingMetadata(front:Record<string,unknown>,strict=false){
   const rawSource=front.source as ReadingSource|undefined,rawReading=front.reading as ReadingProgress|undefined;
-  const source=rawSource&&typeof rawSource==='object'&&['pdf','web'].includes(rawSource.type)?rawSource:undefined,reading=rawReading&&typeof rawReading==='object'&&['new','reading','done'].includes(rawReading.state)?rawReading:undefined;
-  if(strict&&rawReading&&!reading)throw new Error('Invalid reading state.');
+  const source=rawSource&&typeof rawSource==='object'&&['pdf','web'].includes(rawSource.type)?rawSource:undefined,reading=rawReading&&typeof rawReading==='object'&&!Array.isArray(rawReading)&&(rawReading.state===undefined||['new','reading','done'].includes(rawReading.state))?rawReading:undefined;
+  if(strict&&rawReading!==undefined&&!reading)throw new Error('Invalid reading state.');
   if(source&&(typeof source!=='object'||!['pdf','web'].includes(source.type)||['file','url','captured','sha256','feed','entry'].some(key=>source[key as keyof ReadingSource]!==undefined&&(typeof source[key as keyof ReadingSource]!=='string'||String(source[key as keyof ReadingSource]).length>4096))))throw new Error('Invalid reading source metadata.');
   if(source?.file&&(/^(?:[a-z][\w+.-]*:|\/)/i.test(source.file)||source.file.includes('\0')))throw new Error('Attachment paths must be relative.');
-  if(reading&&(!['new','reading','done'].includes(reading.state)||reading.page!==undefined&&(!Number.isInteger(reading.page)||reading.page<1)||reading.scroll!==undefined&&(!Number.isFinite(reading.scroll)||reading.scroll<0)))throw new Error('Invalid reading progress.');
+  if(reading&&(reading.state!==undefined&&!['new','reading','done'].includes(reading.state)||reading.page!==undefined&&(!Number.isInteger(reading.page)||reading.page<1)||reading.scroll!==undefined&&(!Number.isFinite(reading.scroll)||reading.scroll<0)))throw new Error('Invalid reading progress.');
   if(source?.missingImages&&(!Array.isArray(source.missingImages)||source.missingImages.length>100||source.missingImages.some(u=>typeof u!=='string'||u.length>4096)))throw new Error('Invalid image recovery list.');
   if(source?.url){const url=new URL(source.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Invalid source URL.');}
-  return {...(source?{source}:{}),...(reading?{reading}:{})};
+  return {...(front[READLATER_STATUS]!==undefined?{readLaterStatus:front[READLATER_STATUS]}:{}),...(source?{source}:{}),...(reading?{reading}:{})};
 }
 export function validateAnnotation(value:Annotation){
   if(value?.anchors){if(!Array.isArray(value.anchors)||value.anchors.length>1000)throw new Error('Invalid annotation anchors.');for(const anchor of value.anchors){if(!anchor||!Number.isInteger(anchor.page)||anchor.page<1||!Array.isArray(anchor.rects)||anchor.rects.length>1000||anchor.rects.some(r=>r.length!==4||r.some(n=>!Number.isFinite(n)||n<0||n>1)))throw new Error('Invalid annotation anchor.');}}
