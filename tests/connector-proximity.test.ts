@@ -12,7 +12,7 @@ test('connector radius is individual, spans elements, and uses board units while
  assert.deepEqual(nearbyConnectors(facing,{x:310,y:100},'a').map(h=>h.point.key),['b:left']);
  const point=scene.points.find(p=>p.key==='a:left')!;
  for(const zoom of [.2,.5,1,3]){
-  assert.equal(closestConnector([point],{x:point.x+13/zoom,y:point.y},zoom),point);assert.equal(closestConnector([point],{x:point.x+15/zoom,y:point.y},zoom),undefined);
+  assert.equal(closestConnector([point],{x:point.x+19/zoom,y:point.y},zoom),point);assert.equal(closestConnector([point],{x:point.x+21/zoom,y:point.y},zoom),undefined);
  }
  assert.ok(nearbyConnectors([point],{x:point.x+CONNECTOR_RADIUS-1,y:point.y}).length);
  assert.equal(nearbyConnectors([point],{x:point.x+CONNECTOR_RADIUS,y:point.y}).length,0);

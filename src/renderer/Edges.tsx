@@ -121,7 +121,7 @@ export function Edges(props:Props) {
       </g>;})}
       <path ref={preview} className="edge-preview"/>
     </g></svg>
-    <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><EdgeAnchors points={scene.points} endpoints={endpoints} selected={selectedCards} connecting={connecting} keyboard={!!pending.current?.keyboard} source={pending.current?.from} enabled={props.enabled} viewport={viewport} camera={props.camera} onStart={start} onKeyboardStart={keyboardStart}/></svg>
+    <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><EdgeAnchors points={scene.points} rects={scene.rects} endpoints={endpoints} selected={selectedCards} connecting={connecting} keyboard={!!pending.current?.keyboard} source={pending.current?.from} enabled={props.enabled} viewport={viewport} camera={props.camera} onStart={start} onKeyboardStart={keyboardStart}/></svg>
     {connecting&&!pending.current?.edge&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </>;

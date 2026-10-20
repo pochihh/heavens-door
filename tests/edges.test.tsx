@@ -287,7 +287,9 @@ test('selected edge endpoints share zoom-aware proximity hints and retain pointe
  try{
   const render=async(selectedEdges:string[])=>act(async()=>root.render(<div ref={viewport}><Edges board={board} mentions={[]} heightOf={p=>p.height} camera={()=>camera} viewport={viewport} selectedCards={['p0','p1']} selectedEdges={selectedEdges} enabled onSelect={()=>{}} onSave={next=>saved.push(next)} onFinish={()=>{}} onStyle={()=>{}}/></div>));
   await render([]);await hover(500);assert.deepEqual(endpoints(),[],'unselected edges never contribute reconnection handles');assert.ok(document.querySelector('[data-anchor-visible=true][data-anchor-card="p1"][data-anchor-side="left"]'));assert.equal(document.querySelector('.edge-anchor-hint:last-child .edge-anchor')!.getAttribute('data-anchor-card'),'p1','the nearest overlapping element anchor receives the pointer');
+  await hover(518);assert.ok([...document.querySelectorAll('.edge-anchor-hint')].every(n=>n.classList.contains('over-body')),'element targets yield to card bodies without hiding their dots');
   await render(['edge']);await hover(500);const shared=[...document.querySelectorAll('[data-anchor-visible=true][cx="500"][cy="140"]')];assert.equal(shared.at(-1)!.getAttribute('data-edge-endpoint'),'to','a selected edge endpoint is painted and hit-tested above the selected placement anchor');
+  await hover(518);assert.ok(!document.querySelector('[data-anchor-visible=true][data-edge-endpoint="to"]')!.parentElement!.classList.contains('over-body'),'selected edge handles keep priority inside a card body');
   await hover(1400);assert.deepEqual(endpoints(),[]);assert.equal(document.querySelectorAll('.edge-keyboard-anchor[data-edge-endpoint]').length,2,'distant endpoints remain keyboard accessible');
   await hover(800);assert.deepEqual(endpoints(),['to']);assert.ok(document.querySelector('[data-anchor-visible=true]')!.parentElement!.style.getPropertyValue('--connector-strength'));
   const path=document.querySelector('.edge-stroke')!,geometry=path.getAttribute('d');
@@ -300,7 +302,7 @@ test('selected edge endpoints share zoom-aware proximity hints and retain pointe
   }
   Object.assign(camera,{x:0,y:0,zoom:1});
   await hover(500);const end=document.querySelector('[data-anchor-visible=true][data-edge-endpoint="to"]')!;
-  await act(async()=>{pointer(end,'pointerdown',500);pointer(document,'pointermove',1000);pointer(document,'pointerup',1000);});assert.equal(saved.length,1);assert.equal(saved[0].edges[0].to,'p2');assert.equal(saved[0].edges[0].id,'edge');
+  await act(async()=>{pointer(end,'pointerdown',518);pointer(document,'pointermove',982);pointer(document,'pointerup',982);});assert.equal(saved.length,1);assert.equal(saved[0].edges[0].to,'p2');assert.equal(saved[0].edges[0].id,'edge');assert.equal(saved[0].edges[0].toSide,'left','dropping 18 screen pixels outside the card snaps to its connector');
   await hover(800);const keyboardEnd=document.querySelector('.edge-keyboard-anchor[data-edge-endpoint="to"]')!;await act(async()=>key(keyboardEnd));assert.equal(keyboardEnd.isConnected,true,'focused endpoints survive keyboard-started reconnection');
   await act(async()=>key(document.querySelector('.edge-keyboard-anchor[data-anchor-card="p2"][data-anchor-side="left"]')!));assert.equal(saved.length,2);assert.equal(saved[1].edges[0].to,'p2');assert.equal(saved[1].edges.length,1);
  }finally{await act(async()=>root.unmount());win.close();}

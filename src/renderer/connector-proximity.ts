@@ -1,7 +1,7 @@
 import type {AnchorSide,Placement,Edge} from '../shared';
 import {anchor,sides,type Point} from './edge-geometry';
 export const CONNECTOR_RADIUS=320;
-export const CONNECTOR_SNAP_RADIUS=14;
+export const CONNECTOR_HIT_RADIUS=20;
 export interface Connector extends Point {key:string;card:Placement;side:AnchorSide;edge?:Edge;endpoint?:'from'|'to'}
 export function connectorScene(cards:Placement[],heightOf:(card:Placement)=>number){
  const rects=cards.map(card=>({card,height:heightOf(card)}));
@@ -19,7 +19,7 @@ export function nearbyConnectors(points:Connector[],cursor:Point,skip?:string){
  return found;
 }
 export function closestConnector(points:Connector[],cursor:Point,zoom:number,skip?:string){
- let nearest:Connector|undefined,distance2=(CONNECTOR_SNAP_RADIUS/zoom)**2;
+ let nearest:Connector|undefined,distance2=(CONNECTOR_HIT_RADIUS/zoom)**2;
  for(const point of points){if(point.card.id===skip)continue;const dx=point.x-cursor.x,dy=point.y-cursor.y,d=dx*dx+dy*dy;if(d<=distance2){distance2=d;nearest=point;}}
  return nearest;
 }
