@@ -90,7 +90,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
       <label className="settings-toggle"><span>{ui.style.showMentions}</span><input type="checkbox" role="switch" checked={board.showMentions!==false} onChange={e=>boardStyle({showMentions:e.target.checked})}/></label>
     </>}
     {(card||!!cards.length)&&<SelectionGroup name={ui.style.cards} icon="note" count={card?1:cards.length}>
-      {color(ui.style.color,card?cardFill(card)??'':common(cards.map(p=>cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fillColor=>{void session.fillCards(card?[card.id]:cards.map(p=>p.cardId),fillColor).catch(()=>undefined);})}
+      {color(ui.style.fill,card?cardFill(card)??'':common(cards.map(p=>cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fillColor=>{void session.fillCards(card?[card.id]:cards.map(p=>p.cardId),fillColor).catch(()=>undefined);})}
       {card&&<small>{ui.style.cardFillHelp}</small>}
     </SelectionGroup>}
     {!!boards.length&&<SelectionGroup name={ui.style.whiteboards} icon="map" count={boards.length}>
@@ -99,9 +99,8 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
     {!!texts.length&&<SelectionGroup name={readingText.textObjects} icon="text" count={texts.length}>
       {color(ui.style.textColor,common(textValues.map(p=>p.textColor??'')),textColor=>textStyle({textColor}))}
       <label className="style-label"><span>{readingText.fontSize}</span><input key={texts.map(p=>p.id).join(',')+':'+fontSize} aria-label={readingText.fontSize} type="number" min="8" max="120" placeholder={ui.style.mixed} defaultValue={fontSize??''} onBlur={e=>{const fontSize=e.target.valueAsNumber;if(fontSize>=8&&fontSize<=120&&textValues.some(value=>(value.fontSize??20)!==fontSize))textStyle({fontSize});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>
-      {!!shapes.length&&<Choice label={readingText.shape} value={common(textValues.map(p=>p.shape))} choices={['none','rectangle','rounded','ellipse','diamond'].map(v=>[v,({none:'Text',rectangle:'Rectangle',rounded:'Rounded rectangle',ellipse:'Ellipse',diamond:'Diamond'} as Record<string,string>)[v]])} sample={shape=><ShapeSample shape={shape}/>} onChange={shape=>textStyle({shape:shape as Extract<BoardObject,{type:'text'}>['shape']})}/>}
+      <Choice label={readingText.shape} value={common(textValues.map(p=>p.shape))} choices={['none','rectangle','rounded','ellipse','diamond'].map(v=>[v,({none:'Text',rectangle:'Rectangle',rounded:'Rounded rectangle',ellipse:'Ellipse',diamond:'Diamond'} as Record<string,string>)[v]])} sample={shape=><ShapeSample shape={shape}/>} onChange={shape=>textStyle({shape:shape as Extract<BoardObject,{type:'text'}>['shape']})}/>
       {!!shapes.length&&<div className="style-subgroup" role="group" aria-label={ui.style.shapeAppearance}><h4>{ui.style.shapeAppearance}<small>{shapes.length}</small></h4>
-        {color(ui.style.fill,common(shapes.map(p=>p.fillColor??'')),fillColor=>placements(shapes,p=>({...p,fillColor})))}
         {color(ui.style.borderColor,common(shapes.map(p=>p.strokeColor??'')),strokeColor=>placements(shapes,p=>({...p,strokeColor})))}
         {stroke(shapes,patch=>placements(shapes,p=>({...p,...patch})),true)}
       </div>}

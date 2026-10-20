@@ -170,3 +170,15 @@ test('canvas creation menu has one Text action and the navigation controls have 
   assert.equal(saved.cards.length,2);assert.equal(saved.cards[1].object?.type,'text');assert.equal(saved.cards[1].object?.type==='text'&&saved.cards[1].object.shape,'none');assert.equal(saved.cards[1].x,560);assert.equal(saved.cards[1].y,320);assert.ok(document.querySelector('[aria-label="Edit whiteboard text"]'));
  }finally{await act(async()=>root.unmount());}
 });
+
+
+test('Text shapes render their stored border settings and keep independent fill data',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');const shapes=['none','rectangle','rounded','ellipse','diamond'] as const;
+ const board:Board={...fixture(),cards:shapes.map((shape,i)=>({...topic(shape,shape),x:i*260,y:0,height:120,fillColor:'#91aa8b',strokeColor:'#c9838a',strokeWidth:4,strokeStyle:'dotted',object:{type:'text',shape,text:shape}}))};
+ assert.deepEqual(readBoard(board.path,writeBoard(board)).cards,board.cards,'all text fills and strokes remain portable, including plain Text');
+ const root=createRoot(document.getElementById('root')!);try{await act(async()=>root.render(<Whiteboard board={board} cards={[]} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>));
+  for(const shape of shapes){const item=document.querySelector<HTMLElement>(`[data-placement="${shape}"]`)!;assert.equal(item.style.getPropertyValue('--object-border-color'),'#c9838a');assert.equal(item.style.getPropertyValue('--object-border-width'),'4px');assert.equal(item.style.getPropertyValue('--object-border-style'),'dotted');}
+  const diamond=document.querySelector('.object-diamond')!,polygon=diamond.querySelector('polygon')!;assert.equal(diamond.getAttribute('viewBox'),'0 0 240 120');assert.equal(polygon.getAttribute('stroke'),'#c9838a');assert.equal(polygon.getAttribute('stroke-width'),'4');assert.equal(polygon.getAttribute('stroke-dasharray'),'0 12');assert.equal(polygon.getAttribute('stroke-linecap'),'round');assert.equal(polygon.getAttribute('points'),'120,2 238,60 120,118 2,60');
+  const plain=document.querySelector<HTMLElement>('[data-placement="none"]')!;assert.ok(plain.classList.contains('board-text'));assert.equal(plain.querySelector('.object-diamond'),null);assert.equal(plain.style.background,'transparent');
+ }finally{await act(async()=>root.unmount());}
+});

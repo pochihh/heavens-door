@@ -112,7 +112,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
     assert.equal(document.querySelectorAll('select').length,0);
     const groups=()=>[...document.querySelectorAll<HTMLElement>('.style-group')];
     assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards · 1 selected','Whiteboards · 1 selected','Edges · 1 selected']);
-    assert.deepEqual(labels(),['Color','Color','Color','Arrows','Arrowhead style','Stroke style','Stroke width','Label size']);
+    assert.deepEqual(labels(),['Fill color','Color','Color','Arrows','Arrowhead style','Stroke style','Stroke width','Label size']);
     const beforeCards=board.cards;
     await act(async()=>groups()[2].querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(board.edges[0].strokeColor,'#91aa8b');assert.deepEqual(board.cards,beforeCards);
@@ -125,7 +125,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
     assert.equal(saved!.edges[0].strokeColor,'#91aa8b','fill changes never recolor edges');assert.equal(saved!.cards[1].fillColor,undefined,'source card controls do not style whiteboards');
     await act(async()=>groups()[1].querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click());assert.equal(saved!.cards[1].fillColor,'#a699c3','whiteboard color has its own scoped control');
     assert.deepEqual(saved?.cards[0],board.cards[0],'card placement decoration is untouched');
-    for(const [ids,titles] of [[['a'],['Cards · 1 selected']],[['b'],['Whiteboards · 1 selected']],[['a','b'],['Cards · 1 selected','Whiteboards · 1 selected']]] as const){await render([...ids],[]);assert.deepEqual(labels(),titles.map(()=>'Color'));assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),[...titles]);}
+    for(const [ids,titles] of [[['a'],['Cards · 1 selected']],[['b'],['Whiteboards · 1 selected']],[['a','b'],['Cards · 1 selected','Whiteboards · 1 selected']]] as const){await render([...ids],[]);assert.deepEqual(labels(),titles.map(title=>title.startsWith('Cards')?'Fill color':'Color'));assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),[...titles]);}
     await render([],['e']);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(saved!.edges[0].strokeColor,'#91aa8b');assert.deepEqual(saved!.cards,board.cards);
@@ -187,8 +187,8 @@ test('Style separates card, plain Text, shapes, images and edges, including mixe
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
   const placement={x:0,y:0,width:300,height:200};let board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[
     {...placement,id:'card',cardId:'source'},
-    {...placement,id:'plain',cardId:'',object:{type:'text',shape:'none',text:'Plain',fontSize:20}},
-    {...placement,id:'shape',cardId:'',object:{type:'text',shape:'rounded',text:'Shape',fontSize:30}},
+    {...placement,id:'plain',cardId:'',fillColor:'#8aa5c5',object:{type:'text',shape:'none',text:'Plain',fontSize:20}},
+    {...placement,id:'shape',cardId:'',fillColor:'#91aa8b',object:{type:'text',shape:'rounded',text:'Shape',fontSize:30}},
     {...placement,id:'image',cardId:'',object:{type:'image',html:'<div data-better-edit-image="placeholder"></div>'}},
   ],edges:[{id:'e',from:'card',to:'plain'}]};let filled:string[]=[];
   const session={board:async(b:Board)=>{board=b;},fillCards:async(ids:string[])=>{filled=ids;}} as Pick<Session,'board'|'fillCards'>,root=createRoot(document.getElementById('root')!);
@@ -202,8 +202,10 @@ test('Style separates card, plain Text, shapes, images and edges, including mixe
     await render();await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Text color"] [aria-label="Rose"]')!.click());
     assert.ok(board.cards.filter(p=>p.object?.type==='text').every(p=>p.object?.type==='text'&&p.object.textColor==='#c9838a'));assert.equal(board.edges[0].strokeColor,undefined);
     await render();await act(async()=>group('Cards · 1 selected').querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());assert.deepEqual(filled,['source']);
-    await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Fill color"] [aria-label="Sage"]')!.click());assert.equal(board.cards[1].fillColor,undefined);assert.equal(board.cards[2].fillColor,'#91aa8b');
-    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color']);
+    assert.equal(group('Text · 2 selected').querySelector('[aria-label="Fill color"]'),null,'Text has no fill editor');
+    await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Border color"] [aria-label="Rose"]')!.click());assert.equal(board.cards[1].strokeColor,undefined);assert.equal(board.cards[2].strokeColor,'#c9838a');assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(board.cards[2].fillColor,'#91aa8b','editing a border preserves the saved fill');
+    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color','Shape']);
+    await act(async()=>text.querySelector<HTMLButtonElement>('[aria-label="Rectangle"]')!.click());await render(['card','plain']);assert.ok(group('Text · 1 selected').querySelector('[aria-label="Border color"]'));assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(group('Cards · 1 selected').querySelector('[aria-label="Border color"]'),null);assert.deepEqual(readBoard(board.path,writeBoard(board)).cards.filter(p=>p.object),board.cards.filter(p=>p.object),'both fill and border data survive the restricted UI');
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
