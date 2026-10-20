@@ -97,6 +97,7 @@ export function Edges(props:Props) {
   useEffect(()=>{if(!props.enabled)clear();},[props.enabled]);
   useLayoutEffect(()=>{if(connecting)draw(point.current.x,point.current.y);},[connecting]);
   const geometries=board.edges.flatMap(edge=>{const a=placements.get(edge.from),b=placements.get(edge.to);return a&&b?[{edge,...edgeGeometry(edge,a,b,heightOf)}]:[];});
+  const endpoints=geometries.filter(g=>selectedEdges.includes(g.edge.id)).flatMap(g=>(['from','to'] as const).map(endpoint=>{const at=endpoint==='from'?g.start:g.end,fixed=endpoint==='from'?'to':'from';return {...at,key:'edge:'+g.edge.id+':'+endpoint,card:placements.get(g.edge[fixed])!,side:fixed==='from'?g.fromSide:g.toSide,edge:g.edge,endpoint};}));
   const select=(event:React.MouseEvent|React.PointerEvent,edge:Edge)=>{event.preventDefault();event.stopPropagation();onFinish();onSelect([edge.id],event.shiftKey||event.metaKey||event.ctrlKey,event.metaKey||event.ctrlKey);};
   const editLabel=(edge:Edge)=>{onSelect([edge.id],false);setLabel({id:edge.id,text:edge.label??''});};
   const saveLabel=()=>{if(label){if(board.edges.some(e=>e.id===label.id&&(e.label??'')!==label.text))onSave({...board,edges:board.edges.map(e=>e.id===label.id?{...e,label:label.text}:e)},ui.history.editEdgeLabel);setLabel(null);}};
@@ -120,9 +121,7 @@ export function Edges(props:Props) {
       </g>;})}
       <path ref={preview} className="edge-preview"/>
     </g></svg>
-    <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><EdgeAnchors points={scene.points} selected={selectedCards} connecting={connecting} keyboard={!!pending.current?.keyboard} source={pending.current?.from} enabled={props.enabled} viewport={viewport} camera={props.camera} onStart={start} onKeyboardStart={keyboardStart}/><g className="edge-camera" transform={transform} style={{'--edge-zoom':camera.zoom} as React.CSSProperties}>
-      {geometries.filter(g=>selectedEdges.includes(g.edge.id)).flatMap(g=>(['from','to'] as const).map(endpoint=>{const at=endpoint==='from'?g.start:g.end,fixed=endpoint==='from'?'to':'from',card=placements.get(g.edge[fixed])!,side=fixed==='from'?g.fromSide:g.toSide;return <circle className="edge-endpoint" key={g.edge.id+endpoint} cx={at.x} cy={at.y} r={6/props.camera().zoom} role="button" tabIndex={0} aria-label={ui.edges.endpoint(endpoint)} data-tooltip={tooltips.edges.reconnect} onPointerDown={e=>start(e,card,side,g.edge,endpoint)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(card,side,at,g.edge,endpoint);}}}/>;}))}
-    </g></svg>
+    <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><EdgeAnchors points={scene.points} endpoints={endpoints} selected={selectedCards} connecting={connecting} keyboard={!!pending.current?.keyboard} source={pending.current?.from} enabled={props.enabled} viewport={viewport} camera={props.camera} onStart={start} onKeyboardStart={keyboardStart}/></svg>
     {connecting&&!pending.current?.edge&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </>;

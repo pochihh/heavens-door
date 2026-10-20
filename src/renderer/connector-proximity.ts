@@ -1,14 +1,16 @@
-import type {AnchorSide,Placement} from '../shared';
+import type {AnchorSide,Placement,Edge} from '../shared';
 import {anchor,sides,type Point} from './edge-geometry';
-export const CONNECTOR_RADIUS=72;
+export const CONNECTOR_RADIUS=160;
+export const CONNECTOR_MIN_SCREEN_RADIUS=88;
+export const connectorRadius=(zoom:number)=>Math.max(CONNECTOR_RADIUS,CONNECTOR_MIN_SCREEN_RADIUS/zoom);
 export const CONNECTOR_SNAP_RADIUS=14;
-export interface Connector extends Point {key:string;card:Placement;side:AnchorSide}
+export interface Connector extends Point {key:string;card:Placement;side:AnchorSide;edge?:Edge;endpoint?:'from'|'to'}
 export function connectorScene(cards:Placement[],heightOf:(card:Placement)=>number){
  const rects=cards.map(card=>({card,height:heightOf(card)}));
  return {rects,points:rects.flatMap(({card,height})=>sides.map(side=>({...anchor(card,side,height),key:card.id+':'+side,card,side})))};
 }
 export function nearbyConnectors(points:Connector[],cursor:Point,zoom:number,skip?:string){
- const radius=CONNECTOR_RADIUS/zoom,radius2=radius*radius,found:{point:Connector;strength:number}[]=[];
+ const radius=connectorRadius(zoom),radius2=radius*radius,found:{point:Connector;strength:number}[]=[];
  for(const point of points){
   if(point.card.id===skip)continue;
   const dx=point.x-cursor.x,dy=point.y-cursor.y;if(Math.abs(dx)>=radius||Math.abs(dy)>=radius)continue;

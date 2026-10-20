@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { act, useState } from 'react';
+import { act, useState, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { edgeStyle, type Board, type Edge } from '../src/shared';
 import { readBoard, writeBoard } from '../src/core/format';
@@ -269,4 +269,32 @@ test('arrowheads have a continuous straight shaft in deep fans, with bounded lea
  const a={id:'a',cardId:'',x:0,y:0,width:70,height:28,object:{type:'text' as const,text:'original',shape:'none' as const}},b={...a,id:'b',x:152,y:336},edge:Edge={id:'e',from:'a',to:'b',fromSide:'right',toSide:'left',toArrowhead:'arrow',strokeWidth:2};
  const g=edgeGeometry(edge,a,b,p=>p.height);assert.deepEqual(g.start,anchor(a,'right',28));assert.deepEqual(g.end,anchor(b,'left',28));assert.equal(g.samples.at(-2)!.y,g.end.y);assert.equal(g.end.x-g.samples.at(-2)!.x,20,'the reported short, deep branch gets a full 20-unit approach');
  const bare=curve(g.start,g.end,'right','left');assert.ok(!bare.path.includes(' L '),'edges without arrowheads retain the original cubic');
+});
+
+
+test('selected edge endpoints share zoom-aware proximity hints and retain pointer and keyboard reconnection',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true}),win=dom.window;
+ Object.assign(globalThis,{window:win,document:win.document,HTMLElement:win.HTMLElement,Element:win.Element,Node:win.Node,IS_REACT_ACT_ENVIRONMENT:true});
+ const frames=new Map<number,FrameRequestCallback>();let number=0;win.requestAnimationFrame=callback=>{frames.set(++number,callback);return number;};win.cancelAnimationFrame=id=>{frames.delete(id);};
+ const step=async()=>act(async()=>{const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(0);});
+ const {Edges}=await import('../src/renderer/Edges'),{BOARD_CAMERA_EVENT}=await import('../src/renderer/navigation');
+ const board:Board={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[0,1,2].map(i=>({id:'p'+i,cardId:'c'+i,x:i*500,y:0,width:340,height:280})),edges:[{id:'edge',from:'p0',to:'p1',fromSide:'right',toSide:'left'}]};
+ const viewport=createRef<HTMLDivElement>(),saved:Board[]=[],camera={x:0,y:0,zoom:1},root=createRoot(document.getElementById('root')!);
+ const pointer=(target:EventTarget,type:string,x:number,y=140)=>{const event=new win.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:1});target.dispatchEvent(event);};
+ const hover=async(x:number,y=140)=>{await act(async()=>pointer(document,'pointermove',x,y));await step();};
+ const endpoints=()=>[...document.querySelectorAll('[data-anchor-visible=true][data-edge-endpoint]')].map(n=>n.getAttribute('data-edge-endpoint'));
+ const key=(target:Element)=>target.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+ try{
+  await act(async()=>root.render(<div ref={viewport}><Edges board={board} mentions={[]} heightOf={p=>p.height} camera={()=>camera} viewport={viewport} selectedCards={[]} selectedEdges={['edge']} enabled onSelect={()=>{}} onSave={next=>saved.push(next)} onFinish={()=>{}} onStyle={()=>{}}/></div>));
+  await hover(800);assert.deepEqual(endpoints(),[]);assert.equal(document.querySelectorAll('.edge-keyboard-anchor[data-edge-endpoint]').length,2,'distant endpoints remain keyboard accessible');
+  await hover(600);assert.deepEqual(endpoints(),['to']);assert.ok(document.querySelector('[data-anchor-visible=true]')!.parentElement!.style.getPropertyValue('--connector-strength'));
+  const path=document.querySelector('.edge-stroke')!,geometry=path.getAttribute('d');
+  camera.zoom=2;await act(async()=>viewport.current!.dispatchEvent(new win.Event(BOARD_CAMERA_EVENT)));await step();assert.deepEqual(endpoints(),['from'],'zoom refreshes the radius and world cursor without another pointer event');assert.equal(path.getAttribute('d'),geometry);
+  camera.zoom=.25;await hover(160,35);assert.deepEqual(endpoints(),['from','to'],'the minimum screen radius keeps zoomed-out endpoints reachable');
+  camera.zoom=1;await hover(420);assert.deepEqual(endpoints(),['from','to']);
+  await hover(500);const end=document.querySelector('[data-anchor-visible=true][data-edge-endpoint="to"]')!;
+  await act(async()=>{pointer(end,'pointerdown',500);pointer(document,'pointermove',1000);pointer(document,'pointerup',1000);});assert.equal(saved.length,1);assert.equal(saved[0].edges[0].to,'p2');assert.equal(saved[0].edges[0].id,'edge');
+  await hover(800);const keyboardEnd=document.querySelector('.edge-keyboard-anchor[data-edge-endpoint="to"]')!;await act(async()=>key(keyboardEnd));assert.equal(keyboardEnd.isConnected,true,'focused endpoints survive keyboard-started reconnection');
+  await act(async()=>key(document.querySelector('.edge-keyboard-anchor[data-anchor-card="p2"][data-anchor-side="left"]')!));assert.equal(saved.length,2);assert.equal(saved[1].edges[0].to,'p2');assert.equal(saved[1].edges.length,1);
+ }finally{await act(async()=>root.unmount());win.close();}
 });
