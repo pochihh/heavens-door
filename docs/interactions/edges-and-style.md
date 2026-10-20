@@ -116,4 +116,4 @@ Text and edge labels use the same **Font size** control: **S, M, L, XL**, with d
 
 Existing numeric sizes remain literal and are not rewritten or rounded; those and mixed sizes leave the preset buttons unpressed until a preset is chosen. Numeric sizes from 8–120 px remain supported in files and style copy/paste. New preset choices use the existing revision-checked save and Undo path. Text stays transparent regardless of its stored fill.
 
-When editing Text, **Command+Enter** (Windows: **Ctrl+Enter**) accepts the draft and returns to selection without creating a sibling. Escape cancels; Alt+Enter inserts a newline. Enter and Tab retain sibling/child creation.
+When editing Text, **Escape** or **Command+Enter** (Windows: **Ctrl+Enter**) saves the draft and returns to selection without creating a sibling. **Command/Ctrl+Z** restores the pre-edit text and position as one Undo action. Alt+Enter inserts a newline. Enter and Tab retain sibling/child creation.

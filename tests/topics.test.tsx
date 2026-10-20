@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {JSDOM} from 'jsdom';
-import {act,useState} from 'react';
+import {act,useState,useSyncExternalStore} from 'react';
 import {Workspace} from '../src/core/workspace';
 import {readBoard,writeBoard} from '../src/core/format';
 import {UndoHistory} from '../src/renderer/history';
@@ -239,8 +239,8 @@ test('Space edits at the end; direct typing replaces; composition can enter edit
  const key=(target:Element,key:string,options:KeyboardEventInit={})=>{const event=new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options});target.dispatchEvent(event);return event;};
  try{await act(async()=>root.render(<Harness/>));await act(async()=>press(document.querySelector('[data-placement="root"]')!));const canvas=document.querySelector<HTMLElement>('.canvas')!;
   await act(async()=>key(canvas,' ',{code:'Space'}));let editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(editor.value,'Root');assert.equal(editor.selectionStart,4);assert.equal(editor.selectionEnd,4);assert.equal(canvas.dataset.space,undefined,'Space edits selected Text instead of engaging canvas pan');assert.equal(writes,0);
-  await act(async()=>key(editor,'Escape'));await act(async()=>key(canvas,'z'));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(editor.value,'z');assert.equal(editor.selectionStart,1);assert.equal(writes,0,'replacement stays a draft until committed');await act(async()=>key(editor,'Escape'));assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'Root');
-  await act(async()=>key(canvas,'Process',{keyCode:229,isComposing:true}));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(document.activeElement,editor);assert.equal(editor.value,'');await act(async()=>assert.equal(key(editor,'Enter',{isComposing:true}).defaultPrevented,false));assert.equal(saved.cards.length,1);await act(async()=>key(editor,'Escape'));assert.equal(writes,0);
+  await act(async()=>key(editor,'Escape'));await act(async()=>key(canvas,'z'));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(editor.value,'z');assert.equal(editor.selectionStart,1);assert.equal(writes,0,'replacement stays a draft until committed');await act(async()=>key(editor,'Escape'));assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'z');assert.equal(writes,1,'Escape accepts replacement text');
+  await act(async()=>key(canvas,'Process',{keyCode:229,isComposing:true}));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(document.activeElement,editor);assert.equal(editor.value,'');await act(async()=>assert.equal(key(editor,'Enter',{isComposing:true}).defaultPrevented,false));assert.equal(saved.cards.length,1);await act(async()=>key(editor,'Escape'));assert.equal(writes,2,'Escape can commit an intentionally empty Text');
   await act(async()=>assert.equal(key(canvas,' ',{code:'Space',ctrlKey:true}).defaultPrevented,false));assert.equal(canvas.dataset.space,undefined);
   await act(async()=>key(canvas,'x',{ctrlKey:true}));assert.equal(document.querySelector('textarea'),null,'command shortcuts never replace the text');
   await act(async()=>key(document.querySelector('.board-object-text')!,'Enter'));assert.equal(saved.cards.length,2,'Enter remains quick creation when focus is on the Text group itself');
@@ -254,8 +254,8 @@ test('left-facing Text keeps its right anchor during typing, saves the new left 
  try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="left"]')!;Object.defineProperty(node,'offsetWidth',{get:()=>node.querySelector('span')!.textContent!.startsWith('Long')?180:80});Object.defineProperty(node,'offsetHeight',{value:28});await act(async()=>observers.findLast(o=>o.target===node)!.callback([],{} as ResizeObserver));await act(async()=>press(node));const canvas=document.querySelector('.canvas')!;
   await act(async()=>key(canvas,' '));let editor=document.querySelector<HTMLTextAreaElement>('textarea')!;const set=Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!;await act(async()=>{set.call(editor,'Long label growing left');editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(node.style.left,'300px');assert.equal(document.querySelector('[data-anchor-card="left"][data-anchor-side="right"]')!.getAttribute('cx'),'488');assert.equal(writes,0,'live growth does not create per-key saves');
   await act(async()=>key(editor,'Tab',{shiftKey:true}));assert.equal(saved.cards[1].x,300);assert.equal(saved.cards[1].object?.type==='text'&&saved.cards[1].object.text,'Long label growing left');assert.equal(writes,1);assert.deepEqual(readBoard(saved.path,writeBoard(saved)).cards,saved.cards,'left growth needs no file-format change');
-  await act(async()=>press(node));await act(async()=>key(canvas,' '));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;await act(async()=>{set.call(editor,'Short');editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(node.style.left,'400px');await act(async()=>key(editor,'Escape'));assert.equal(node.style.left,'300px');assert.equal(writes,1,'cancel restores text and geometry without an undo entry');
-  await act(async()=>key(canvas,'Tab'));assert.equal(saved.edges.at(-1)?.fromSide,'left');assert.equal(saved.edges.at(-1)?.toSide,'right');assert.equal(saved.cards.at(-1)?.x,-30);assert.equal(saved.edges.at(-1)?.from,'left');
+  await act(async()=>press(node));await act(async()=>key(canvas,' '));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;await act(async()=>{set.call(editor,'Short');editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(node.style.left,'400px');await act(async()=>key(editor,'Escape'));assert.equal(node.style.left,'400px');assert.equal(saved.cards[1].x,400);assert.equal(writes,2,'Escape saves text and geometry together');
+  await act(async()=>key(canvas,'Tab'));assert.equal(saved.edges.at(-1)?.fromSide,'left');assert.equal(saved.edges.at(-1)?.toSide,'right');assert.equal(saved.cards.at(-1)?.x,70);assert.equal(saved.edges.at(-1)?.from,'left');
  }finally{await act(async()=>root.unmount());}
 });
 
@@ -275,16 +275,35 @@ test('style shortcuts and menus use the active selection, respect bindings, and 
 });
 
 
-test('Command/Ctrl+Enter accepts edited Text once without creating a sibling',async()=>{
+test('Escape and Command/Ctrl+Enter accept edited Text once without creating a sibling',async()=>{
  const {Whiteboard}=await import('../src/renderer/Board');let saved:Board={...fixture(),cards:[topic('root','Original')]},writes=0;const root=createRoot(document.getElementById('root')!);
  function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} onSave={next=>{saved=next;writes++;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
  const key=(target:Element,key:string,options:KeyboardEventInit={})=>target.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
  try{await act(async()=>root.render(<Harness/>));await act(async()=>press(document.querySelector('[data-placement="root"]')!));
-  for(const modifier of ['metaKey','ctrlKey']){
+  for(const modifier of ['metaKey','ctrlKey','Escape']){
    await act(async()=>key(document.querySelector('.canvas')!,' '));const editor=document.querySelector<HTMLTextAreaElement>('textarea')!;
    await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(editor,'Accepted '+modifier);editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
-   await act(async()=>key(editor,'Enter',{[modifier]:true}));assert.equal(document.querySelector('textarea'),null);assert.equal(saved.cards.length,1);assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'Accepted '+modifier);assert.equal(saved.edges.length,0);
+   await act(async()=>key(editor,modifier==='Escape'?'Escape':'Enter',modifier==='Escape'?{}:{[modifier]:true}));assert.equal(document.querySelector('textarea'),null);assert.equal(saved.cards.length,1);assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'Accepted '+modifier);assert.equal(saved.edges.length,0);
   }
-  assert.equal(writes,2,'each acceptance is one save');
+  assert.equal(writes,3,'each acceptance is one save');
+ }finally{await act(async()=>root.unmount());}
+});
+
+
+test('Escape commits Text and leftward growth as one real undoable file edit, with no unchanged saves',async t=>{
+ const {Session}=await import('../src/renderer/session'),{Whiteboard}=await import('../src/renderer/Board');
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-text-escape-')),folder=join(dir,'notes');await fs.mkdir(folder);const w=await Workspace.open(folder,join(dir,'cache'));await w.createFolder('','Board');let board=w.snapshot().boards.find(b=>b.folder==='Board')!;
+ await w.saveBoard({...board,cards:[{...topic('parent','Parent'),x:800},{...topic('left','Short'),x:400}],edges:[{id:'branch',kind:'branch',from:'parent',to:'left',fromSide:'left',toSide:'right'}]},board.revision);board=w.snapshot().boards.find(b=>b.folder==='Board')!;
+ let writes=0;const session=new Session({request:async request=>{if(request.kind==='saveBoard'){writes++;return w.saveBoard(request.board,request.expected);}if(request.kind==='write')return w.write(request.changes);throw new Error(request.kind);}} as import('../src/shared').Bridge);session.update({snapshot:w.snapshot()});
+ t.after(async()=>{session.dispose();w.close();await fs.rm(dir,{recursive:true,force:true});});const root=createRoot(document.getElementById('root')!);
+ function Harness(){const state=useSyncExternalStore(session.subscribe,session.getState);return <Whiteboard board={state.snapshot!.boards.find(b=>b.path===board.path)!} cards={[]} onSave={(next,label,base)=>session.board(next,label,base)} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const key=(target:Element,key:string,options:KeyboardEventInit={})=>target.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
+ try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="left"]')!,canvas=document.querySelector<HTMLElement>('.canvas')!;Object.defineProperty(node,'offsetWidth',{get:()=>node.querySelector('span')!.textContent!.startsWith('Long')?180:80});Object.defineProperty(node,'offsetHeight',{value:28});await act(async()=>observers.findLast(o=>o.target===node)!.callback([],{} as ResizeObserver));await act(async()=>press(node));await act(async()=>key(canvas,' '));const editor=document.querySelector<HTMLTextAreaElement>('textarea')!,before=await w.read(board.path);
+  await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(editor,'Long edited text\nSecond line');editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(writes,0);assert.equal(node.style.left,'300px');
+  await act(async()=>key(editor,'Escape',{isComposing:true}));assert.equal(document.activeElement,editor);assert.equal(writes,0,'Escape used by IME composition does not commit');
+  await act(async()=>{key(editor,'Escape');await session.run(async()=>{});});assert.equal(document.activeElement,canvas);assert.equal(document.querySelector('textarea'),null);assert.equal(writes,1);assert.equal(session.undoHistory.past.length,1);const after=await w.read(board.path),saved=readBoard(board.path,after);assert.equal(saved.cards.length,2);assert.deepEqual(saved.edges,board.edges);assert.equal(saved.cards[1].x,300);assert.equal(saved.cards[1].object?.type==='text'&&saved.cards[1].object.text,'Long edited text\nSecond line');
+  await act(async()=>session.undo());assert.equal(await w.read(board.path),before);assert.equal(node.style.left,'400px','Undo restores the pre-edit geometry');
+  await act(async()=>session.undo(true));assert.equal(await w.read(board.path),after);assert.equal(node.style.left,'300px');
+  await act(async()=>key(canvas,' '));await act(async()=>{key(document.querySelector('textarea')!,'Escape');await session.run(async()=>{});});assert.equal(writes,1,'accepting unchanged text adds no write or history entry');assert.equal(session.undoHistory.past.length,1);
  }finally{await act(async()=>root.unmount());}
 });
