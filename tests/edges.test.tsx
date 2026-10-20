@@ -52,10 +52,10 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
   const pressAnchor=async(id:string,side:string,x:number,y:number)=>{await hover(x,y);await press(anchor(id,side),x,y);};
   try{
     await act(async()=>root.render(<Harness/>));
-    await press(document.querySelector('[data-placement="p0"]')!,100,100);
+    await hover(340,140);assert.equal(document.querySelectorAll('.board-placement.selected').length,0,'drawing can start without selecting an element');assert.equal(document.querySelectorAll('.edge-keyboard-anchor').length,0,'idle Tab order remains limited to selected placements');
     await press(anchor('p0','right'),340,140);assert.equal(writes,0);
-    assert.equal(document.querySelectorAll('.edge-anchor').length,0,'distant destinations do not reveal anchors');
-    await hover(500,140);assert.equal(document.querySelectorAll('[data-anchor-visible=true]').length,1,'only the nearby individual anchor appears');
+    assert.equal(document.querySelectorAll('.edge-anchor').length,1,'the larger reveal reaches the facing destination before snapping');
+    await hover(500,140);assert.equal(document.querySelectorAll('[data-anchor-visible=true]').length,3,'only destination anchors inside the radius appear');
     await press(anchor('p1','left'),500,140);assert.equal(current.edges.length,1);assert.equal(current.edges[0].fromSide,'right');assert.equal(current.edges[0].toSide,'left');
     assert.deepEqual(edgeStyle(current.edges[0]),{strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed',fromArrowhead:'arrow',toArrowhead:'arrow',labelSize:18},'new edges copy the complete cached style');
     assert.equal(current.edges[0].label,undefined);
@@ -282,14 +282,16 @@ test('selected edge endpoints share zoom-aware proximity hints and retain pointe
  const viewport=createRef<HTMLDivElement>(),saved:Board[]=[],camera={x:0,y:0,zoom:1},root=createRoot(document.getElementById('root')!);
  const pointer=(target:EventTarget,type:string,x:number,y=140)=>{const event=new win.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:1});target.dispatchEvent(event);};
  const hover=async(x:number,y=140)=>{await act(async()=>pointer(document,'pointermove',x,y));await step();};
- const endpoints=()=>[...document.querySelectorAll('[data-anchor-visible=true][data-edge-endpoint]')].map(n=>n.getAttribute('data-edge-endpoint'));
+ const endpoints=()=>[...document.querySelectorAll('[data-anchor-visible=true][data-edge-endpoint]')].map(n=>n.getAttribute('data-edge-endpoint')).sort();
  const key=(target:Element)=>target.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
  try{
-  await act(async()=>root.render(<div ref={viewport}><Edges board={board} mentions={[]} heightOf={p=>p.height} camera={()=>camera} viewport={viewport} selectedCards={[]} selectedEdges={['edge']} enabled onSelect={()=>{}} onSave={next=>saved.push(next)} onFinish={()=>{}} onStyle={()=>{}}/></div>));
-  await hover(800);assert.deepEqual(endpoints(),[]);assert.equal(document.querySelectorAll('.edge-keyboard-anchor[data-edge-endpoint]').length,2,'distant endpoints remain keyboard accessible');
-  await hover(600);assert.deepEqual(endpoints(),['to']);assert.ok(document.querySelector('[data-anchor-visible=true]')!.parentElement!.style.getPropertyValue('--connector-strength'));
+  const render=async(selectedEdges:string[])=>act(async()=>root.render(<div ref={viewport}><Edges board={board} mentions={[]} heightOf={p=>p.height} camera={()=>camera} viewport={viewport} selectedCards={['p0','p1']} selectedEdges={selectedEdges} enabled onSelect={()=>{}} onSave={next=>saved.push(next)} onFinish={()=>{}} onStyle={()=>{}}/></div>));
+  await render([]);await hover(500);assert.deepEqual(endpoints(),[],'unselected edges never contribute reconnection handles');assert.ok(document.querySelector('[data-anchor-visible=true][data-anchor-card="p1"][data-anchor-side="left"]'));assert.equal(document.querySelector('.edge-anchor-hint:last-child .edge-anchor')!.getAttribute('data-anchor-card'),'p1','the nearest overlapping element anchor receives the pointer');
+  await render(['edge']);await hover(500);const shared=[...document.querySelectorAll('[data-anchor-visible=true][cx="500"][cy="140"]')];assert.equal(shared.at(-1)!.getAttribute('data-edge-endpoint'),'to','a selected edge endpoint is painted and hit-tested above the selected placement anchor');
+  await hover(1400);assert.deepEqual(endpoints(),[]);assert.equal(document.querySelectorAll('.edge-keyboard-anchor[data-edge-endpoint]').length,2,'distant endpoints remain keyboard accessible');
+  await hover(800);assert.deepEqual(endpoints(),['to']);assert.ok(document.querySelector('[data-anchor-visible=true]')!.parentElement!.style.getPropertyValue('--connector-strength'));
   const path=document.querySelector('.edge-stroke')!,geometry=path.getAttribute('d');
-  camera.zoom=2;await act(async()=>viewport.current!.dispatchEvent(new win.Event(BOARD_CAMERA_EVENT)));await step();assert.deepEqual(endpoints(),['from'],'zoom refreshes the radius and world cursor without another pointer event');assert.equal(path.getAttribute('d'),geometry);
+  camera.zoom=2;await act(async()=>viewport.current!.dispatchEvent(new win.Event(BOARD_CAMERA_EVENT)));await step();assert.deepEqual(endpoints(),['from','to'],'zoom refreshes the radius and world cursor without another pointer event');assert.equal(path.getAttribute('d'),geometry);
   Object.assign(camera,{x:0,y:0,zoom:1});await hover(420);assert.deepEqual(endpoints(),['from','to']);
   const strengths=()=>[...document.querySelectorAll<SVGElement>('.edge-anchor-hint')].map(n=>Number(n.style.getPropertyValue('--connector-strength'))),before=strengths();
   for(const zoom of [.2,.5,1,2,3]){

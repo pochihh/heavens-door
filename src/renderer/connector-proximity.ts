@@ -1,6 +1,6 @@
 import type {AnchorSide,Placement,Edge} from '../shared';
 import {anchor,sides,type Point} from './edge-geometry';
-export const CONNECTOR_RADIUS=160;
+export const CONNECTOR_RADIUS=320;
 export const CONNECTOR_SNAP_RADIUS=14;
 export interface Connector extends Point {key:string;card:Placement;side:AnchorSide;edge?:Edge;endpoint?:'from'|'to'}
 export function connectorScene(cards:Placement[],heightOf:(card:Placement)=>number){

@@ -7,15 +7,16 @@ const card=(id:string,x:number,y:number):Placement=>({id,cardId:id,x,y,width:300
 
 test('connector radius is individual, spans elements, and uses board units while snapping stays in screen units',()=>{
  const a=card('a',0,0),b=card('b',320,0),scene=connectorScene([a,b],p=>p.height);
- const hits=nearbyConnectors(scene.points,{x:310,y:100});assert.deepEqual(hits.map(h=>h.point.key),['a:right','b:left']);assert.ok(hits.every(h=>h.strength>0));
- assert.deepEqual(nearbyConnectors(scene.points,{x:310,y:100},'a').map(h=>h.point.key),['b:left']);
+ const facing=scene.points.filter(p=>p.key==='a:right'||p.key==='b:left');
+ const hits=nearbyConnectors(facing,{x:310,y:100});assert.deepEqual(hits.map(h=>h.point.key),['a:right','b:left']);assert.ok(hits.every(h=>h.strength>0));
+ assert.deepEqual(nearbyConnectors(facing,{x:310,y:100},'a').map(h=>h.point.key),['b:left']);
  const point=scene.points.find(p=>p.key==='a:left')!;
  for(const zoom of [.2,.5,1,3]){
   assert.equal(closestConnector([point],{x:point.x+13/zoom,y:point.y},zoom),point);assert.equal(closestConnector([point],{x:point.x+15/zoom,y:point.y},zoom),undefined);
  }
  assert.ok(nearbyConnectors([point],{x:point.x+CONNECTOR_RADIUS-1,y:point.y}).length);
  assert.equal(nearbyConnectors([point],{x:point.x+CONNECTOR_RADIUS,y:point.y}).length,0);
- assert.equal(nearbyConnectors([point],{x:point.x+120,y:point.y}).length,1,'the enlarged radius includes points outside the old 72 pixels');
+ assert.equal(nearbyConnectors([point],{x:point.x+300,y:point.y}).length,1,'the enlarged radius includes points outside the previous 160 board units');
  const strength=[0,10,30,60].map(d=>nearbyConnectors([point],{x:point.x+d,y:point.y})[0].strength);assert.equal(strength[0],1);assert.ok(strength.every((s,i)=>i===0||s<strength[i-1]));
  assert.equal(closestConnector(scene.points,{x:318,y:100},1)?.key,'b:left','snap chooses the closest connector across neighboring elements');
 });

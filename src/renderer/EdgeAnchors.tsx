@@ -20,7 +20,8 @@ export function EdgeAnchors(props:Props){
  const pointer=useRef<Point|null>(null),frame=useRef<number|null>(null),held=useRef(false);
  const [near,setNear]=useState<ReturnType<typeof nearbyConnectors>>([]);
  const selectedPoints=useMemo(()=>{const selected=new Set(props.selected);return props.points.filter(p=>selected.has(p.card.id));},[props.points,props.selected]);
- const idlePoints=useMemo(()=>[...selectedPoints,...props.endpoints],[selectedPoints,props.endpoints]);
+ const keyboardIdle=useMemo(()=>[...selectedPoints,...props.endpoints],[selectedPoints,props.endpoints]);
+ const idlePoints=useMemo(()=>[...props.points,...props.endpoints],[props.points,props.endpoints]);
  const candidates=props.connecting?props.points:idlePoints,candidatesRef=useRef(candidates);candidatesRef.current=candidates;
  function refresh(){
   const {enabled,connecting,source,camera,viewport}=latest.current,element=viewport.current,at=pointer.current;
@@ -29,16 +30,18 @@ export function EdgeAnchors(props:Props){
    const rect=element.getBoundingClientRect(),c=camera();
    if(!rect.width||!rect.height||at.x>=rect.left&&at.x<=rect.right&&at.y>=rect.top&&at.y<=rect.bottom)found=nearbyConnectors(candidatesRef.current,{x:(at.x-rect.left-c.x)/c.zoom,y:(at.y-rect.top-c.y)/c.zoom},connecting?source:undefined);
   }
+  // SVG paint order also decides which overlapping hit target receives the pointer.
+  found.sort((a,b)=>a.strength-b.strength||Number(!!a.point.edge)-Number(!!b.point.edge));
   setNear(previous=>previous.length===found.length&&previous.every((p,i)=>p.point===found[i].point&&p.strength===found[i].strength)?previous:found);
  }
  useLayoutEffect(()=>{refresh();},[props.points,props.selected,props.connecting,props.source,props.enabled,props.endpoints]);
  useEffect(()=>{
   const element=props.viewport.current!,doc=element.ownerDocument,win=doc.defaultView!;
-  const schedule=()=>{if(held.current||!latest.current.enabled||!latest.current.connecting&&!latest.current.selected.length&&!latest.current.endpoints.length)return;if(frame.current===null)frame.current=win.requestAnimationFrame(()=>{frame.current=null;refresh();});};
+  const schedule=()=>{if(held.current||!latest.current.enabled)return;if(frame.current===null)frame.current=win.requestAnimationFrame(()=>{frame.current=null;refresh();});};
   const move=(e:PointerEvent)=>{
    const target=e.target instanceof win.Element?e.target:null;
    pointer.current=target?.closest('.canvas-controls,input,textarea,select,[contenteditable=true]')?null:{x:e.clientX,y:e.clientY};
-   if(latest.current.connecting||latest.current.selected.length||latest.current.endpoints.length)schedule();
+   schedule();
   };
   const down=(e:PointerEvent)=>{const target=e.target instanceof win.Element?e.target:null;held.current=!latest.current.connecting&&!target?.closest('.edge-anchor,.edge-keyboard-anchor')&&!!target?.closest('.canvas');move(e);if(held.current){if(frame.current!==null){win.cancelAnimationFrame(frame.current);frame.current=null;}setNear(previous=>previous.length?[]:previous);}};
   const up=()=>{if(held.current){held.current=false;schedule();}};
@@ -46,7 +49,7 @@ export function EdgeAnchors(props:Props){
   doc.addEventListener('pointermove',move,true);doc.addEventListener('pointerdown',down,true);doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',up,true);element.addEventListener('pointerleave',leave);element.addEventListener(BOARD_CAMERA_EVENT,schedule);doc.addEventListener('scroll',schedule,true);win.addEventListener('blur',blur);
   return()=>{doc.removeEventListener('pointermove',move,true);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',up,true);element.removeEventListener('pointerleave',leave);element.removeEventListener(BOARD_CAMERA_EVENT,schedule);doc.removeEventListener('scroll',schedule,true);win.removeEventListener('blur',blur);if(frame.current!==null)win.cancelAnimationFrame(frame.current);};
  },[]);
- const keyboardPoints=useMemo(()=>!props.enabled?[]:props.connecting?props.keyboard?[...props.points,...props.endpoints]:[]:idlePoints,[props.enabled,props.connecting,props.keyboard,props.points,props.endpoints,idlePoints]),c=props.camera();
+ const keyboardPoints=useMemo(()=>!props.enabled?[]:props.connecting?props.keyboard?[...props.points,...props.endpoints]:[]:keyboardIdle,[props.enabled,props.connecting,props.keyboard,props.points,props.endpoints,keyboardIdle]),c=props.camera();
  return <g className="edge-camera" transform={`translate(${c.x} ${c.y}) scale(${c.zoom})`} style={{'--edge-zoom':c.zoom} as CSSProperties}>
   <KeyboardAnchors points={keyboardPoints} onStart={props.onStart} onKeyboardStart={props.onKeyboardStart}/>
   {near.map(({point,strength})=><g key={point.key} className="edge-anchor-hint" style={{'--connector-strength':strength,'--connector-size':`${2+4*strength}px`} as CSSProperties} aria-hidden="true">
