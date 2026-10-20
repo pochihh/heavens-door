@@ -101,3 +101,11 @@ All Style View choices are default presets, not a permanently fixed menu. Future
 ## Whiteboard deletion
 
 Whiteboard tiles and Whiteboard explorer rows reuse the card Delete menu action and Delete/Backspace selection gesture. Delete whiteboard uses the shared confirmation dialog, then the existing folder-to-Trash operation. It includes every nested board, local card, and asset in that folder; references to cards stored elsewhere do not delete their files. Check the complete folder stamp again after confirmation to reject concurrent changes. Undo restores the folder and its identities; redo returns it to Trash. The mother whiteboard cannot be deleted.
+
+## Copy and apply styles
+
+Select one whiteboard element and press **Command+Shift+C** (Windows: **Ctrl+Shift+C**) to copy its style. Select one or more targets and press **Command+Shift+V** (**Ctrl+Shift+V**) to apply it. Both actions are also in element context menus and can be rebound in Keyboard shortcuts. They do not run while editing text or fields.
+
+Stroke color, width and pattern apply wherever supported; fill applies to placements. Text-to-Text also copies shape, text color and font size. Edge-to-edge also copies arrowheads and label size. Other fields remain unchanged, including content, position, connections, edge labels and image crop/caption. Backend fill/border fields still round-trip even where the current UI leaves their rendering to the theme. Card fill updates the source note and all its references. A mixed application is one revision-checked Undo action.
+
+The style clipboard is shared across boards and splits within this app window. It is separate from the system clipboard, so normal copied text and images remain available; it does not persist after closing the window or transfer to another app window.

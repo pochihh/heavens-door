@@ -1,3 +1,4 @@
+import {applyBoardStyle,copyBoardStyle,type CopiedBoardStyle} from '../board-style';
 import {splitCardSource} from '../card-source';
 import {remapFilePath} from '../path-remap';
 import {moveCardLinks} from '../card-links';
@@ -22,6 +23,8 @@ interface State {
 }
 export class Session {
   state: State = {snapshot:null,draft:null,status:ui.status.ready,error:'',checkpoints:[],revision:0};
+  // shortcut: styles are shared across boards in this window; use a custom OS clipboard format for cross-window sharing.
+  styleClipboard:CopiedBoardStyle|null=null;
   fileClipboard:{root:string;path:string;cut:boolean}|null=null;
   viewTabs=new Map<string,string>();
   viewScrolls=new Map<string,{left:number;top:number}>();
@@ -378,20 +381,34 @@ export class Session {
       this.accept(result,label);
     });
   }
+  copyStyle(base:Board,placements:string[],edges:string[]){return this.run(async()=>{
+    await this.flush();const board=this.state.snapshot?.boards.find(b=>b.path===base.path);
+    if(!board||layout(board)!==layout(base))throw new Error(ui.errors.whiteboardChanged(base.path));
+    const style=copyBoardStyle(board,placements,edges,this.state.snapshot!.cards);
+    if(!style){this.update({status:ui.style.chooseSource});return;}
+    this.styleClipboard=style;this.update({status:ui.style.copied});
+  });}
+  pasteStyle(base:Board,placements:string[],edges:string[]){return this.run(async()=>{
+    const style=this.styleClipboard;if(!style){this.update({status:ui.style.clipboardEmpty});return;}
+    if(!base.cards.some(p=>placements.includes(p.id))&&!base.edges.some(e=>edges.includes(e.id))){this.update({status:ui.style.chooseTarget});return;}
+    const next=applyBoardStyle(base,placements,edges,style),ids='fillColor' in style?base.cards.filter(p=>placements.includes(p.id)&&!p.folder&&!p.object).map(p=>p.cardId):[];
+    await this.fillCardsNow(ids,style.fillColor??undefined,next,base,ui.history.pasteStyle);
+  });}
   fillCards(ids:string[],color:string|undefined,board?:Board,base?:Board) {
-    return this.run(async()=>{
-      await this.flush();
-      const snapshot=this.state.snapshot!,cards=[...new Set(ids)].map(id=>{
-        const card=snapshot.cards.find(c=>c.id===id);if(!card)throw new Error(ui.errors.cardMissing);
-        return {path:card.path,expected:card.revision};
-      });
-      const current=board&&snapshot.boards.find(b=>b.path===board.path);
-      if(board&&(!base||!current||layout(base)!==layout(current)))throw new Error(ui.errors.whiteboardChanged(board.path));
-      const result=await this.bridge.request<Mutation>({kind:'setFill',cards,color:color??null,board:board&&current?{value:board,expected:current.revision}:undefined});
-      this.accept(result,ui.history.colorSelection);
-      const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
-      if(draft&&info){const card=await this.bridge.request<Card>({kind:'card',path:info.path});this.acceptCard(card);}
+    return this.run(()=>this.fillCardsNow(ids,color,board,base,ui.history.colorSelection));
+  }
+  private async fillCardsNow(ids:string[],color:string|undefined,board:Board|undefined,base:Board|undefined,label:string) {
+    await this.flush();
+    const snapshot=this.state.snapshot!,cards=[...new Set(ids)].map(id=>{
+      const card=snapshot.cards.find(c=>c.id===id);if(!card)throw new Error(ui.errors.cardMissing);
+      return {path:card.path,expected:card.revision};
     });
+    const current=board&&snapshot.boards.find(b=>b.path===board.path);
+    if(board&&(!base||!current||layout(base)!==layout(current)))throw new Error(ui.errors.whiteboardChanged(board.path));
+    const result=await this.bridge.request<Mutation>({kind:'setFill',cards,color:color??null,board:board&&current?{value:board,expected:current.revision}:undefined});
+    this.accept(result,label);
+    const draft=this.state.draft,info=result.snapshot.cards.find(c=>c.id===draft?.card.id);
+    if(draft&&info){const card=await this.bridge.request<Card>({kind:'card',path:info.path});this.acceptCard(card);}
   }
   deleteSelection(board:Board,placements:string[],edges:string[],confirm:(names:string[],boards?:boolean)=>boolean|Promise<boolean>):Promise<boolean> {
     const folders=board.cards.filter(p=>p.folder&&placements.includes(p.id)).map(p=>p.folder!).sort((a,b)=>a.length-b.length);

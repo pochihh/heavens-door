@@ -79,6 +79,7 @@ export const ui = {
   style: {
     empty:'Open a card or whiteboard to edit styles.', selected:(kind:string,n:number)=>`${kind} · ${n} selected`,
     cards:'Cards',whiteboards:'Whiteboards',cardsAndWhiteboards:'Cards & whiteboards',edges:'Edges',
+    copy:'Copy style',paste:'Apply style',copied:'Style copied',chooseSource:'Select one element to copy its style.',chooseTarget:'Select elements to apply the copied style.',clipboardEmpty:'Copy an element’s style first.',
     images:'Images',textColor:'Text color',lineColor:'Line color',lineStyle:'Line style',lineWidth:'Line width',fill:'Fill color',shapeAppearance:'Shape appearance',mixed:'Mixed',imageHelp:'Use the image toolbar for crop, size and caption.',color:'Color',selectItems:'Select elements on the whiteboard to edit their styles.',
     solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
     arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',
@@ -225,7 +226,7 @@ export const ui = {
     beforeRootCardsMigration: "Before root cards migration",
     sampleWorkspace: "Sample workspace",
     createWhiteboard: "Create whiteboard",
-    colorSelection:'Change color',createEdge:'Create edge',reconnectEdge:'Reconnect edge',deleteEdges:'Delete edges',styleSelection:'Style selection',styleBoard:'Style whiteboard',editEdgeLabel:'Edit edge label',
+    colorSelection:'Change color',createEdge:'Create edge',reconnectEdge:'Reconnect edge',deleteEdges:'Delete edges',styleSelection:'Style selection',pasteStyle:'Apply copied style',styleBoard:'Style whiteboard',editEdgeLabel:'Edit edge label',
     moveCards: "Move cards",
     resizeCard: "Resize card",
     expandCard: "Expand card",

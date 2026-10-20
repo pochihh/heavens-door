@@ -1,4 +1,6 @@
 export const KEY_COMMANDS=[
+  {id:'copyStyle',name:'Copy whiteboard style',key:'Mod-Shift-c',scope:'Whiteboard'},
+  {id:'pasteStyle',name:'Apply whiteboard style',key:'Mod-Shift-v',scope:'Whiteboard'},
   {id:'readerLibrary',name:'Return to Inbox',key:'Shift-j',scope:'Reader'},
   {id:'readerSearch',name:'Search PDF text',key:'Mod-f',scope:'Reader'},
   {id:'readerHighlight',name:'Highlight selected text',key:'h',scope:'Reader'},
