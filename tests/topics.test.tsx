@@ -50,7 +50,7 @@ test('a released connector stays live on empty canvas and double-click creates a
  try{await act(async()=>root.render(<Harness/>));const canvas=document.querySelector<HTMLElement>('.canvas')!;canvas.getBoundingClientRect=()=>({left:40,top:30,width:1000,height:700} as DOMRect);
   await act(async()=>press(document.querySelector('[data-placement="root"]')!));const anchor=document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!;
   await act(async()=>{pointer(anchor,'pointerdown',220,100);pointer(document,'pointermove',800,400);pointer(document,'pointerup',800,400);});assert.ok(document.querySelector('.edge-handles.connecting'));assert.equal(writes,0);
-  await act(async()=>document.querySelector('[aria-label="New text"]')!.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:800,clientY:400})));assert.equal(writes,0,'double-clicking a control is not empty-canvas creation');
+  await act(async()=>document.querySelector('[aria-label="Style the selection"]')!.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:800,clientY:400})));assert.equal(writes,0,'double-clicking a control is not empty-canvas creation');
   await act(async()=>{pointer(canvas,'pointerdown',800,400);pointer(document,'pointerup',800,400);canvas.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:800,clientY:400}));});
   assert.equal(writes,1);assert.equal(ordinary,0);assert.equal(saved.cards.length,2);assert.equal(saved.edges.length,1);assert.equal(saved.edges[0].kind,'branch');assert.equal(saved.edges[0].from,'root');assert.equal(saved.edges[0].to,saved.cards[1].id);assert.equal(saved.cards[1].x,1500);assert.equal(saved.cards[1].y,700);assert.ok(document.querySelector('textarea[aria-label="Edit whiteboard text"]'));assert.equal(document.querySelector('.edge-handles.connecting'),null);
  }finally{await act(async()=>root.unmount());}
@@ -155,5 +155,18 @@ test('dragging shows anchors only for the nearest candidate and clears them on e
   await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.deepEqual(shown(),[],'cancel clears selection and target hints');
   await act(async()=>press(document.querySelector('[data-placement="source"]')!,20,20));assert.deepEqual(shown(),['source'],'idle selection still exposes its own anchors');
   const keyboardSource=document.querySelector('[data-anchor-card="source"][data-anchor-side="right"]')!;await act(async()=>keyboardSource.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));assert.deepEqual(shown(),['source','near','far'],'keyboard users can still tab through destinations');assert.equal(keyboardSource.isConnected,true,'the focused keyboard anchor is never unmounted');
+ }finally{await act(async()=>root.unmount());}
+});
+
+
+test('canvas creation menu has one Text action and the navigation controls have no creation buttons',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');Object.assign(globalThis,{innerWidth:1000,innerHeight:800});let saved=fixture();const root=createRoot(document.getElementById('root')!);
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} initialCamera={{x:20,y:40,zoom:.5}} onSave={next=>{saved=next;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ try{await act(async()=>root.render(<Harness/>));
+  assert.equal(document.querySelector('.canvas-controls [aria-label="New text"],.canvas-controls [aria-label="Add image"]'),null);
+  await act(async()=>document.querySelector('.canvas')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:200})));
+  assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(n=>n.textContent),['New card','New whiteboard','New text','Image or figure']);
+  await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(n=>n.textContent==='New text')!.click());
+  assert.equal(saved.cards.length,2);assert.equal(saved.cards[1].object?.type,'text');assert.equal(saved.cards[1].object?.type==='text'&&saved.cards[1].object.shape,'none');assert.equal(saved.cards[1].x,560);assert.equal(saved.cards[1].y,320);assert.ok(document.querySelector('[aria-label="Edit whiteboard text"]'));
  }finally{await act(async()=>root.unmount());}
 });

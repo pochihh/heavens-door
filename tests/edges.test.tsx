@@ -203,7 +203,7 @@ test('Style separates card, plain Text, shapes, images and edges, including mixe
     assert.ok(board.cards.filter(p=>p.object?.type==='text').every(p=>p.object?.type==='text'&&p.object.textColor==='#c9838a'));assert.equal(board.edges[0].strokeColor,undefined);
     await render();await act(async()=>group('Cards · 1 selected').querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());assert.deepEqual(filled,['source']);
     await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Fill color"] [aria-label="Sage"]')!.click());assert.equal(board.cards[1].fillColor,undefined);assert.equal(board.cards[2].fillColor,'#91aa8b');
-    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color','Shape']);
+    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color']);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
