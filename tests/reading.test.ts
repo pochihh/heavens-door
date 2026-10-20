@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve,dirname} from 'node:path';
-import {splitAnnotations,withAnnotations,updateAnnotation,validateAnnotation,readingMetadata,type Annotation} from '../src/reading';
+import {annotationOnPage,splitAnnotations,withAnnotations,updateAnnotation,validateAnnotation,readingMetadata,type Annotation} from '../src/reading';
 import {readFeeds,writeFeeds,feedArticles} from '../src/feeds';
 import {Workspace} from '../src/core/workspace';
 import {extractArticle} from '../src/core/article';
@@ -69,4 +69,14 @@ test('asset notes become ordinary owned cards atomically, rebase links, retain h
  await w.write(result.edits.map(e=>({path:e.path,expected:e.after===null?null:revision(e.after),content:e.before})));assert.equal((await w.card(asset.path)).body,body);assert.equal(w.snapshot().cards.some(c=>c.id===created.id),false);assert.equal(w.snapshot().boards.find(b=>b.folder==='Board')!.cards.length,0);
  asset=await w.card(asset.path);board=w.snapshot().boards.find(b=>b.folder==='Board')!;await w.extractAssetNote(asset.path,asset.revision,'h1','Board',board.revision,500,200);const kept=splitAnnotations((await w.card(asset.path)).body).annotations[1];assert.equal(kept.quote,'quoted passage');assert.equal(kept.page,1);assert.match(kept.text,/\.\.\/Board\/A%20derived%20insight.md/);assert.match((await w.card('Board/A derived insight.md')).body,/> quoted passage/);
  await assert.rejects(()=>w.extractAssetNote(asset.path,asset.revision,'n1','Board',board.revision,0,0));asset=await w.card(asset.path);board=w.snapshot().boards.find(b=>b.folder==='Board')!;await assert.rejects(()=>w.extractAssetNote(asset.path,asset.revision,'n1','Board','stale',0,0));await assert.rejects(()=>w.extractAssetNote(asset.path,asset.revision,'missing','Board',board.revision,0,0));await assert.rejects(()=>w.extractAssetNote('Board/A derived insight.md',w.snapshot().cards.find(c=>c.path==='Board/A derived insight.md')!.revision,'h1','Board',board.revision,0,0));
+});
+
+test('PDF page notes include multi-page highlights and preserve legacy document notes',()=>{
+ const notes:Annotation[]=[{id:'global',kind:'note',text:'Legacy asset note'},{id:'p1',kind:'note',page:1,text:'First page'},{id:'p2',kind:'note',page:2,text:'Second page'},{id:'span',kind:'highlight',text:'Across pages',page:1,anchors:[{page:1,rects:[]},{page:2,rects:[]}]}];
+ assert.deepEqual(notes.filter(a=>annotationOnPage(a,2)).map(a=>a.id),['global','p2','span']);assert.equal(notes.filter(a=>annotationOnPage(a)).length,4);
+});
+test('PDF placement page, expansion and notes settings survive a board round trip',()=>{
+ const board={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'p',cardId:'pdf',x:0,y:0,width:340,height:480,pdf:{page:2,expanded:true,notes:false}}],edges:[]};
+ assert.deepEqual(readBoard(board.path,writeBoard(board)).cards,board.cards.map(p=>({...p,folder:undefined})));
+ for(const pdf of [{page:0},{page:1.5},{page:5001},{page:NaN},{expanded:'yes'},{notes:0},[]])assert.throws(()=>writeBoard({...board,cards:[{...board.cards[0],pdf:pdf as never}]}),/Invalid PDF/);
 });

@@ -4,6 +4,9 @@ export interface ReadingSource {type:'pdf'|'web';file?:string;url?:string;captur
 export interface ReadingProgress {state:'new'|'reading'|'done';page?:number;scroll?:number}
 export interface ReadingSettings {folder:string}
 export interface Annotation {id:string;kind:'highlight'|'note';text:string;quote?:string;color?:string;page?:number;rects?:number[][];anchors?:{page:number;rects:number[][]}[];source?:string;context?:string;unresolved?:boolean}
+export function annotationOnPage(annotation:Annotation,page?:number){
+  return page===undefined||annotation.page===page||!!annotation.anchors?.some(a=>a.page===page)||annotation.page===undefined&&!annotation.anchors?.length;
+}
 const marker='\n\n## Annotations\n<!-- heavens-door:annotations -->\n';
 const idPattern=/^[\w-]{1,128}$/;
 export function readingMetadata(front:Record<string,unknown>,strict=false){

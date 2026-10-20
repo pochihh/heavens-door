@@ -38,7 +38,7 @@ test('a standalone image and PDF use direct media placements with no card shell 
  dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
  const root=createRoot(document.getElementById('root')!);try{await act(async()=>root.render(<Whiteboard board={board} cards={[pdf]} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>));
   for(const id of ['image','pdf']){const placement=document.querySelector(`[data-placement="${id}"]`)!;assert.ok(placement.classList.contains('board-media'));assert.equal(placement.classList.contains('board-card'),false);assert.equal(placement.querySelector('.card-top-row,.card-actions,.tiptap,.card-editor,.editor-body'),null);assert.equal((placement as HTMLElement).style.height,'auto');}
-  assert.equal(document.querySelector('[data-placement="image"] > .resize-handle'),null);assert.ok(document.querySelector('[data-placement="image"] .image-resize'));assert.equal(document.querySelector('.image-caption')?.textContent,'My image');assert.ok(document.querySelector('[data-placement="image"] img'));assert.ok(document.querySelector('[data-placement="pdf"] .pdf-preview-placeholder'));
+  assert.equal(document.querySelector('[data-placement="image"] > .resize-handle'),null);assert.ok(document.querySelector('[data-placement="image"] .image-resize'));assert.equal(document.querySelector('.image-caption')?.textContent,'My image');assert.ok(document.querySelector('[data-placement="image"] img'));assert.ok(document.querySelector('[data-placement="pdf"] .pdf-reader'));assert.equal(document.querySelector('.board-pdf-title')?.textContent,pdf.name);assert.ok(document.querySelector('[aria-label="Next PDF page"]'));assert.ok(document.querySelector('[aria-label="PDF actions"]'));
   const text=document.querySelector<HTMLElement>('[data-placement="text"]')!;assert.ok(text.classList.contains('board-text'));assert.equal(text.querySelector('.card-top-row,.resize-handle,.card-editor'),null);
   const image=document.querySelector<HTMLElement>('[data-placement="image"]')!,media=image.querySelector<HTMLElement>('.image-media')!;Object.defineProperty(image,'offsetHeight',{value:220});Object.defineProperty(image,'offsetWidth',{value:340});Object.defineProperty(media,'offsetHeight',{value:180});
   await act(async()=>observers.find(o=>o.target===image)!.callback([],{} as ResizeObserver));
@@ -131,4 +131,28 @@ test('image placeholders share the icon bar, tabbed picker and transfer handling
   await drop(image.querySelector('.image-placeholder')!,'paste',[new File(['png'],'paste.png',{type:'image/png'})]);assert.equal(board.cards.length,1,'paste fills the target instead of appending a second image');assert.equal(board.cards[0].id,id);assert.equal(imports.at(-1),'paste.png');assert.ok(image.querySelector('.image-media img'));
   for(const html of ['<div data-better-edit-image="placeholder"><img src="bad"></div>','<div data-better-edit-image-row="true"></div>','<div data-better-edit-image="placeholder"></div><div data-better-edit-image="placeholder"></div>'])assert.throws(()=>writeBoard({...board,cards:[{...board.cards[0],object:{type:'image',html}}]}),/Invalid whiteboard object/);
  }finally{await act(async()=>root.unmount());window.door=original;}
+});
+
+test('PDF board actions preserve width, show notes by default and collapse to the ordinary compact card',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react');let saved:import('../src/shared').Board|undefined;
+ const pdf={...card,id:'pdf',source:{type:'pdf' as const,file:'_assets/paper.pdf'}},initial={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'pdf',cardId:'pdf',x:10,y:20,width:340,height:480}],edges:[]};
+ function Board(){const [board,setBoard]=useState<import('../src/shared').Board>(initial);return <Whiteboard board={board} cards={[pdf]} onSave={next=>{saved=next;setBoard({...next,revision:crypto.randomUUID()});}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const root=createRoot(document.getElementById('root')!);
+ const action=async(label:string)=>{await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="PDF actions"]')!.click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(b=>b.textContent===label)!.click());};
+ try{await act(async()=>root.render(<Board/>));await action('Expand PDF preview');assert.equal(saved!.cards[0].pdf?.expanded,true);assert.equal(saved!.cards[0].width,340);assert.ok(document.querySelector('.board-pdf.continuous'));
+  const reader=document.querySelector<HTMLElement>('.board-pdf .pdf-reader')!;Object.defineProperties(reader,{scrollHeight:{value:1400,configurable:true},clientHeight:{value:600,configurable:true}});
+  const scroll=new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:80});await act(async()=>reader.dispatchEvent(scroll));assert.equal(scroll.defaultPrevented,false,'scrollable PDF keeps native vertical reading instead of canvas navigation');
+  const zoom=new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:0,ctrlKey:true});await act(async()=>reader.dispatchEvent(zoom));assert.equal(zoom.defaultPrevented,true,'modified wheel still reaches canvas zoom');
+  await action('Show notes');assert.equal(saved!.cards[0].pdf?.notes,false);await action('Show one page');assert.equal(saved!.cards[0].pdf?.expanded,false);
+  await act(async()=>document.querySelector<HTMLButtonElement>('.board-pdf [aria-label="Collapse card"]')!.click());assert.equal(saved!.cards[0].collapsed,true);assert.ok(document.querySelector('.board-card.collapsed'));assert.equal(document.querySelector('.pdf-reader'),null);
+  await act(async()=>document.querySelector<HTMLButtonElement>('.card-actions [aria-label="Expand card"]')!.click());assert.equal(saved!.cards[0].collapsed,false);assert.ok(document.querySelector('.pdf-reader'));
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('the continuous PDF reader tracks the page occupying most of its visible height, including the last page',async()=>{
+ const {visiblePdfPage}=await import('../src/renderer/PdfReader');const reader=document.createElement('div');reader.innerHTML='<div class="pdf-reader-toolbar"></div><div data-pdf-page="1"></div><div data-pdf-page="2"></div>';
+ const rect=(top:number,bottom:number)=>({top,bottom,left:0,right:340,width:340,height:bottom-top} as DOMRect);
+ reader.getBoundingClientRect=()=>rect(100,700);reader.firstElementChild!.getBoundingClientRect=()=>rect(100,130);
+ const pages=reader.querySelectorAll<HTMLElement>('[data-pdf-page]');pages[0].getBoundingClientRect=()=>rect(-180,260);pages[1].getBoundingClientRect=()=>rect(270,700);assert.equal(visiblePdfPage(reader),2,'last page is current even when the preceding page has a visible tail');
+ pages[0].getBoundingClientRect=()=>rect(130,570);pages[1].getBoundingClientRect=()=>rect(580,1020);assert.equal(visiblePdfPage(reader),1);reader.replaceChildren();assert.equal(visiblePdfPage(reader),undefined);
 });

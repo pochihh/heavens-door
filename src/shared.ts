@@ -11,7 +11,7 @@ export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 export type Arrowhead = 'none' | 'arrow' | 'triangle' | 'triangle-outline';
 export interface Stroke { strokeColor?:string; strokeWidth?:number; strokeStyle?:'solid'|'dashed'|'dotted'|'none' }
 export type BoardObject={type:'text';text:string;shape:'none'|'rectangle'|'rounded'|'ellipse'|'diamond';fontSize?:FontSize;textColor?:string}|{type:'image';html:string};
-export interface Placement extends Stroke {object?:BoardObject; fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; folder?: string }
+export interface Placement extends Stroke {object?:BoardObject; fillColor?:string; id: string; cardId: string; x: number; y: number; width: number; height: number; collapsed?:boolean; autoHeight?:boolean; pdf?:{page?:number;expanded?:boolean;notes?:boolean}; folder?: string }
 export interface Edge extends Stroke { kind?:'branch'; id:string; from:string; to:string; fromSide?:AnchorSide; toSide?:AnchorSide; fromArrowhead?:Arrowhead; toArrowhead?:Arrowhead; label?:string; labelSize?:FontSize }
 export type EdgeStyle = Pick<Edge,'strokeColor'|'strokeWidth'|'strokeStyle'|'fromArrowhead'|'toArrowhead'|'labelSize'>;
 export function edgeStyle(edge:EdgeStyle):EdgeStyle {

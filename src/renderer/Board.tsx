@@ -4,7 +4,7 @@ import {topicText,textNeighbor,type TextNavigation} from '../topics';
 import {readingText} from '../text/reading';
 import {BoardObject} from './BoardObject';
 import {BoardAnnotations} from './Annotations';
-import {PdfPreview} from './PdfReader';
+import {BoardPdf} from './BoardPdf';
 import {imageHtml} from './image-layout';
 import {imageFiles,imageTransferUrl} from './editor-images';
 import {clearDocumentDrop,dropDocumentAt,previewDocumentDrop,type DocumentDrag} from './card-drop';
@@ -118,7 +118,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
   const [contentVersion,setContentVersion]=useState(0);
   const contentReady=useCallback(()=>setContentVersion(version=>version+1),[]);
   const naturalHeight=(p:Placement)=>p.object?.type==='image'||p.object?.type==='text'||lookup.get(p.cardId)?.source?.type==='pdf'||autoHeight(p);
-  const heightSignature=(p:Placement)=>p.width+':'+(p.object?JSON.stringify(p.object):lookup.get(p.cardId)?.revision??'');
+  const heightSignature=(p:Placement)=>p.width+':'+(p.object?JSON.stringify(p.object):lookup.get(p.cardId)?.revision??'')+':'+JSON.stringify(p.pdf);
   const measuredHeight=(p:Placement)=>{const measured=measuredHeights[heightKey(p)];return measured?.signature===heightSignature(p)?measured.height:undefined;};
   const widthOf=(p:Placement)=>objectPreview?.id===p.id?objectPreview.width:p.object?.type==='text'&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
   const heightOf=(placement:Placement)=>{const p=placements.get(placement.id)??placement;return p.collapsed||naturalHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;};
@@ -158,6 +158,8 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     observer.observe(element);
     const wheel = (event: WheelEvent) => {
       if ((event.target as HTMLElement).closest('.canvas-controls,.editor-tools,.card-details')) return;
+      const reader=(event.target as HTMLElement).closest<HTMLElement>('.pdf-reader,.annotation-rail');
+      if(reader&&!event.ctrlKey&&!event.metaKey&&reader.scrollHeight>reader.clientHeight)return;
       if (gesture.current) { event.preventDefault(); return; }
       nav.wheel(event);
     };
@@ -240,7 +242,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     if(!e.currentTarget.contains(target))return;
     rightPress.current=e.button===2;
     if (target.closest('.edge-layer,.edge-handles')) return;
-    if (target.closest('.canvas-controls,.canvas-empty button,.card-editor') || editable(target)) return;
+    if (target.closest('.canvas-controls,.canvas-empty button,.card-editor,.pdf-reader,.annotation-rail') || editable(target)) return;
     const card = target.closest<HTMLElement>('[data-placement]');
     if (e.button === 1 || (e.button === 0 && spaceDown.current) || (e.button === 2 && !card)) {
       begin(e, 'pan'); return;
@@ -253,7 +255,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     }
   }
   function startCard(e: PointerEvent, id: string) {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor')) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor,.pdf-reader,.annotation-rail')) return;
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       onFinish?.();
       setSelected(previous => e.shiftKey ? [...new Set([...previous, id])] : previous.includes(id) ? previous.filter(p => p !== id) : [...previous, id]);
@@ -268,7 +270,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     const ids = selected.includes(id) ? selected : [id];
     setSelected(ids); begin(e, 'move', ids);
     // Like obsidian-whiteboard: a press is a pending drag; edit only on a quiet release.
-    if((body||lookup.get(latest.current.board.cards.find(p=>p.id===id)?.cardId??'')?.source)&&selected.length<2)gesture.current!.editOnClick={id,focus:{x:e.clientX,y:e.clientY,scrollTop:body?.scrollTop??0,append}};
+    if((body||lookup.get(latest.current.board.cards.find(p=>p.id===id)?.cardId??'')?.source?.type==='web')&&selected.length<2)gesture.current!.editOnClick={id,focus:{x:e.clientX,y:e.clientY,scrollTop:body?.scrollTop??0,append}};
   }
   function selectRegion(g: Gesture, x: number, y: number) {
     const left = Math.min(g.x, x) - g.rect.left, top = Math.min(g.y, y) - g.rect.top;
@@ -315,7 +317,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
-      { ...p, x: p.x + dx, y: p.y + dy } : { ...p, ...(!p.folder?{autoHeight:false}:{}), width: Math.max(p.object?.type==='image'||lookup.get(p.cardId)?.source?.type==='pdf'?40:200, p.width + dx), height: Math.max(120, g.resizeHeight! + dy) }) };
+      { ...p, x: p.x + dx, y: p.y + dy } : { ...p, ...(!p.folder?{autoHeight:false}:{}), width: Math.max(p.object?.type==='image'?40:lookup.get(p.cardId)?.source?.type==='pdf'?120:200, p.width + dx), height: Math.max(120, g.resizeHeight! + dy) }) };
   }
   function move(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
     const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
@@ -407,6 +409,10 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     if(!p.collapsed)onFinish?.();
     save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,height:expandedHeight(p),collapsed:!p.collapsed}:card)},p.collapsed?ui.history.expandCard:ui.history.collapseCard);
   }
+  function setPdf(id:string,settings:NonNullable<Placement['pdf']>){
+    const base=pendingSave.current??latest.current.board;
+    save({...base,cards:base.cards.map(p=>p.id===id?{...p,pdf:{...p.pdf,...settings}}:p)},'Change PDF preview',base);
+  }
   function copyStyle(ids=selected,lines=selectedEdges){onFinish?.();void onCopyStyle?.(pendingSave.current??latest.current.board,ids,lines).catch(error=>setObjectError(String(error)));}
   function pasteStyle(ids=selected,lines=selectedEdges){onFinish?.();void onPasteStyle?.(pendingSave.current??latest.current.board,ids,lines).catch(error=>setObjectError(String(error)));}
   function styleShortcut(event:KeyboardEvent){
@@ -422,6 +428,17 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     const styles=styleActions(selected.includes(p.id)?selected:[p.id],selected.includes(p.id)?selectedEdges:[]);
     const textIds=current.cards.filter(item=>selected.includes(item.id)&&item.object?.type==='text').map(item=>item.id);
     if(onConvertTopics&&selected.includes(p.id)&&selected.length>1&&textIds.length){setMenu({anchor,label:topicText.selection,x,y,actions:[...styles,{label:topicText.convertMany(textIds.length),icon:'note',run:()=>{void convertTopics(textIds);}},{label:ui.history.deleteSelection,icon:'trash',danger:true,run:()=>{void deleteSelection();}}]});return;}
+    if(lookup.get(p.cardId)?.source?.type==='pdf'){
+      setMenu({anchor,placementId:p.id,label:readingText.pdfActions,x,y,actions:[
+        {label:p.pdf?.expanded?readingText.singlePage:readingText.expandPdf,icon:p.pdf?.expanded?'compact':'down',run:()=>setPdf(p.id,{expanded:!p.pdf?.expanded})},
+        {label:readingText.showNotes,checked:p.pdf?.notes!==false,checkType:'checkbox',run:()=>setPdf(p.id,{notes:p.pdf?.notes===false})},
+        {label:p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard,icon:p.collapsed?'down':'chevronUp',run:()=>toggleCollapsed(p)},
+        ...(onOpenCard?[{label:ui.common.openInPopup,icon:'external' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')}]:[]),
+        ...styles,
+        ...(parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,separatorBefore:true,run:()=>removeReference(p)}]:[]),
+        ...(onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])
+      ]});return;
+    }
     if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[...styles,...(p.object.type==='text'?[{label:topicText.edit,icon:'edit' as const,run:()=>editText(p.id)},{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(onConvertTopics?[{label:topicText.convert,icon:'note' as const,separatorBefore:true,run:()=>{void convertTopics([p.id]);}}]:[])]:[]),{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [...styles,{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')},...(onDelete?[{label:ui.whiteboard.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]:
@@ -593,11 +610,11 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
-          const text=p.object?.type==='text',media=p.object?.type==='image'||card?.source?.type==='pdf'||text;
-          return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
+          const text=p.object?.type==='text',pdf=card?.source?.type==='pdf',media=p.object?.type==='image'||pdf&&!p.collapsed||text;
+          return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${pdf?'board-pdf-placement':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
             data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:objectPreview?.id===p.id?objectPreview.width:p.width,height: p.collapsed||naturalHeight(p)?'auto':p.height, background:media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
-              if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;
+              if((e.target as HTMLElement).closest('button,input,.card-top-row,.pdf-reader,.annotation-rail'))return;
               if(p.object?.type==='text'){e.stopPropagation();editText(p.id);}
               else if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
@@ -612,7 +629,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
               }}/>
             </div>}
             {!media&&!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:card?.source?.type==='pdf'?<><PdfPreview path={card.path} source={card.source} onReady={contentReady}/><div className="board-asset-caption">{card.title||card.name}</div></>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf&&!p.collapsed?<BoardPdf card={card!} settings={p.pdf} zoom={view.zoom} viewportHeight={size.height} onPage={page=>setPdf(p.id,{page})} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
@@ -628,8 +645,8 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
               </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
               <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
             </>}
-            {card?.source?.type==='pdf'&&<button className="resize-handle" aria-label={ui.whiteboard.resize(p.object?.type??card?.name??'asset')} onPointerDown={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}}/>}
-            {selected.includes(p.id)&&selected.length===1&&savedCard?.source&&!p.collapsed&&view.zoom>=.65&&<BoardAnnotations card={savedCard}/>}
+            {pdf&&!p.collapsed&&<button className="resize-handle" aria-label={ui.whiteboard.resize(p.object?.type??card?.name??'asset')} onPointerDown={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}}/>}
+            {selected.includes(p.id)&&selected.length===1&&savedCard?.source?.type==='web'&&!p.collapsed&&view.zoom>=.65&&<BoardAnnotations card={savedCard}/>}
           </article>;
         })}
       </div>

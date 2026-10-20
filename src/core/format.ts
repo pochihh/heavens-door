@@ -74,6 +74,7 @@ export function validateBoard(board: Board) {
     if (p.folder !== undefined && (typeof p.folder !== 'string' || !p.folder || p.folder.startsWith('/') || p.folder.split(/[\\/]/).some(part => !part || part.startsWith('.')))) throw new Error(ui.errors.invalidWhiteboardReference);
     if(p.collapsed!==undefined&&typeof p.collapsed!=='boolean')throw new Error(ui.errors.invalidCollapsedState);
     if(p.autoHeight!==undefined&&typeof p.autoHeight!=='boolean')throw new Error(ui.errors.invalidAutoHeightMode);
+    if(p.pdf!==undefined&&(!p.pdf||typeof p.pdf!=='object'||Array.isArray(p.pdf)||p.pdf.page!==undefined&&(!Number.isInteger(p.pdf.page)||p.pdf.page<1||p.pdf.page>5000)||p.pdf.expanded!==undefined&&typeof p.pdf.expanded!=='boolean'||p.pdf.notes!==undefined&&typeof p.pdf.notes!=='boolean'))throw new Error('Invalid PDF preview settings.');
     ids.add(p.id);
   }
   const edges = new Set<string>();
@@ -89,6 +90,6 @@ export function validateBoard(board: Board) {
 export function writeBoard(board: Board) {
   validateBoard(board);
   const members = board.cards.map(c => c.object?`- [${c.object.type==='image'?'Image':'Text'}](object:${c.id}) ^${c.id}`:c.folder ? `- [Whiteboard](board:${encodeURIComponent(c.folder)}) ^${c.id}` : `- [Card](card:${c.cardId}) ^${c.id}`).join('\n');
-  const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,...(p.object?{object:p.object}:{}),x:p.x,y:p.y,width:p.width,height:p.height,...(p.collapsed!==undefined?{collapsed:p.collapsed}:{}),...(p.autoHeight!==undefined?{autoHeight:p.autoHeight}:{}),fillColor:p.fillColor,strokeColor:p.strokeColor,strokeWidth:p.strokeWidth,strokeStyle:p.strokeStyle})), edges: board.edges, showMentions:board.showMentions, mentionStyle:board.mentionStyle, canvasColor:board.canvasColor, gridColor:board.gridColor, ...(board.inbox?{inbox:board.inbox}:{}) };
+  const layout = { version: 1, cards: board.cards.map(p => ({id:p.id,...(p.object?{object:p.object}:{}),x:p.x,y:p.y,width:p.width,height:p.height,...(p.collapsed!==undefined?{collapsed:p.collapsed}:{}),...(p.autoHeight!==undefined?{autoHeight:p.autoHeight}:{}),...(p.pdf?{pdf:p.pdf}:{}),fillColor:p.fillColor,strokeColor:p.strokeColor,strokeWidth:p.strokeWidth,strokeStyle:p.strokeStyle})), edges: board.edges, showMentions:board.showMentions, mentionStyle:board.mentionStyle, canvasColor:board.canvasColor, gridColor:board.gridColor, ...(board.inbox?{inbox:board.inbox}:{}) };
   return `---\nwhiteboard: true\nwhiteboard_version: 1\n---\n# ${board.name}\n\n## Cards\n${members}\n\n%% whiteboard-layout\n${JSON.stringify(layout, null, 2)}\n%%\n`;
 }
