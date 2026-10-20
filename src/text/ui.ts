@@ -79,7 +79,7 @@ export const ui = {
   style: {
     empty:'Open a card or whiteboard to edit styles.', selected:(kind:string,n:number)=>`${kind} · ${n} selected`,
     cards:'Cards',whiteboards:'Whiteboards',cardsAndWhiteboards:'Cards & whiteboards',edges:'Edges',
-    color:'Color',selectItems:'Select cards, whiteboards or edges to color them.',strokeWidth:'Stroke width',strokeStyle:'Stroke style',
+    images:'Images',textColor:'Text color',borderColor:'Border color',borderStyle:'Border style',borderWidth:'Border width',fill:'Fill color',shapeAppearance:'Shape appearance',mixed:'Mixed',imageHelp:'Use the image toolbar for crop, size and caption.',color:'Color',selectItems:'Select elements on the whiteboard to edit their styles.',strokeWidth:'Stroke width',strokeStyle:'Stroke style',
     solid:'Solid',dashed:'Dashed',dotted:'Dotted',theme:'Theme',custom:'Custom color',
     arrows:'Arrows',sourceArrow:'Start arrow',targetArrow:'End arrow',
     arrowheadStyle:'Arrowhead style',arrowheads:{arrow:'Open arrow',triangle:'Filled triangle','triangle-outline':'Outlined triangle'},

@@ -103,7 +103,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
   let board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[{id:'a',cardId:'a',x:0,y:0,width:300,height:200},{id:'b',cardId:'b',x:500,y:0,width:300,height:200,folder:'Child'}],edges:[{id:'e',from:'a',to:'b',strokeColor:'#e03131'}]};
   let saved:Board|undefined,fill:{ids:string[];color:string|undefined}|undefined;
-  const session={board:async(b:Board)=>{saved=b;board=b;},fillCards:async(ids:string[],color:string|undefined,b?:Board)=>{fill={ids,color};saved=b;}} as Pick<Session,'board'|'fillCards'>;
+  const session={board:async(b:Board)=>{saved=b;board=b;},fillCards:async(ids:string[],color:string|undefined,b?:Board)=>{fill={ids,color};if(b)saved=b;}} as Pick<Session,'board'|'fillCards'>;
   const root=createRoot(document.getElementById('root')!);
   const render=async(cards:string[],edges:string[])=>act(async()=>root.render(<StyleView board={board} selection={{path:board.path,cards,edges}} session={session}/>));
   const labels=()=>[...document.querySelectorAll('legend')].map(n=>n.textContent);
@@ -111,10 +111,10 @@ test('Style View groups mixed selections by type and scopes each section to its 
     await render(['a','b'],['e']);
     assert.equal(document.querySelectorAll('select').length,0);
     const groups=()=>[...document.querySelectorAll<HTMLElement>('.style-group')];
-    assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards & whiteboards · 2 selected','Edges · 1 selected']);
-    assert.deepEqual(labels(),['Color','Color','Arrows','Arrowhead style','Stroke style','Stroke width','Label size']);
+    assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards · 1 selected','Whiteboards · 1 selected','Edges · 1 selected']);
+    assert.deepEqual(labels(),['Color','Color','Color','Arrows','Arrowhead style','Stroke style','Stroke width','Label size']);
     const beforeCards=board.cards;
-    await act(async()=>groups()[1].querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
+    await act(async()=>groups()[2].querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(board.edges[0].strokeColor,'#91aa8b');assert.deepEqual(board.cards,beforeCards);
     assert.equal(fill,undefined,'edge controls never write source card metadata');
     await render(['a','b'],['e']);
@@ -122,9 +122,10 @@ test('Style View groups mixed selections by type and scopes each section to its 
     assert.ok(!document.body.textContent?.includes('Mixed'));
     await act(async()=>{groups()[0].querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click();});
     assert.deepEqual(fill,{ids:['a'],color:'#a699c3'},'card color targets its source file');
-    assert.equal(saved!.edges[0].strokeColor,'#91aa8b','fill changes never recolor edges');assert.equal(saved!.cards[1].fillColor,'#a699c3');
+    assert.equal(saved!.edges[0].strokeColor,'#91aa8b','fill changes never recolor edges');assert.equal(saved!.cards[1].fillColor,undefined,'source card controls do not style whiteboards');
+    await act(async()=>groups()[1].querySelector<HTMLButtonElement>('[aria-label="Lavender"]')!.click());assert.equal(saved!.cards[1].fillColor,'#a699c3','whiteboard color has its own scoped control');
     assert.deepEqual(saved?.cards[0],board.cards[0],'card placement decoration is untouched');
-    for(const [ids,title] of [[['a'],'Cards · 1 selected'],[['b'],'Whiteboards · 1 selected'],[['a','b'],'Cards & whiteboards · 2 selected']] as const){await render([...ids],[]);assert.deepEqual(labels(),['Color']);assert.equal(groups()[0].textContent?.startsWith(title),true);}
+    for(const [ids,titles] of [[['a'],['Cards · 1 selected']],[['b'],['Whiteboards · 1 selected']],[['a','b'],['Cards · 1 selected','Whiteboards · 1 selected']]] as const){await render([...ids],[]);assert.deepEqual(labels(),titles.map(()=>'Color'));assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),[...titles]);}
     await render([],['e']);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(saved!.edges[0].strokeColor,'#91aa8b');assert.deepEqual(saved!.cards,board.cards);
@@ -178,6 +179,31 @@ test('Style View groups mixed selections by type and scopes each section to its 
     await act(async()=>mentionSwitch.click());assert.equal(board.showMentions,false);
     await render([],[]);assert.equal(document.querySelector<HTMLInputElement>('input[role=switch]')!.checked,false);
     assert.equal(groups().length,0);
+  }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+
+test('Style separates card, plain Text, shapes, images and edges, including mixed text sizes',async()=>{
+  const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
+  const placement={x:0,y:0,width:300,height:200};let board:Board={path:'b.whiteboard',folder:'',name:'B',revision:'r',cards:[
+    {...placement,id:'card',cardId:'source'},
+    {...placement,id:'plain',cardId:'',object:{type:'text',shape:'none',text:'Plain',fontSize:20}},
+    {...placement,id:'shape',cardId:'',object:{type:'text',shape:'rounded',text:'Shape',fontSize:30}},
+    {...placement,id:'image',cardId:'',object:{type:'image',html:'<div data-better-edit-image="placeholder"></div>'}},
+  ],edges:[{id:'e',from:'card',to:'plain'}]};let filled:string[]=[];
+  const session={board:async(b:Board)=>{board=b;},fillCards:async(ids:string[])=>{filled=ids;}} as Pick<Session,'board'|'fillCards'>,root=createRoot(document.getElementById('root')!);
+  const render=async(ids=board.cards.map(p=>p.id))=>act(async()=>root.render(<StyleView board={board} selection={{path:board.path,cards:ids,edges:['e']}} session={session}/>));
+  const group=(name:string)=>document.querySelector<HTMLElement>(`.style-group[aria-label="${name}"]`)!;
+  try{
+    await render();assert.deepEqual([...document.querySelectorAll('.style-group')].map(g=>g.getAttribute('aria-label')),['Cards · 1 selected','Text · 2 selected','Images · 1 selected','Edges · 1 selected']);
+    assert.equal(group('Images · 1 selected').querySelector('fieldset,input'),null);
+    const size=group('Text · 2 selected').querySelector<HTMLInputElement>('[aria-label="Font size"]')!;assert.equal(size.value,'');assert.equal(size.placeholder,'Mixed');
+    await act(async()=>{size.value='24';size.dispatchEvent(new dom.window.FocusEvent('focusout',{bubbles:true}));});assert.deepEqual(board.cards.flatMap(p=>p.object?.type==='text'?[p.object.fontSize]:[]),[24,24]);
+    await render();await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Text color"] [aria-label="Rose"]')!.click());
+    assert.ok(board.cards.filter(p=>p.object?.type==='text').every(p=>p.object?.type==='text'&&p.object.textColor==='#c9838a'));assert.equal(board.edges[0].strokeColor,undefined);
+    await render();await act(async()=>group('Cards · 1 selected').querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());assert.deepEqual(filled,['source']);
+    await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Fill color"] [aria-label="Sage"]')!.click());assert.equal(board.cards[1].fillColor,undefined);assert.equal(board.cards[2].fillColor,'#91aa8b');
+    await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color','Shape']);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 

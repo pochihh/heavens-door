@@ -1,9 +1,9 @@
 import {readingText} from '../text/reading';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Arrowhead, Board, CardInfo, Edge, PaletteColor, Stroke } from '../shared';
+import type { Arrowhead, Board, BoardObject, CardInfo, Edge, PaletteColor, Placement, Stroke } from '../shared';
 import { DEFAULT_PALETTE, cardFill, isHexColor } from '../colors';
 import type { Session } from './session';
-import { Icon, Tool } from './Icons';
+import { Icon, Tool, type IconName } from './Icons';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 export interface BoardSelection {path:string;cards:string[];edges:string[]}
@@ -59,26 +59,29 @@ function PaletteEditor({palette,onSave,onClose}:{palette:PaletteColor[];onSave:(
     </fieldset>{error&&<small role="alert">{error}</small>}
   </form>;
 }
+function SelectionGroup({name,icon,count,children}:{name:string;icon:IconName;count:number;children:ReactNode}){
+  return <section className="style-group" aria-label={ui.style.selected(name,count)}><h3 className="style-selection"><Icon name={icon}/><span>{name}</span><small>{count}</small></h3>{children}</section>;
+}
+function ShapeSample({shape}:{shape:string}){
+  return shape==='none'?<Icon name="text"/>:<svg viewBox="0 0 28 20" width="28" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">{shape==='ellipse'?<ellipse cx="14" cy="10" rx="11" ry="7"/>:shape==='diamond'?<path d="M 14 2 L 25 10 L 14 18 L 3 10 Z"/>:<rect x="3" y="3" width="22" height="14" rx={shape==='rounded'?4:0}/>}</svg>;
+}
 export function StyleView({board,card,cardInfos=[],selection,session,palette=DEFAULT_PALETTE,onPalette}:{board?:Board;card?:CardInfo;cardInfos?:CardInfo[];selection?:BoardSelection;session:Pick<Session,'board'|'fillCards'>;palette?:PaletteColor[];onPalette?:(palette:PaletteColor[])=>Promise<void>}) {
   const [editingPalette,setEditingPalette]=useState(false);
-  const cards=board?.cards.filter(p=>selection?.cards.includes(p.id))??[],edges=board?.edges.filter(e=>selection?.edges.includes(e.id))??[];
-  const count=card?1:cards.length+edges.length;
-  const fillTitle=ui.style.selected(card||cards.every(p=>!p.folder)?ui.style.cards:cards.every(p=>p.folder)?ui.style.whiteboards:ui.style.cardsAndWhiteboards,card?1:cards.length);
-  const edgeTitle=ui.style.selected(ui.style.edges,edges.length);
+  const selected=board?.cards.filter(p=>selection?.cards.includes(p.id))??[],edges=board?.edges.filter(e=>selection?.edges.includes(e.id))??[];
+  const cards=selected.filter(p=>!p.folder&&!p.object),boards=selected.filter(p=>p.folder),texts=selected.filter(p=>p.object?.type==='text'),images=selected.filter(p=>p.object?.type==='image');
+  const textValues=texts.flatMap(p=>p.object?.type==='text'?[p.object]:[]),shapes=texts.filter(p=>p.object?.type==='text'&&p.object.shape!=='none'),fontSize=common(textValues.map(p=>p.fontSize??20));
+  const count=card?1:selected.length+edges.length;
   const apply=(patch:Partial<Edge>|((edge:Edge)=>Partial<Edge>))=>{if(board)void session.board({...board,edges:board.edges.map(e=>edges.includes(e)?{...e,...(typeof patch==='function'?patch(e):patch)}:e)},ui.history.styleSelection,board).catch(()=>undefined);};
+  const placements=(items:Placement[],change:(p:Placement)=>Placement)=>{if(board)void session.board({...board,cards:board.cards.map(p=>items.includes(p)?change(p):p)},ui.history.styleSelection,board).catch(()=>undefined);};
+  const textStyle=(patch:Partial<Extract<BoardObject,{type:'text'}>>)=>placements(texts,p=>p.object?.type==='text'?{...p,object:{...p.object,...patch}}:p);
   const arrowDirections=common(edges.map(e=>(hasArrow(e.fromArrowhead)?1:0)|(hasArrow(e.toArrowhead)?2:0)));
   const arrowheads=edges.flatMap(e=>[e.fromArrowhead,e.toArrowhead].filter(hasArrow));
   const boardStyle=(patch:Partial<Board>)=>{if(board)void session.board({...board,...patch},ui.history.styleBoard,board).catch(()=>undefined);};
   const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void)=><Color label={label} value={value} palette={palette} onChange={onChange}/>;
-  const stroke=(values:Stroke[],change:(patch:Stroke)=>void)=><>
-    <Choice label={ui.style.strokeStyle} value={common(values.map(p=>p.strokeStyle==='none'?'solid':p.strokeStyle??'solid'))} choices={(['solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
-    <Choice label={ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={DEFAULT_EDGE_WIDTHS.map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
+  const stroke=(values:Stroke[],change:(patch:Stroke)=>void,border=false)=><>
+    <Choice label={border?ui.style.borderStyle:ui.style.strokeStyle} value={common(values.map(p=>p.strokeStyle==='none'?'solid':p.strokeStyle??'solid'))} choices={(['solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
+    <Choice label={border?ui.style.borderWidth:ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={DEFAULT_EDGE_WIDTHS.map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
   </>;
-  const fill=(fillColor:string|undefined)=>{
-    const ids=card?[card.id]:cards.filter(p=>!p.folder&&!p.object).map(p=>p.cardId);
-    const updated=board&&cards.some(p=>p.folder||p.object)?{...board,cards:board.cards.map(p=>(p.folder||p.object)&&cards.includes(p)?{...p,fillColor}:p)}:undefined;
-    void session.fillCards(ids,fillColor,updated,board).catch(()=>undefined);
-  };
   return <div className="style-view">
     {!board&&!card?<p className="empty-label">{ui.style.empty}</p>:<>
     {!count&&board&&<>
@@ -86,14 +89,25 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
       <p className="empty-label">{ui.style.selectItems}</p>
       <label className="settings-toggle"><span>{ui.style.showMentions}</span><input type="checkbox" role="switch" checked={board.showMentions!==false} onChange={e=>boardStyle({showMentions:e.target.checked})}/></label>
     </>}
-    {(card||!!cards.length)&&<section className="style-group" aria-label={fillTitle}>
-      <h3 className="style-selection">{fillTitle}</h3>
-      {color(ui.style.color,card?cardFill(card)??'':common(cards.map(p=>p.folder||p.object?p.fillColor??'':cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fill)}
+    {(card||!!cards.length)&&<SelectionGroup name={ui.style.cards} icon="note" count={card?1:cards.length}>
+      {color(ui.style.color,card?cardFill(card)??'':common(cards.map(p=>cardFill(cardInfos.find(c=>c.id===p.cardId),p)??'')),fillColor=>{void session.fillCards(card?[card.id]:cards.map(p=>p.cardId),fillColor).catch(()=>undefined);})}
       {card&&<small>{ui.style.cardFillHelp}</small>}
-    </section>}
-    {!!cards.filter(p=>p.object?.type==='text').length&&<section className="style-group"><h3>{readingText.textObjects}</h3><Choice label={readingText.shape} value={common(cards.filter(p=>p.object?.type==='text').map(p=>p.object!.type==='text'?p.object!.shape:''))} choices={['none','rectangle','rounded','ellipse','diamond'].map(v=>[v,v==='none'?'Text':v])} onChange={shape=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?.type==='text'?{...p,object:{...p.object,shape:shape as 'none'|'rectangle'|'rounded'|'ellipse'|'diamond'}}:p)},'Change text shape',board).catch(()=>undefined);}}/><label className="style-label">{readingText.fontSize}<input type="number" min="8" max="120" defaultValue={cards.find(p=>p.object?.type==='text')?.object?.type==='text'?(cards.find(p=>p.object?.type==='text')!.object as {fontSize?:number}).fontSize??20:20} onBlur={e=>{const fontSize=Number(e.target.value);if(board&&fontSize>=8&&fontSize<=120)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?.type==='text'?{...p,object:{...p.object,fontSize}}:p)},'Text font size',board).catch(()=>undefined);}}/></label>{color('Text color',common(cards.filter(p=>p.object?.type==='text').map(p=>p.object?.type==='text'?p.object.textColor:undefined)),textColor=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?.type==='text'?{...p,object:{...p.object,textColor}}:p)},'Text color',board).catch(()=>undefined);})}{color('Stroke color',common(cards.map(p=>p.strokeColor)),strokeColor=>{if(board)void session.board({...board,cards:board.cards.map(p=>cards.includes(p)&&p.object?{...p,strokeColor}:p)},'Object stroke color',board).catch(()=>undefined);})}</section>}
-    {!!edges.length&&<section className="style-group" aria-label={edgeTitle}>
-      <h3 className="style-selection">{edgeTitle}</h3>
+    </SelectionGroup>}
+    {!!boards.length&&<SelectionGroup name={ui.style.whiteboards} icon="map" count={boards.length}>
+      {color(ui.style.color,common(boards.map(p=>p.fillColor??'')),fillColor=>placements(boards,p=>({...p,fillColor})))}
+    </SelectionGroup>}
+    {!!texts.length&&<SelectionGroup name={readingText.textObjects} icon="text" count={texts.length}>
+      {color(ui.style.textColor,common(textValues.map(p=>p.textColor??'')),textColor=>textStyle({textColor}))}
+      <label className="style-label"><span>{readingText.fontSize}</span><input key={texts.map(p=>p.id).join(',')+':'+fontSize} aria-label={readingText.fontSize} type="number" min="8" max="120" placeholder={ui.style.mixed} defaultValue={fontSize??''} onBlur={e=>{const fontSize=e.target.valueAsNumber;if(fontSize>=8&&fontSize<=120&&textValues.some(value=>(value.fontSize??20)!==fontSize))textStyle({fontSize});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>
+      <Choice label={readingText.shape} value={common(textValues.map(p=>p.shape))} choices={['none','rectangle','rounded','ellipse','diamond'].map(v=>[v,({none:'Text',rectangle:'Rectangle',rounded:'Rounded rectangle',ellipse:'Ellipse',diamond:'Diamond'} as Record<string,string>)[v]])} sample={shape=><ShapeSample shape={shape}/>} onChange={shape=>textStyle({shape:shape as Extract<BoardObject,{type:'text'}>['shape']})}/>
+      {!!shapes.length&&<div className="style-subgroup" role="group" aria-label={ui.style.shapeAppearance}><h4>{ui.style.shapeAppearance}<small>{shapes.length}</small></h4>
+        {color(ui.style.fill,common(shapes.map(p=>p.fillColor??'')),fillColor=>placements(shapes,p=>({...p,fillColor})))}
+        {color(ui.style.borderColor,common(shapes.map(p=>p.strokeColor??'')),strokeColor=>placements(shapes,p=>({...p,strokeColor})))}
+        {stroke(shapes,patch=>placements(shapes,p=>({...p,...patch})),true)}
+      </div>}
+    </SelectionGroup>}
+    {!!images.length&&<SelectionGroup name={ui.style.images} icon="image" count={images.length}><p className="style-help">{ui.style.imageHelp}</p></SelectionGroup>}
+    {!!edges.length&&<SelectionGroup name={ui.style.edges} icon="branch" count={edges.length}>
         {color(ui.style.color,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}
         <fieldset className="style-choice"><legend>{ui.style.arrows}</legend><div className="style-buttons" role="group" aria-label={ui.style.arrows}>
           {(['fromArrowhead','toArrowhead'] as const).map((key,index)=>{
@@ -105,7 +119,7 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
         {stroke(edges,apply)}
         <Choice label={ui.style.labelSize} value={common(edges.map(e=>e.labelSize??14))} choices={[12,14,18,24].map((n,i)=>[n,ui.style.labelSizes[i]])} tip={v=>tooltips.style.size(Number(v))} onChange={v=>apply({labelSize:Number(v)})}/>
         {edges.length===1&&<label className="style-label"><span>{ui.style.label}</span><input key={edges[0].id+':'+(edges[0].label??'')} aria-label={ui.style.label} maxLength={2000} defaultValue={edges[0].label??''} onBlur={e=>{if(e.target.value!==(edges[0].label??''))apply({label:e.target.value});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>}
-    </section>}
+    </SelectionGroup>}
     </>}
     {onPalette&&(editingPalette?<PaletteEditor palette={palette} onSave={onPalette} onClose={()=>setEditingPalette(false)}/>:<button className="palette-edit" data-tooltip={tooltips.style.editPalette} onClick={()=>setEditingPalette(true)}><Icon name="art"/>{ui.style.editPalette}</button>)}
   </div>;

@@ -90,7 +90,7 @@ const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
 export const Whiteboard = memo(function Whiteboard({ onConvertTopic,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
-  const imageInput=useRef<HTMLInputElement>(null),objectPosition=useRef({x:120,y:120}),imageImportLive=useRef(true);
+  const imageImportLive=useRef(true);
   const [objectError,setObjectError]=useState(''),[imageDrop,setImageDrop]=useState(false);
   useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
   const viewport = useRef<HTMLDivElement>(null);
@@ -417,7 +417,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopic,addTagAction
       {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
       {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
       ...(['none','rectangle','rounded','ellipse','diamond'] as const).map(shape=>({label:shape==='none'?topicText.new:shape==='rounded'?'Rounded rectangle':shape[0].toUpperCase()+shape.slice(1),icon:'text' as const,disabled:!board.folder,run:()=>{if(shape==='none'){addTopic(x,y);return;}save({...current,cards:[...current.cards,{id:crypto.randomUUID(),cardId:'',x,y,width:240,height:120,autoHeight:false,object:{type:'text' as const,text:'',shape,...textDefaults}}]},'Add text object');}})),
-      {label:readingText.imageOrFigure,icon:'image',disabled:!board.folder,run:()=>{objectPosition.current={x,y};imageInput.current?.click();}},
+      {label:readingText.imageOrFigure,icon:'image',disabled:!board.folder,run:()=>addImagePlaceholder(x,y)},
       ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
   }
@@ -448,6 +448,10 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopic,addTagAction
     const element=viewport.current!,nav=navigation.current!;nav.flush();
     const rect=element.getBoundingClientRect(),camera=nav.current;
     return {x:((clientX??rect.left+rect.width/2)-rect.left-camera.x)/camera.zoom,y:((clientY??rect.top+rect.height/2)-rect.top-camera.y)/camera.zoom};
+  }
+  function addImagePlaceholder(x:number,y:number){
+    const base=pendingSave.current??latest.current.board,id=crypto.randomUUID();
+    save({...base,cards:[...base.cards,{id,cardId:'',x,y,width:340,height:80,autoHeight:false,object:{type:'image',html:imageHtml({kind:'placeholder'})}}]},'Add image object',base);setSelected([id]);setSelectedEdges([]);viewport.current?.focus({preventScroll:true});
   }
   async function addImages(files:File[],position:{x:number;y:number},url?:string) {
     setObjectError('');const additions:Placement[]=[];
@@ -494,7 +498,6 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopic,addTagAction
     return()=>observer.disconnect();
   },[measuredIds,contentVersion]);
   return <div className="board-shell">
-    <input ref={imageInput} type="file" accept="image/*" multiple hidden aria-label={readingText.importWhiteboardImage} onChange={e=>{const files=imageFiles(e.target);e.target.value='';if(files.length)void addImages(files,objectPosition.current);}}/>
     {objectError&&<p className="editor-image-error" role="alert">{objectError}</p>}
     <div className={"canvas"+(imageDrop?" document-drop-target":"")} data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPaste={e=>{if(e.defaultPrevented||!acceptsImage(e.target))return;const files=imageFiles(e.clipboardData),url=files.length?undefined:imageTransferUrl(e.clipboardData);if(!files.length&&!url)return;e.preventDefault();void addImages(files,imagePosition(),url);}}
@@ -569,7 +572,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopic,addTagAction
       {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={e=>{const button=e.currentTarget.getBoundingClientRect(),r=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current;onCreate((button.left+button.width/2-r.left-camera.x)/camera.zoom-(board.folder?170:160),(button.top+button.height/2-r.top-camera.y)/camera.zoom-(board.folder?60:80));}}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
       <div className="canvas-controls">
         <Tool icon="text" label={topicText.new} disabled={!board.folder} onClick={()=>{const p=imagePosition();addTopic(p.x,p.y);}}/>
-        <Tool icon="image" label={readingText.importWhiteboardImage} disabled={!board.folder} onClick={()=>{const center=imagePosition();objectPosition.current={x:center.x-170,y:center.y-140};imageInput.current?.click();}}/>
+        <Tool icon="image" label={ui.editorTools.addImage} disabled={!board.folder} onClick={()=>{const center=imagePosition();addImagePlaceholder(center.x-170,center.y-25);}}/>
         <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
         <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>
         <button ref={zoomLabel} className="zoom-level" aria-label={ui.whiteboard.zoomToFit} data-tooltip={tooltips.whiteboard.zoomToFit} onClick={fit}>85%</button>

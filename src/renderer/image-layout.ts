@@ -1,3 +1,4 @@
+export const imagePlaceholderIcon='<svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
 import type {Node as PMNode} from '@tiptap/pm/model';
 import {htmlAttribute as escape} from './editor-html';
 export interface Crop {offsetX:number;offsetY:number;height:number;imgWidth:number;shape?:'circle'}

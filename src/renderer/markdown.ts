@@ -3,7 +3,7 @@ import {annotationView,annotationReferences} from '../reading';
 import '../document-links';
 import {mathHtml,mathToken} from './math';
 marked.use({extensions:([{name:'mathBlock',level:'block'},{name:'mathInline',level:'inline'}] as const).map(({name,level})=>({name,level,start:(source:string)=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenizer:(source:string)=>mathToken(source,name==='mathBlock'),renderer:(token)=>mathHtml(token.text,name==='mathBlock')}))});
-import {parseImageLayout,imageHtml} from './image-layout';
+import {parseImageLayout,imageHtml,imagePlaceholderIcon} from './image-layout';
 import { ui } from '../text/ui';
 import { marked, type Token } from 'marked';
 import { extractAbsorbedBlankLines } from '@tiptap/markdown';
@@ -92,6 +92,10 @@ function renderPreview(html:string,path:string,reservedTitle=true) {
     for(const item of body.querySelectorAll<HTMLElement>('[data-better-edit-image="filled"]')){
       item.classList.add('editor-image');
       const caption=item.querySelector('p');if(caption){const hidden=caption.style.display==='none';caption.removeAttribute('style');caption.className='image-caption';if(hidden)caption.style.display='none';}
+    }
+    for(const item of body.querySelectorAll<HTMLElement>('[data-better-edit-image="placeholder"]')){
+      item.removeAttribute('style');item.className='editor-image image-placeholder'+(layout.kind==='row'?' row-placeholder':'');item.style.width=layout.kind==='row'?'160px':'100%';
+      const trigger=document.createElement('span'),icon=document.createElement('span'),label=document.createElement('span');trigger.className='image-placeholder-trigger';icon.className='image-placeholder-icon';icon.innerHTML=imagePlaceholderIcon;label.textContent=ui.editorTools.addAnImage;trigger.append(icon,label);item.replaceChildren(trigger);
     }
     wrapper.append(body);block.replaceWith(wrapper);
   }
