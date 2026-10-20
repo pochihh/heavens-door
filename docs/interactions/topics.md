@@ -13,7 +13,7 @@ Plain text connectors leave an eight-pixel gap from the compact text bounds on a
 
 **Settings → Whiteboard → Text** contains defaults for the font size and text color, using the shared theme/palette controls, plus a shortcut reference. Defaults apply to newly created text only; existing text keeps its saved appearance.
 
-Branch relationships are explicit `kind: branch` edges between placement IDs. A child has one parent and branches cannot form cycles. Ordinary connectors remain independent and may have arbitrary cross-links. Structure does not change file ownership. Reconnection validates branch structure, and all existing moves/transfers preserve the same edge metadata.
+Branch relationships are explicit `kind: branch` edges between placement IDs. A child has one parent and branches cannot form cycles. Ordinary connectors remain independent and may have arbitrary cross-links. Structure does not change file ownership. Either arrow endpoint can reconnect to text, cards, images, shapes or boards. A valid branch reconnection retains the parent/child relationship. If it would give an item two parents or introduce a cycle, that arrow becomes an ordinary connector instead of rejecting the drop; its ID and style stay intact. Reconnecting or deleting an arrow never removes its former text endpoint. Standalone text without arrows is valid. Existing moves/transfers preserve the edge metadata.
 
 ## Convert to card
 
@@ -23,6 +23,6 @@ The Text context menu exposes **Convert to card**. It creates an ordinary Markdo
 
 This pass adds fast creation and conversion. Automatic branch layout, collapse, subtree drag/reparenting and a full drawing toolbar remain separate design work. The visible Text button joins existing canvas controls; right-click and keyboard access remain available.
 
-Verification on October 19: all 218 tests and lint/types pass. Browser input verified direct Enter/Tab creation with draft preservation and focus transfer, Alt+Enter line breaks at the caret, identical compact edit/selection bounds, connector spacing, and Text settings in light and dark themes. The earlier native Test.17 pass verified conversion, Undo/Redo and normal Quit persistence. Existing user fixtures in **Topic UI checks** are preserved.
+Verification on October 19: all 220 tests and lint/types pass. Browser input verified direct Enter/Tab creation with draft preservation and focus transfer, Alt+Enter line breaks at the caret, identical compact edit/selection bounds, connector spacing, and Text settings in light and dark themes. The earlier native Test.17 pass verified conversion, Undo/Redo and normal Quit persistence. Existing user fixtures in **Topic UI checks** are preserved.
 
-The follow-up is packaged as `0.1.27-test.19` in `.local/test-app-next`, ready to launch after quitting the current Test app. The running session and installed stable app remain unchanged.
+The arrow follow-up also verifies both endpoint reconnections using real pointer drags, including text with an existing parent, cards, shapes and boards. Target anchors appear only on the nearest candidate within 32 screen pixels, regardless of zoom; empty canvas shows none. Keyboard-driven connections retain access to all target anchors. New Text remains independent when an arrow moves away.

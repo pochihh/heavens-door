@@ -15,14 +15,14 @@ interface Props {
   selectedCards:string[];selectedEdges:string[];enabled:boolean;onSelect:(ids:string[],add:boolean,toggle?:boolean)=>void;
   onSave:(board:Board,label:string)=>void;onFinish:()=>void;onStyle:()=>void;
 }
-interface Pending {from:string;side:AnchorSide;pointerId?:number;x:number;y:number;moved:boolean;edge?:Edge;endpoint?:'from'|'to'}
+interface Pending {from:string;side:AnchorSide;pointerId?:number;x:number;y:number;moved:boolean;edge?:Edge;endpoint?:'from'|'to';keyboard?:boolean}
 export function Edges(props:Props) {
   const {board,mentions,heightOf,selectedCards,selectedEdges,viewport,onSelect,onSave,onFinish,onStyle}=props;
   const markerId=useId().replaceAll(':',''),latest=useRef(props);latest.current=props;
   const preview=useRef<SVGPathElement>(null),pending=useRef<Pending|null>(null),frame=useRef<number|null>(null),point=useRef({x:0,y:0});
-  const [connecting,setConnecting]=useState(false),[menu,setMenu]=useState<MenuState|null>(null),[label,setLabel]=useState<{id:string;text:string}|null>(null);
+  const [nearby,setNearby]=useState(''),[connecting,setConnecting]=useState(false),[menu,setMenu]=useState<MenuState|null>(null),[label,setLabel]=useState<{id:string;text:string}|null>(null);
   const placements=new Map(board.cards.map(p=>[p.id,p]));
-  function clear(){pending.current=null;setConnecting(false);preview.current?.setAttribute('d','');if(frame.current!==null)viewport.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame.current);frame.current=null;}
+  function clear(){pending.current=null;setConnecting(false);setNearby('');preview.current?.setAttribute('d','');if(frame.current!==null)viewport.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame.current);frame.current=null;}
   function worldPoint(x:number,y:number):Point {const r=viewport.current!.getBoundingClientRect(),c=latest.current.camera();return {x:(x-r.left-c.x)/c.zoom,y:(y-r.top-c.y)/c.zoom};}
   function targetAt(x:number,y:number) {
     const {board,heightOf,camera}=latest.current,p=worldPoint(x,y),source=pending.current?.from;
@@ -35,17 +35,27 @@ export function Edges(props:Props) {
     for(const card of board.cards)if(card.id!==source)for(const side of sides){const a=anchor(card,side,heightOf(card)),distance=Math.hypot(p.x-a.x,p.y-a.y)*camera().zoom;if(distance<=14&&(!near||distance<near.distance))near={card,side,distance};}
     return near;
   }
+  function nearbyAt(x:number,y:number){
+    const {board,heightOf,camera}=latest.current,p=worldPoint(x,y);let id='',distance=32;
+    for(const card of board.cards)if(card.id!==pending.current?.from){
+      const dx=Math.max(card.x-p.x,0,p.x-card.x-card.width),dy=Math.max(card.y-p.y,0,p.y-card.y-heightOf(card)),d=Math.hypot(dx,dy)*camera().zoom;
+      if(d<=distance){id=card.id;distance=d;}
+    }
+    return id;
+  }
   function draw(x:number,y:number){
     const g=pending.current;if(!g)return;
     const {board,heightOf}=latest.current,from=board.cards.find(p=>p.id===g.from);if(!from){clear();return;}
     const target=targetAt(x,y),start=anchor(from,g.side,heightOf(from)),end=target?anchor(target.card,target.side,heightOf(target.card)):worldPoint(x,y),side=target?.side??opposite[g.side];
+    setNearby(target?.card.id??nearbyAt(x,y));
     preview.current?.setAttribute('d',g.endpoint==='from'?curve(end,start,side,g.side).path:curve(start,end,g.side,side).path);
   }
   function complete(x:number,y:number,exact?:{card:Placement;side:AnchorSide}){
     const g=pending.current,target=exact??targetAt(x,y);if(!g)return;if(!target&&!g.edge&&latest.current.onCreateTopic){g.pointerId=undefined;point.current={x,y};draw(x,y);return;}if(!target||target.card.id===g.from){clear();return;}
     const {board,onSave,onSelect}=latest.current;
     const next:Edge=g.edge?{...g.edge,[g.endpoint!]:target.card.id,[g.endpoint!+'Side']:target.side}:{id:crypto.randomUUID(),from:g.from,to:target.card.id,fromSide:g.side,toSide:target.side,fromArrowhead:'none',toArrowhead:'arrow',...latest.current.edgeDefaults};
-    if(next.kind==='branch'&&!canReconnectBranch(board,next)){clear();return;}
+    // A visual reconnection remains valid even when it no longer describes a tree branch.
+    if(next.kind==='branch'&&!canReconnectBranch(board,next))next.kind=undefined;
     onSave({...board,edges:g.edge?board.edges.map(e=>e.id===next.id?next:e):[...board.edges,next]},g.edge?ui.history.reconnectEdge:ui.history.createEdge);
     onSelect([next.id],false);
     clear();
@@ -53,14 +63,14 @@ export function Edges(props:Props) {
   function keyboardStart(card:Placement,side:AnchorSide,at:Point,edge?:Edge,endpoint?:'from'|'to'){
     const r=viewport.current!.getBoundingClientRect(),c=latest.current.camera(),x=r.left+at.x*c.zoom+c.x,y=r.top+at.y*c.zoom+c.y;
     if(pending.current&&!edge){complete(x,y,{card,side});return;}
-    onFinish();pending.current={from:card.id,side,x,y,moved:false,edge,endpoint};point.current={x,y};setConnecting(true);
+    onFinish();pending.current={from:card.id,side,x,y,moved:false,edge,endpoint,keyboard:true};point.current={x,y};setConnecting(true);
   }
   function start(event:React.PointerEvent,card:Placement,side:AnchorSide,edge?:Edge,endpoint?:'from'|'to'){
     if(event.button!==0)return;
     event.preventDefault();event.stopPropagation();onFinish();
     if(pending.current&&!edge){complete(event.clientX,event.clientY,{card,side});return;}
     pending.current={from:card.id,side,pointerId:event.pointerId,x:event.clientX,y:event.clientY,moved:false,edge,endpoint};setConnecting(true);
-    point.current={x:event.clientX,y:event.clientY};viewport.current?.focus({preventScroll:true});event.currentTarget.setPointerCapture?.(event.pointerId);draw(event.clientX,event.clientY);
+    point.current={x:event.clientX,y:event.clientY};viewport.current?.focus({preventScroll:true});viewport.current?.setPointerCapture?.(event.pointerId);draw(event.clientX,event.clientY);
   }
   useEffect(()=>{
     const doc=viewport.current!.ownerDocument;
@@ -119,10 +129,10 @@ export function Edges(props:Props) {
       <path ref={preview} className="edge-preview"/>
     </g></svg>
     <svg className={'edge-handles '+(connecting?'connecting':'')} aria-label={ui.edges.edge}><g className="edge-camera" transform={transform} style={{'--edge-zoom':camera.zoom} as React.CSSProperties}>
-      {board.cards.filter(p=>connecting||selectedCards.includes(p.id)).flatMap(p=>sides.map(side=>{const a=anchor(p,side,heightOf(p));return <circle className="edge-anchor" key={p.id+side} cx={a.x} cy={a.y} r={5/props.camera().zoom} data-anchor-card={p.id} data-anchor-side={side} tabIndex={0} role="button" aria-label={ui.edges.anchor(side)} data-tooltip={tooltips.edges.anchor} onPointerDown={e=>start(e,p,side)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(p,side,a);}}}/>;}))}
+      {board.cards.filter(p=>connecting?pending.current?.keyboard||p.id!==pending.current?.from&&p.id===nearby:selectedCards.includes(p.id)).flatMap(p=>sides.map(side=>{const a=anchor(p,side,heightOf(p));return <circle className="edge-anchor" key={p.id+side} cx={a.x} cy={a.y} r={5/props.camera().zoom} data-anchor-card={p.id} data-anchor-side={side} tabIndex={0} role="button" aria-label={ui.edges.anchor(side)} data-tooltip={tooltips.edges.anchor} onPointerDown={e=>start(e,p,side)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(p,side,a);}}}/>;}))}
       {geometries.filter(g=>selectedEdges.includes(g.edge.id)).flatMap(g=>(['from','to'] as const).map(endpoint=>{const at=endpoint==='from'?g.start:g.end,fixed=endpoint==='from'?'to':'from',card=placements.get(g.edge[fixed])!,side=fixed==='from'?g.fromSide:g.toSide;return <circle className="edge-endpoint" key={g.edge.id+endpoint} cx={at.x} cy={at.y} r={6/props.camera().zoom} role="button" tabIndex={0} aria-label={ui.edges.endpoint(endpoint)} data-tooltip={tooltips.edges.reconnect} onPointerDown={e=>start(e,card,side,g.edge,endpoint)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();keyboardStart(card,side,at,g.edge,endpoint);}}}/>;}))}
     </g></svg>
-    {connecting&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}
+    {connecting&&!pending.current?.edge&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </>;
 }

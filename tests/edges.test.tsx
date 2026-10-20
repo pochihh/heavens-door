@@ -48,11 +48,14 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
   const pointer=(target:EventTarget,type:string,x:number,y:number,button=0)=>{const event=new dom.window.MouseEvent(type,{bubbles:true,button,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:1});target.dispatchEvent(event);};
   const press=async(target:EventTarget,x:number,y:number)=>act(async()=>{pointer(target,'pointerdown',x,y);pointer(document,'pointerup',x,y);});
   const anchor=(id:string,side:string)=>document.querySelector(`[data-anchor-card="${id}"][data-anchor-side="${side}"]`)!;
+  const hover=async(x:number,y:number)=>act(async()=>{pointer(document,'pointermove',x,y);await new Promise(r=>setTimeout(r,25));});
+  const pressAnchor=async(id:string,side:string,x:number,y:number)=>{await hover(x,y);await press(anchor(id,side),x,y);};
   try{
     await act(async()=>root.render(<Harness/>));
     await press(document.querySelector('[data-placement="p0"]')!,100,100);
     await press(anchor('p0','right'),340,140);assert.equal(writes,0);
-    assert.equal(document.querySelectorAll('.edge-anchor').length,12,'destinations reveal anchors');
+    assert.equal(document.querySelectorAll('.edge-anchor').length,0,'distant destinations do not reveal anchors');
+    await hover(500,140);assert.equal(document.querySelectorAll('.edge-anchor').length,4,'only the nearby destination reveals anchors');
     await press(anchor('p1','left'),500,140);assert.equal(current.edges.length,1);assert.equal(current.edges[0].fromSide,'right');assert.equal(current.edges[0].toSide,'left');
     assert.deepEqual(edgeStyle(current.edges[0]),{strokeColor:'#80aaa6',strokeWidth:4,strokeStyle:'dashed',fromArrowhead:'arrow',toArrowhead:'arrow',labelSize:18},'new edges copy the complete cached style');
     assert.equal(current.edges[0].label,undefined);
@@ -69,9 +72,8 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
     await act(async()=>{pointer(anchor('p1','right'),'pointerdown',840,140);pointer(document,'pointermove',1100,20);pointer(document,'pointerup',1100,20);});
     assert.equal(current.edges.length,2,'drag-to-body creates a second edge');assert.equal(current.edges[1].toSide,'top');
     await press(document.querySelector('[data-placement="p1"]')!,600,100);
-    await press(anchor('p1','top'),670,0);await press(anchor('p1','bottom'),670,280);
-    assert.equal(writes,3,'clicking another anchor on the source does not create a self-edge');
-    await press(anchor('p1','top'),670,0);
+    await press(anchor('p1','top'),670,0);await press(document.querySelector('[data-placement="p1"]')!,670,280);
+    assert.equal(writes,3,'clicking the source body does not create a self-edge');
     await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     assert.equal(document.querySelector('.edge-handles')!.classList.contains('connecting'),false);assert.equal(writes,3);
     await press(document.querySelector('.edge-hit')!,420,140);
@@ -79,11 +81,11 @@ test('anchor clicks, dragging, reconnection, cancellation and deletion work for 
     assert.equal(current.edges.length,1);
     const original=current.edges[0];
     await press(document.querySelector('[data-placement="p1"]')!,600,100);
-    await press(anchor('p1','right'),840,140);await press(anchor('p2','top'),1170,0);
+    await press(anchor('p1','right'),840,140);await pressAnchor('p2','top',1170,0);
     assert.equal(current.edges.length,2,'a repeated pair and identical anchors create a distinct edge');
     assert.deepEqual(current.edges[0],original,'creating another relationship leaves its sibling unchanged');
     await press(document.querySelector('[data-placement="p2"]')!,1100,100);
-    await press(anchor('p2','top'),1170,0);await press(anchor('p1','right'),840,140);
+    await press(anchor('p2','top'),1170,0);await pressAnchor('p1','right',840,140);
     assert.equal(current.edges.length,3,'reversed connections also remain distinct');
     assert.equal(new Set(current.edges.map(e=>e.id)).size,3);
     const reversed=current.edges[2].id;

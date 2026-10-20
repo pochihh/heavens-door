@@ -5,7 +5,7 @@
 | Term | Meaning |
 | --- | --- |
 | Edge | A manually drawn, editable relationship between two placements on one whiteboard. Saved in that `.whiteboard` file. |
-| Anchor | One of four attachment points on a card or whiteboard tile: top, right, bottom, left. |
+| Anchor | One of four attachment points on a text item, card, image, shape or whiteboard tile: top, right, bottom, left. |
 | Endpoint | Either end of an existing edge, attached to an anchor. Drag it to reconnect the edge. |
 | Mention | A link in card content to another card. The current editor creates stable `card:<id>` Markdown links. |
 | Mention link | A passive line visualizing a mention when both cards have placements on the displayed whiteboard. Derived from the index; never saved as an edge. |
@@ -23,14 +23,14 @@ The previous app saved its straight lines in `edges`; those remain manual edges 
 The interaction reference is `obsidian-whiteboard`'s **Edges and Note Links** UX and its `beginConnection`, `connectionGeometry` and endpoint-reconnection code.
 
 - Selected or edited cards and selected whiteboard tiles reveal four anchors. There is no persistent connection tool mode.
-- Drag an anchor to another anchor, or click the first anchor and then the destination anchor. During this temporary gesture all destinations reveal their anchors and a curved preview follows the pointer.
-- Dropping on a card/tile body chooses its nearest side. Anchors have a small screen-space capture radius. Source and destination cannot be the same placement.
-- Escape, right-click, pointer cancellation, window blur, clicking empty canvas, or a drag ending without a destination cancels without writing a file.
-- A completed edge is selected. Its two endpoint handles can be dragged onto other cards/tiles. Releasing a handle without a destination preserves the existing edge.
+- Drag an anchor to another anchor, or click the first anchor and then the destination anchor. A curved preview follows the pointer. Only the nearest candidate within 32 screen pixels reveals its four destination anchors; empty canvas and unrelated elements stay clear. A keyboard-started connection keeps every destination reachable with Tab.
+- Dropping on a card/tile body chooses its nearest side. Anchors snap within 14 screen pixels, separately from the earlier nearby-anchor reveal. Source and destination cannot be the same placement.
+- Escape, right-click, pointer cancellation or window blur cancels without writing a file. When drawing a new arrow, releasing on empty canvas keeps a preview active so a double-click can create connected Text. Reconnecting an existing arrow onto empty canvas preserves the original edge.
+- A completed edge is selected. Its two endpoint handles can be dragged onto text, cards, images, shapes or whiteboard tiles. Releasing a handle without a destination preserves the existing edge.
 - Multiple manual edges may connect the same pair of placements, in either direction and with the same or different anchors. Creation always assigns a new edge ID; reconnection updates only the selected edge ID. Each edge retains its own label, style, selection, deletion and undo behavior. Version-1 files already support this; no schema migration is needed. Identical anchors can produce overlapping curves/labels; users can reconnect an endpoint to another side to separate them. Automatic parallel-curve spacing is not currently applied.
 - Click an edge to select it. Shift-click adds; Cmd/Ctrl-click toggles. These modifiers also work with cards for mixed selection. Canvas rectangle selection includes curves crossing its region.
 - Selected edges show endpoint handles and a center label affordance. Click the label affordance or double-click the path to edit the label. The label retains its font size, position and wrapping during selection and editing; its draft is visible immediately as the user types. Enter or blur saves one edit; Escape cancels. Unchanged labels do not create edits. See the [in-place editing contract](../design-system.md#editing-in-place).
-- Right-click an edge for **Edit edge label**, **Show Style View**, and **Delete edge**. Delete/Backspace on the canvas deletes selected cards and edges in one undoable action. Deleting an edge alone never deletes its cards or removes a mention from Markdown.
+- Right-click an edge for **Edit edge label**, **Show Style View**, and **Delete edge**. Delete/Backspace on the canvas deletes selected cards and edges in one undoable action. Deleting an edge alone never deletes its text or other endpoint elements, or removes a mention from Markdown.
 
 Paths live behind card content in viewport-sized SVGs outside the compositor-scaled card layer. Native SVG group transforms follow the same camera frame as cards, keeping curves, markers and labels sharp throughout zoom without rebuilding their path geometry. The handle layer stays above cards and below canvas controls; anchor hit areas stay a constant screen size. Invisible wide hit paths make thin curves selectable. Pointer preview updates are batched to one animation frame, and the completed gesture creates one board edit/undo step. Moving, resizing, collapsing and auto-height measurement update endpoints using the displayed geometry.
 

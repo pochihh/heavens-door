@@ -90,7 +90,7 @@ test('manual connectors use compact topic bounds without persisting their narrow
  const {Whiteboard}=await import('../src/renderer/Board');let saved:Board={...fixture(),cards:[topic('root','A'),{...topic('other','B'),x:500}]};const root=createRoot(document.getElementById('root')!);
  function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} initialCamera={{x:0,y:0,zoom:1}} onSave={next=>{assert.doesNotThrow(()=>writeBoard(next));saved=next;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
  try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="root"]')!;Object.defineProperty(node,'offsetWidth',{value:40});Object.defineProperty(node,'offsetHeight',{value:23});await act(async()=>observers.find(o=>o.target===node)!.callback([],{} as ResizeObserver));await act(async()=>press(node,110,110));assert.equal(document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!.getAttribute('cx'),'148');
-  await act(async()=>press(document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!,140,111));await act(async()=>press(document.querySelector('[data-anchor-card="other"][data-anchor-side="left"]')!,500,111));assert.equal(saved.edges.length,1);assert.equal(saved.cards[0].width,240);assert.equal(saved.cards[1].width,240);
+  await act(async()=>press(document.querySelector('[data-anchor-card="root"][data-anchor-side="right"]')!,140,111));await act(async()=>{pointer(document,'pointermove',500,111);await new Promise(r=>setTimeout(r,25));});await act(async()=>press(document.querySelector('[data-anchor-card="other"][data-anchor-side="left"]')!,500,111));assert.equal(saved.edges.length,1);assert.equal(saved.cards[0].width,240);assert.equal(saved.cards[1].width,240);
  }finally{await act(async()=>root.unmount());}
 });
 
@@ -114,4 +114,46 @@ test('whiteboard text defaults round-trip through settings and reject invalid si
  assert.equal(validatePreferences(defaultPreferences()).whiteboardText,undefined);
  assert.deepEqual(validatePreferences({...defaultPreferences(),whiteboardText:{fontSize:28,type:'image',shape:'diamond'}}).whiteboardText,{fontSize:28,textColor:undefined},'extra settings keys cannot change the object kind');
  for(const value of [null,[],{fontSize:7},{fontSize:121},{fontSize:NaN},{fontSize:'20'},{textColor:'red'},{textColor:'url(https://example.com)'}])assert.throws(()=>validatePreferences({...defaultPreferences(),whiteboardText:value}),/Invalid whiteboard text defaults/);
+});
+
+
+test('Text branch endpoints reconnect to any element and leave their former text as an orphan',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');
+ let saved:Board={...fixture(),cards:[{...topic('root','Root'),x:0,y:0},{...topic('leaf','Leaf'),x:400,y:0},{...topic('claimed','Has a parent'),x:400,y:200},{id:'card',cardId:'note',x:800,y:0,width:240,height:160},{id:'board',cardId:'',folder:'Board/Child',x:800,y:240,width:240,height:160},{...topic('shape','Shape'),x:0,y:400,object:{type:'text',text:'Shape',shape:'ellipse'}},{id:'image',cardId:'',x:400,y:400,width:240,height:160,object:{type:'image',html:'<figure data-better-edit-image="true"><img src="image.png"></figure>'}}],edges:[{id:'moving',kind:'branch',from:'root',to:'leaf',fromSide:'right',toSide:'left',strokeColor:'#80aaa6',strokeStyle:'dashed',strokeWidth:4},{id:'existing',kind:'branch',from:'root',to:'claimed'}]};
+ const ids=saved.cards.map(p=>p.id),root=createRoot(document.getElementById('root')!);
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} initialCamera={{x:0,y:0,zoom:1}} onSave={next=>{assert.doesNotThrow(()=>writeBoard(next));saved=next;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const edge=()=>saved.edges.find(e=>e.id==='moving')!;
+ const reconnect=async(endpoint:'Start'|'End',id:string)=>{
+  const target=saved.cards.find(p=>p.id===id)!,handle=document.querySelector('[aria-label="'+endpoint+' endpoint"]')!;
+  assert.ok(handle);const x=Number(handle.getAttribute('cx')),y=Number(handle.getAttribute('cy'));
+  await act(async()=>{pointer(handle,'pointerdown',x,y);pointer(document,'pointermove',target.x+20,target.y+20);pointer(document,'pointerup',target.x+20,target.y+20);});
+ };
+ try{await act(async()=>root.render(<Harness/>));await act(async()=>press(document.querySelector('[data-edge="moving"] .edge-hit')!,320,40));
+  await reconnect('End','card');assert.equal(edge().to,'card');assert.equal(edge().kind,'branch','valid reparenting retains quick-add structure');
+  await reconnect('End','claimed');assert.equal(edge().to,'claimed','a pre-existing parent does not block a visual connection');assert.equal(edge().kind,undefined,'a conflicting branch becomes an ordinary connector');assert.ok(saved.edges.some(e=>e.id==='existing'&&e.to==='claimed'));
+  for(const id of ['card','board','shape','image','leaf']){await reconnect('End',id);assert.equal(edge().to,id);assert.deepEqual(saved.cards.map(p=>p.id),ids,'rewiring never removes the old text or other elements');}
+  await reconnect('Start','card');assert.equal(edge().from,'card');assert.equal(edge().to,'leaf');assert.equal(edge().strokeColor,'#80aaa6');assert.equal(edge().strokeStyle,'dashed');assert.equal(edge().strokeWidth,4);
+  await reconnect('End','card');assert.equal(edge().to,'leaf','self-connections cancel without losing the old arrow');
+  assert.equal(saved.edges.length,2);
+  await act(async()=>document.querySelector('.canvas')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Delete',bubbles:true})));
+  assert.ok(!saved.edges.some(e=>e.id==='moving'));assert.deepEqual(saved.cards.map(p=>p.id),ids,'removing an arrow leaves every text item on the board');
+ }finally{await act(async()=>root.unmount());}
+});
+
+
+test('dragging shows anchors only for the nearest candidate and clears them on empty canvas',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');const root=createRoot(document.getElementById('root')!);
+ const board:Board={...fixture(),cards:[{...topic('source'),x:0,y:0},{...topic('near'),x:500,y:0},{...topic('far'),x:900,y:0}],edges:[]};
+ const shown=()=>[...new Set([...document.querySelectorAll('[data-anchor-card]')].map(el=>el.getAttribute('data-anchor-card')))];
+ const move=async(x:number,y:number)=>act(async()=>{pointer(document,'pointermove',x,y);await new Promise(r=>setTimeout(r,25));});
+ try{await act(async()=>root.render(<Whiteboard board={board} cards={[]} initialCamera={{x:0,y:0,zoom:.5}} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>));
+  await act(async()=>press(document.querySelector('[data-placement="source"]')!,20,20));const source=document.querySelector('[data-anchor-card="source"][data-anchor-side="right"]')!;
+  await act(async()=>pointer(source,'pointerdown',124,20));await move(400,200);assert.deepEqual(shown(),[],'distant elements stay uncluttered');
+  await move(240,20);assert.deepEqual(shown(),['near'],'nearby means screen pixels and appears before the actual drop snap');assert.equal(document.querySelectorAll('.edge-anchor').length,4);
+  await move(440,20);assert.deepEqual(shown(),['far'],'moving between candidates replaces their anchors');
+  await move(400,200);assert.deepEqual(shown(),[]);
+  await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.deepEqual(shown(),[],'cancel clears selection and target hints');
+  await act(async()=>press(document.querySelector('[data-placement="source"]')!,20,20));assert.deepEqual(shown(),['source'],'idle selection still exposes its own anchors');
+  const keyboardSource=document.querySelector('[data-anchor-card="source"][data-anchor-side="right"]')!;await act(async()=>keyboardSource.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));assert.deepEqual(shown(),['source','near','far'],'keyboard users can still tab through destinations');assert.equal(keyboardSource.isConnected,true,'the focused keyboard anchor is never unmounted');
+ }finally{await act(async()=>root.unmount());}
 });
