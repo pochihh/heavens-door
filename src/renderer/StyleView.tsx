@@ -78,9 +78,9 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
   const arrowheads=edges.flatMap(e=>[e.fromArrowhead,e.toArrowhead].filter(hasArrow));
   const boardStyle=(patch:Partial<Board>)=>{if(board)void session.board({...board,...patch},ui.history.styleBoard,board).catch(()=>undefined);};
   const color=(label:string,value:string|undefined,onChange:(c:string|undefined)=>void)=><Color label={label} value={value} palette={palette} onChange={onChange}/>;
-  const stroke=(values:Stroke[],change:(patch:Stroke)=>void,border=false)=><>
-    <Choice label={border?ui.style.borderStyle:ui.style.strokeStyle} value={common(values.map(p=>p.strokeStyle==='none'?'solid':p.strokeStyle??'solid'))} choices={(['solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
-    <Choice label={border?ui.style.borderWidth:ui.style.strokeWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={DEFAULT_EDGE_WIDTHS.map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
+  const stroke=(values:Stroke[],change:(patch:Stroke)=>void)=><>
+    <Choice label={ui.style.lineStyle} value={common(values.map(p=>p.strokeStyle==='none'?'solid':p.strokeStyle??'solid'))} choices={(['solid','dashed','dotted'] as const).map(v=>[v,ui.style[v]])} onChange={strokeStyle=>change({strokeStyle:strokeStyle as Stroke['strokeStyle']})} sample={style=><LineSample style={style}/>}/>
+    <Choice label={ui.style.lineWidth} value={common(values.map(p=>p.strokeWidth??2))} choices={DEFAULT_EDGE_WIDTHS.map(n=>[n,ui.style.width(n)])} tip={v=>tooltips.style.width(Number(v))} onChange={value=>change({strokeWidth:Number(value)})} sample={v=><LineSample width={Number(v)}/>}/>
   </>;
   return <div className="style-view">
     {!board&&!card?<p className="empty-label">{ui.style.empty}</p>:<>
@@ -101,13 +101,13 @@ export function StyleView({board,card,cardInfos=[],selection,session,palette=DEF
       <label className="style-label"><span>{readingText.fontSize}</span><input key={texts.map(p=>p.id).join(',')+':'+fontSize} aria-label={readingText.fontSize} type="number" min="8" max="120" placeholder={ui.style.mixed} defaultValue={fontSize??''} onBlur={e=>{const fontSize=e.target.valueAsNumber;if(fontSize>=8&&fontSize<=120&&textValues.some(value=>(value.fontSize??20)!==fontSize))textStyle({fontSize});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>
       <Choice label={readingText.shape} value={common(textValues.map(p=>p.shape==='rectangle'?'rounded':p.shape))} choices={['none','rounded','ellipse','diamond'].map(v=>[v,({none:'Text',rectangle:'Rectangle',rounded:'Rectangle',ellipse:'Ellipse',diamond:'Diamond'} as Record<string,string>)[v]])} sample={shape=><ShapeSample shape={shape}/>} onChange={shape=>textStyle({shape:shape as Extract<BoardObject,{type:'text'}>['shape']})}/>
       {!!shapes.length&&<div className="style-subgroup" role="group" aria-label={ui.style.shapeAppearance}><h4>{ui.style.shapeAppearance}<small>{shapes.length}</small></h4>
-        {color(ui.style.borderColor,common(shapes.map(p=>p.strokeColor??'')),strokeColor=>placements(shapes,p=>({...p,strokeColor})))}
-        {stroke(shapes,patch=>placements(shapes,p=>({...p,...patch})),true)}
+        {color(ui.style.lineColor,common(shapes.map(p=>p.strokeColor??'')),strokeColor=>placements(shapes,p=>({...p,strokeColor})))}
+        {stroke(shapes,patch=>placements(shapes,p=>({...p,...patch})))}
       </div>}
     </SelectionGroup>}
     {!!images.length&&<SelectionGroup name={ui.style.images} icon="image" count={images.length}><p className="style-help">{ui.style.imageHelp}</p></SelectionGroup>}
     {!!edges.length&&<SelectionGroup name={ui.style.edges} icon="branch" count={edges.length}>
-        {color(ui.style.color,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}
+        {color(ui.style.lineColor,common(edges.map(e=>e.strokeColor??'')),strokeColor=>apply({strokeColor}))}
         <fieldset className="style-choice"><legend>{ui.style.arrows}</legend><div className="style-buttons" role="group" aria-label={ui.style.arrows}>
           {(['fromArrowhead','toArrowhead'] as const).map((key,index)=>{
             const enabled=arrowDirections!==undefined&&!!(arrowDirections&(1<<index)),other=index?'fromArrowhead':'toArrowhead',shape=common(edges.map(e=>e[key]));

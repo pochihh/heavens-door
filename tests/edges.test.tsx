@@ -112,7 +112,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
     assert.equal(document.querySelectorAll('select').length,0);
     const groups=()=>[...document.querySelectorAll<HTMLElement>('.style-group')];
     assert.deepEqual(groups().map(g=>g.getAttribute('aria-label')),['Cards · 1 selected','Whiteboards · 1 selected','Edges · 1 selected']);
-    assert.deepEqual(labels(),['Fill color','Color','Color','Arrows','Arrowhead style','Stroke style','Stroke width','Label size']);
+    assert.deepEqual(labels(),['Fill color','Color','Line color','Arrows','Arrowhead style','Line style','Line width','Label size']);
     const beforeCards=board.cards;
     await act(async()=>groups()[2].querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(board.edges[0].strokeColor,'#91aa8b');assert.deepEqual(board.cards,beforeCards);
@@ -130,9 +130,9 @@ test('Style View groups mixed selections by type and scopes each section to its 
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());
     assert.equal(saved!.edges[0].strokeColor,'#91aa8b');assert.deepEqual(saved!.cards,board.cards);
     assert.ok(document.querySelector('[aria-label="4 px"] svg'),'edge thickness keeps its visual buttons');
-    assert.deepEqual([...document.querySelectorAll('[aria-label="Stroke width"] button')].map(b=>b.getAttribute('aria-label')),['1 px','2 px','4 px']);
+    assert.deepEqual([...document.querySelectorAll('[aria-label="Line width"] button')].map(b=>b.getAttribute('aria-label')),['1 px','2 px','4 px']);
     assert.ok(labels().includes('Arrows'));
-    assert.equal(document.querySelector('[aria-label="Stroke style"] [aria-label="None"]'),null);
+    assert.equal(document.querySelector('[aria-label="Line style"] [aria-label="None"]'),null);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="4 px"]')!.click());
     assert.equal(saved?.edges[0].strokeWidth,4);assert.deepEqual(saved?.cards,board.cards);
     const toggle=async(name:string)=>{await act(async()=>document.querySelector<HTMLButtonElement>(`[aria-label="${name}"]`)!.click());await render([],['e']);};
@@ -151,7 +151,7 @@ test('Style View groups mixed selections by type and scopes each section to its 
     assert.equal(document.querySelectorAll('[aria-label="Arrows"] [aria-pressed=true]').length,0,'mixed directions leave both buttons unpressed');
     assert.ok(!document.body.textContent?.includes('Mixed'));
     assert.equal(document.querySelectorAll('.style-color [aria-pressed=true]').length,0);
-    assert.equal(document.querySelectorAll('[aria-label="Stroke width"] [aria-pressed=true]').length,0);
+    assert.equal(document.querySelectorAll('[aria-label="Line width"] [aria-pressed=true]').length,0);
     await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Start arrow"]')!.click());
     assert.deepEqual(board.edges.map(e=>e.fromArrowhead),['arrow','triangle'],'a mixed toggle enables absent arrows and preserves existing shapes');
     assert.equal(board.edges[1].strokeWidth,8,'non-preset saved widths remain unchanged');
@@ -203,9 +203,9 @@ test('Style separates card, plain Text, shapes, images and edges, including mixe
     assert.ok(board.cards.filter(p=>p.object?.type==='text').every(p=>p.object?.type==='text'&&p.object.textColor==='#c9838a'));assert.equal(board.edges[0].strokeColor,undefined);
     await render();await act(async()=>group('Cards · 1 selected').querySelector<HTMLButtonElement>('[aria-label="Sage"]')!.click());assert.deepEqual(filled,['source']);
     assert.equal(group('Text · 2 selected').querySelector('[aria-label="Fill color"]'),null,'Text has no fill editor');
-    await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Border color"] [aria-label="Rose"]')!.click());assert.equal(board.cards[1].strokeColor,undefined);assert.equal(board.cards[2].strokeColor,'#c9838a');assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(board.cards[2].fillColor,'#91aa8b','editing a border preserves the saved fill');
+    await act(async()=>group('Text · 2 selected').querySelector<HTMLButtonElement>('[aria-label="Line color"] [aria-label="Rose"]')!.click());assert.equal(board.cards[1].strokeColor,undefined);assert.equal(board.cards[2].strokeColor,'#c9838a');assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(board.cards[2].fillColor,'#91aa8b','editing a border preserves the saved fill');
     await render(['card','plain']);const text=group('Text · 1 selected');assert.equal(text.querySelector('[aria-label="Shape appearance"]'),null);assert.deepEqual([...text.querySelectorAll('legend')].map(n=>n.textContent),['Text color','Shape']);
-    await act(async()=>text.querySelector<HTMLButtonElement>('[aria-label="Rectangle"]')!.click());await render(['card','plain']);assert.ok(group('Text · 1 selected').querySelector('[aria-label="Border color"]'));assert.equal(board.cards[1].object?.type==='text'&&board.cards[1].object.shape,'rounded');assert.equal(group('Text · 1 selected').querySelector('[aria-label="Rounded rectangle"]'),null);assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(group('Cards · 1 selected').querySelector('[aria-label="Border color"]'),null);assert.deepEqual(readBoard(board.path,writeBoard(board)).cards.filter(p=>p.object),board.cards.filter(p=>p.object),'both fill and border data survive the restricted UI');
+    await act(async()=>text.querySelector<HTMLButtonElement>('[aria-label="Rectangle"]')!.click());await render(['card','plain']);assert.ok(group('Text · 1 selected').querySelector('[aria-label="Line color"]'));assert.equal(board.cards[1].object?.type==='text'&&board.cards[1].object.shape,'rounded');assert.equal(group('Text · 1 selected').querySelector('[aria-label="Rounded rectangle"]'),null);assert.equal(board.cards[1].fillColor,'#8aa5c5');assert.equal(group('Cards · 1 selected').querySelector('[aria-label="Line color"]'),null);assert.deepEqual(readBoard(board.path,writeBoard(board)).cards.filter(p=>p.object),board.cards.filter(p=>p.object),'both fill and border data survive the restricted UI');
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 

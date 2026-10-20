@@ -552,10 +552,15 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .board-text{width:max-content;height:auto;padding:0}
 .board-text .board-object-text{display:block;position:relative;width:auto;height:auto;padding:6px 10px;white-space:pre;text-align:center;overflow-wrap:normal;line-height:1.4}
 .board-text .board-object-text.shape-none{padding:0;text-align:left}
-.board-text .board-object-text.shape-ellipse{padding:8px 16px}
+/* A 1.4167× content box keeps the text corners inside the ellipse (above √2). */
+.board-text .board-object-text.shape-ellipse{display:grid;grid-template-columns:1fr 4.8fr 1fr;grid-template-rows:1fr 4.8fr 1fr;padding:8px 12px}
 .board-text.object-shape-rectangle,.board-text.object-shape-rounded{border-radius:12px}
 .board-text .board-object-text>span{display:block;white-space:pre;min-width:1px}
 .board-text .board-object-text>textarea{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:inherit;overflow:hidden;box-sizing:border-box;white-space:pre;text-align:inherit}
 .board-text .board-object-text.shape-diamond{display:grid;grid-template-columns:1fr 2fr 1fr;grid-template-rows:1fr 2fr 1fr;padding:6px 10px}
-.board-text .shape-diamond>span,.board-text .shape-diamond>textarea{grid-area:2/2/3/3}
-.board-text .shape-diamond>textarea{padding:0;width:auto;height:auto;min-width:0}
+.board-text :is(.shape-diamond,.shape-ellipse)>span,.board-text :is(.shape-diamond,.shape-ellipse)>textarea{grid-area:2/2/3/3}
+.board-text :is(.shape-diamond,.shape-ellipse)>textarea{padding:0;width:auto;height:auto;min-width:0}
+
+.board-text.selected{outline:0;box-shadow:0 0 0 2.5px color-mix(in srgb,var(--accent) 35%,transparent),inset 0 0 0 2.5px color-mix(in srgb,var(--accent) 35%,transparent)}
+.board-text.object-shape-diamond.selected{box-shadow:none}
+.board-text .object-diamond{overflow:visible}
