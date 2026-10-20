@@ -110,7 +110,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]')?.textContent,'Workspace');
     assert.ok(document.querySelector('[role=menu] [role=separator]'));
     assert.ok(!document.querySelector('[role=menu]')?.textContent?.includes('Missing workspace'));
-    assert.ok(document.querySelector('[role=menuitemradio][aria-checked=true]>svg:first-child'),'current workspace check precedes its name');
+    assert.ok(document.querySelector('[role=menuitemradio][aria-checked=true]>.menu-check:first-child>svg'),'current workspace check precedes its name');
     assert.equal(document.querySelector('[role=menuitem]')?.textContent,'Manage workspaces');
     await click('[role=menuitem]');
     assert.ok(document.querySelector('[role=dialog][aria-label="Manage workspaces"]'));

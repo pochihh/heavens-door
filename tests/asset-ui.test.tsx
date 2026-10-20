@@ -139,11 +139,11 @@ test('PDF board actions preserve width, show notes by default and collapse to th
  function Board(){const [board,setBoard]=useState<import('../src/shared').Board>(initial);return <Whiteboard board={board} cards={[pdf]} onSave={next=>{saved=next;setBoard({...next,revision:crypto.randomUUID()});}} onOpen={()=>{}} onCreate={()=>{}}/>;}
  const root=createRoot(document.getElementById('root')!);
  const action=async(label:string)=>{await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="PDF actions"]')!.click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(b=>b.textContent===label)!.click());};
- try{await act(async()=>root.render(<Board/>));await action('Expand PDF preview');assert.equal(saved!.cards[0].pdf?.expanded,true);assert.equal(saved!.cards[0].width,340);assert.ok(document.querySelector('.board-pdf.continuous'));
+ try{await act(async()=>root.render(<Board/>));await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="PDF actions"]')!.click());const expansion=document.querySelector('[role=menuitemcheckbox]')!;assert.equal(expansion.textContent,'Expand PDF preview');assert.equal(expansion.getAttribute('aria-checked'),'false');await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="PDF actions"]')!.click());await action('Expand PDF preview');assert.equal(saved!.cards[0].pdf?.expanded,true);assert.equal(saved!.cards[0].width,340);assert.ok(document.querySelector('.board-pdf.continuous'));assert.equal(document.querySelector<HTMLElement>('.board-pdf')!.style.height,'');
   const reader=document.querySelector<HTMLElement>('.board-pdf .pdf-reader')!;Object.defineProperties(reader,{scrollHeight:{value:1400,configurable:true},clientHeight:{value:600,configurable:true}});
-  const scroll=new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:80});await act(async()=>reader.dispatchEvent(scroll));assert.equal(scroll.defaultPrevented,false,'scrollable PDF keeps native vertical reading instead of canvas navigation');
+  const scroll=new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:80});await act(async()=>reader.dispatchEvent(scroll));assert.equal(scroll.defaultPrevented,true,'expanded PDF delegates navigation to the canvas instead of scrolling internally');
   const zoom=new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:0,ctrlKey:true});await act(async()=>reader.dispatchEvent(zoom));assert.equal(zoom.defaultPrevented,true,'modified wheel still reaches canvas zoom');
-  await action('Show notes');assert.equal(saved!.cards[0].pdf?.notes,false);await action('Show one page');assert.equal(saved!.cards[0].pdf?.expanded,false);
+  await action('Show notes');assert.equal(saved!.cards[0].pdf?.notes,false);await action('Expand PDF preview');assert.equal(saved!.cards[0].pdf?.expanded,false);
   await act(async()=>document.querySelector<HTMLButtonElement>('.board-pdf [aria-label="Collapse card"]')!.click());assert.equal(saved!.cards[0].collapsed,true);assert.ok(document.querySelector('.board-card.collapsed'));assert.equal(document.querySelector('.pdf-reader'),null);
   await act(async()=>document.querySelector<HTMLButtonElement>('.card-actions [aria-label="Expand card"]')!.click());assert.equal(saved!.cards[0].collapsed,false);assert.ok(document.querySelector('.pdf-reader'));
  }finally{await act(async()=>root.unmount());}
@@ -155,4 +155,11 @@ test('the continuous PDF reader tracks the page occupying most of its visible he
  reader.getBoundingClientRect=()=>rect(100,700);reader.firstElementChild!.getBoundingClientRect=()=>rect(100,130);
  const pages=reader.querySelectorAll<HTMLElement>('[data-pdf-page]');pages[0].getBoundingClientRect=()=>rect(-180,260);pages[1].getBoundingClientRect=()=>rect(270,700);assert.equal(visiblePdfPage(reader),2,'last page is current even when the preceding page has a visible tail');
  pages[0].getBoundingClientRect=()=>rect(130,570);pages[1].getBoundingClientRect=()=>rect(580,1020);assert.equal(visiblePdfPage(reader),1);reader.replaceChildren();assert.equal(visiblePdfPage(reader),undefined);
+});
+
+test('PDF popup reading keeps comments on highlights and offers no standalone note creation',async()=>{
+ const {NoteView}=await import('../src/renderer/DocumentViews'),asset={...card,id:'pdf-comments',source:{type:'pdf' as const,file:'_assets/paper.pdf'}},snapshot={cards:[asset],boards:[],preferences:{theme:'dark'}} as unknown as Snapshot;
+ const session={tagExpansion:new Map(),state:{draft:{card:asset,body,dirty:false}},bridge:window.door,run:async()=>{},update:()=>{}} as unknown as Session,root=createRoot(document.getElementById('root')!);
+ try{await act(async()=>root.render(<ConfirmationProvider><NoteView path={asset.path} snapshot={snapshot} session={session} active memory={{}} onActivate={()=>{}} onOpen={()=>{}} onViewChange={()=>{}}/></ConfirmationProvider>));assert.ok(document.querySelector('.pdf-reader'));assert.ok(document.querySelector('.annotation-rail'));assert.equal(document.querySelector('[aria-label="Add asset note"]'),null);assert.equal([...document.querySelectorAll('.reading-actions button')].some(b=>b.textContent==='Add note'),false);assert.equal(document.querySelectorAll('.sticky-note').length,1,'existing stored notes remain readable');
+ }finally{await act(async()=>root.unmount());}
 });

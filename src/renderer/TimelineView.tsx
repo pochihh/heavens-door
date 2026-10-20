@@ -7,7 +7,7 @@ import {DateDisplayContext} from './DateProperty';
 import {cardFill,tintColor} from '../colors';
 import {clearDocumentDrop,dropDocumentAt,previewDocumentDrop} from './card-drop';
 import {crossed,createDragPhantom} from './sortable';
-import {Icon,Tool} from './Icons';
+import {MenuCheck,Icon,Tool} from './Icons';
 import {PropertyPopover} from './PropertyValue';
 import {tooltips} from '../text/tooltips';
 import {ui} from '../text/ui';
@@ -161,7 +161,7 @@ export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onVi
       <button className="timeline-scale" aria-label={t.scale} aria-haspopup="dialog" aria-expanded={!!scaleMenu} onClick={e=>setScaleMenu(scaleMenu?null:e.currentTarget)}>{t[scale]}<Icon name="down" size={12}/></button>
       <Tool className="timeline-previous" icon="chevron" label={tooltips.views.previous} onClick={()=>setAnchor(shiftDay(anchor,-period))}/><button onClick={()=>{setAnchor(today);if(viewport.current)viewport.current.scrollLeft=Math.max(0,todayX-viewport.current.clientWidth/4);}}>{t.today}</button><Tool icon="chevron" label={tooltips.views.next} onClick={()=>setAnchor(shiftDay(anchor,period))}/>
     </div>
-    {scaleMenu&&<PropertyPopover anchor={scaleMenu} align="end" label={t.scale} className="timeline-scale-menu" onClose={()=>setScaleMenu(null)}><div className="view-menu-list" role="listbox" aria-label={t.scale}>{(['day','week','month'] as const).map(s=><button key={s} role="option" aria-selected={scale===s} onClick={()=>{setScaleMenu(null);onViewChange({scale:s});}}><span>{t[s]}</span>{scale===s&&<Icon name="check"/>}</button>)}</div></PropertyPopover>}
+    {scaleMenu&&<PropertyPopover anchor={scaleMenu} align="end" label={t.scale} className="timeline-scale-menu" onClose={()=>setScaleMenu(null)}><div className="view-menu-list" role="listbox" aria-label={t.scale}>{(['day','week','month'] as const).map(s=><button key={s} role="option" aria-selected={scale===s} onClick={()=>{setScaleMenu(null);onViewChange({scale:s});}}><MenuCheck checked={scale===s}/><span>{t[s]}</span></button>)}</div></PropertyPopover>}
     <div className="timeline-scroll" ref={viewport}><div className="timeline-grid" onPointerDown={pan} style={{width,'--timeline-day':dayWidth+'px'} as React.CSSProperties}>
       <div className="timeline-heading" data-scale={scale}>
         <div className="timeline-months">{months.filter(month=>month.left+month.width>visibleLeft&&month.left<visibleRight).map((month,i)=><span key={month.left} style={{left:Math.max(visibleLeft+(i?160:0),month.left),width:Math.max(160,month.left+month.width-Math.max(visibleLeft,month.left))}}><span>{month.label}</span></span>)}</div>

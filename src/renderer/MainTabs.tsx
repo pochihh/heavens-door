@@ -2,7 +2,7 @@ import {useLayoutEffect,useMemo,useRef,useState,type ReactNode,type PointerEvent
 import {TextSearch} from '../core/search';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
-import {Icon,Tool} from './Icons';
+import {MenuCheck,Tool} from './Icons';
 import {PropertyPopover} from './PropertyValue';
 
 interface TabItem {key:string;title:string;path?:string;boardFolder?:string;icon:ReactNode}
@@ -33,7 +33,7 @@ export function MainTabs({group,active,items,dragging,onSelect,onClose,onMenu,on
     {children}
     {anchor&&<PropertyPopover anchor={anchor} align="end" label={ui.layout.searchTabs} className="main-tab-picker" onClose={()=>setAnchor(null)}>
       <input aria-label={ui.layout.searchTabs} placeholder={ui.layout.searchTabs} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&shown.length){e.preventDefault();choose(shown[0].key);}}}/>
-      <div role="listbox" aria-label={ui.layout.openFiles}>{shown.map(item=><button type="button" key={item.key} role="option" aria-selected={item.key===active} onClick={()=>choose(item.key)} onContextMenu={e=>{e.preventDefault();setAnchor(null);onMenu(item.key,e.clientX,e.clientY);}}>{item.icon}<span>{item.title}{item.path&&<small>{item.path}</small>}</span>{item.key===active&&<Icon name="check" size={14}/>}</button>)}{!shown.length&&<p>{ui.layout.noMatchingTabs}</p>}</div>
+      <div role="listbox" aria-label={ui.layout.openFiles}>{shown.map(item=><button type="button" key={item.key} role="option" aria-selected={item.key===active} onClick={()=>choose(item.key)} onContextMenu={e=>{e.preventDefault();setAnchor(null);onMenu(item.key,e.clientX,e.clientY);}}><MenuCheck checked={item.key===active}/>{item.icon}<span>{item.title}{item.path&&<small>{item.path}</small>}</span></button>)}{!shown.length&&<p>{ui.layout.noMatchingTabs}</p>}</div>
     </PropertyPopover>}
   </div>;
 }

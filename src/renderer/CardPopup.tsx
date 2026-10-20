@@ -9,7 +9,7 @@ import {useConfirmation} from './Confirmation';
 import {NoteView} from './DocumentViews';
 import {ViewBlockProvider} from './ViewBlock';
 import {InlineName} from './InlineName';
-import {DocumentIcon,Tool} from './Icons';
+import {MenuCheck,DocumentIcon,Tool} from './Icons';
 import {PropertyPopover} from './PropertyValue';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
@@ -40,6 +40,6 @@ export function CardPopup({documentKey,snapshot,session,onClose,onNavigate,onPre
       {(error||session.state.error)&&<div className="card-popup-error" role="alert"><span>{error||session.state.error}</span>{session.state.draft?.dirty&&<><button onClick={()=>void perform(()=>session.copyDraft())}>{ui.common.copyDraft}</button><button onClick={()=>void perform(async()=>{if(await confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}))await session.reloadDraft();})}>{ui.common.reloadFromDisk}</button></>}</div>}
     </div>
     {colorAnchor&&card&&<PropertyPopover anchor={colorAnchor} align="end" label={ui.style.color} onClose={()=>setColorAnchor(null)}><Color label={ui.style.color} value={cardFill(card)??''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>void perform(()=>session.fillCards([card.id],color))}/></PropertyPopover>}
-    {menu&&<PropertyPopover anchor={menu} align="end" label={ui.whiteboard.cardActions} onClose={()=>setMenu(null)}><div className="view-menu-list"><button role="menuitemcheckbox" aria-checked={source} onClick={()=>{void perform(async()=>{await session.run(()=>session.flush());setSource(!source);setMenu(null);});}}>{ui.editorTools.sourceMode}{source?'✓':''}</button>{(['same','new','other'] as const).map(mode=><button key={mode} disabled={busy||!card} onClick={()=>{setMenu(null);void perform(()=>onNavigate(documentKey,mode));}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}</div></PropertyPopover>}
+    {menu&&<PropertyPopover anchor={menu} align="end" label={ui.whiteboard.cardActions} onClose={()=>setMenu(null)}><div className="view-menu-list"><button role="menuitemcheckbox" aria-checked={source} onClick={()=>{void perform(async()=>{await session.run(()=>session.flush());setSource(!source);setMenu(null);});}}><MenuCheck checked={source}/><span>{ui.editorTools.sourceMode}</span></button>{(['same','new','other'] as const).map(mode=><button key={mode} disabled={busy||!card} onClick={()=>{setMenu(null);void perform(()=>onNavigate(documentKey,mode));}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}</div></PropertyPopover>}
   </dialog>;
 }

@@ -1,6 +1,6 @@
 // Reader and whiteboard-object interface copy.
 export const readingText={
- pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",singlePage:"Show one page",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
+ pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
   someArticleImagesCouldNotBeDownloadedThe:"Some article images could not be downloaded. The original snapshot and image URLs are preserved in Source.",
   repairAnnotationFooter:"Open Source mode to repair this footer.",
   repairAnnotationSource:"Edit the source below to repair it.",

@@ -14,3 +14,7 @@ export function DocumentIcon({value,fallback}:{value?:string;fallback:IconName})
 export function Tool({icon,label,...props}:{icon:IconName;label:string}&ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button type="button" {...props} className={'tool '+(props.className??'')} data-tooltip={label} aria-label={label}><Icon name={icon}/></button>;
 }
+
+export function MenuCheck({checked}:{checked:boolean}){
+  return <span className="menu-check" aria-hidden="true">{checked&&<Icon name="check" size={14}/>}</span>;
+}

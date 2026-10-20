@@ -25,3 +25,11 @@ test('hover submenus retain the parent, keyboard returns to it, and actions dism
     assert.equal(selected,1);assert.equal(closed,1);assert.equal(document.querySelectorAll('[role=menu]').length,0);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });
+
+test('checked and unchecked menu items reserve the same left-hand checkmark slot',async()=>{
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});Object.assign(globalThis,{window:dom.window,document:dom.window.document,Element:dom.window.Element,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,innerWidth:1000,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true});
+ const root=createRoot(document.getElementById('root')!);try{await act(async()=>root.render(<ActionMenu menu={{x:10,y:20,actions:[{label:'Expand PDF preview',checked:true,checkType:'checkbox'},{label:'Show notes',checked:false,checkType:'checkbox'},{label:'Align left',icon:'imageLeft',checked:true}]}} onClose={()=>{}}/>));
+  const options=[...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')];for(const button of options){assert.ok(button.firstElementChild?.classList.contains('menu-check'));assert.equal(button.lastElementChild?.textContent,button.textContent);}
+  assert.ok(options[0].firstElementChild?.querySelector('svg'));assert.equal(options[1].firstElementChild?.querySelector('svg'),null);assert.equal(options[0].getAttribute('aria-checked'),'true');assert.equal(options[1].getAttribute('aria-checked'),'false');
+ }finally{await act(async()=>root.unmount());dom.window.close();}
+});
