@@ -52,7 +52,7 @@ test('settings separate Core plugins and allow journal templates outside the tem
   const textSize=document.querySelector<HTMLInputElement>('[aria-label="Default text font size"]')!;await act(async()=>{textSize.focus();textSize.value='32';textSize.blur();});assert.equal(current.whiteboardText?.fontSize,32);
   await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Default text color"] [aria-label="Rose"]')!.click());assert.equal(current.whiteboardText?.textColor,'#c9838a');
   await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Default text color"] [aria-label="Theme"]')!.click());assert.equal(current.whiteboardText?.textColor,undefined);assert.equal(current.whiteboardText?.fontSize,32);
-  assert.deepEqual([...document.querySelectorAll('[aria-label="Whiteboard Text"] kbd')].map(el=>el.textContent),['Enter','Tab','Alt + Enter']);
+  assert.deepEqual([...document.querySelectorAll('[aria-label="Whiteboard Text"] kbd')].map(el=>el.textContent),['Space / F2','Enter','Tab','Alt + Enter']);
   await act(async()=>document.querySelector<HTMLButtonElement>('#settings-files')!.click());assert.equal(document.querySelectorAll('[role=switch]').length,0);assert.ok(document.querySelector('[aria-label="Slipbox folder"]'));assert.ok(document.querySelector('[aria-label="Trash folder"]'));
   const folderInput=document.querySelector<HTMLInputElement>('input[aria-label="Slipbox folder"]')!;
   const type=async(input:HTMLInputElement,value:string)=>act(async()=>{input.focus();Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});

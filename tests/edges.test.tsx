@@ -231,3 +231,16 @@ test('last edited edge style is cached per workspace, survives restart, and igno
   const otherRoot=join(dir,'other');await fs.mkdir(otherRoot);const other=await Workspace.open(otherRoot,join(dir,'other-cache'));
   try{assert.equal(other.snapshot().lastEdgeStyle,undefined,'workspaces do not share defaults');}finally{other.close();}
 });
+
+
+test('facing edge curves stay inside their gap for deep sibling fans in every direction',async()=>{
+ const {curve}=await import('../src/renderer/edge-geometry');
+ for(const gap of [0,1,20,74,400])for(const offset of [-800,-100,0,100,800])for(const side of ['right','left','top','bottom'] as const){
+  const horizontal=side==='right'||side==='left',sign=side==='right'||side==='bottom'?1:-1,opposite={right:'left',left:'right',top:'bottom',bottom:'top'} as const;
+  const start={x:100,y:200},end={x:100+(horizontal?sign*gap:offset),y:200+(horizontal?offset:sign*gap)},geometry=curve(start,end,side,opposite[side]),axis=horizontal?'x':'y';
+  let previous=0;for(const point of geometry.samples){const distance=(point[axis]-start[axis])*sign;assert.ok(Number.isFinite(point.x)&&Number.isFinite(point.y));assert.ok(distance>=previous-1e-8&&distance<=gap+1e-8,'the curve progresses toward the child without overshoot');previous=distance;}
+  assert.deepEqual(geometry.samples[0],start);assert.deepEqual(geometry.samples.at(-1),end);
+ }
+ const backward=curve({x:100,y:0},{x:0,y:300},'right','left');assert.ok(backward.samples.some(p=>p.x>100),'backward connections retain room to turn');
+ const sameSide=curve({x:0,y:0},{x:0,y:300},'right','right');assert.ok(sameSide.samples.some(p=>p.x>0),'same-side manual connections keep their outside curve');
+});

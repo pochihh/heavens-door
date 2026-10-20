@@ -16,9 +16,11 @@ function facing(p:Placement,toward:Point,height:number):AnchorSide {
   return Math.abs(dx)>=Math.abs(dy)?dx>=0?'right':'left':dy>=0?'bottom':'top';
 }
 export function curve(start:Point,end:Point,fromSide:AnchorSide,toSide:AnchorSide) {
-  // Same outward tangent and bounded bend as obsidian-whiteboard.
-  const distance=Math.max(72,Math.min(240,Math.hypot(end.x-start.x,end.y-start.y)*.42));
-  const a=vectors[fromSide],b=vectors[toSide],c1={x:start.x+a.x*distance,y:start.y+a.y*distance},c2={x:end.x+b.x*distance,y:end.y+b.y*distance};
+  const a=vectors[fromSide],b=vectors[toSide],bend=Math.max(72,Math.min(240,Math.hypot(end.x-start.x,end.y-start.y)*.42));
+  const forward=(end.x-start.x)*a.x+(end.y-start.y)*a.y;
+  // Facing anchors share the gap; distant siblings must not make the curve double back.
+  const distance=toSide===opposite[fromSide]&&forward>=0?Math.min(bend,forward/2):bend;
+  const c1={x:start.x+a.x*distance,y:start.y+a.y*distance},c2={x:end.x+b.x*distance,y:end.y+b.y*distance};
   const point=(t:number)=>({x:(1-t)**3*start.x+3*(1-t)**2*t*c1.x+3*(1-t)*t*t*c2.x+t**3*end.x,y:(1-t)**3*start.y+3*(1-t)**2*t*c1.y+3*(1-t)*t*t*c2.y+t**3*end.y});
   const samples=Array.from({length:25},(_,i)=>point(i/24));
   return {path:`M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,midpoint:point(.5),samples,start,end,fromSide,toSide};

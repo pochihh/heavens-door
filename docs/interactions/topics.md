@@ -1,13 +1,19 @@
 # Text on whiteboards
 
-Text uses the existing board text object. Plain text items have a compact transparent footprint; the text mirror determines identical bounds during selection and editing. Shapes retain their existing presentation. Text content stays in the `.whiteboard` file until converted into a card.
+Text uses the existing board text object. All Text items auto-size around their text and explicit line breaks, with no resize handle. The text mirror determines identical bounds during selection and editing. Ellipse padding keeps the full text rectangle inside its curve; shaped selections use a soft highlight along their existing border. Text content stays in the `.whiteboard` file until converted into a card.
 
 ## Creation and editing
 
-- Use **New text** in the canvas controls or canvas context menu. Creation immediately selects the text and starts editing.
+- Use **New text** in the canvas context menu. Creation immediately selects the text and starts editing.
 - Start a new connector from an anchor, then release on empty canvas. The connector remains active. Double-click empty canvas to create text and its connecting branch in one board edit. Escape or right-click cancels. Existing destination cards/text still complete a normal connector. Reconnecting an existing edge never creates text.
-- With text or ordinary card selected, **Tab** creates child text and **Enter** creates a sibling. A root's sibling is another independent root. Menus expose the same actions. Each new text item starts editing immediately and is placed clear of existing content, without rearranging it.
-- Double-click text, use **Edit text**, or press **F2** to edit. While editing, Tab saves the draft and creates a child; Enter saves it and creates a sibling. Alt+Enter inserts a line break at the caret. These shortcuts also work immediately after creation, without a select/deselect step. IME composition does not trigger creation. Command/Ctrl+Enter commits and returns focus to the canvas; Escape discards the current edit and returns focus. Clicking away commits. Normal Quit/Reload commits the focused control before the session finishes saving.
+- With text or ordinary card selected, **Tab** creates child text and **Enter** creates a sibling. A root's sibling is another independent root. Menus expose the same actions. Each new text item starts editing immediately and is placed clear of existing content, without rearranging it. Placement reads live text dimensions so rapid typing cannot put a child inside its parent. Children inherit their branch direction.
+- Double-click text, use **Edit text**, or press **Space / F2** to edit with the caret at the end. Typing on selected Text replaces its content and enters editing; Escape restores the original content. While editing, Tab saves the draft and creates a child; Enter saves it and creates a sibling. Alt+Enter inserts a line break at the caret. These shortcuts also work immediately after creation, without a select/deselect step. IME composition does not trigger creation. Command/Ctrl+Enter commits and returns focus to the canvas; Escape discards the current edit and returns focus. Clicking away commits. Normal Quit/Reload commits the focused control before the session finishes saving.
+
+With one item selected, **Shift+Tab** selects its branch parent, **Up/Down** selects same-parent peers by Y position, and **Left/Right** selects connected neighbors by X position. Arrows retain caret behavior while typing; Shift+Tab commits and selects the parent.
+
+While editing a left-facing branch, the Text item’s right edge stays fixed and its label grows leftward, with right-aligned lines for plain Text. Committing saves the new left coordinate and text together; Escape restores both. Reconnecting the branch determines the next edit’s growth direction. Right-facing and standalone Text keep their left coordinate. This uses ordinary placement coordinates, with no new file fields.
+
+Facing edge curves stay within the gap between their anchors, so lower siblings cannot make the curve bend back. Backward and same-side manual connections retain their outward routing.
 
 Plain text connectors leave an eight-pixel gap from the compact text bounds on all sides. Cards, images and shaped objects keep their existing attachment points.
 
@@ -17,12 +23,10 @@ Branch relationships are explicit `kind: branch` edges between placement IDs. A 
 
 ## Convert to card
 
-The Text context menu exposes **Convert to card**. It creates an ordinary Markdown file in the owning board's folder. The first line becomes its title; remaining text becomes its body. It keeps the placement ID, position, fill color and connections, and takes the normal card width/editor. The board change and new file are one revision-checked, undoable transaction. A conflict creates no orphan note or overwritten file. Conversion never creates asset/annotation metadata.
+The Text context menu exposes **Convert to card**. With several Text items selected, **Convert N text elements to cards** converts them in one undoable transaction and stays on the board. It creates an ordinary Markdown file in the owning board's folder. The first line becomes its title; remaining text becomes its body. It keeps the placement ID, position, fill color and connections, and takes the normal card width/editor. The board change and new file are one revision-checked, undoable transaction. A conflict creates no orphan note or overwritten file. Conversion never creates asset/annotation metadata.
 
 ## Scope and checks
 
-This pass adds fast creation and conversion. Automatic branch layout, collapse, subtree drag/reparenting and a full drawing toolbar remain separate design work. The visible Text button joins existing canvas controls; right-click and keyboard access remain available.
+This pass adds fast creation and conversion. Automatic branch layout, collapse, subtree drag/reparenting and a full drawing toolbar remain separate design work. Canvas controls contain navigation and Style; creation remains available from right-click and keyboard access.
 
-Verification on October 19: all 220 tests and lint/types pass. Browser input verified direct Enter/Tab creation with draft preservation and focus transfer, Alt+Enter line breaks at the caret, identical compact edit/selection bounds, connector spacing, and Text settings in light and dark themes. The earlier native Test.17 pass verified conversion, Undo/Redo and normal Quit persistence. Existing user fixtures in **Topic UI checks** are preserved.
-
-The arrow follow-up also verifies both endpoint reconnections using real pointer drags, including text with an existing parent, cards, shapes and boards. Target anchors appear only on the nearest candidate within 32 screen pixels, regardless of zoom; empty canvas shows none. Keyboard-driven connections retain access to all target anchors. New Text remains independent when an arrow moves away.
+Regression checks cover rapid Enter/Tab placement, facing-curve monotonicity in all four directions, Space/F2 caret placement, direct replacement and composition entry, left-facing growth/commit/cancel, navigation, batch conversion, Undo/Redo and existing arrow reconnection. Browser checks exercise actual repeated quick-creation keys and live fractional-width geometry in both themes. Native Test builds use separate additive review boards; existing user fixtures are preserved.

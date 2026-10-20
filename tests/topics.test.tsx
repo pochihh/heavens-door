@@ -222,3 +222,39 @@ test('all Text uses measured content bounds and multi-select conversion passes o
   await act(async()=>a.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200})));const action=[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(n=>n.textContent?.startsWith('Convert 2'))!;assert.ok(action);await act(async()=>action.click());assert.equal(calls,1);assert.deepEqual(ids,['a','b']);assert.equal(opened,0,'bulk conversion stays on the board');assert.equal(board.cards[2].cardId,'existing');assert.equal(document.querySelectorAll('.board-text').length,0);assert.deepEqual(board.edges,[{id:'ab',from:'a',to:'b'}]);
  }finally{await act(async()=>root.unmount());}
 });
+
+
+test('rapid child creation uses the live text size before its observer cache catches up',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');let saved=fixture();const root=createRoot(document.getElementById('root')!);
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} onSave={next=>{saved=next;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="root"]')!;Object.defineProperty(node,'offsetWidth',{value:420});Object.defineProperty(node,'offsetHeight',{value:112});await act(async()=>press(node));
+  await act(async()=>document.querySelector('.canvas')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})));
+  assert.equal(saved.cards[1].x,610,'90px gap follows the live 420px parent, not its stored 240px width');assert.equal(saved.cards[1].y,142,'child aligns with the live multiline parent');assert.equal(saved.edges[0].from,'root');
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('Space edits at the end; direct typing replaces; composition can enter editing without creating Text',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');let saved:Board={...fixture(),cards:[{...topic('root','Root'),object:{type:'text',shape:'rounded',text:'Root'}}]},writes=0;const root=createRoot(document.getElementById('root')!);
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} onSave={next=>{saved=next;writes++;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const key=(target:Element,key:string,options:KeyboardEventInit={})=>{const event=new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options});target.dispatchEvent(event);return event;};
+ try{await act(async()=>root.render(<Harness/>));await act(async()=>press(document.querySelector('[data-placement="root"]')!));const canvas=document.querySelector<HTMLElement>('.canvas')!;
+  await act(async()=>key(canvas,' ',{code:'Space'}));let editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(editor.value,'Root');assert.equal(editor.selectionStart,4);assert.equal(editor.selectionEnd,4);assert.equal(canvas.dataset.space,undefined,'Space edits selected Text instead of engaging canvas pan');assert.equal(writes,0);
+  await act(async()=>key(editor,'Escape'));await act(async()=>key(canvas,'z'));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(editor.value,'z');assert.equal(editor.selectionStart,1);assert.equal(writes,0,'replacement stays a draft until committed');await act(async()=>key(editor,'Escape'));assert.equal(saved.cards[0].object?.type==='text'&&saved.cards[0].object.text,'Root');
+  await act(async()=>key(canvas,'Process',{keyCode:229,isComposing:true}));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;assert.equal(document.activeElement,editor);assert.equal(editor.value,'');await act(async()=>assert.equal(key(editor,'Enter',{isComposing:true}).defaultPrevented,false));assert.equal(saved.cards.length,1);await act(async()=>key(editor,'Escape'));assert.equal(writes,0);
+  await act(async()=>assert.equal(key(canvas,' ',{code:'Space',ctrlKey:true}).defaultPrevented,false));assert.equal(canvas.dataset.space,undefined);
+  await act(async()=>key(canvas,'x',{ctrlKey:true}));assert.equal(document.querySelector('textarea'),null,'command shortcuts never replace the text');
+  await act(async()=>key(document.querySelector('.board-object-text')!,'Enter'));assert.equal(saved.cards.length,2,'Enter remains quick creation when focus is on the Text group itself');
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('left-facing Text keeps its right anchor during typing, saves the new left edge, and inherits direction for children',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board');let saved:Board={...fixture(),cards:[{...topic('parent','Parent'),x:800,y:100},{...topic('left','Short'),x:400,y:100}],edges:[{id:'branch',kind:'branch',from:'parent',to:'left',fromSide:'left',toSide:'right'}]},writes=0;const root=createRoot(document.getElementById('root')!);
+ function Harness(){const [board,setBoard]=useState(saved);return <Whiteboard board={board} cards={[]} onSave={next=>{saved=next;writes++;setBoard(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const key=(target:Element,key:string,options:KeyboardEventInit={})=>target.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
+ try{await act(async()=>root.render(<Harness/>));const node=document.querySelector<HTMLElement>('[data-placement="left"]')!;Object.defineProperty(node,'offsetWidth',{get:()=>node.querySelector('span')!.textContent!.startsWith('Long')?180:80});Object.defineProperty(node,'offsetHeight',{value:28});await act(async()=>observers.findLast(o=>o.target===node)!.callback([],{} as ResizeObserver));await act(async()=>press(node));const canvas=document.querySelector('.canvas')!;
+  await act(async()=>key(canvas,' '));let editor=document.querySelector<HTMLTextAreaElement>('textarea')!;const set=Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!;await act(async()=>{set.call(editor,'Long label growing left');editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(node.style.left,'300px');assert.equal(document.querySelector('[data-anchor-card="left"][data-anchor-side="right"]')!.getAttribute('cx'),'488');assert.equal(writes,0,'live growth does not create per-key saves');
+  await act(async()=>key(editor,'Tab',{shiftKey:true}));assert.equal(saved.cards[1].x,300);assert.equal(saved.cards[1].object?.type==='text'&&saved.cards[1].object.text,'Long label growing left');assert.equal(writes,1);assert.deepEqual(readBoard(saved.path,writeBoard(saved)).cards,saved.cards,'left growth needs no file-format change');
+  await act(async()=>press(node));await act(async()=>key(canvas,' '));editor=document.querySelector<HTMLTextAreaElement>('textarea')!;await act(async()=>{set.call(editor,'Short');editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(node.style.left,'400px');await act(async()=>key(editor,'Escape'));assert.equal(node.style.left,'300px');assert.equal(writes,1,'cancel restores text and geometry without an undo entry');
+  await act(async()=>key(canvas,'Tab'));assert.equal(saved.edges.at(-1)?.fromSide,'left');assert.equal(saved.edges.at(-1)?.toSide,'right');assert.equal(saved.cards.at(-1)?.x,-30);assert.equal(saved.edges.at(-1)?.from,'left');
+ }finally{await act(async()=>root.unmount());}
+});

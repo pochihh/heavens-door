@@ -564,3 +564,5 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .board-text.selected{outline:0;box-shadow:0 0 0 2.5px color-mix(in srgb,var(--accent) 35%,transparent),inset 0 0 0 2.5px color-mix(in srgb,var(--accent) 35%,transparent)}
 .board-text.object-shape-diamond.selected{box-shadow:none}
 .board-text .object-diamond{overflow:visible}
+
+.board-text[data-text-grow-left=true] .board-object-text.shape-none{text-align:right}

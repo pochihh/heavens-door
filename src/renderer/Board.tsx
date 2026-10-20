@@ -1,3 +1,4 @@
+import {flushSync} from 'react-dom';
 import {topicText,textNeighbor,type TextNavigation} from '../topics';
 import {readingText} from '../text/reading';
 import {BoardObject} from './BoardObject';
@@ -11,7 +12,7 @@ import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
 import { Edges } from './Edges';
-import { edgeGeometry } from './edge-geometry';
+import { edgeGeometry, opposite } from './edge-geometry';
 import type { BoardSelection } from './StyleView';
 import type {AnchorSide,Edge} from '../shared';
 import type { Mention } from '../shared';
@@ -109,7 +110,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
   const cache = useRef(new Map<string, string>());
   const [size, setSize] = useState({ width: 1000, height: 800 });
   const [view, setView] = useState<Camera>({ x: 20, y: 20, zoom: 0.85 });
-  const [imageResize,setImageResize]=useState<{id:string;width:number}>();
+  const [objectPreview,setObjectPreview]=useState<{id:string;width:number;x?:number}>();
   const [working, setWorking] = useState<Board | null>(null);
   const [measuredHeights,setMeasuredHeights]=useState<Record<string,{height:number;width:number;signature:string}>>({});
   const [contentVersion,setContentVersion]=useState(0);
@@ -117,7 +118,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
   const naturalHeight=(p:Placement)=>p.object?.type==='image'||p.object?.type==='text'||lookup.get(p.cardId)?.source?.type==='pdf'||autoHeight(p);
   const heightSignature=(p:Placement)=>p.width+':'+(p.object?JSON.stringify(p.object):lookup.get(p.cardId)?.revision??'');
   const measuredHeight=(p:Placement)=>{const measured=measuredHeights[heightKey(p)];return measured?.signature===heightSignature(p)?measured.height:undefined;};
-  const widthOf=(p:Placement)=>imageResize?.id===p.id?imageResize.width:p.object?.type==='text'&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
+  const widthOf=(p:Placement)=>objectPreview?.id===p.id?objectPreview.width:p.object?.type==='text'&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
   const heightOf=(placement:Placement)=>{const p=placements.get(placement.id)??placement;return p.collapsed||naturalHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;};
   const expandedHeight=(p:Placement)=>naturalHeight(p)?(measuredHeight({...p,collapsed:false})??p.height):p.height;
   const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
@@ -127,11 +128,14 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
   const [selectedEdges,setSelectedEdges]=useState<string[]>([]);
   const [editingPlacement, setEditingPlacement] = useState(''),[editingObject,setEditingObject]=useState('');
   const [focusPoint, setFocusPoint] = useState<EditorFocus>();
+  const textOrigin=useRef<{id:string;x:number;width:number;left:boolean}|undefined>(undefined),[textReplacement,setTextReplacement]=useState<string>();
   const current = working ?? board;
   const draftTitle=useMemo(()=>draft?leadingTitle(draft.body)?.text??'':undefined,[draft?.body]);
   const active = current.cards.find(p => !p.collapsed && p.id === editingPlacement && p.cardId === draft?.card.id) ?? current.cards.find(p => !p.collapsed && p.cardId === draft?.card.id);
   const lookup = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards]);
   const boardLookup = useMemo(() => new Map(boards.map(b => [b.folder, b])), [boards]);
+  const branchEnds=useMemo(()=>new Map(current.edges.filter(e=>e.kind==='branch').map(e=>[e.to,e.toSide??opposite[e.fromSide??'right']])),[current.edges]);
+  const xOf=(p:Placement)=>objectPreview?.id===p.id&&objectPreview.x!==undefined?objectPreview.x:p.x;
   const placements = useMemo(() => new Map(current.cards.map(p => [p.id, p])), [current.cards]);
   const openReference = useCallback((id: string) => {
     const target = lookup.get(id); if (target) { if(onReference) onReference(id); else onOpen(target.path); }
@@ -156,11 +160,11 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
       nav.wheel(event);
     };
     const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing || !latest.current.enabled || document.querySelector('dialog[open],[popover][data-open="true"]')) return;
+      if (event.defaultPrevented || event.isComposing || !latest.current.enabled || document.querySelector('dialog[open],[popover][data-open="true"]')) return;
       if (event.key === 'Escape') { cancel(); setSelected([]); setSelectedEdges([]); latest.current.onFinish?.(); element.focus({preventScroll:true}); return; }
       if (editable(event.target)) return;
       if ((event.key==='Delete'||event.key==='Backspace')&&element.contains(event.target as Node)){event.preventDefault();latest.current.deleteSelection();return;}
-      if (event.code === 'Space' && !(event.target instanceof HTMLElement && event.target.closest('button'))) {
+      if (event.code === 'Space' && !event.metaKey && !event.ctrlKey && !event.altKey && !(event.target instanceof HTMLElement && event.target.closest('button'))) {
         spaceDown.current = true; element.dataset.space = 'true'; event.preventDefault();
       }
       if ((event.metaKey || event.ctrlKey) && ['=', '+', '-', '0', '1'].includes(event.key)) {
@@ -403,7 +407,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
   function openMenu(p:Placement,anchor:HTMLElement,x:number,y:number) {
     const textIds=current.cards.filter(item=>selected.includes(item.id)&&item.object?.type==='text').map(item=>item.id);
     if(onConvertTopics&&selected.includes(p.id)&&selected.length>1&&textIds.length){setMenu({anchor,label:topicText.selection,x,y,actions:[{label:topicText.convertMany(textIds.length),icon:'note',run:()=>{void convertTopics(textIds);}},{label:ui.history.deleteSelection,icon:'trash',danger:true,run:()=>{void deleteSelection();}}]});return;}
-    if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[...(p.object.type==='text'?[{label:topicText.edit,icon:'edit' as const,run:()=>setEditingObject(p.id)},{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(onConvertTopics?[{label:topicText.convert,icon:'note' as const,separatorBefore:true,run:()=>{void convertTopics([p.id]);}}]:[])]:[]),{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
+    if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[...(p.object.type==='text'?[{label:topicText.edit,icon:'edit' as const,run:()=>editText(p.id)},{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(onConvertTopics?[{label:topicText.convert,icon:'note' as const,separatorBefore:true,run:()=>{void convertTopics([p.id]);}}]:[])]:[]),{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')},...(onDelete?[{label:ui.whiteboard.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]:
       [{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,submenu:addTagActions(lookup.get(p.cardId)!)}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'note' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
@@ -423,29 +427,52 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
       ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
   }
-  function addTopic(x:number,y:number,from?:string,side:AnchorSide='right',edited?:Placement) {
+  function addTopic(x:number,y:number,from?:string,side:AnchorSide='right',edited?:Placement,rightAnchor?:number) {
     const base=pendingSave.current??latest.current.board;if(!base.folder)return;
-    const id=crypto.randomUUID(),topic:Placement={id,cardId:'',x,y,width:240,height:80,autoHeight:false,object:{type:'text',text:'',shape:'none',...textDefaults}};
+    const id=crypto.randomUUID(),topic:Placement={id,cardId:'',x:from&&side==='left'?(rightAnchor??x)-240:x,y,width:240,height:80,autoHeight:false,object:{type:'text',text:'',shape:'none',...textDefaults}};
     const edge:Edge|undefined=from?{id:crypto.randomUUID(),kind:'branch',from,to:id,fromSide:side,toSide:side==='right'?'left':side==='left'?'right':side==='top'?'bottom':'top',fromArrowhead:'none',toArrowhead:'arrow',...edgeDefaults}:undefined;
+    textOrigin.current={id,x:topic.x,width:topic.width,left:!!from&&side==='left'};setTextReplacement(undefined);
     onFinish?.();save({...base,cards:[...base.cards.map(p=>p.id===edited?.id?edited:p),topic],edges:edge?[...base.edges,edge]:base.edges},'Create text',base);setSelected([id]);setSelectedEdges([]);setEditingObject(id);
   }
   function addRelatedTopic(id:string,mode:'child'|'sibling',object?:Placement['object']) {
-    const base=pendingSave.current??latest.current.board,selected=base.cards.find(p=>p.id===id);if(!selected||!base.folder)return;
-    const parent=mode==='sibling'?base.edges.find(e=>e.kind==='branch'&&e.to===id):undefined,source=parent?base.cards.find(p=>p.id===parent.from)!:selected;
-    const from=mode==='child'?source.id:parent?.from,side=parent?.fromSide??'right',vertical=side==='top'||side==='bottom';
-    let x=from?(side==='left'?source.x-330:side==='right'?source.x+widthOf(source)+90:source.x):selected.x;
-    let y=from?(side==='top'?source.y-120:side==='bottom'?source.y+heightOf(source)+90:source.y+heightOf(source)/2-14):selected.y+heightOf(selected)+32;
+    const base=pendingSave.current??latest.current.board,original=base.cards.find(p=>p.id===id);if(!original||!base.folder)return;
+    const selected=object?editedText(original,object):original;
+    const incoming=base.edges.find(e=>e.kind==='branch'&&e.to===id),parent=mode==='sibling'?incoming:undefined,source=parent?base.cards.find(p=>p.id===parent.from)!:selected;
+    const from=mode==='child'?source.id:parent?.from,side=parent?.fromSide??(incoming?.toSide?opposite[incoming.toSide]:incoming?.fromSide)??'right',vertical=side==='top'||side==='bottom';
+    // A quick key can arrive before ResizeObserver records the edited text's new size.
+    const sizes=new Map([...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].map(node=>[node.dataset.placement,{width:node.offsetWidth,height:node.offsetHeight}]));
+    const width=(p:Placement)=>sizes.get(p.id)?.width||widthOf(p),height=(p:Placement)=>sizes.get(p.id)?.height||heightOf(p);
+    let x=from?(side==='left'?source.x-330:side==='right'?source.x+width(source)+90:source.x):selected.x;
+    let y=from?(side==='top'?source.y-120:side==='bottom'?source.y+height(source)+90:source.y+height(source)/2-14):selected.y+height(selected)+32;
     const siblingIds=new Set(from?base.edges.filter(e=>e.kind==='branch'&&e.from===from).map(e=>e.to):[id]),siblings=base.cards.filter(p=>siblingIds.has(p.id));
-    if(siblings.length){if(vertical)x=Math.max(x,...siblings.map(p=>p.x+widthOf(p)+48));else y=Math.max(y,...siblings.map(p=>p.y+heightOf(p)+32));}
+    if(siblings.length){if(vertical)x=Math.max(x,...siblings.map(p=>p.x+width(p)+48));else y=Math.max(y,...siblings.map(p=>p.y+height(p)+32));}
     // Place only the new topic; existing manual positions remain untouched.
-    const blockers=base.cards.filter(p=>x<p.x+widthOf(p)+16&&x+240>p.x-16).sort((a,b)=>a.y-b.y);
-    for(const p of blockers)if(y<p.y+heightOf(p)+16&&y+28>p.y-16)y=p.y+heightOf(p)+32;
-    addTopic(x,y,from,side,object?{...selected,object}:undefined);
+    const blockers=base.cards.filter(p=>x<p.x+width(p)+16&&x+240>p.x-16).sort((a,b)=>a.y-b.y);
+    for(const p of blockers)if(y<p.y+height(p)+16&&y+28>p.y-16)y=p.y+height(p)+32;
+    addTopic(x,y,from,side,object?selected:undefined,side==='left'?x+240:undefined);
+  }
+  function textNode(id:string){return [...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].find(node=>node.dataset.placement===id);}
+  function textWidth(p:Placement){const node=textNode(p.id);return (node?.getBoundingClientRect().width??0)/(navigation.current?.current.zoom??1)||node?.offsetWidth||widthOf(p);}
+  function editText(id:string,replacement?:string){
+    const p=(pendingSave.current??latest.current.board).cards.find(p=>p.id===id);if(p?.object?.type!=='text')return;
+    textOrigin.current={id,x:p.x,width:textWidth(p),left:branchEnds.get(id)==='right'};
+    setTextReplacement(replacement);setEditingObject(id);
+  }
+  function editedText(p:Placement,object:Placement['object']){
+    const origin=textOrigin.current,width=textWidth(p);
+    return {...p,object,x:origin?.id===p.id&&origin.left?origin.x+origin.width-width:p.x};
+  }
+  function finishTextEdit(focus=false){textOrigin.current=undefined;setObjectPreview(undefined);setEditingObject('');if(focus)viewport.current?.focus({preventScroll:true});}
+  function previewObject(p:Placement,width?:number){
+    if(width===undefined){setObjectPreview(previous=>previous?.id===p.id?undefined:previous);return;}
+    if(p.object?.type==='text')width=textWidth(p);
+    const origin=textOrigin.current,x=origin?.id===p.id&&origin.left?origin.x+origin.width-width:undefined;
+    setObjectPreview(previous=>previous?.id===p.id&&previous.width===width&&previous.x===x?previous:{id:p.id,width,x});
   }
   function navigateText(id:string,direction:TextNavigation,object?:Placement['object']){
     const base=pendingSave.current??latest.current.board,target=textNeighbor(base,id,direction);
-    if(object&&JSON.stringify(object)!==JSON.stringify(base.cards.find(p=>p.id===id)?.object))save({...base,cards:base.cards.map(p=>p.id===id?{...p,object}:p)},'Edit whiteboard object',base);
-    setEditingObject('');setSelectedEdges([]);if(target)setSelected([target]);
+    if(object){const previous=base.cards.find(p=>p.id===id),next=previous&&editedText(previous,object);if(next&&JSON.stringify(next)!==JSON.stringify(previous))save({...base,cards:base.cards.map(p=>p.id===id?next:p)},'Edit whiteboard object',base);}
+    finishTextEdit();setSelectedEdges([]);if(target)setSelected([target]);
     const element=viewport.current!,nav=navigation.current!,p=base.cards.find(p=>p.id===target);nav.flush();
     if(p&&element.clientWidth>0&&element.clientHeight>0){const camera=nav.current,left=p.x*camera.zoom+camera.x,top=p.y*camera.zoom+camera.y,right=left+widthOf(p)*camera.zoom,bottom=top+heightOf(p)*camera.zoom,dx=left<24?24-left:right>element.clientWidth-24?element.clientWidth-24-right:0,dy=top<24?24-top:bottom>element.clientHeight-24?element.clientHeight-24-bottom:0;if(dx||dy){nav.set({...camera,x:camera.x+dx,y:camera.y+dy});nav.flush();}}
     element.focus({preventScroll:true});
@@ -490,7 +517,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
   }
   // Measure unknown auto-height cards above the viewport before deciding to cull them.
   // ponytail: cold opens measure that column once; persist a size cache if much larger boards need it.
-  const visible = current.cards.filter(p => p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible({...p,width:widthOf(p)}, view, size.width, size.height, Math.max(size.width, size.height), naturalHeight(p)&&!p.collapsed&&measuredHeight(p)===undefined?Infinity:heightOf(p)));
+  const visible = current.cards.filter(p => p.id === editingObject || p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible({...p,x:xOf(p),width:widthOf(p)}, view, size.width, size.height, Math.max(size.width, size.height), naturalHeight(p)&&!p.collapsed&&measuredHeight(p)===undefined?Infinity:heightOf(p)));
   const measuredIds=visible.filter(p=>p.collapsed||naturalHeight(p)).map(p=>heightKey(p)+':'+heightSignature(p)).join(',');
   useLayoutEffect(()=>{
     const nodes=[...world.current!.querySelectorAll<HTMLElement>('.board-placement.collapsed,.board-placement.auto-height')];
@@ -519,11 +546,15 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
         if(!rightPress.current&&!(e.target as HTMLElement).closest('[data-placement],.edge-layer,.edge-handles,button,input'))openCanvasMenu(e.clientX,e.clientY);
       }} onKeyDown={e=>{
-        if(!e.defaultPrevented&&!e.nativeEvent.isComposing&&enabled&&board.folder&&!editable(e.target)&&!(e.target as HTMLElement).closest('button,a,select')&&selected.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+        if(!e.defaultPrevented&&enabled&&board.folder&&!editable(e.target)&&!(e.target as HTMLElement).closest('button,a,select')&&selected.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
           const p=current.cards.find(p=>p.id===selected[0]);if(p){
+            const composing=e.nativeEvent.isComposing||e.keyCode===229||e.key==='Process'||e.key==='Dead';
+            if(p.object?.type==='text'&&(e.key==='F2'||e.key===' '||[...e.key].length===1||composing)){
+              if(!composing)e.preventDefault();e.stopPropagation();if(!e.repeat)flushSync(()=>editText(p.id,e.key==='F2'||e.key===' '?undefined:composing?'':e.key));return;
+            }
+            if(composing)return;
             if(e.key==='Tab'&&e.shiftKey||!e.shiftKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();navigateText(p.id,e.key==='Tab'?'parent':e.key as TextNavigation);return;}
             if(!p.folder&&(p.object?.type==='text'||!p.object)&&!e.shiftKey&&(e.key==='Tab'||e.key==='Enter')){e.preventDefault();e.stopPropagation();if(!e.repeat)addRelatedTopic(p.id,e.key==='Tab'?'child':'sibling');return;}
-            if(e.key==='F2'&&p.object?.type==='text'){e.preventDefault();setEditingObject(p.id);return;}
           }
         }
         if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}
@@ -536,7 +567,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
       }}>
       <div className="canvas-grid" ref={grid}/>
         {/* Measured text widths are for edge geometry; keep stored placement sizes on save. */}
-        <Edges onCreateTopic={board.folder?addTopic:undefined} edgeDefaults={edgeDefaults} board={{...current,cards:current.cards.map(p=>({...p,width:widthOf(p)}))}} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
+        <Edges onCreateTopic={board.folder?addTopic:undefined} edgeDefaults={edgeDefaults} board={{...current,cards:current.cards.map(p=>({...p,x:xOf(p),width:widthOf(p)}))}} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
           selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={(next,label)=>save({...next,cards:current.cards},label)} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
       <div className="board-world" ref={world}>
         {visible.map(p => {
@@ -549,10 +580,10 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           const text=p.object?.type==='text',media=p.object?.type==='image'||card?.source?.type==='pdf'||text;
           return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} style={{ left: p.x, top: p.y, width: text?undefined:imageResize?.id===p.id?imageResize.width:p.width,height: p.collapsed||naturalHeight(p)?'auto':p.height, background:text&&p.object?.type==='text'&&p.object.shape!=='none'?tintColor(p.fillColor)??'transparent':media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:objectPreview?.id===p.id?objectPreview.width:p.width,height: p.collapsed||naturalHeight(p)?'auto':p.height, background:text&&p.object?.type==='text'&&p.object.shape!=='none'?tintColor(p.fillColor)??'transparent':media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row'))return;
-              if(p.object?.type==='text'){e.stopPropagation();setEditingObject(p.id);}
+              if(p.object?.type==='text'){e.stopPropagation();editText(p.id);}
               else if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
@@ -566,7 +597,7 @@ export const Whiteboard = memo(function Whiteboard({ onConvertTopics,addTagActio
               }}/>
             </div>}
             {!media&&!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>setImageResize(width===undefined?undefined:{id:p.id,width})} editing={editingObject===p.id} onEditing={()=>setEditingObject(p.id)} onDone={focus=>{setEditingObject('');if(focus)viewport.current?.focus({preventScroll:true});}} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{void save({...current,cards:current.cards.map(item=>item.id===p.id?{...item,object,...(width?{width}:{})}:item)},'Edit whiteboard object');}}/>:card?.source?.type==='pdf'?<><PdfPreview path={card.path} source={card.source} onReady={contentReady}/><div className="board-asset-caption">{card.title||card.name}</div></>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:card?.source?.type==='pdf'?<><PdfPreview path={card.path} source={card.source} onReady={contentReady}/><div className="board-asset-caption">{card.title||card.name}</div></>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
