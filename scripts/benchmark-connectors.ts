@@ -10,7 +10,7 @@ assert.equal(candidates.length,2000);assert.ok(candidates.every(p=>Number.isFini
 const samples:number[]=[];let hits=0;
 for(let i=0;i<12000;i++){
  const point=scene.points[i%scene.points.length],zoom=[.2,.5,1,3][i%4],cursor={x:point.x+Math.sin(i)*80/zoom,y:point.y+Math.cos(i*.7)*80/zoom},begin=performance.now();
- hits+=nearbyConnectors(candidates,cursor,zoom).length;closestConnector(scene.points,cursor,zoom,'card-001');
+ hits+=nearbyConnectors(candidates,cursor).length;closestConnector(scene.points,cursor,zoom,'card-001');
  if(i>=2000)samples.push(performance.now()-begin);
 }
 samples.sort((a,b)=>a-b);

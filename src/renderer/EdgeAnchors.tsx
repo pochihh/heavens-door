@@ -27,7 +27,7 @@ export function EdgeAnchors(props:Props){
   let found:ReturnType<typeof nearbyConnectors>=[];
   if(enabled&&!held.current&&element&&at){
    const rect=element.getBoundingClientRect(),c=camera();
-   if(!rect.width||!rect.height||at.x>=rect.left&&at.x<=rect.right&&at.y>=rect.top&&at.y<=rect.bottom)found=nearbyConnectors(candidatesRef.current,{x:(at.x-rect.left-c.x)/c.zoom,y:(at.y-rect.top-c.y)/c.zoom},c.zoom,connecting?source:undefined);
+   if(!rect.width||!rect.height||at.x>=rect.left&&at.x<=rect.right&&at.y>=rect.top&&at.y<=rect.bottom)found=nearbyConnectors(candidatesRef.current,{x:(at.x-rect.left-c.x)/c.zoom,y:(at.y-rect.top-c.y)/c.zoom},connecting?source:undefined);
   }
   setNear(previous=>previous.length===found.length&&previous.every((p,i)=>p.point===found[i].point&&p.strength===found[i].strength)?previous:found);
  }

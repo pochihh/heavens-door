@@ -277,7 +277,7 @@ test('selected edge endpoints share zoom-aware proximity hints and retain pointe
  Object.assign(globalThis,{window:win,document:win.document,HTMLElement:win.HTMLElement,Element:win.Element,Node:win.Node,IS_REACT_ACT_ENVIRONMENT:true});
  const frames=new Map<number,FrameRequestCallback>();let number=0;win.requestAnimationFrame=callback=>{frames.set(++number,callback);return number;};win.cancelAnimationFrame=id=>{frames.delete(id);};
  const step=async()=>act(async()=>{const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(0);});
- const {Edges}=await import('../src/renderer/Edges'),{BOARD_CAMERA_EVENT}=await import('../src/renderer/navigation');
+ const {Edges}=await import('../src/renderer/Edges'),{BOARD_CAMERA_EVENT,zoomAt}=await import('../src/renderer/navigation');
  const board:Board={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[0,1,2].map(i=>({id:'p'+i,cardId:'c'+i,x:i*500,y:0,width:340,height:280})),edges:[{id:'edge',from:'p0',to:'p1',fromSide:'right',toSide:'left'}]};
  const viewport=createRef<HTMLDivElement>(),saved:Board[]=[],camera={x:0,y:0,zoom:1},root=createRoot(document.getElementById('root')!);
  const pointer=(target:EventTarget,type:string,x:number,y=140)=>{const event=new win.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:1});target.dispatchEvent(event);};
@@ -290,8 +290,13 @@ test('selected edge endpoints share zoom-aware proximity hints and retain pointe
   await hover(600);assert.deepEqual(endpoints(),['to']);assert.ok(document.querySelector('[data-anchor-visible=true]')!.parentElement!.style.getPropertyValue('--connector-strength'));
   const path=document.querySelector('.edge-stroke')!,geometry=path.getAttribute('d');
   camera.zoom=2;await act(async()=>viewport.current!.dispatchEvent(new win.Event(BOARD_CAMERA_EVENT)));await step();assert.deepEqual(endpoints(),['from'],'zoom refreshes the radius and world cursor without another pointer event');assert.equal(path.getAttribute('d'),geometry);
-  camera.zoom=.25;await hover(160,35);assert.deepEqual(endpoints(),['from','to'],'the minimum screen radius keeps zoomed-out endpoints reachable');
-  camera.zoom=1;await hover(420);assert.deepEqual(endpoints(),['from','to']);
+  Object.assign(camera,{x:0,y:0,zoom:1});await hover(420);assert.deepEqual(endpoints(),['from','to']);
+  const strengths=()=>[...document.querySelectorAll<SVGElement>('.edge-anchor-hint')].map(n=>Number(n.style.getPropertyValue('--connector-strength'))),before=strengths();
+  for(const zoom of [.2,.5,1,2,3]){
+   Object.assign(camera,zoomAt(camera,420,140,zoom));await act(async()=>viewport.current!.dispatchEvent(new win.Event(BOARD_CAMERA_EVENT)));await step();
+   assert.deepEqual(endpoints(),['from','to'],'zooming around a stationary cursor preserves the connector set');assert.ok(strengths().every((s,i)=>Math.abs(s-before[i])<1e-12),'distance strength stays stable across zoom');assert.equal(path.getAttribute('d'),geometry);
+  }
+  Object.assign(camera,{x:0,y:0,zoom:1});
   await hover(500);const end=document.querySelector('[data-anchor-visible=true][data-edge-endpoint="to"]')!;
   await act(async()=>{pointer(end,'pointerdown',500);pointer(document,'pointermove',1000);pointer(document,'pointerup',1000);});assert.equal(saved.length,1);assert.equal(saved[0].edges[0].to,'p2');assert.equal(saved[0].edges[0].id,'edge');
   await hover(800);const keyboardEnd=document.querySelector('.edge-keyboard-anchor[data-edge-endpoint="to"]')!;await act(async()=>key(keyboardEnd));assert.equal(keyboardEnd.isConnected,true,'focused endpoints survive keyboard-started reconnection');
