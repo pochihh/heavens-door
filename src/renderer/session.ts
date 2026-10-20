@@ -223,11 +223,11 @@ export class Session {
       this.newCards.add(card.id);this.update({draft:{card,body:card.body,dirty:false}});
     });
   }
-  convertTopic(base:Board,placement:string){return this.run(async()=>{
+  convertTopics(base:Board,placement:string[]){return this.run(async()=>{
     await this.flush();const board=this.state.snapshot?.boards.find(b=>b.path===base.path);
     if(!board||layout(board)!==layout(base))throw new Error(ui.errors.whiteboardChanged(base.path));
-    const result=await this.bridge.request<Mutation>({kind:'convertTopic',path:board.path,expected:board.revision,placement});this.accept(result,'Convert text to card');
-    return result.snapshot.cards.find(c=>result.edits.some(e=>e.before===null&&e.path===c.path))!;
+    const result=await this.bridge.request<Mutation>({kind:'convertTopic',path:board.path,expected:board.revision,placement});this.accept(result,placement.length===1?'Convert text to card':'Convert text to cards');
+    return result.snapshot.cards.filter(c=>result.edits.some(e=>e.before===null&&e.path===c.path));
   });}
   extractAssetNote(path:string,expected:string,note:string,folder:string,x:number,y:number){return this.run(async()=>{
     const before=this.state.snapshot?.cards.find(c=>c.path===path);if(before?.revision!==expected)throw new Error(ui.errors.externalEdit(path));

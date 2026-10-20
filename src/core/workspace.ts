@@ -636,12 +636,12 @@ export class Workspace {
     await fs.mkdir(dirname(await this.path(path)),{recursive:true});
     return {...await this.write([{path,content:raw,expected:null}]),path};
   }
-  private async newCardPath(folder:string,stem:string){
+  private async newCardPath(folder:string,stem:string,reserved?:Set<string>){
     validateStem(stem);
     const directory=folder?await this.path(folder):this.root;await fs.mkdir(directory,{recursive:true});
-    const names=new Set((await fs.readdir(directory)).map(n=>n.toLocaleLowerCase()));
+    const names=reserved??new Set((await fs.readdir(directory)).map(n=>n.toLocaleLowerCase()));
     let filename=stem+'.md',i=0;while(names.has(filename.toLocaleLowerCase()))filename=`${stem}_${++i}.md`;
-    return join(folder,filename);
+    names.add(filename.toLocaleLowerCase());return join(folder,filename);
   }
   async create(folder: string, stem: string, x: number, y: number,place=true) {
     validateStem(stem);
@@ -991,19 +991,25 @@ export class Workspace {
     try { this.db.prepare("INSERT OR REPLACE INTO ui_cache(key,value) VALUES('edge-style',?)").run(JSON.stringify(this.lastEdgeStyle)); }
     catch { /* Cache failure must not turn a successful document save into an error. */ }
   }
-  async convertTopic(path:string,expected:string,placement:string){
-    if(typeof path!=='string'||typeof expected!=='string'||typeof placement!=='string')throw new Error(ui.errors.invalidRequestValue);
+  async convertTopic(path:string,expected:string,placement:string|string[]){
+    const ids=typeof placement==='string'?[placement]:placement;
+    if(typeof path!=='string'||typeof expected!=='string'||!Array.isArray(ids)||!ids.length||ids.length>10000||ids.some(id=>typeof id!=='string')||new Set(ids).size!==ids.length)throw new Error(ui.errors.invalidRequestValue);
     const board=this.boards.get(path);if(!board||!board.folder)throw new Error(ui.errors.whiteboardMissing);
     if(board.revision!==expected)throw new Error(ui.errors.whiteboardChanged(path));
-    const topic=board.cards.find(p=>p.id===placement);if(topic?.object?.type!=='text')throw new Error('Choose whiteboard text to convert.');
-    const lines=topic.object.text.replace(/\r\n?/g,'\n').split('\n'),title=lines[0].trim()||'Text';
-    let stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Text';
-    if(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem))stem='Text '+stem;
-    const destination=await this.newCardPath(board.folder,stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
-    const raw=newNote(),{front}=splitNote(raw);if(topic.fillColor)front.set('card-color',topic.fillColor);
-    const created=`---\n${front.toString()}---\n# ${escape(title)}\n\n${lines.slice(1).map(escape).join('\n')}\n`,card=readCard(destination,created);
-    const next={...board,cards:board.cards.map(p=>p.id===placement?{...p,object:undefined,cardId:card.id,width:Math.max(340,p.width),height:280,autoHeight:true}:p)};
-    return this.write([{path:destination,content:created,expected:null},{path,content:writeBoard(next),expected}]);
+    const byId=new Map(board.cards.map(p=>[p.id,p])),topics=ids.map(id=>byId.get(id));if(topics.some(p=>p?.object?.type!=='text'))throw new Error('Choose whiteboard text to convert.');
+    const names=new Set((await fs.readdir(await this.path(board.folder))).map(n=>n.toLocaleLowerCase())),changes:Write[]=[],converted=new Map<string,string>();
+    for(const topic of topics){
+      if(topic?.object?.type!=='text')throw new Error('Choose whiteboard text to convert.');
+      const lines=topic.object.text.replace(/\r\n?/g,'\n').split('\n'),title=lines[0].trim()||'Text';
+      let stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Text';
+      if(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem))stem='Text '+stem;
+      const destination=await this.newCardPath(board.folder,stem,names),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
+      const raw=newNote(),{front}=splitNote(raw);if(topic.fillColor)front.set('card-color',topic.fillColor);
+      const created=`---\n${front.toString()}---\n# ${escape(title)}\n\n${lines.slice(1).map(escape).join('\n')}\n`,card=readCard(destination,created);
+      changes.push({path:destination,content:created,expected:null});converted.set(topic.id,card.id);
+    }
+    const next={...board,cards:board.cards.map(p=>converted.has(p.id)?{...p,object:undefined,cardId:converted.get(p.id)!,width:Math.max(340,p.width),height:280,autoHeight:true}:p)};
+    return this.write([...changes,{path,content:writeBoard(next),expected}]);
   }
   async saveBoard(board: Board, expected: string) {
     const before=this.boards.get(board.path);

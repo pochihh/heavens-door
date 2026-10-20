@@ -105,7 +105,7 @@ export function BoardView({reveal,onRevealed,onSelection,onStyle,board,snapshot,
     onDelete={(base,placements,edges)=>session.deleteSelection(base,placements,edges,(names,boards)=>confirm({title:boards?ui.whiteboard.deleteTitle:ui.card.deleteTitle(names.length),message:boards?ui.whiteboard.confirmDelete(names):ui.card.confirmDelete(names),accept:boards?ui.whiteboard.delete:ui.card.deleteTitle(names.length),danger:true}))}
     onPlaceReference={(id,x,y)=>session.placeCard(id,board.folder,x,y,'reference')}
     onCreateReference={async(name,x,y)=>{await session.createSlipboxCard(name,{folder:board.folder,x,y});}}
-    onConvertTopic={(base,id)=>session.convertTopic(base,id)} onCreate={onCreate} onCreateBoard={onCreateBoard}
+    onConvertTopics={(base,ids)=>session.convertTopics(base,ids)} onCreate={onCreate} onCreateBoard={onCreateBoard}
     onTitleDone={()=>void session.run(()=>session.flush()).catch(()=>undefined)} draft={active?session.state.draft:null} onEdit={(body,label)=>{if(label)void session.editAction(body,label).catch(()=>undefined);else session.edit(body);}}
     onFinish={()=>{void session.select(null).catch(()=>undefined);}}/>;
 }

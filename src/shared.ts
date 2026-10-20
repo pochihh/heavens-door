@@ -103,7 +103,7 @@ export type Request =
   | { kind:'addTagProperty';path:string;expected:string;tag:string;tagExpected:string;field:TagField;value:TagValue }
   | { kind:'setViewProperty';path:string;expected:string;key:string;value:TagValue }
   | { kind:'setTagProperty';path:string;expected:string;tag:string;key:string;value:TagValue }
-  | {kind:'convertTopic';path:string;expected:string;placement:string}
+  | {kind:'convertTopic';path:string;expected:string;placement:string|string[]}
   | { kind: 'create'; folder: string; stem: string; x: number; y: number; place?:boolean }
   | { kind: 'renameBoard'; folder:string; name:string; expected:string }
   | { kind: 'renameCard'; path:string; stem:string; expected:string }
