@@ -38,7 +38,7 @@ The block grip opens Duplicate, Delete, Turn into, and move/indent actions. Opti
 
 Type `/` on a fresh paragraph to search commands with the shared bilingual fuzzy engine, use arrows to choose, Enter to insert, and Escape to dismiss. **Settings → Editor** controls command availability/order and Markdown/HTML templates. `{{cursor}}` marks the insertion point. Application commands can open workspace search or save a checkpoint. Symbols and emoji are available in the block menu, slash menu, or Ctrl+Shift+Space; these insert normal Unicode characters.
 
-Whiteboard cards hide tags and expose an Open in popup button beside Collapse. Click bottom empty space to append or focus the final empty paragraph. Block grips share one fixed gutter at every list depth and have transparent buttons; whiteboard cards never show the Add button. Grips hide below 65% whiteboard zoom. Floating editor controls track every canvas transform, including pan and zoom inertia.
+Whiteboard cards hide tags and expose an Open in popup button beside Collapse. Click bottom empty space to append or focus the final empty paragraph. Block grips share one fixed gutter at every list depth and have transparent buttons; whiteboard cards never show the Add button. Grips scale their size and gutter spacing with the live whiteboard zoom, including below 65%. Floating editor controls track every canvas transform, including pan and zoom inertia.
 
 ## Image controls and layouts
 
@@ -67,3 +67,9 @@ Inline `$…$` and block `$$…$$` equations render with KaTeX and retain their 
 Home/End move to the start/end of the displayed line; Shift extends the selection. Command+Home/End moves to card boundaries. Tab/Shift+Tab indents only the current or explicitly selected list/task lines. Unselected children retain their existing depth where the list hierarchy permits it. A first sibling cannot indent without a preceding item to nest under. The caret remains in its original text. Keyboard shortcuts are configurable in Settings.
 
 New card content still autosaves, but automatic filename generation waits for title blur or leaving the card. A same-folder rename retains the editor instance and caret instead of remounting it. Popup cards expose Color, word count, path and board membership; backlinks remain at the bottom. Text color and highlight swatches share compact square geometry.
+
+## Quick code and equation blocks
+
+On a fresh body paragraph, type three backticks and Space to start editing a code block immediately. A language can follow the fence, for example `c++`, `c#`, `python` or `typescript`, before Space. The compact picker at the upper right changes the language and its syntax highlighting. Plain text disables coloring. Existing and unknown language labels remain in Markdown; merely opening a block does not rewrite it. Previews and the editor share theme-aware token colors. View blocks retain their separate UI.
+
+Type `$$` and Space to create a block equation and open its LaTeX editor with a live preview. Empty equations also round-trip as ordinary fenced math. Inline math keeps its existing `$…$` shortcut. No source-mode or file-format migration is required. Text placements remain transparent; stored fill data is retained for future plugins.

@@ -2,10 +2,11 @@ import {cardKeyboard} from './editor-keyboard';
 import type {Keybindings} from '../keybindings';
 import {mathHtml,mathToken} from './math';
 import { ui } from '../text/ui';
-import { Extension, nodeInputRule, Node as TiptapNode, type Editor, type NodeViewRenderer, type JSONContent, type MarkdownRendererHelpers } from '@tiptap/core';
-import { Plugin } from '@tiptap/pm/state';
+import { Extension, InputRule, textblockTypeInputRule, nodeInputRule, Node as TiptapNode, type Editor, type NodeViewRenderer, type JSONContent, type MarkdownRendererHelpers } from '@tiptap/core';
+import { Plugin, NodeSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import CodeBlock from '@tiptap/extension-code-block';
+import CodeBlock from '@tiptap/extension-code-block-lowlight';
+import {codeHighlight} from './code-highlight';
 import StarterKit from '@tiptap/starter-kit';
 import {wikiToken} from '../document-links';
 const CardKit=StarterKit.extend({addExtensions(){return (this.parent?.()??[]).map(extension=>extension.name==='link'?extension.extend({markdownTokenizer:{name:'wikiLink',level:'inline',start:(source:string)=>source.indexOf('[['),tokenize:wikiToken},renderMarkdown(node:JSONContent,helpers:MarkdownRendererHelpers){
@@ -48,9 +49,9 @@ export function cardMarkdown(editor:Editor){
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
 export function extensions(path: string,codeView?:NodeViewRenderer,htmlView?:NodeViewRenderer,imageView?:NodeViewRenderer,mathView?:NodeViewRenderer,getBindings?:()=>Keybindings|undefined) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
-  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({...codeView?{codeBlock:false}:{},undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),...(codeView?[CodeBlock.extend({addNodeView(){return codeView;}})]:[]),Markdown,TextColors,AnnotationMark,
+  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({codeBlock:false,undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),CodeBlock.extend({addInputRules(){return [/^```([\w#+.-]*)[ \t\n]$/,/^~~~([\w#+.-]*)[ \t\n]$/].map(find=>textblockTypeInputRule({find,type:this.type,getAttributes:match=>({language:match[1]||null})}));},...(codeView?{addNodeView:()=>codeView}:{})}).configure({lowlight:{...codeHighlight,highlightAuto:(text:string)=>codeHighlight.highlight('plaintext',text)}}),Markdown,TextColors,AnnotationMark,
     ...(['mathInline','mathBlock'] as const).map(name=>TiptapNode.create({name,group:name==='mathBlock'?'block':'inline',inline:name==='mathInline',atom:true,
-      addInputRules(){return name==='mathInline'?[nodeInputRule({find:/\$(?!\$)([^\n$]+)\$$/,type:this.type,getAttributes:match=>{const token=mathToken(match[0]);return token?{latex:token.text}:false;}})]:[];},
+      addInputRules(){return name==='mathInline'?[nodeInputRule({find:/\$(?!\$)([^\n$]+)\$$/,type:this.type,getAttributes:match=>{const token=mathToken(match[0]);return token?{latex:token.text}:false;}})]:[new InputRule({find:/^\$\$ $/,handler:({state})=>{const {$from}=state.selection;if($from.parent.type.name!=='paragraph'||$from.parentOffset!==$from.parent.content.size||!$from.node(-1).canReplaceWith($from.index(-1),$from.indexAfter(-1),this.type))return null;const from=$from.before(),tr=state.tr;tr.replaceWith(from,$from.after(),[this.type.create(),state.schema.nodes.paragraph.create()]);tr.setSelection(NodeSelection.create(tr.doc,from));}})];},
       addAttributes(){return {latex:{default:''}};},parseHTML(){return [{tag:(name==='mathBlock'?'div':'span')+'[data-latex]',getAttrs:element=>({latex:(element as HTMLElement).dataset.latex})}];},renderHTML({node}){return [name==='mathBlock'?'div':'span',{'data-latex':node.attrs.latex}];},
       markdownTokenName:name,markdownTokenizer:{name,level:name==='mathBlock'?'block':'inline',start:source=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenize:source=>mathToken(source,name==='mathBlock')},
       parseMarkdown:(token,helpers)=>helpers.createNode(name,{latex:token.text}),renderMarkdown:node=>name==='mathBlock'?'$$\n'+node.attrs?.latex+'\n$$':'$'+node.attrs?.latex+'$',

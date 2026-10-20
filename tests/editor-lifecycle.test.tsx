@@ -152,13 +152,13 @@ test('row toolbox edits portable layout and editor controls follow canvas transf
   try{
     await act(async()=>root.render(<CardEditor path="row.md" body={'# Images\n\n'+imageHtml(content)+'\n\nEnd'} cards={[]} canvas onEdit={body=>edits.push(body)}/>));
     const element=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor},editor=element.editor;
-    let x=100,y=100;
+    let x=100,y=100,scale=1;
     const rect=(left:number,top:number,width:number,height:number)=>new dom.window.DOMRect(left,top,width,height);
-    element.getBoundingClientRect=()=>rect(x,y,500,600);Object.defineProperty(element,'offsetWidth',{value:500});
+    element.getBoundingClientRect=()=>rect(x,y,500*scale,600*scale);Object.defineProperty(element,'offsetWidth',{value:500});
     document.querySelector('.editor-body')!.getBoundingClientRect=()=>rect(0,0,1000,1000);
     document.querySelector('.canvas')!.getBoundingClientRect=()=>rect(0,0,1000,1000);
-    const imageRow=document.querySelector<HTMLElement>('.editor-image-layout')!;imageRow.getBoundingClientRect=()=>rect(x,y+60,500,300);
-    const last=element.lastElementChild!;last.getBoundingClientRect=()=>rect(x,y+400,500,26);
+    const imageRow=document.querySelector<HTMLElement>('.editor-image-layout')!;imageRow.getBoundingClientRect=()=>rect(x,y+60*scale,500*scale,300*scale);
+    const last=element.lastElementChild!;last.getBoundingClientRect=()=>rect(x,y+400*scale,500*scale,26*scale);
     await act(async()=>editor.commands.setTextSelection(editor.state.doc.content.size-1));
     const grip=document.querySelector<HTMLElement>('.editor-block-controls')!,before={left:parseFloat(grip.style.left),top:parseFloat(grip.style.top)};
     await act(async()=>document.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:150,clientY:180})));
@@ -168,6 +168,8 @@ test('row toolbox edits portable layout and editor controls follow canvas transf
     await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform='translate(80px,40px)';await Promise.resolve();});
     assert.equal(parseFloat(grip.style.left),before.left+80);assert.equal(parseFloat(grip.style.top),before.top+40);
     assert.equal(parseFloat(toolbar.style.left),toolLeft+80);assert.equal(parseFloat(toolbar.style.top),toolTop+40);
+    for(scale of [.25,1.8]){await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform=`translate(80px,40px) scale(${scale})`;await Promise.resolve();});assert.equal(grip.style.transform,`scale(${scale})`);assert.equal(grip.style.visibility,'visible');assert.equal(parseFloat(grip.style.left),x-24*scale);assert.equal(grip.querySelector<HTMLButtonElement>('[aria-label="Add block"]')!.hidden,true);}
+    scale=1;await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform='translate(80px,40px) scale(1)';await Promise.resolve();});
     assert.equal(edits.length,0,'navigation never writes card content');
     await act(async()=>toolbar.querySelector<HTMLButtonElement>('[aria-label="Justify: space between"]')!.click());
     assert.match(edits.at(-1)!,/justify-content: space-between/);

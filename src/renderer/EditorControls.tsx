@@ -35,7 +35,7 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
       const target=event.target as Node,modal=document.querySelector('dialog[open],[aria-modal=true]');
       if(modal&&!modal.contains(editor.view.dom)||controls.current?.contains(target))return;
       const hoverArea=editor.view.dom.closest('.editor-body')??editor.view.dom;
-      if(!hoverArea.contains(target)){const area=editor.view.dom.getBoundingClientRect(),clip=hoverArea.getBoundingClientRect();if(event.clientX<area.left-(canvas?24:46)||event.clientX>area.left||event.clientY<clip.top||event.clientY>=clip.bottom)return;}
+      if(!hoverArea.contains(target)){const area=editor.view.dom.getBoundingClientRect(),clip=hoverArea.getBoundingClientRect();if(event.clientX<area.left-(canvas?24*(editor.view.dom.offsetWidth?area.width/editor.view.dom.offsetWidth:zoom):46)||event.clientX>area.left||event.clientY<clip.top||event.clientY>=clip.bottom)return;}
       const blocks=editorBlocks(editor.state.doc);
       let found=blocks.filter(b=>domFor(b)?.contains(target)).at(-1);
       if(found?.item){
@@ -56,11 +56,11 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
       const target=block&&domFor(block),handle=controls.current;
       if(target&&handle){
         const area=editor.view.dom.getBoundingClientRect(),clip=editor.view.dom.closest('.editor-body')?.getBoundingClientRect(),viewport=editor.view.dom.closest('.canvas')?.getBoundingClientRect();
-        const scale=canvas&&editor.view.dom.offsetWidth?area.width/editor.view.dom.offsetWidth:zoom;
+        const scale=canvas?(editor.view.dom.offsetWidth?area.width/editor.view.dom.offsetWidth:zoom):1;
         const line=target.matches('li')?target.querySelector('p')??target:target,first=line.getBoundingClientRect(),lineHeight=parseFloat(getComputedStyle(line).lineHeight)||24;
         const center=first.top+Math.min(first.height,lineHeight*scale)/2;
-        handle.style.left=Math.max(4,area.left-(canvas?24:46))+'px';handle.style.top=(center-13)+'px';
-        handle.style.visibility=(!canvas||scale>=.65)&&(!clip||center>=clip.top&&center<clip.bottom)&&(!viewport||center>=viewport.top&&center<viewport.bottom&&area.left>=viewport.left&&area.left<viewport.right)?'visible':'hidden';
+        handle.style.left=Math.max(4,area.left-(canvas?24:46)*scale)+'px';handle.style.top=(center-13*scale)+'px';handle.style.transform=`scale(${scale})`;handle.style.transformOrigin='top left';
+        handle.style.visibility=(!clip||center>=clip.top&&center<clip.bottom)&&(!viewport||center>=viewport.top&&center<viewport.bottom&&area.left>=viewport.left&&area.left<viewport.right)?'visible':'hidden';
       }
       const el=bubble.current,selection=window.getSelection();if(!el||!selection?.rangeCount)return;
       const rect=selection.getRangeAt(0).getBoundingClientRect(),size=el.getBoundingClientRect();
@@ -84,7 +84,7 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
   const addAbove=useRef(false);
   const add=(node:JSONContent)=>{setMenu(null);const position=block?(addAbove.current?block.from:block.to):editor.state.doc.content.size;action(ui.editor.addBlock,()=>editor.chain().focus().insertContentAt(position,node).run());};
   return createPortal(<>
-    {block&&(!canvas||zoom>=.65)&&<div ref={controls} className="editor-block-controls" contentEditable={false}>
+    {block&&<div ref={controls} className="editor-block-controls" contentEditable={false}>
       <Tool hidden={canvas} icon="plus" label={ui.editor.addBlock} onClick={e=>{addAbove.current=e.altKey;const r=e.currentTarget.getBoundingClientRect();setMenu({anchor:e.currentTarget,x:r.left,y:r.bottom,label:ui.editor.addBlock,actions:[
         {label:ui.editor.text,icon:'format',run:()=>add({type:'paragraph'})},
         {label:tooltips.editor.heading,icon:'h1',run:()=>add({type:'heading',attrs:{level:2}})},

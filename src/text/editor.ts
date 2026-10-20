@@ -1,5 +1,7 @@
 // Contextual editor controls and migration settings.
 export const editorText = {
+  codeLanguage: "Code language",
+  plainText: "Plain text",
   "sourceMode": "Source mode",
   "markdownSource": "Markdown source",
   "insertBlock": "Insert block",

@@ -566,3 +566,20 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .board-text .object-diamond{overflow:visible}
 
 .board-text[data-text-grow-left=true] .board-object-text.shape-none{text-align:right}
+/* Code controls and previews share geometry; tokens never enter the stored Markdown. */
+.editor-code-block{position:relative;margin:1em 0;background:color-mix(in srgb,var(--text) 4%,transparent);border-radius:5px;min-width:0}
+.prose .editor-code-block pre{margin:0;background:transparent;padding:34px 12px 12px;white-space:pre-wrap}
+.code-block-toolbar{position:absolute;top:4px;right:6px;max-width:calc(100% - 12px);font-size:11px;line-height:22px;color:var(--muted)}
+.code-block-toolbar select{max-width:100%;border:0;background:transparent;color:inherit;font:inherit;padding:2px 4px;cursor:pointer}
+.code-block-toolbar span{display:block;padding:2px 4px;line-height:22px}
+.prose pre .hljs-comment,.prose pre .hljs-quote{color:var(--muted);font-style:italic}
+.prose pre .hljs-keyword,.prose pre .hljs-selector-tag,.prose pre .hljs-literal{color:#a12972}
+.prose pre .hljs-string,.prose pre .hljs-regexp,.prose pre .hljs-addition{color:#28703c}
+.prose pre .hljs-number,.prose pre .hljs-symbol,.prose pre .hljs-attr{color:#965009}
+.prose pre .hljs-title,.prose pre .hljs-built_in,.prose pre .hljs-type{color:#295fa6}
+.prose pre .hljs-meta,.prose pre .hljs-tag,.prose pre .hljs-deletion{color:#a43e36}
+:root[data-theme=dark] .prose pre :is(.hljs-keyword,.hljs-selector-tag,.hljs-literal){color:#d9a0d0}
+:root[data-theme=dark] .prose pre :is(.hljs-string,.hljs-regexp,.hljs-addition){color:#a6c995}
+:root[data-theme=dark] .prose pre :is(.hljs-number,.hljs-symbol,.hljs-attr){color:#e4b37d}
+:root[data-theme=dark] .prose pre :is(.hljs-title,.hljs-built_in,.hljs-type){color:#91b9e6}
+:root[data-theme=dark] .prose pre :is(.hljs-meta,.hljs-tag,.hljs-deletion){color:#e29b91}

@@ -91,7 +91,7 @@ test('previews preserve actual blank paragraphs without inventing trailing body 
     try{
       editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize-1);
       const shown=document.createElement('div');shown.innerHTML=preview(body,'empty.md');
-      assert.deepEqual([...shown.children].map(el=>el.tagName),[...editor.view.dom.children].map(el=>el.classList.contains('tableWrapper')?'TABLE':el.tagName),'preview must reserve the same blocks as editing: '+JSON.stringify(body));
+      assert.deepEqual([...shown.children].map(el=>el.classList.contains('editor-code-block')?'PRE':el.tagName),[...editor.view.dom.children].map(el=>el.classList.contains('tableWrapper')?'TABLE':el.tagName),'preview must reserve the same blocks as editing: '+JSON.stringify(body));
       const emptyParagraphs=(parent:Element)=>[...parent.children].filter(el=>el.tagName==='P'&&!el.textContent?.trim());
       assert.equal(emptyParagraphs(shown).length,emptyParagraphs(editor.view.dom).length,'preserve every blank body line');
       assert.ok(emptyParagraphs(shown).every(p=>p.querySelector('br')),'empty preview paragraphs occupy real text lines');
