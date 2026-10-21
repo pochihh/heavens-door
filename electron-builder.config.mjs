@@ -10,7 +10,8 @@ export default {
   appId:'com.pochihh.heavens-door',productName:"Heaven's Door",
   buildVersion:`${buildNumber}.0.0`,artifactName:'Heavens-Door-${version}-${os}-${arch}.${ext}',
   directories:{output:'release',buildResources:'build'},asar:true,npmRebuild:false,asarUnpack:sparkle.asarUnpack,
-  files:['dist/**/*','package.json','!dist/**/*.map',...sparkle.files],
+  // PDF.js runs in Chromium; its optional Node-only Canvas binaries are unused.
+  files:['dist/**/*','package.json','!dist/**/*.map','!**/node_modules/@napi-rs/canvas*/**',...sparkle.files],
   dmg:sparkle.dmg,
   extraResources:[{from:'build/icon.png',to:'icon.png'},{from:'build/sparkle.json',to:'sparkle.json'}],
   publish:{provider:'github',owner:'pochihh',repo:'heavens-door',releaseType:'draft'},
