@@ -20,6 +20,18 @@ Use the shared native CSS rules in `styles.css`: thin scrollbars with `scrollbar
 
 Keep native scrolling, thumb dragging, keyboard navigation and system visibility behavior. Do not add custom scrollbar elements, track decorations, scroll listeners or hover-triggered width changes. Forced-colors mode uses system scrollbar colors for accessibility. New scrollable Views inherit this convention instead of defining their own track fills.
 
+### Stable space and margins
+
+A scrollbar appearing or disappearing must not resize its container, shift neighboring UI, rewrap text, or change card height. Reserve its space before overflow appears. The empty reserved gutter is part of the normal edge margin; the visible scrollbar occupies that same space. Do not add a full margin beside the scrollbar as well.
+
+Vertical scroll owners use `scrollbar-gutter: stable`. `scrollbar-space.ts` measures the platform's native thin scrollbar width before the first render and follows changes with one ResizeObserver. Overlay scrollbars reserve zero width. Shared scroll surfaces subtract `--reserved-scrollbar-space` from their normal `--scroll-padding-end`, clamped at zero; explorer rows subtract it from their trailing row margin. The combined padding/margin and gutter should equal the intended spacing, or the native scrollbar width when that is larger. Do not hard-code a platform scrollbar width. Padding overrides must update the spacing token too.
+
+Whiteboard card previews reserve the same gutter while unselected (`overflow: hidden`) and selected (`overflow: auto`); fixed-height editors use the same padding budget. Fixed cards combine their 10 px outer and 10 px inner trailing insets into one 20 px budget on the scroll owner, so a native scrollbar can consume space from both without increasing the total margin. Selection, overflow, and switching between preview and editing must keep text width and position stable. Auto-height cards and other editors with visible overflow keep their full ordinary padding because they have no internal scrolling gutter.
+
+Horizontal scroll regions reserve the native scrollbar lane with `overflow-x: scroll`, keeping the transparent track and native visibility behavior. Count that lane within bottom spacing where padding exists. Hidden Tab Strip/Action Ribbon scrollbars remain hidden. Avoid introducing a second scroll owner around an existing one.
+
+New scroll regions must join the shared gutter rules and account for their own padding or row margins. Check empty and overflowing content, selected/unselected and preview/editing cards, auto-height cards, native/classic and zero-width scrollbar configurations, and both scroll axes. Run `node_modules/.bin/electron scripts/check-scrollbars.mjs` for the Chromium geometry regression; DOM-only tests cannot establish scrollbar widths.
+
 ## Settings switches
 
 Every binary on/off setting uses a pill-shaped toggle switch, with its label on the left and the switch aligned to the right. Off places the circular thumb on the left of a neutral track; On moves it right and fills the track with the theme accent. Keep the label unchanged between states. The shared control is 36 × 22px with a 16px thumb in a row at least 32px tall. Use the theme tokens `--switch-off`, `--switch-on` and `--switch-thumb`; color and thumb motion follow the shared motion tokens and reduced-motion preference.

@@ -4,6 +4,10 @@ import { createRoot } from 'react-dom/client';
 import { App, session } from './App';
 import 'katex/dist/katex.min.css';
 import './styles.css';
+import {installScrollbarSpace} from './scrollbar-space';
+
+const disposeScrollbarSpace=installScrollbarSpace();
+if(import.meta.hot)import.meta.hot.dispose(disposeScrollbarSpace);
 
 document.title=ui.common.appName;
 session.connectWindow();
