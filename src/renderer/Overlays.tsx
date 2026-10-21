@@ -33,7 +33,7 @@ export function TooltipHost() {
   return tip?createPortal(<div ref={element} id="app-tooltip" className="hover-tooltip" role="tooltip">{tip.text}</div>,overlayContainer()):null;
 }
 export interface MenuAction {danger?:boolean;separatorBefore?:boolean;label:string;icon?:IconName;checked?:boolean;checkType?:'checkbox'|'radio';disabled?:boolean;hint?:string;submenu?:MenuAction[];run?:()=>void}
-export interface MenuState {anchor?:HTMLElement;above?:boolean;label?:string;x:number;y:number;actions:MenuAction[]}
+export interface MenuState {anchor?:HTMLElement;toggleAnchor?:boolean;above?:boolean;label?:string;x:number;y:number;actions:MenuAction[]}
 export function ActionMenu({menu,onClose}:{menu:MenuState;onClose:()=>void}) {
   return <MenuPanel menu={menu} onClose={onClose} onChoose={onClose}/>;
 }
@@ -50,10 +50,12 @@ function MenuPanel({menu,onClose,onChoose,parent,focus=true}:{menu:MenuState;onC
     return()=>{if(restoreFocus.current&&previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
   },[menu,parent,focus]);
   useEffect(()=>{
-    const outside=(e:PointerEvent)=>{if(!(e.target as Element).closest?.('.context-menu')&&!menu.anchor?.contains(e.target as Node)){restoreFocus.current=false;onChoose();}};
-    document.addEventListener('pointerdown',outside,true);window.addEventListener('blur',onChoose);window.addEventListener('resize',onChoose);
-    return()=>{document.removeEventListener('pointerdown',outside,true);window.removeEventListener('blur',onChoose);window.removeEventListener('resize',onChoose);};
-  },[onChoose,menu.anchor]);
+    if(parent)return;
+    const outside=(e:PointerEvent)=>{if(!(e.target as Element).closest?.('.context-menu')&&!((menu.toggleAnchor||menu.anchor?.matches('button,[role=button]'))&&menu.anchor?.contains(e.target as Node))){restoreFocus.current=false;onChoose();}};
+    const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!(e.target as Element).closest?.('.context-menu')){e.preventDefault();e.stopImmediatePropagation();onChoose();}};
+    document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',escape,true);window.addEventListener('blur',onChoose);window.addEventListener('resize',onChoose);
+    return()=>{document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',escape,true);window.removeEventListener('blur',onChoose);window.removeEventListener('resize',onChoose);};
+  },[onChoose,menu.anchor,menu.toggleAnchor,parent]);
   return createPortal(<><div ref={ref} className="context-menu" role="menu" aria-label={menu.label??ui.menus.explorerActions} onKeyDown={e=>{
     const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>(':scope > button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}

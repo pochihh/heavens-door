@@ -139,6 +139,7 @@ export const ui = {
     save: "Save",
     loading: "Loading…",
   },
+  links:{actions:'Link actions',open:'Open link',browser:'Open link in browser',copy:'Copy link address',invalid:'This link cannot be opened externally.'},
   references: {
     find:'Find a card or whiteboard…',findCard:'Find a card…',insert:'Insert mention',add:'Add reference card',
     create:(name:string)=>`Create “${name}” in Slipbox`,empty:'No matches',

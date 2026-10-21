@@ -16,5 +16,5 @@ export function TitleContent({html,afterTitle,path,...props}:{html:string;path?:
     const target=slots[i]??document.createElement('div');target.className='view-block-preview';pre.after(target);return target;
   });setSlots(next);},[content.html]);
   useLayoutEffect(()=>{if(afterTitle){const heading=ref.current?.querySelector(':scope > h1');if(heading?.nextElementSibling!==slot)heading?.after(slot);}else slot.remove();},[content.html,afterTitle,slot]);
-  return <><div {...props} onClick={e=>{if(!links.click(e))props.onClick?.(e);}} ref={ref} dangerouslySetInnerHTML={{__html:content.html}}/>{links.picker}{afterTitle&&createPortal(afterTitle,slot)}{slots.map((target,i)=>i<content.sources.length&&createPortal(<ViewBlock path={path} blockIndex={i} source={content.sources[i]}/>,target,path+'\0'+i))}</>;
+  return <><div {...props} onClick={e=>{if(!links.click(e))props.onClick?.(e);}} onContextMenu={e=>{if(!links.onContextMenu(e))props.onContextMenu?.(e);}} ref={ref} dangerouslySetInnerHTML={{__html:content.html}}/>{links.picker}{afterTitle&&createPortal(afterTitle,slot)}{slots.map((target,i)=>i<content.sources.length&&createPortal(<ViewBlock path={path} blockIndex={i} source={content.sources[i]}/>,target,path+'\0'+i))}</>;
 }

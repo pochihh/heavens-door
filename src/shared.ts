@@ -138,6 +138,7 @@ export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features
 export interface UpdateState {currentVersion:string;status:'idle'|'checking'|'up-to-date'|'available'|'downloading'|'ready'|'installing'|'error';canInstall:boolean;version?:string;progress?:number;message?:string}
 export type WindowAction = 'close' | 'reload' | 'update';
 export interface Bridge {
+  openExternal(url:string):Promise<void>;
   chooseReadingFiles(folder?:string,placement?:ReadingImport['placement']):Promise<{imports:(Mutation&{path:string})[];errors:string[]}>;
   importReading(value:ReadingImport):Promise<Mutation&{path:string}>;
   importPdfFile(file:File,folder:string,placement:NonNullable<ReadingImport['placement']>):Promise<Mutation&{path:string}>;

@@ -93,7 +93,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, `Workspac
 | Tooltip on menu opening | `ActionMenu` focuses the first item; tooltips now ignore focus events and retain the 450ms hover delay. | Still distinguish a newly mounted row under a stationary pointer from genuine movement. |
 | Duplicate labels | Only an explicit additional `hint` supplies a menu tooltip. | Detect genuine truncation if full-label tooltips are needed later. |
 | Tooltip position | The shared host places all tips below/above their owner. | Add menu-aware placement outside the menu. |
-| Dismissal and focus | `ActionMenu` handles outside pointer-down in capture (including canvas drags), blur, resize, and Escape/Tab received inside the menu. Outside-click dismissal preserves the new focus target. Card triggers are exempt from outside dismissal so a second click toggles their menu. | Make Escape reliable for the open surface, define scrolling and Tab dismissal as above. |
+| Dismissal and focus | `ActionMenu` handles outside pointer-down in capture (including clicks on the card that opened it), blur, resize, and Escape even after focus leaves the menu. Outside clicks retain their own focus; button and composite dropdown triggers retain toggle behavior. | Finish scrolling and Tab dismissal as above. |
 | Alternate menus | Main Dock “Tab Group actions” and the card-link picker use independent `<details>` surfaces. | Bring their floating-surface dismissal under this contract. The link picker remains a form popover. |
 | Menu lifecycle | Individual components own menu state; there is no shared rule enforcing one open menu or invalidating tooltip timers on menu opening. | Coordinate opening, replacement, closing, and tooltip ownership through the shared interaction layer. |
 
@@ -113,3 +113,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, `Workspac
 ## Confirmation dialogs
 
 Use `ConfirmationProvider` / `useConfirmation` for card deletion, history navigation/application, and discarding unsaved drafts. Its native `<dialog>` provides modal focus containment and makes the background inert, while app CSS defines its appearance. The Promise resolves only after the user chooses; mutation callers await it and retain revision checks. Cancel is initially focused. Escape and backdrop click cancel. Card context menus and More menus expose Open in popup, Open in same tab, Open in new tab and Open in another Tab Group, followed by card options and a separated destructive Delete card action. Destructive hover/focus uses the shared `--negative` token, including icons. Nested overlays in a Card popup render within its native dialog so they remain interactive.
+
+## Document links
+
+Website and email links in card previews and editors open through the system browser or mail app. Internal Markdown and wiki links keep the existing in-app navigation. Right-click a link for Open and Copy link address; resolved internal links also offer Open in new tab. The shared menu dismissal and focus rules apply, including clicks within the same card and Escape. Only HTTP, HTTPS and mailto URLs may leave the renderer; arbitrary file and executable protocols stay blocked.

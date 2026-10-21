@@ -33,3 +33,18 @@ test('checked and unchecked menu items reserve the same left-hand checkmark slot
   assert.ok(options[0].firstElementChild?.querySelector('svg'));assert.equal(options[1].firstElementChild?.querySelector('svg'),null);assert.equal(options[0].getAttribute('aria-checked'),'true');assert.equal(options[1].getAttribute('aria-checked'),'false');
  }finally{await act(async()=>root.unmount());dom.window.close();}
 });
+
+
+test('card context menus dismiss on their own card and Escape outside the menu, without consuming the card click',async()=>{
+ const dom=new JSDOM('<!doctype html><div id="root"></div><article id="card"><input aria-label="Card text"/></article><button id="trigger">More</button>',{pretendToBeVisual:true});
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Element:dom.window.Element,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,innerWidth:1000,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true});
+ const card=document.getElementById('card')!,input=card.querySelector('input')!,trigger=document.getElementById('trigger')!,root=createRoot(document.getElementById('root')!);let closed=0,presses=0,escapes=0;
+ card.addEventListener('pointerdown',()=>presses++);card.addEventListener('keydown',()=>escapes++);
+ const show=async(anchor:HTMLElement)=>act(async()=>root.render(<ActionMenu menu={{anchor,x:10,y:20,actions:[{label:'Action'}]}} onClose={()=>{closed++;root.render(null);}}/>));
+ try{
+  await show(card);input.focus();await act(async()=>input.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));assert.equal(closed,1);assert.equal(presses,1);assert.equal(document.activeElement,input);assert.equal(document.querySelector('[role=menu]'),null);
+  await show(card);input.focus();const escape=new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true});await act(async()=>input.dispatchEvent(escape));assert.equal(closed,2);assert.equal(escapes,0);assert.ok(escape.defaultPrevented);assert.equal(document.querySelector('[role=menu]'),null);
+  await show(card);const focusedEscape=new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true});await act(async()=>document.activeElement!.dispatchEvent(focusedEscape));assert.equal(closed,3);assert.ok(focusedEscape.defaultPrevented);assert.equal(document.querySelector('[role=menu]'),null);
+  await show(trigger);await act(async()=>trigger.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));assert.equal(closed,3,'dropdown triggers still own their toggle click');assert.ok(document.querySelector('[role=menu]'));
+ }finally{await act(async()=>root.unmount());dom.window.close();}
+});

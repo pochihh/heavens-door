@@ -6,6 +6,7 @@ import {randomBytes} from 'node:crypto';
 import type {ReadingImport} from './shared';
 import {readingText} from './text/reading';
 import {TEST_BUILD} from './identity';
+import {externalURL} from './external-links';
 import { ui } from './text/ui';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell, clipboard, nativeImage, ClipboardItem } from 'electron';
 import { Worker } from 'node:worker_threads';
@@ -168,6 +169,7 @@ void app.whenReady().then(async()=>{
   ipcMain.handle('app:check-updates',event=>{trusted(event);return updates.check();});
   ipcMain.handle('app:download-update',event=>{trusted(event);return updates.download();});
   ipcMain.handle('app:install-update',event=>{trusted(event);installUpdate();});
+  ipcMain.handle('app:open-external',(event,value:unknown)=>{trusted(event);const url=externalURL(value);if(!url)throw new Error(ui.links.invalid);return shell.openExternal(url);});
   ipcMain.handle('app:download-page',event=>{trusted(event);return shell.openExternal(DOWNLOAD_PAGE);});
   registry=new WorkspaceRegistry(join(app.getPath('userData'),'workspaces.json'));
   ipcMain.handle('app:settings',event=>{trusted(event);return appSettings();});
