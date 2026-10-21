@@ -607,3 +607,6 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 
 /* An uncolored comment has no fill; new annotations explicitly save their palette color. */
 .sticky-note.uncolored{background:transparent;border-color:var(--border)}.sticky-note.uncolored .sticky-quote{border-left-color:var(--border)}
+
+/* A PDF keeps its header in place when collapsed and resizes at the page corner. */
+.board-pdf-heading{display:grid;grid-template-columns:20px minmax(0,1fr) auto;grid-template-rows:24px minmax(32px,auto);column-gap:8px;row-gap:0}.board-pdf-more{grid-column:3;grid-row:1;justify-self:end}.board-pdf-icon{grid-column:1;grid-row:2;color:var(--muted)}.board-pdf-title{grid-column:2;grid-row:2}.board-pdf-heading>.board-pdf-actions:not(.board-pdf-more){grid-column:3;grid-row:2}.board-pdf-main>.resize-handle{opacity:0;background:transparent}.board-pdf-placement:is(:hover,.selected) .board-pdf-main>.resize-handle{opacity:1}

@@ -3,7 +3,7 @@ export const readingText={
  releaseComment:"Release to create a card",moveCommentOutside:"Move beyond the attachment boundary to create a card",
  createCardFromComment:"Create card from comment",
  comment:"Comment",noteActions:"Comment actions",dragToCreateCard:"Drag to create card",emptyNote:"Empty comment",openNote:"Open comment",
- pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
+ pdf:"PDF",pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
   someArticleImagesCouldNotBeDownloadedThe:"Some article images could not be downloaded. The original snapshot and image URLs are preserved in Source.",
   repairAnnotationFooter:"Open Source mode to repair this footer.",
   repairAnnotationSource:"Edit the source below to repair it.",

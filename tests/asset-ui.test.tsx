@@ -133,7 +133,7 @@ test('image placeholders share the icon bar, tabbed picker and transfer handling
  }finally{await act(async()=>root.unmount());window.door=original;}
 });
 
-test('PDF board actions preserve width, show notes by default and collapse to the ordinary compact card',async()=>{
+test('PDF board actions preserve width, show notes by default and keep the same PDF header when collapsed',async()=>{
  const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react');let saved:import('../src/shared').Board|undefined;
  const pdf={...card,id:'pdf',source:{type:'pdf' as const,file:'_assets/paper.pdf'}},initial={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'pdf',cardId:'pdf',x:10,y:20,width:340,height:480}],edges:[]};
  function Board(){const [board,setBoard]=useState<import('../src/shared').Board>(initial);return <Whiteboard board={board} cards={[pdf]} onSave={next=>{saved=next;setBoard({...next,revision:crypto.randomUUID()});}} onOpen={()=>{}} onCreate={()=>{}}/>;}
@@ -145,8 +145,9 @@ test('PDF board actions preserve width, show notes by default and collapse to th
   const zoom=new dom.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:0,ctrlKey:true});await act(async()=>reader.dispatchEvent(zoom));assert.equal(zoom.defaultPrevented,true,'modified wheel still reaches canvas zoom');
   await action('Show notes');assert.equal(saved!.cards[0].pdf?.notes,false);await action('Expand PDF preview');assert.equal(saved!.cards[0].pdf?.expanded,false);
   const main=document.querySelector('.board-pdf-main')!;assert.ok(main.contains(document.querySelector('.board-pdf-heading')));assert.ok(main.contains(document.querySelector('.pdf-reader')));assert.equal(main.contains(document.querySelector('.annotation-rail')),false);
-  await act(async()=>document.querySelector<HTMLButtonElement>('.board-pdf [aria-label="Collapse card"]')!.click());assert.equal(saved!.cards[0].collapsed,true);assert.ok(document.querySelector('.board-card.collapsed'));assert.equal(document.querySelector('.pdf-reader'),null);
-  await act(async()=>document.querySelector<HTMLButtonElement>('.card-actions [aria-label="Expand card"]')!.click());assert.equal(saved!.cards[0].collapsed,false);assert.ok(document.querySelector('.pdf-reader'));
+  const heading=document.querySelector('.board-pdf-heading')!,title=document.querySelector('.board-pdf-title')!,more=document.querySelector('.board-pdf-more')!,resize=main.querySelector('.resize-handle');assert.ok(resize);assert.equal(document.querySelector('[data-placement=pdf]>.resize-handle'),null,'PDF resize belongs to the document column, not the notes footprint');
+  await act(async()=>document.querySelector<HTMLButtonElement>('.board-pdf [aria-label="Collapse card"]')!.click());assert.equal(saved!.cards[0].collapsed,true);assert.ok(document.querySelector('.board-media.collapsed'));assert.equal(document.querySelector('.pdf-reader,.annotation-rail,.board-pdf-selection,.resize-handle,.card-top-row,.card-actions'),null);assert.ok(document.querySelector('.board-pdf-icon'));assert.equal(document.querySelector('.board-pdf-heading'),heading);assert.equal(document.querySelector('.board-pdf-title'),title);assert.equal(document.querySelector('.board-pdf-more'),more);assert.deepEqual([saved!.cards[0].x,saved!.cards[0].y,saved!.cards[0].width],[10,20,340]);
+  await act(async()=>document.querySelector<HTMLButtonElement>('.board-pdf [aria-label="Expand card"]')!.click());assert.equal(saved!.cards[0].collapsed,false);assert.ok(document.querySelector('.pdf-reader'));assert.equal(document.querySelector('.board-pdf-heading'),heading);
  }finally{await act(async()=>root.unmount());}
 });
 
