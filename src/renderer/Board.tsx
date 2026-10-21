@@ -68,6 +68,7 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
   }} html={collapsed?summary:html||preview('',card.path)} />;
 });
 interface Props {
+  onAttachPdf?:(files:(File|string)[]|undefined,x:number,y:number)=>Promise<void>;
   keybindings?:Preferences['keybindings'];hasCopiedStyle?:boolean;onCopyStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;onPasteStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;
   onConvertTopics?:(base:Board,ids:string[])=>Promise<CardInfo[]>;
   addTagActions?:(card:CardInfo)=>import('./Overlays').MenuAction[];reveal?:{placement:string;token:number};onRevealed?:()=>void;onOpenCard?:(id:string,mode?:import('../layout').NavigationMode|'popup')=>void;
@@ -92,7 +93,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
+export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
   const imageImportLive=useRef(true);
   const [objectError,setObjectError]=useState(''),[imageDrop,setImageDrop]=useState(false);
   useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
@@ -458,6 +459,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
       {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
       {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
       {label:topicText.new,icon:'text',disabled:!board.folder,run:()=>addTopic(x,y)},
+      ...(onAttachPdf?[{label:readingText.attachPdf,icon:'file' as const,disabled:!board.folder,run:()=>{void onAttachPdf(undefined,x,y).catch(error=>setObjectError(String(error)));}}]:[]),
       {label:readingText.imageOrFigure,icon:'image',disabled:!board.folder,run:()=>addImagePlaceholder(x,y)},
       ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
@@ -574,9 +576,9 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     {objectError&&<p className="editor-image-error" role="alert">{objectError}</p>}
     <div className={"canvas"+(imageDrop?" document-drop-target":"")} data-drop-folder={board.folder} data-drop-kind="board" data-drop-name={board.name} data-navigation="obsidian" ref={viewport} tabIndex={0} aria-label={ui.whiteboard.whiteboardCanvas}
       onPaste={e=>{if(e.defaultPrevented||!acceptsImage(e.target))return;const files=imageFiles(e.clipboardData),url=files.length?undefined:imageTransferUrl(e.clipboardData);if(!files.length&&!url)return;e.preventDefault();void addImages(files,imagePosition(),url);}}
-      onDragOver={e=>{if(!acceptsImage(e.target)||(e.target as HTMLElement).closest('.editor-image'))return;if([...e.dataTransfer.items].some(item=>item.kind==='file'&&(!item.type||item.type.startsWith('image/')))||e.dataTransfer.types.includes('text/html')||e.dataTransfer.types.includes('text/uri-list')){e.preventDefault();e.dataTransfer.dropEffect='copy';setImageDrop(true);}}}
+      onDragOver={e=>{if(!acceptsImage(e.target)||(e.target as HTMLElement).closest('.editor-image'))return;if([...e.dataTransfer.items].some(item=>item.kind==='file'&&(!item.type||item.type.startsWith('image/')||!!onAttachPdf&&item.type==='application/pdf'))||e.dataTransfer.types.includes('text/html')||e.dataTransfer.types.includes('text/uri-list')){e.preventDefault();e.dataTransfer.dropEffect='copy';setImageDrop(true);}}}
       onDragLeave={e=>{if(!(e.relatedTarget instanceof Node)||!e.currentTarget.contains(e.relatedTarget))setImageDrop(false);}}
-      onDropCapture={()=>setImageDrop(false)} onDrop={e=>{setImageDrop(false);if(e.defaultPrevented||!acceptsImage(e.target))return;const files=imageFiles(e.dataTransfer),url=files.length?undefined:imageTransferUrl(e.dataTransfer);if(!files.length&&!url)return;e.preventDefault();e.stopPropagation();void addImages(files,imagePosition(e.clientX,e.clientY),url);}}
+      onDropCapture={()=>setImageDrop(false)} onDrop={e=>{setImageDrop(false);if(e.defaultPrevented||!acceptsImage(e.target))return;const pdfs=[...e.dataTransfer.files].filter(file=>file.type==='application/pdf'||/\.pdf$/i.test(file.name));if(pdfs.length&&onAttachPdf){e.preventDefault();e.stopPropagation();const point=imagePosition(e.clientX,e.clientY);void onAttachPdf(pdfs,point.x,point.y).catch(error=>setObjectError(String(error)));return;}const files=imageFiles(e.dataTransfer),url=files.length?undefined:imageTransferUrl(e.dataTransfer);if(!files.length&&!url)return;e.preventDefault();e.stopPropagation();void addImages(files,imagePosition(e.clientX,e.clientY),url);}}
       onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.

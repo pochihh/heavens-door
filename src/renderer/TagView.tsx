@@ -65,13 +65,14 @@ function InlineTagInput({tags,attached,busy,onAttach,session,label=ui.tags.add}:
   </div>,overlayContainer(input.current))}</>;
 }
 
-export function CardTags({card,snapshot,session,onOpen,allowAdd=true,defaultTag}:{defaultTag?:string;card:CardInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;allowAdd?:boolean}) {
-  const tags=card.tags??[],memory=session.tagExpansion.get(card.id),preferred=memory?memory.active:defaultTag,active=tags.includes(preferred??'')?preferred:undefined;
+export function CardTags({card,snapshot,session,onOpen,allowAdd=true}:{card:CardInfo;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;allowAdd?:boolean}) {
+  const [view,setView]=useState<{cardId:string;active?:string;last?:string}>({cardId:card.id}),memory=view.cardId===card.id?view:undefined;
+  const tags=card.tags??[],active=tags.includes(memory?.active??'')?memory?.active:undefined;
   const [properties,setProperties]=useState<CardProperties>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[menu,setMenu]=useState<MenuState|null>(null),confirm=useConfirmation(),list=useRef<HTMLDivElement>(null),id=useId();
   useEffect(()=>{let live=true;if(!active)return;void session.bridge.request<CardProperties>({kind:'cardProperties',path:card.path}).then(p=>{if(live){setProperties(p);setError('');}}).catch(e=>{if(live)setError(String(e));});return()=>{live=false;};},[active,card.path,card.revision,session]);
-  function toggle(tag?:string){session.tagExpansion.set(card.id,{active:tag===active?undefined:tag,last:tag??memory?.last});session.update({});}
-  async function attach(tag:string,create=false){setBusy(true);try{await session.setCardTag(card.path,card.revision,tag,true,create);session.tagExpansion.set(card.id,{active:tag,last:tag});session.update({});return true;}catch{return false;}finally{setBusy(false);}}
-  function reorder(tag:string,index:number|null){if(index===null||busy)return;session.tagExpansion.set(card.id,{active:tag,last:tag});session.update({});if(tags.indexOf(tag)===index)return;const next=tags.filter(t=>t!==tag);next.splice(index,0,tag);setBusy(true);void session.reorderCardTags(card.path,card.revision,next).catch(()=>undefined).finally(()=>setBusy(false));}
+  function toggle(tag?:string){setView({cardId:card.id,active:tag===active?undefined:tag,last:tag??memory?.last});}
+  async function attach(tag:string,create=false){setBusy(true);try{await session.setCardTag(card.path,card.revision,tag,true,create);setView({cardId:card.id,active:tag,last:tag});return true;}catch{return false;}finally{setBusy(false);}}
+  function reorder(tag:string,index:number|null){if(index===null||busy)return;setView({cardId:card.id,active:tag,last:tag});if(tags.indexOf(tag)===index)return;const next=tags.filter(t=>t!==tag);next.splice(index,0,tag);setBusy(true);void session.reorderCardTags(card.path,card.revision,next).catch(()=>undefined).finally(()=>setBusy(false));}
   const drag=useBookmarkDrag(list,(tag,index)=>reorder(tag,index),'horizontal',true),colors=snapshot.preferences?.tagColors;
   function actions(tag:string,anchor:HTMLElement){anchor=anchor.closest<HTMLElement>('.tag-chip')??anchor;const rect=anchor.getBoundingClientRect();setMenu({anchor,x:rect.left,y:rect.bottom,label:tag,actions:[{label:ui.tags.definition,icon:'external',run:()=>{const definition=snapshot.tags?.find(t=>t.tag===tag);if(definition)onOpen('tag:'+definition.path);}},{label:ui.tags.remove,icon:'close',danger:true,run:()=>{void confirm({title:ui.tags.remove,message:ui.tags.removeMessage(tag),accept:ui.tags.remove,danger:true}).then(ok=>{if(ok)void session.setCardTag(card.path,card.revision,tag,false).catch(()=>undefined);});}}]});}
   return <div className="card-tags" data-expanded={!!active} onDoubleClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()} onContextMenu={e=>e.stopPropagation()}>

@@ -967,14 +967,18 @@ export class Workspace {
   async importReading(value:import('../shared').ReadingImport){
     validateImport(value);const folder=value.folder??systemPath('reading',this.preferences);if(!validNotePath(folder))throw new Error('Invalid import folder.');await this.ensureFolder(folder);
     if(value.entry){const existing=this.db.prepare("SELECT path FROM cards WHERE coalesce(json_extract(frontmatter,'$.source.feed'),'')=? AND json_extract(frontmatter,'$.source.entry')=?").get(value.feed??'',value.entry);if(existing)return {snapshot:this.snapshot(),edits:[],path:String(existing.path)};}
-    const stem=value.name.replace(/[<>:"/\\|?*]/g,' ').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim()||'Reading item',path=await this.newCardPath(folder,stem),asset=await readingAsset(this.root,path,value.name,value.type==='pdf'?'.pdf':'.html',value.data);
+    const board=value.placement?this.boards.get(this.boardPath(folder)):undefined;
+    if(value.placement&&(!board||typeof value.placement.expected!=='string'||board.revision!==value.placement.expected||![value.placement.x,value.placement.y].every(Number.isFinite)))throw new Error(ui.errors.whiteboardChanged(this.boardPath(folder)));
+    const stem=value.name.replace(/[<>:"/\\|?*]/g,' ').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim()||'Reading item',path=await this.newCardPath(folder,stem),asset=await readingAsset(this.root,path,value.name,value.type==='pdf'?'.pdf':'.html',value.data,value.file);
     const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});const {field,changes}=await this.readingStatusSchema();front.set('tags',['readlater']);front.set(READLATER_STATUS,legacyReadingStatus('new',field));
-    return {...await this.write([...changes,{path,content:`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`,expected:null}]),path};
+    const content=`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`;
+    if(board&&value.placement)changes.push({path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:readCard(path,content).id,x:value.placement.x,y:value.placement.y,width:420,height:560,autoHeight:true}]}),expected:board.revision});
+    return {...await this.write([...changes,{path,content,expected:null}]),path};
   }
-  async relinkPdfSource(path:string,expected:string,value:Pick<import('../shared').ReadingImport,'name'|'data'>){
+  async relinkPdfSource(path:string,expected:string,value:Pick<import('../shared').ReadingImport,'name'|'data'|'file'>){
     if(!path.endsWith('.md'))throw new Error('Choose a PDF attachment.');validateImport({...value,type:'pdf'});const raw=await this.read(path);if(revision(raw)!==expected)throw new Error(ui.errors.externalEdit(path));
     const card=readCard(path,raw);if(card.source?.type!=='pdf')throw new Error('Choose a PDF attachment.');
-    const asset=await readingAsset(this.root,path,value.name,'.pdf',value.data),{front,body}=splitNote(raw);front.set('source',{...card.source,...asset});
+    const asset=await readingAsset(this.root,path,value.name,'.pdf',value.data,value.file),{front,body}=splitNote(raw);front.set('source',{...card.source,...asset});
     return this.write([{path,expected,content:`---\n${front.toString()}---\n${body}`}]);
   }
   async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);const raw=await this.read(path),{field,changes}=await this.readingStatusSchema(),{front,body}=splitNote(this.readingStatusContent(raw,field));const {state,...bookmark}=value;if(state!==undefined){const status=legacyReadingStatus(state,field);validateTagValue(field,status);front.set(READLATER_STATUS,status);}front.set('reading',{...(front.toJSON()?.reading??{}),...bookmark});return this.write([...changes,{path,expected,content:`---\n${front.toString()}---\n${body}`}]);}

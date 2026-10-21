@@ -45,3 +45,14 @@ test('live find starts at the current page, wraps individual matches, clears res
   await act(async()=>find.setQuery(''));assert.equal(find.matches.length,0);assert.equal(find.pending,false);
  }finally{await act(async()=>root.unmount());}
 });
+
+test('board search previews never request navigation until next or previous is explicitly invoked',async()=>{
+ const source=pdf([text('alpha alpha'),text('alpha beta')]),selected:number[]=[];let find!:ReturnType<typeof usePdfSearch>;
+ function Harness(){find=usePdfSearch(source,2,match=>selected.push(match.page*100+match.start),true);return null;}
+ const root=createRoot(document.getElementById('root')!),settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,210));});
+ try{await act(async()=>root.render(<Harness/>));await act(async()=>find.setQuery('alpha'));await settle();assert.equal(find.matches.length,3);assert.equal(find.current,2);assert.equal(find.requested,undefined);assert.equal(find.reveal,0);assert.deepEqual(selected,[]);
+  await act(async()=>find.next(1));assert.deepEqual(selected,[200]);assert.equal(find.current,2,'first Enter goes to the previewed result');assert.equal(find.requested,find.matches[2]);assert.equal(find.reveal,1);await act(async()=>find.next(1));assert.equal(find.current,0);assert.equal(selected.at(-1),100);
+  await act(async()=>find.setQuery('beta'));await settle();assert.equal(find.requested,undefined);assert.equal(find.reveal,2);assert.equal(selected.length,2,'editing after navigation does not navigate again');await act(async()=>find.next(-1));assert.equal(selected.at(-1),206);
+  await act(async()=>find.setQuery('alpha'));await act(async()=>find.next(1));assert.equal(selected.length,3);await settle();assert.equal(selected.at(-1),200,'Enter during the debounce navigates once results are ready');assert.equal(selected.length,4);
+ }finally{await act(async()=>root.unmount());}
+});

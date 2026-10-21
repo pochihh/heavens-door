@@ -1,9 +1,10 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { Bridge, Snapshot, WindowAction, UpdateState } from './shared';
 let assetKey='';
 async function adopt(promise:Promise<Snapshot|null>){const value=await promise;if(value?.assetKey)assetKey=value.assetKey;return value;}
 const bridge:Bridge={
-  chooseReadingFiles:()=>ipcRenderer.invoke('reading:choose'),
+  chooseReadingFiles:(folder,placement)=>ipcRenderer.invoke('reading:choose',folder,placement),
+  importPdfFile:async(file,folder,placement)=>{const source=webUtils.getPathForFile(file);return source?ipcRenderer.invoke('reading:attach-pdf',source,folder,placement):ipcRenderer.invoke('reading:import',{name:file.name.replace(/\.pdf$/i,''),type:'pdf',data:new Uint8Array(await file.arrayBuffer()),folder,placement});},
   importReading:value=>ipcRenderer.invoke('reading:import',value),
   capturePage:url=>ipcRenderer.invoke('reading:capture',url),
   capturePairing:()=>ipcRenderer.invoke('reading:pair'),

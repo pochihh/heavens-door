@@ -10,3 +10,7 @@ test('blank pages can hold overflow; a tall comment never overlaps later comment
  const positions=annotationPositions([{id:'a',page:1,height:800},{id:'b',page:3,height:20}],pages);assert.deepEqual(positions.get('a'),{top:70,column:0});assert.deepEqual(positions.get('b'),{top:1290,column:0});
  const tall=annotationPositions([{id:'a',page:1,height:1200},{id:'b',page:2,height:700},{id:'c',page:3,height:80}],pages);assert.deepEqual(tall.get('a'),{top:70,column:1});assert.deepEqual(tall.get('b'),{top:680,column:2});assert.deepEqual(tall.get('c'),{top:1290,column:0});
 });
+
+test('single-column PDF comments overflow continuously without making another column',()=>{
+ const positions=annotationPositions([{id:'a',page:1,height:800},{id:'b',page:1,height:200},{id:'c',page:2,height:80}],pages,8,{singleColumn:true,start:120});assert.deepEqual([...positions.values()],[{top:120,column:0},{top:928,column:0},{top:1136,column:0}]);
+});

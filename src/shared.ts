@@ -63,10 +63,10 @@ export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:stri
 export interface FileMutation extends Mutation {path:string;inverse:FileOperation}
 export interface BoardTransfer {moves:{from:string;to:string;expected:string}[];changes:Write[]}
 export interface TransferMutation extends Mutation {inverse:BoardTransfer}
-export interface ReadingImport {missingImages?:string[];name:string;type:'pdf'|'web';data:Uint8Array;url?:string;body?:string;folder?:string;feed?:string;entry?:string}
+export interface ReadingImport {missingImages?:string[];name:string;type:'pdf'|'web';data:Uint8Array;file?:string;placement?:{expected:string;x:number;y:number};url?:string;body?:string;folder?:string;feed?:string;entry?:string}
 export type Request =
   | {kind:'importReading';value:ReadingImport}
-  | {kind:'relinkPdfSource';path:string;expected:string;value:Pick<ReadingImport,'name'|'data'>}
+  | {kind:'relinkPdfSource';path:string;expected:string;value:Pick<ReadingImport,'name'|'data'|'file'>}
   | {kind:'readingProgress';path:string;expected:string;value:import('./reading').ReadingProgress}
   | {kind:'readingFeeds'}
   | {kind:'saveReadingFeeds';source:string;expected:string|null}
@@ -138,8 +138,9 @@ export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features
 export interface UpdateState {currentVersion:string;status:'idle'|'checking'|'up-to-date'|'available'|'downloading'|'ready'|'installing'|'error';canInstall:boolean;version?:string;progress?:number;message?:string}
 export type WindowAction = 'close' | 'reload' | 'update';
 export interface Bridge {
-  chooseReadingFiles():Promise<{imports:(Mutation&{path:string})[];errors:string[]}>;
+  chooseReadingFiles(folder?:string,placement?:ReadingImport['placement']):Promise<{imports:(Mutation&{path:string})[];errors:string[]}>;
   importReading(value:ReadingImport):Promise<Mutation&{path:string}>;
+  importPdfFile(file:File,folder:string,placement:NonNullable<ReadingImport['placement']>):Promise<Mutation&{path:string}>;
   capturePage(url:string):Promise<Mutation&{path:string}>;
   capturePairing():Promise<{port:number;token:string;workspace:string;name:string}>;
   refreshFeed(url:string,limit:number):Promise<{imported:number}>;

@@ -1,11 +1,11 @@
 // Reader and whiteboard-object interface copy.
 export const readingText={
- relinkPdfSource:"Relink PDF source…",relinkingPdfSource:"Relinking…",pdfUnavailable:"PDF unavailable",pdfSourceRecovery:"The source file may have moved or could not be read. Your highlights and comments are preserved.",pdfOpenToRelink:"Open this PDF in a popup to locate or replace its source file.",pdfSourceCopyHint:"Choose a PDF to store a copy with this attachment. Existing highlights and comments are kept.",sourceDetails:"Details",showSourceFolder:"Show in folder",sourceNotSet:"No source file linked",
+ relinkPdfSource:"Relink PDF source…",relinkingPdfSource:"Relinking…",pdfUnavailable:"PDF unavailable",pdfSourceRecovery:"The source file may have moved or could not be read. Your highlights and comments are preserved.",pdfOpenToRelink:"Open this PDF in a popup to locate or replace its source file.",pdfSourceCopyHint:"Workspace PDFs are linked directly. External PDFs are copied into _assets. Existing highlights and comments are kept.",sourceDetails:"Details",showSourceFolder:"Show in folder",sourceNotSet:"No source file linked",
  releaseComment:"Release to create a card",moveCommentOutside:"Move beyond the attachment boundary to create a card",
  createCardFromComment:"Create card from comment",
  comment:"Comment",noteActions:"Comment actions",dragToCreateCard:"Drag to create card",emptyNote:"Empty comment",openNote:"Open comment",
  showMoreComments:(count:number)=>`Show ${count} more`,showFewerComments:"Show fewer",
- pdf:"PDF",pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
+ attachPdf:"Attach PDF…",pdf:"PDF",pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
   someArticleImagesCouldNotBeDownloadedThe:"Some article images could not be downloaded. The original snapshot and image URLs are preserved in Source.",
   repairAnnotationFooter:"Open Source mode to repair this footer.",
   repairAnnotationSource:"Edit the source below to repair it.",

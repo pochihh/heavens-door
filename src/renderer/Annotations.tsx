@@ -11,8 +11,8 @@ import {Color} from './StyleView';
 import {DEFAULT_PALETTE} from '../colors';
 import {ViewBlockContext} from './ViewBlock';
 import {useConfirmation} from './Confirmation';
-export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages,previewLimit,active=true}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[];previewLimit?:number;active?:boolean}){
- const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>(),[shownPages,setShownPages]=useState<number[]>([]);useEffect(()=>()=>cancelDrag.current(),[]);
+export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages,previewLimit,active=true,singleColumn=false,header}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[];previewLimit?:number;active?:boolean;singleColumn?:boolean;header?:React.ReactNode}){
+ const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[headerHeight,setHeaderHeight]=useState(0),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>(),[shownPages,setShownPages]=useState<number[]>([]);useEffect(()=>()=>cancelDrag.current(),[]);
  const linkedCards=new Set(cards.map(card=>card.id)),annotations=annotationView(body).annotations.filter(a=>annotationOnPage(a,page)&&(!a.cardId||!linkedCards.has(a.cardId))),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
  const groups=new Map<number,Annotation[]>();for(const a of annotations){const number=page??a.page??a.anchors?.[0]?.page??pages?.[0]?.page??1,items=groups.get(number)??[];items.push(a);groups.set(number,items);}
  const visible=previewLimit?[...groups].flatMap(([number,items])=>active&&shownPages.includes(number)?items:items.slice(0,previewLimit)):annotations;
@@ -23,7 +23,7 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
  useEffect(()=>{if(active&&expandedPage!==undefined)setShownPages(old=>old.includes(expandedPage)?old:[...old,expandedPage]);},[expanded,expandedPage]);
  const visibleIds=items.map(item=>item.id).join(',');
  useLayoutEffect(()=>{const root=rail.current!;
-  const measure=()=>{const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id],[data-note-more]').forEach(el=>{
+  const measure=()=>{setHeaderHeight(root.querySelector<HTMLElement>('.annotation-meta')?.offsetHeight??0);const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id],[data-note-more]').forEach(el=>{
    const details=el.querySelector<HTMLElement>('.annotation-details'),heading=el.querySelector<HTMLElement>('.sticky-note-heading'),style=getComputedStyle(el);
    // Pack the final height once; sampling the animated height makes neighboring notes chase it.
    const contentHeight=(heading?.firstElementChild?.scrollHeight??0)||heading?.offsetHeight||0;
@@ -31,14 +31,15 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
    const height=details&&heading?contentHeight+['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key as keyof CSSStyleDeclaration] as string)||0),0)+(details.dataset.open==='true'?(details.firstElementChild?.scrollHeight??0):0):el.offsetHeight;
    if(height>0)next[el.dataset.noteId??el.dataset.noteMore!]=height;
   });setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);};
-  measure();const observer=new ResizeObserver(measure);root.querySelectorAll('[data-note-id],[data-note-more],.annotation-details>div,.sticky-note-content').forEach(el=>observer.observe(el));return()=>observer.disconnect();
- },[body,expanded,visibleIds]);
- const positions=pages?annotationPositions(items,pages):undefined;
+  measure();const observer=new ResizeObserver(measure);root.querySelectorAll('[data-note-id],[data-note-more],.annotation-details>div,.sticky-note-content,.annotation-meta').forEach(el=>observer.observe(el));return()=>observer.disconnect();
+ },[body,expanded,visibleIds,!!header]);
+ const positions=pages?annotationPositions(items,pages,8,{singleColumn,start:headerHeight}):undefined;
  const colorNote=annotations.find(a=>a.id===colorPicker?.id&&a.id===expanded);
- const notesHeight=positions?Math.max(0,...items.map(a=>(positions.get(a.id)?.top??0)+a.height)):undefined;
+ const notesHeight=positions?Math.max(headerHeight,...items.map(a=>(positions.get(a.id)?.top??0)+a.height)):undefined;
  const positionStyle=(id:string):React.CSSProperties=>{const position=positions?.get(id);return position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{};};
- return <aside ref={rail} className={'annotation-rail'+(compact?' board-annotation-rail':'')+(pages?' page-aligned-notes':'')} style={pages?{'--annotation-columns':Math.max(1,...[...positions!.values()].map(p=>p.column+1)),...(compact?{height:notesHeight}:{} )} as React.CSSProperties:undefined} aria-label={readingText.annotations} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
-  {!previewLimit&&<div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span>{onAdd&&<Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/>}</div>}
+ return <aside ref={rail} className={'annotation-rail'+(compact?' board-annotation-rail':'')+(pages?' page-aligned-notes':'')+(singleColumn?' single-column-notes':'')} style={pages?{'--annotation-columns':Math.max(1,...[...positions!.values()].map(p=>p.column+1)),...(compact||singleColumn?{height:notesHeight}:{} )} as React.CSSProperties:undefined} aria-label={readingText.annotations} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
+  {header&&<div className="annotation-meta">{header}</div>}
+  {!previewLimit&&!pages&&<div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span>{onAdd&&<Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/>}</div>}
   {visible.map(a=>{const open=expanded===a.id;
    const drag=(e:React.PointerEvent)=>{if(!context||!a.text.trim()&&!a.quote?.trim())return;cancelDrag.current();cancelDrag.current=dragAssetNote(e,()=>({key:'asset-note:'+a.id,path,note:{id:a.id,expected:context.session.state.snapshot?.cards.find(c=>c.path===path)?.revision??''}}));};
    return <section key={a.id} data-note-id={a.id} className={'sticky-note'+(open?' expanded':'')+(!a.color?' uncolored':'')} style={{'--note-color':a.color??'transparent',...positionStyle(a.id)} as React.CSSProperties} onPointerDown={e=>{if(e.target===e.currentTarget)drag(e);}}>

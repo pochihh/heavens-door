@@ -110,6 +110,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       const path=board?.folder??card?.path??(d.key.startsWith('file:')?d.key.slice(5):undefined);
       if(path===undefined||!path)return;
       const destination=current.boards.find(b=>b.folder===d.folder),point=d.atPointer?{x:d.x,y:d.y}:{x:80,y:Math.max(48,...(destination?.cards??[]).map(p=>p.y+p.height))+32};
+      if(!card&&!board&&d.kind==='board'&&/\.pdf$/i.test(path)){attempt(session.attachPdfFiles(d.folder,[path],point.x,point.y));return;}
       const target=(d.folder?d.folder+'/':'')+path.split('/').at(-1);
       if(board||!card||d.kind==='folder'){
         if(target===path){

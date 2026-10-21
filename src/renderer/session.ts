@@ -28,7 +28,6 @@ export class Session {
   fileClipboard:{root:string;path:string;cut:boolean}|null=null;
   viewTabs=new Map<string,string>();
   viewScrolls=new Map<string,{left:number;top:number}>();
-  tagExpansion=new Map<string,{active?:string;last?:string}>();
   undoHistory = new UndoHistory();
   private newCards=new Set<string>();
   private listeners = new Set<() => void>();
@@ -288,6 +287,12 @@ export class Session {
       }
     });
   }
+  attachPdfFiles(folder:string,sources:(File|string)[]|undefined,x:number,y:number){return this.run(async()=>{
+    await this.flush();if(sources&&sources.length>20)throw new Error('Attach at most 20 PDFs at a time.');
+    const position=()=>{const board=this.state.snapshot?.boards.find(b=>b.folder===folder);if(!board)throw new Error(ui.errors.whiteboardMissing);return {expected:board.revision,x,y};};
+    if(!sources){const {imports,errors}=await this.bridge.chooseReadingFiles(folder,position());for(const result of imports)this.accept(result,'Attach PDF');if(errors.length)this.update({error:errors.join('\n')});return;}
+    for(const file of sources){const placement=position(),result=typeof file==='string'?await this.bridge.importReading({name:file.split('/').at(-1)!.replace(/\.pdf$/i,''),type:'pdf',file,data:await this.bridge.attachmentData(file),folder,placement}):await this.bridge.importPdfFile(file,folder,placement);this.accept(result,'Attach PDF');x+=440;}
+  });}
   importReadingFiles(){return this.run(async()=>{await this.flush();const {imports:results,errors}=await this.bridge.chooseReadingFiles();if(errors.length)this.update({error:errors.join('\n')});for(const result of results)this.accept(result,'Import reading material');return results.map(r=>r.snapshot.cards.find(c=>c.path===r.path)!);});}
   importReading(value:import('../shared').ReadingImport|string){return this.run(async()=>{await this.flush();const result=typeof value==='string'?await this.bridge.capturePage(value):await this.bridge.importReading(value);this.accept(result,'Import reading material');return result.snapshot.cards.find(c=>c.path===result.path)!;});}
   relinkPdfSource(path:string){return this.run(async()=>{await this.flush();const info=this.state.snapshot?.cards.find(c=>c.path===path);if(!info)throw new Error('Card is missing.');const result=await this.bridge.relinkPdfSource(path,info.revision);if(!result)return;this.accept(result,'Relink PDF source');this.acceptCard(await this.bridge.request<Card>({kind:'card',path}));});}

@@ -31,22 +31,23 @@ export function createPdfSearch(pdf:Pick<PDFDocumentProxy,'numPages'|'getPage'>)
     return matches;
   };
 }
-export function usePdfSearch(pdf:PDFDocumentProxy|null,page:number,onMatch:(match:PdfSearchMatch)=>void){
-  const search=useMemo(()=>pdf?createPdfSearch(pdf):null,[pdf]),latest=useRef({page,onMatch});latest.current={page,onMatch};
-  const [query,setQuery]=useState(''),[state,setState]=useState({matches:[] as PdfSearchMatch[],current:-1,pending:false,error:'',reveal:0});
+export function usePdfSearch(pdf:PDFDocumentProxy|null,page:number,onMatch:(match:PdfSearchMatch)=>void,previewOnly=false){
+  const search=useMemo(()=>pdf?createPdfSearch(pdf):null,[pdf]),latest=useRef({page,onMatch,previewOnly});latest.current={page,onMatch,previewOnly};
+  const queued=useRef<string|undefined>(undefined);
+  const [query,setQuery]=useState(''),[state,setState]=useState({matches:[] as PdfSearchMatch[],current:-1,pending:false,error:'',reveal:0,requested:undefined as PdfSearchMatch|undefined,navigated:false});
   useEffect(()=>{
-    let cancelled=false;setState(old=>({...old,matches:[],current:-1,pending:!!search&&!!query.trim(),error:''}));
+    let cancelled=false;setState(old=>({...old,matches:[],current:-1,pending:!!search&&!!query.trim(),error:'',requested:undefined,navigated:false}));
     if(!search||!query.trim())return;
     const timer=setTimeout(()=>{void search(query,()=>cancelled).then(matches=>{
       if(cancelled)return;const current=matches.length?Math.max(0,matches.findIndex(match=>match.page>=latest.current.page)):-1;
-      setState(old=>({...old,matches,current,pending:false,reveal:old.reveal+1}));if(current>=0)latest.current.onMatch(matches[current]);
+      const explicit=queued.current===query;queued.current=undefined;const navigate=(!latest.current.previewOnly||explicit)&&current>=0;setState(old=>({...old,matches,current,pending:false,reveal:old.reveal+(navigate?1:0),requested:navigate?matches[current]:undefined,navigated:navigate}));if(navigate)latest.current.onMatch(matches[current]);
     }).catch(error=>{if(!cancelled)setState(old=>({...old,pending:false,error:String(error)}));});},180);
     return()=>{cancelled=true;clearTimeout(timer);};
   },[search,query]);
   const next=(direction:number)=>{
-    if(!state.matches.length||state.pending)return;
-    const current=(state.current+direction+state.matches.length)%state.matches.length;
-    setState(old=>({...old,current,reveal:old.reveal+1}));latest.current.onMatch(state.matches[current]);
+    if(state.pending){queued.current=query;return;}if(!state.matches.length)return;
+    const current=state.navigated?(state.current+direction+state.matches.length)%state.matches.length:state.current;
+    setState(old=>({...old,current,reveal:old.reveal+1,requested:state.matches[current],navigated:true}));latest.current.onMatch(state.matches[current]);
   };
   return {...state,query,setQuery,next};
 }
