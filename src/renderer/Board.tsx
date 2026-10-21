@@ -114,14 +114,17 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
   const [view, setView] = useState<Camera>({ x: 20, y: 20, zoom: 0.85 });
   const [objectPreview,setObjectPreview]=useState<{id:string;width:number;x?:number}>();
   const [working, setWorking] = useState<Board | null>(null);
-  const [measuredHeights,setMeasuredHeights]=useState<Record<string,{height:number;width:number;signature:string}>>({});
+  const [measuredHeights,setMeasuredHeights]=useState<Record<string,{height:number;width:number;top:number;signature:string}>>({});
   const [contentVersion,setContentVersion]=useState(0);
   const contentReady=useCallback(()=>setContentVersion(version=>version+1),[]);
   const naturalHeight=(p:Placement)=>p.object?.type==='image'||p.object?.type==='text'||lookup.get(p.cardId)?.source?.type==='pdf'||autoHeight(p);
   const heightSignature=(p:Placement)=>p.width+':'+(p.object?JSON.stringify(p.object):lookup.get(p.cardId)?.revision??'')+':'+JSON.stringify(p.pdf);
   const measuredHeight=(p:Placement)=>{const measured=measuredHeights[heightKey(p)];return measured?.signature===heightSignature(p)?measured.height:undefined;};
-  const widthOf=(p:Placement)=>objectPreview?.id===p.id?objectPreview.width:p.object?.type==='text'&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
+  const widthOf=(p:Placement)=>objectPreview?.id===p.id?objectPreview.width:(p.object?.type==='text'||!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf')&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
   const heightOf=(placement:Placement)=>{const p=placements.get(placement.id)??placement;return p.collapsed||naturalHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;};
+  const geometryTop=(item:Placement)=>{const p=placements.get(item.id)??item;return !p.collapsed&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]?.top??0:0;};
+  const geometryCard=(p:Placement)=>({...p,x:xOf(p),y:p.y+geometryTop(p),width:widthOf(p)});
+  const geometryHeight=(p:Placement)=>heightOf(p)-geometryTop(p);
   const expandedHeight=(p:Placement)=>naturalHeight(p)?(measuredHeight({...p,collapsed:false})??p.height):p.height;
   const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
   const [reference,setReference]=useState<{x:number;y:number;screenX:number;screenY:number}|null>(null),[referenceAnchor,setReferenceAnchor]=useState<HTMLSpanElement|null>(null),[referenceBusy,setReferenceBusy]=useState(false),[referenceError,setReferenceError]=useState('');
@@ -282,7 +285,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     setSelected(previous => previous.length === next.length && previous.every((id, i) => id === next[i]) ? previous : next);
     const edges=g.board.edges.filter(edge=>{
       const from=placements.get(edge.from),to=placements.get(edge.to);if(!from||!to)return false;
-      return edgeGeometry(edge,from,to,heightOf).samples.some(p=>p.x>=a&&p.x<=a+width/g.camera.zoom&&p.y>=b&&p.y<=b+height/g.camera.zoom);
+      return edgeGeometry(edge,geometryCard(from),geometryCard(to),geometryHeight).samples.some(p=>p.x>=a&&p.x<=a+width/g.camera.zoom&&p.y>=b&&p.y<=b+height/g.camera.zoom);
     }).map(e=>e.id);
     setSelectedEdges(g.additive?[...new Set([...g.initialEdges,...edges])]:edges);
   }
@@ -302,7 +305,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
     edges.querySelectorAll<SVGGElement>('[data-edge]').forEach(node=>{
       const edge=g.board.edges.find(e=>e.id===node.dataset.edge&&g.ids.includes(e.from)&&g.ids.includes(e.to));
       if(!edge){node.remove();return;}
-      const geometry=edgeGeometry(edge,items.find(p=>p.id===edge.from)!,items.find(p=>p.id===edge.to)!,heightOf);
+      const geometry=edgeGeometry(edge,geometryCard(items.find(p=>p.id===edge.from)!),geometryCard(items.find(p=>p.id===edge.to)!),geometryHeight);
       node.querySelectorAll('path').forEach(path=>path.setAttribute('d',geometry.path));
       const label=node.querySelector('foreignObject');label?.setAttribute('x',String(geometry.midpoint.x-120));label?.setAttribute('y',String(geometry.midpoint.y-20));
     });
@@ -557,8 +560,9 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
       let next=previous;
       for(const node of nodes){
         if(node.querySelector('.card-preview[data-ready=false]'))continue;
+        const top=node.querySelector<HTMLElement>('.board-pdf-selection')?.offsetTop??0;
         const id=node.dataset.heightKey!,height=(node.classList.contains('board-image')?node.querySelector<HTMLElement>('.image-media')??node:node).offsetHeight,width=node.offsetWidth,signature=node.dataset.heightSignature!;
-        if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature)){if(next===previous)next={...previous};next[id]={height,width,signature};}
+        if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top)){if(next===previous)next={...previous};next[id]={height,width,top,signature};}
       }
       return next;
     });
@@ -599,7 +603,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
       }}>
       <div className="canvas-grid" ref={grid}/>
         {/* Measured text widths are for edge geometry; keep stored placement sizes on save. */}
-        <Edges onCreateTopic={board.folder?addTopic:undefined} edgeDefaults={edgeDefaults} board={{...current,cards:current.cards.map(p=>({...p,x:xOf(p),width:widthOf(p)}))}} mentions={mentions} heightOf={heightOf} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
+        <Edges onCreateTopic={board.folder?addTopic:undefined} edgeDefaults={edgeDefaults} board={{...current,cards:current.cards.map(geometryCard)}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
           selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={(next,label)=>save({...next,cards:current.cards},label)} styleActions={id=>styleActions([], [id])} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
       <div className="board-world" ref={world}>
         {visible.map(p => {
@@ -612,7 +616,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           const text=p.object?.type==='text',pdf=card?.source?.type==='pdf',media=p.object?.type==='image'||pdf&&!p.collapsed||text;
           return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${pdf?'board-pdf-placement':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:objectPreview?.id===p.id?objectPreview.width:p.width,height: p.collapsed||naturalHeight(p)?'auto':p.height, background:media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:pdf&&!p.collapsed?'max-content':objectPreview?.id===p.id?objectPreview.width:p.width,height: p.collapsed||naturalHeight(p)?'auto':p.height, background:media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row,.pdf-reader,.annotation-rail'))return;
               if(p.object?.type==='text'){e.stopPropagation();editText(p.id);}
@@ -629,7 +633,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
               }}/>
             </div>}
             {!media&&!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="external" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf&&!p.collapsed?<BoardPdf onSelect={()=>{if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);onFinish?.();}}} card={card!} settings={p.pdf} zoom={view.zoom} onRevealPage={page=>{const nav=navigation.current!,rect=page.getBoundingClientRect(),viewportRect=viewport.current!.getBoundingClientRect();nav.set({...nav.current,y:nav.current.y+viewportRect.top+48-rect.top});nav.flush();}} onPage={page=>setPdf(p.id,{page})} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf&&!p.collapsed?<BoardPdf onLayout={contentReady} onSelect={()=>{if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);onFinish?.();}}} card={card!} width={p.width} settings={p.pdf} zoom={view.zoom} onRevealPage={page=>{const nav=navigation.current!,rect=page.getBoundingClientRect(),viewportRect=viewport.current!.getBoundingClientRect();nav.set({...nav.current,y:nav.current.y+viewportRect.top+48-rect.top});nav.flush();}} onPage={page=>setPdf(p.id,{page})} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
