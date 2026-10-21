@@ -610,3 +610,7 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 
 /* A PDF keeps its header in place when collapsed and resizes at the page corner. */
 .board-pdf-heading{display:grid;grid-template-columns:20px minmax(0,1fr) auto;grid-template-rows:24px minmax(32px,auto);column-gap:8px;row-gap:0}.board-pdf-more{grid-column:3;grid-row:1;justify-self:end}.board-pdf-icon{grid-column:1;grid-row:2;color:var(--muted)}.board-pdf-title{grid-column:2;grid-row:2}.board-pdf-heading>.board-pdf-actions:not(.board-pdf-more){grid-column:3;grid-row:2}.board-pdf-main>.resize-handle{opacity:0;background:transparent}.board-pdf-placement:is(:hover,.selected) .board-pdf-main>.resize-handle{opacity:1}
+
+/* Collapsed PDFs share the compact card surface without moving their header. */
+.board-pdf-heading{padding:4px 8px 8px 12px;min-height:70px}.board-pdf-title{font-size:16px;font-weight:600}.board-pdf-placement.collapsed{border-radius:var(--card-radius);box-shadow:var(--card-shadow),inset 0 0 0 var(--card-border-width) var(--card-border-color)}
+.board-pdf-placement.collapsed.selected{outline:none;box-shadow:0 0 0 1px var(--accent),inset 0 0 0 var(--card-border-width) var(--accent)}
