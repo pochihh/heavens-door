@@ -9,6 +9,7 @@ const bridge:Bridge={
   capturePairing:()=>ipcRenderer.invoke('reading:pair'),
   refreshFeed:(url,limit)=>ipcRenderer.invoke('reading:feed',url,limit),
   attachmentData:path=>ipcRenderer.invoke('reading:data',path),
+  relinkPdfSource:(path,expected)=>ipcRenderer.invoke('reading:relink-pdf',path,expected),
   updateState:()=>ipcRenderer.invoke('app:update-state'),
   checkUpdates:()=>ipcRenderer.invoke('app:check-updates'),
   downloadUpdate:()=>ipcRenderer.invoke('app:download-update'),

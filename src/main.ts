@@ -4,6 +4,7 @@ import {boundedDownload,readFeeds,feedArticles,webAddress,MAX_READING_BYTES,vali
 import {featureEnabled} from './features';
 import {randomBytes} from 'node:crypto';
 import type {ReadingImport} from './shared';
+import {readingText} from './text/reading';
 import {TEST_BUILD} from './identity';
 import { ui } from './text/ui';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, Menu, shell, clipboard, nativeImage, ClipboardItem } from 'electron';
@@ -221,6 +222,13 @@ void app.whenReady().then(async()=>{
   ipcMain.handle('reading:capture',async(event,url:string)=>{const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');return captureArticle(d.host,url);});
   ipcMain.handle('reading:feed',async(event,url:string,limit:number)=>{const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');return refreshFeed(d.host,url,limit);});
   ipcMain.handle('reading:pair',async event=>{const d=trusted(event);if(!d.host||captureError)throw new Error(captureError||'Open a workspace.');return {port:capturePort,token:captureToken,workspace:d.host.key,name:(await d.host.call<Snapshot>({kind:'snapshot'})).name};});
+  ipcMain.handle('reading:relink-pdf',async(event,path:unknown,expected:unknown)=>{
+    const d=trusted(event);if(!d.host||typeof path!=='string'||typeof expected!=='string')throw new Error('Invalid PDF attachment.');
+    const card=await d.host.call<Card>({kind:'card',path});if(card.source?.type!=='pdf')throw new Error('Choose a PDF attachment.');if(card.revision!==expected)throw new Error(ui.errors.externalEdit(path));
+    const chosen=await dialog.showOpenDialog(d.window,{title:readingText.relinkPdfSource,properties:['openFile'],filters:[{name:readingText.pdf,extensions:['pdf']}]});if(chosen.canceled||!chosen.filePaths.length)return null;
+    const file=chosen.filePaths[0],stat=await fs.stat(file);if(!stat.isFile()||stat.size>MAX_READING_BYTES)throw new Error('Choose a PDF smaller than 50 MB.');
+    const result=await d.host.call<Mutation>({kind:'relinkPdfSource',path,expected,value:{name:file.split(/[\\/]/).at(-1)!,data:new Uint8Array(await fs.readFile(file))}});broadcast(d.host);return result;
+  });
   ipcMain.handle('reading:data',async(event,path:unknown)=>{const d=trusted(event);if(!d.host||typeof path!=='string')throw new Error('Invalid attachment.');const file=await workspacePath(d.host.root,path),stat=await fs.stat(file);if(!stat.isFile()||stat.size>MAX_READING_BYTES||!['.pdf','.html'].includes(extname(file).toLowerCase()))throw new Error('Unsupported attachment.');return new Uint8Array(await fs.readFile(file));});
   ipcMain.handle('image:resolve',(event,notePath:string,source:string)=>{const d=trusted(event);if(!d.host)throw new Error(ui.errors.unknownWorkspace);return resolveImage(d.host.root,notePath,source);});
   ipcMain.handle('image:link',async(event,notePath:unknown,url:unknown)=>{

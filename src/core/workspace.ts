@@ -971,6 +971,12 @@ export class Workspace {
     const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});const {field,changes}=await this.readingStatusSchema();front.set('tags',['readlater']);front.set(READLATER_STATUS,legacyReadingStatus('new',field));
     return {...await this.write([...changes,{path,content:`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`,expected:null}]),path};
   }
+  async relinkPdfSource(path:string,expected:string,value:Pick<import('../shared').ReadingImport,'name'|'data'>){
+    if(!path.endsWith('.md'))throw new Error('Choose a PDF attachment.');validateImport({...value,type:'pdf'});const raw=await this.read(path);if(revision(raw)!==expected)throw new Error(ui.errors.externalEdit(path));
+    const card=readCard(path,raw);if(card.source?.type!=='pdf')throw new Error('Choose a PDF attachment.');
+    const asset=await readingAsset(this.root,path,value.name,'.pdf',value.data),{front,body}=splitNote(raw);front.set('source',{...card.source,...asset});
+    return this.write([{path,expected,content:`---\n${front.toString()}---\n${body}`}]);
+  }
   async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);const raw=await this.read(path),{field,changes}=await this.readingStatusSchema(),{front,body}=splitNote(this.readingStatusContent(raw,field));const {state,...bookmark}=value;if(state!==undefined){const status=legacyReadingStatus(state,field);validateTagValue(field,status);front.set(READLATER_STATUS,status);}front.set('reading',{...(front.toJSON()?.reading??{}),...bookmark});return this.write([...changes,{path,expected,content:`---\n${front.toString()}---\n${body}`}]);}
   async readingFeeds(){const path=systemPath('reading',this.preferences)+'/Feeds.opml',source=await this.raw(path);return {source:source??'',expected:source===null?null:revision(source)};}
   async saveReadingFeeds(source:string,expected:string|null){readFeeds(source);const path=systemPath('reading',this.preferences)+'/Feeds.opml';await this.ensureFolder(systemPath('reading',this.preferences));return this.write([{path,content:source,expected}]);}

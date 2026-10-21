@@ -1,5 +1,6 @@
 // Reader and whiteboard-object interface copy.
 export const readingText={
+ relinkPdfSource:"Relink PDF source…",relinkingPdfSource:"Relinking…",pdfUnavailable:"PDF unavailable",pdfSourceRecovery:"The source file may have moved or could not be read. Your highlights and comments are preserved.",pdfOpenToRelink:"Open this PDF in a popup to locate or replace its source file.",pdfSourceCopyHint:"Choose a PDF to store a copy with this attachment. Existing highlights and comments are kept.",sourceDetails:"Details",showSourceFolder:"Show in folder",sourceNotSet:"No source file linked",
  releaseComment:"Release to create a card",moveCommentOutside:"Move beyond the attachment boundary to create a card",
  createCardFromComment:"Create card from comment",
  comment:"Comment",noteActions:"Comment actions",dragToCreateCard:"Drag to create card",emptyNote:"Empty comment",openNote:"Open comment",

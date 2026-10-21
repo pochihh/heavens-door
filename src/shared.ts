@@ -66,6 +66,7 @@ export interface TransferMutation extends Mutation {inverse:BoardTransfer}
 export interface ReadingImport {missingImages?:string[];name:string;type:'pdf'|'web';data:Uint8Array;url?:string;body?:string;folder?:string;feed?:string;entry?:string}
 export type Request =
   | {kind:'importReading';value:ReadingImport}
+  | {kind:'relinkPdfSource';path:string;expected:string;value:Pick<ReadingImport,'name'|'data'>}
   | {kind:'readingProgress';path:string;expected:string;value:import('./reading').ReadingProgress}
   | {kind:'readingFeeds'}
   | {kind:'saveReadingFeeds';source:string;expected:string|null}
@@ -143,6 +144,7 @@ export interface Bridge {
   capturePairing():Promise<{port:number;token:string;workspace:string;name:string}>;
   refreshFeed(url:string,limit:number):Promise<{imported:number}>;
   attachmentData(path:string):Promise<Uint8Array>;
+  relinkPdfSource(path:string,expected:string):Promise<Mutation|null>;
   updateState():Promise<UpdateState>;
   checkUpdates():Promise<UpdateState>;
   downloadUpdate():Promise<UpdateState>;

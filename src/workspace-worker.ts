@@ -54,6 +54,7 @@ async function dispatch(request: Request) {
   workspace.assertReady();
   switch (request.kind) {
     case 'importReading': return workspace.importReading(request.value);
+    case 'relinkPdfSource':string(request.path);string(request.expected);return workspace.relinkPdfSource(request.path,request.expected,request.value);
     case 'readingProgress':string(request.path);string(request.expected);return workspace.readingProgress(request.path,request.expected,request.value);
     case 'readingFeeds':return workspace.readingFeeds();
     case 'saveReadingFeeds':string(request.source);return workspace.saveReadingFeeds(request.source,request.expected);
