@@ -4,6 +4,7 @@ import type {CardInfo,Placement} from '../shared';
 import {annotationView} from '../reading';
 import {AnnotationRail,useAssetAnnotations} from './Annotations';
 import {PdfReader} from './PdfReader';
+import {PdfNoteLink} from './PdfNoteLink';
 import {Tool} from './Icons';
 import {TitleContent} from './TitleContent';
 import {titlePreview} from './markdown';
@@ -28,5 +29,6 @@ export function BoardPdf({card,width,settings,zoom,collapsed=false,active=false,
   {!collapsed&&onResize&&<button className="resize-handle" aria-label={ui.whiteboard.resize(card.name)} onPointerDown={onResize}/>}</div>
   {!collapsed&&error&&<p role="alert">{error}</p>}
   {!collapsed&&settings?.notes!==false&&context&&<AnnotationRail compact previewLimit={5} active={active} pages={pages} sourceHash={checksum} page={settings?.expanded?undefined:page} path={card.path} body={body} cards={context.snapshot.cards} expanded={expanded} onExpanded={setExpanded} onChange={change}/>}
+  {!collapsed&&settings?.notes!==false&&<PdfNoteLink id={expanded} color={annotationView(body).annotations.find(a=>a.id===expanded)?.color} pages={pages}/>}
  </div>;
 }

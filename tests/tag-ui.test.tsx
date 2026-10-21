@@ -128,6 +128,10 @@ test('tag tables, Kanban moves and confirmed tag removal edit the same files and
     await act(async()=>chips()[1].click());await settle();
     await act(async()=>{dragPill(chips()[0],'pointerdown',30);dragPill(document,'pointermove',240);dragPill(document,'pointerup',240);});await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['todo','project']);assert.equal(chips()[1].textContent,'#project');assert.equal(chips()[1].getAttribute('aria-expanded'),'true');assert.equal(document.querySelector('.tag-fields-heading'),null);
     await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todo']);
+    strip.style.flexWrap='wrap';strip.getBoundingClientRect=()=>({...pillRect(20,180),height:80,bottom:100});
+    for(const row of pillRows())row.getBoundingClientRect=()=>{const top=20+[...strip.children].filter(c=>(c as HTMLElement).style.display!=='none').indexOf(row)*36;return {...pillRect(20,90),top,bottom:top+30};};
+    await act(async()=>{dragPill(chips()[0],'pointerdown',30);const move=new dom.window.MouseEvent('pointermove',{bubbles:true,button:0,clientX:150,clientY:76});document.dispatchEvent(move);document.dispatchEvent(new dom.window.MouseEvent('pointerup',{bubbles:true,button:0,clientX:150,clientY:76}));});await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['todo','project'],'wrapped tags reorder by row and horizontal position');
+    await act(async()=>session.undo(false));await settle();assert.deepEqual(w.cardProperties('Notes/A.md').properties.tags,['project','todo']);strip.style.flexWrap='nowrap';
     await act(async()=>chips()[1].click());await settle();
 
     await act(async()=>chips()[1].click());assert.equal(document.querySelector('.tag-fields'),null);

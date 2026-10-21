@@ -11,6 +11,12 @@ import {Color} from './StyleView';
 import {DEFAULT_PALETTE} from '../colors';
 import {ViewBlockContext} from './ViewBlock';
 import {useConfirmation} from './Confirmation';
+export function revealPdfNote(rail:HTMLElement,top:number,height:number){
+ const viewport=rail.closest<HTMLElement>('.pdf-reading-layout');if(!viewport)return;
+ const box=viewport.getBoundingClientRect(),ratio=box.width/viewport.offsetWidth||1,toolbar=viewport.querySelector('.pdf-reader-toolbar')?.getBoundingClientRect().bottom??box.top;
+ const start=Math.max(box.top,toolbar)+12*ratio,end=box.bottom-12*ratio,noteTop=rail.getBoundingClientRect().top+(top-12)*ratio,noteBottom=noteTop+Math.min((height+24)*ratio,end-start);
+ if(end<=start)return;const delta=noteTop<start?noteTop-start:noteBottom>end?noteBottom-end:0;if(delta)viewport.scrollTop+=delta/ratio;
+}
 export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages,previewLimit,active=true,singleColumn=false,header}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[];previewLimit?:number;active?:boolean;singleColumn?:boolean;header?:React.ReactNode}){
  const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[headerHeight,setHeaderHeight]=useState(0),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>(),[shownPages,setShownPages]=useState<number[]>([]);useEffect(()=>()=>cancelDrag.current(),[]);
  const linkedCards=new Set(cards.map(card=>card.id)),annotations=annotationView(body).annotations.filter(a=>annotationOnPage(a,page)&&(!a.cardId||!linkedCards.has(a.cardId))),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
@@ -33,7 +39,11 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
   });setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);};
   measure();const observer=new ResizeObserver(measure);root.querySelectorAll('[data-note-id],[data-note-more],.annotation-details>div,.sticky-note-content,.annotation-meta').forEach(el=>observer.observe(el));return()=>observer.disconnect();
  },[body,expanded,visibleIds,!!header]);
- const positions=pages?annotationPositions(items,pages,8,{singleColumn,start:headerHeight}):undefined;
+ const positions=pages?annotationPositions(items,pages,8,{singleColumn,start:headerHeight}):undefined,shownNote=useRef<string|undefined>(undefined);
+ useLayoutEffect(()=>{
+  if(!expanded){shownNote.current=undefined;return;}if(!singleColumn||shownNote.current===expanded)return;const position=positions?.get(expanded),height=heights[expanded];if(!position||!height)return;
+  const frame=requestAnimationFrame(()=>{shownNote.current=expanded;revealPdfNote(rail.current!,position.top,height);});return()=>cancelAnimationFrame(frame);
+ },[singleColumn,expanded,heights,pages,headerHeight]);
  const colorNote=annotations.find(a=>a.id===colorPicker?.id&&a.id===expanded);
  const notesHeight=positions?Math.max(headerHeight,...items.map(a=>(positions.get(a.id)?.top??0)+a.height)):undefined;
  const positionStyle=(id:string):React.CSSProperties=>{const position=positions?.get(id);return position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{};};

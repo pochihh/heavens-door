@@ -46,6 +46,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
     const groups=[...root.querySelectorAll<HTMLElement>('[data-sort-group]')];
     let list=source.closest<HTMLElement>('[data-sort-group]')??root;
     const vertical=axis==='vertical',start=vertical?event.clientY:event.clientX,initialCross=vertical?event.clientX:event.clientY;
+    const wrapped=!vertical&&root.ownerDocument.defaultView!.getComputedStyle(list).flexWrap==='wrap';
     const rect=source.getBoundingClientRect(),offset=start-(vertical?rect.top:rect.left),pointer=event.pointerId;
     let phantom:HTMLElement|null=null,placeholder:HTMLElement|null=null,active=false,ended=false,last=start,direction=0,x=event.clientX,y=event.clientY,frame=0;
     const animations=new Map<HTMLElement,Animation>();
@@ -61,7 +62,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
       const beforeRects=new Map((groups.length?[...root.querySelectorAll<HTMLElement>('[data-file-key]')].filter(el=>el!==source):rows()).map(el=>[el,el.getBoundingClientRect()]));
       animations.forEach(a=>a.cancel());animations.clear();
       list.insertBefore(placeholder,before);
-      animateReorder(beforeRects,axis,animations);
+      animateReorder(beforeRects,wrapped?'both':axis,animations);
     };
     const update=()=>{
       if(!active||!phantom)return;
@@ -70,6 +71,11 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
       if(!external)clearDocumentDrop();
       if(drag&&!inList){phantom.style.left=rect.left+x-event.clientX+'px';phantom.style.top=rect.top+y-event.clientY+'px';phantom.style.clipPath='none';placeholder?.remove();return;}
       if(inList){list=destination()!;if(placeholder!.parentElement!==list){const before=rows().find(row=>{const r=row.getBoundingClientRect();return coordinate<(vertical?r.top+r.height/2:r.left+r.width/2);});place(before??null);}}
+      if(wrapped){
+        phantom.style.left=rect.left+x-event.clientX+'px';phantom.style.top=rect.top+y-event.clientY+'px';
+        if(inList)place(rows().find(row=>{const r=row.getBoundingClientRect();return y<r.top||y<=r.bottom&&x<r.left+r.width/2;})??null);
+        return;
+      }
       const size=vertical?rect.height:rect.width,clip=scroller.getBoundingClientRect(),bounds=list.getBoundingClientRect(),min=vertical?Math.max(bounds.top,clip.top):r.left,max=Math.max(min,(vertical?Math.min(bounds.bottom,clip.bottom):r.right)-size);
       const table=source.closest<HTMLElement>('.view-records');
       if(table){const clip=table.getBoundingClientRect();phantom.style.clipPath=`inset(0 ${Math.max(0,rect.right-clip.right)}px 0 ${Math.max(0,clip.left-rect.left)}px)`;}
