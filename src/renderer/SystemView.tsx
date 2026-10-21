@@ -26,7 +26,7 @@ export function SystemView({id,snapshot,session,onOpen,onJournalOpen=onOpen,onPr
   const hits=search?new Set(index.search(search).map(hit=>hit.path)):null,shown=rows.filter(row=>!hits||hits.has(row.key));
   const perform=async(run:()=>Promise<void>)=>{setBusy(true);try{await run();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
   function actions(row:typeof rows[number],anchor:HTMLElement){const bounds=anchor.getBoundingClientRect();setMenu({anchor,x:bounds.right,y:bounds.bottom,actions:id==='trash'?[{label:ui.system.restore,icon:'undo',run:()=>void perform(async()=>{const entry=row.card as TrashEntry;if(entry.archive)await session.fileOperation({action:'restore',path:entry.archive},ui.system.restore);else{const card=await session.restoreTrash(entry.path,entry.revision);onOpen('card:'+card.id);}})},{label:(row.card as TrashEntry).kind==='folder'?ui.explorer.revealInFinder:ui.explorer.viewSource,icon:(row.card as TrashEntry).kind==='folder'?'folder':'source',run:()=>{if((row.card as TrashEntry).kind==='folder')void session.bridge.revealFile(row.card!.path);else onOpen(row.key);}}]:[
-    {label:ui.common.openInPopup,icon:'note',run:()=>onPreview(row.key)},
+    {label:ui.common.openInPopup,icon:'popup',run:()=>onPreview(row.key)},
     {label:ui.common.openInNewTab,icon:'external',run:()=>onOpen(row.key)},
     ...(id==='templates'?[{label:ui.journal.template,icon:'copy' as const,run:()=>onTemplate(row.card!.path)}]:[]),
     ...(row.card?[{label:ui.system.moveToTrash,icon:'trash' as const,danger:true,run:()=>void perform(async()=>{if(await confirm({title:ui.system.moveToTrash,message:row.name,accept:ui.system.moveToTrash,danger:true}))await session.trashCard(row.card!.path,row.card!.revision);})}]:[]),

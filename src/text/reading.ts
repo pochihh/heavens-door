@@ -4,6 +4,7 @@ export const readingText={
  releaseComment:"Release to create a card",moveCommentOutside:"Move beyond the attachment boundary to create a card",
  createCardFromComment:"Create card from comment",
  comment:"Comment",noteActions:"Comment actions",dragToCreateCard:"Drag to create card",emptyNote:"Empty comment",openNote:"Open comment",
+ showMoreComments:(count:number)=>`Show ${count} more`,showFewerComments:"Show fewer",
  pdf:"PDF",pdfActions:"PDF actions",showNotes:"Show notes",expandPdf:"Expand PDF preview",previousPdfPage:"Previous PDF page",nextPdfPage:"Next PDF page",
   someArticleImagesCouldNotBeDownloadedThe:"Some article images could not be downloaded. The original snapshot and image URLs are preserved in Source.",
   repairAnnotationFooter:"Open Source mode to repair this footer.",

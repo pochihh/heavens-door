@@ -11,26 +11,41 @@ import {Color} from './StyleView';
 import {DEFAULT_PALETTE} from '../colors';
 import {ViewBlockContext} from './ViewBlock';
 import {useConfirmation} from './Confirmation';
-export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[]}){
- const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>();useEffect(()=>()=>cancelDrag.current(),[]);
+export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages,previewLimit,active=true}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[];previewLimit?:number;active?:boolean}){
+ const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>(),[shownPages,setShownPages]=useState<number[]>([]);useEffect(()=>()=>cancelDrag.current(),[]);
  const linkedCards=new Set(cards.map(card=>card.id)),annotations=annotationView(body).annotations.filter(a=>annotationOnPage(a,page)&&(!a.cardId||!linkedCards.has(a.cardId))),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
- useLayoutEffect(()=>{const root=rail.current!;const observer=new ResizeObserver(()=>{const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id]').forEach(el=>{next[el.dataset.noteId!]=el.offsetHeight;});setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);});root.querySelectorAll('[data-note-id]').forEach(el=>observer.observe(el));return()=>observer.disconnect();},[body,expanded]);
- const positions=pages?annotationPositions(annotations.map(a=>({id:a.id,page:page??a.page??a.anchors?.[0]?.page,height:heights[a.id]??42})),pages):undefined;
+ const groups=new Map<number,Annotation[]>();for(const a of annotations){const number=page??a.page??a.anchors?.[0]?.page??pages?.[0]?.page??1,items=groups.get(number)??[];items.push(a);groups.set(number,items);}
+ const visible=previewLimit?[...groups].flatMap(([number,items])=>active&&shownPages.includes(number)?items:items.slice(0,previewLimit)):annotations;
+ const more=previewLimit?[...groups].filter(([,items])=>items.length>previewLimit).map(([number,items])=>({id:'more:'+number,page:number,count:items.length-previewLimit,open:active&&shownPages.includes(number)})):[];
+ const items=[...visible.map(a=>({id:a.id,page:page??a.page??a.anchors?.[0]?.page,height:heights[a.id]??42})),...more.map(m=>({id:m.id,page:m.page,height:heights[m.id]??32}))];
+ useEffect(()=>{if(!active)setShownPages([]);},[active]);
+ const expandedPage=previewLimit?[...groups].find(([,items])=>items.findIndex(a=>a.id===expanded)>=previewLimit)?.[0]:undefined;
+ useEffect(()=>{if(active&&expandedPage!==undefined)setShownPages(old=>old.includes(expandedPage)?old:[...old,expandedPage]);},[expanded,expandedPage]);
+ const visibleIds=items.map(item=>item.id).join(',');
+ useLayoutEffect(()=>{const root=rail.current!;const observer=new ResizeObserver(()=>{const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id],[data-note-more]').forEach(el=>{next[el.dataset.noteId??el.dataset.noteMore!]=el.offsetHeight;});setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);});root.querySelectorAll('[data-note-id],[data-note-more]').forEach(el=>observer.observe(el));return()=>observer.disconnect();},[body,expanded,visibleIds]);
+ const positions=pages?annotationPositions(items,pages):undefined;
  const colorNote=annotations.find(a=>a.id===colorPicker?.id&&a.id===expanded);
- const notesHeight=positions?Math.max(28,...annotations.map(a=>(positions.get(a.id)?.top??0)+(heights[a.id]??42))):undefined;
+ const notesHeight=positions?Math.max(0,...items.map(a=>(positions.get(a.id)?.top??0)+a.height)):undefined;
+ const positionStyle=(id:string):React.CSSProperties=>{const position=positions?.get(id);return position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{};};
  return <aside ref={rail} className={'annotation-rail'+(compact?' board-annotation-rail':'')+(pages?' page-aligned-notes':'')} style={pages?{'--annotation-columns':Math.max(1,...[...positions!.values()].map(p=>p.column+1)),...(compact?{height:notesHeight}:{} )} as React.CSSProperties:undefined} aria-label={readingText.annotations} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
-  <div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span>{onAdd&&<Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/>}</div>
-  {annotations.map(a=>{const position=positions?.get(a.id),open=expanded===a.id;return <section key={a.id} data-note-id={a.id} className={'sticky-note'+(open?' expanded':'')+(!a.color?' uncolored':'')} style={{'--note-color':a.color??'transparent',...(position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{})} as React.CSSProperties}>
+  {!previewLimit&&<div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span>{onAdd&&<Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/>}</div>}
+  {visible.map(a=>{const open=expanded===a.id;return <section key={a.id} data-note-id={a.id} className={'sticky-note'+(open?' expanded':'')+(!a.color?' uncolored':'')} style={{'--note-color':a.color??'transparent',...positionStyle(a.id)} as React.CSSProperties}>
     <div className="sticky-note-heading"><button className="sticky-preview" onPointerDown={e=>{if(!context||!a.text.trim()&&!a.quote?.trim())return;cancelDrag.current();cancelDrag.current=dragAssetNote(e,()=>({key:'asset-note:'+a.id,path,note:{id:a.id,expected:context.session.state.snapshot?.cards.find(c=>c.path===path)?.revision??''}}));}} aria-expanded={open} aria-label={readingText.openNote+': '+(a.text||a.quote||readingText.emptyNote).split('\n')[0]} onClick={()=>{setColorPicker(undefined);onExpanded(open?undefined:a.id);if(!open)onJump?.(a.id);}}><span>{(a.text||a.quote||readingText.emptyNote).replace(/[#*_`]/g,'').split('\n')[0]}</span></button>{open&&<Tool icon="trash" className="danger" label={readingText.deleteAnnotation} onClick={()=>{void confirm({title:readingText.deleteAnnotation,message:a.text||a.quote||readingText.deleteAnnotation,accept:readingText.delete,danger:true}).then(yes=>{if(yes)onChange(null,a.id);});}}/>}</div>
-    {open&&<>{a.quote&&<blockquote className="sticky-quote">{a.quote}</blockquote>}
+    <AnnotationDetails open={open}>{a.quote&&<blockquote className="sticky-quote">{a.quote}</blockquote>}
       <AnnotationEditor path={path} text={a.text} onChange={text=>onChange({...a,text},a.id)}/>
       <div className="annotation-color"><Tool icon="art" label={readingText.highlightColor} aria-haspopup="dialog" aria-expanded={colorNote?.id===a.id} onClick={e=>setColorPicker(colorNote?.id===a.id?undefined:{id:a.id,anchor:e.currentTarget})}/></div>
       {(a.unresolved||a.source&&sourceHash&&a.source!==sourceHash||a.kind==='highlight'&&!body.includes(`data-annotation="${a.id}"`)&&!a.page)&&<small className="annotation-unresolved">{readingText.thePassageIsUnresolvedYourNoteIsPreserved}</small>}
-    </>}
+    </AnnotationDetails>
   </section>;})}
+  {more.map(m=><button key={m.id} data-note-more={m.id} className="annotation-more" style={positionStyle(m.id)} aria-expanded={m.open} onClick={()=>{setShownPages(old=>m.open?old.filter(p=>p!==m.page):[...old,m.page]);if(m.open&&groups.get(m.page)!.slice(previewLimit).some(a=>a.id===expanded))onExpanded(undefined);}}>{m.open?readingText.showFewerComments:readingText.showMoreComments(m.count)}</button>)}
 
   {colorPicker&&colorNote&&<PropertyPopover anchor={colorPicker.anchor} label={readingText.highlightColor} onClose={()=>setColorPicker(undefined)}><Color label={readingText.highlightColor} palette={palette} emptyLabel={readingText.noColor} value={colorNote.color??''} onChange={color=>onChange({...colorNote,color},colorNote.id)}/></PropertyPopover>}
  </aside>;
+}
+function AnnotationDetails({open,children}:{open:boolean;children:React.ReactNode}){
+ const [present,setPresent]=useState(open);
+ useEffect(()=>{if(open){setPresent(true);return;}if(!present)return;const timer=setTimeout(()=>setPresent(false),220);return()=>clearTimeout(timer);},[open,present]);
+ return <div className="annotation-details" data-open={open} aria-hidden={!open} inert={!open} onTransitionEnd={e=>{if(e.target===e.currentTarget&&!open)setPresent(false);}}><div>{(open||present)&&children}</div></div>;
 }
 export function useAssetAnnotations(card:CardInfo){
  const context=useContext(ViewBlockContext),[loaded,setLoaded]=useState<Card|null>(null),[expanded,setExpanded]=useState<string>(),[error,setError]=useState(''),pending=useRef(new Map<string,Annotation|null>());
