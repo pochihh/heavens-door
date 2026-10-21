@@ -179,6 +179,19 @@ test('board PDF comments keep their width and page alignment when shown, and res
  }finally{await act(async()=>root.unmount());}
 });
 
+test('accordion packing uses final content heights throughout opening and closing',async()=>{
+ const {AnnotationRail}=await import('../src/renderer/Annotations'),root=createRoot(document.getElementById('root')!);let expanded:string|undefined;
+ const body=withAnnotations('# PDF',[{id:'first',kind:'highlight' as const,page:1,text:'First'},{id:'second',kind:'highlight' as const,page:1,text:'Second'}]);
+ const render=()=>root.render(<ConfirmationProvider><AnnotationRail compact path={card.path} body={body} cards={[card]} pages={[{page:1,top:72,height:600}]} expanded={expanded} onExpanded={id=>{expanded=id;render();}} onChange={()=>{}}/></ConfirmationProvider>);
+ try{await act(async()=>render());const first=document.querySelector<HTMLElement>('[data-note-id=first]')!,second=document.querySelector<HTMLElement>('[data-note-id=second]')!,heading=first.querySelector<HTMLElement>('.sticky-note-heading')!,details=first.querySelector<HTMLElement>('.annotation-details')!,content=details.firstElementChild!;
+  Object.defineProperty(heading,'offsetHeight',{value:40});Object.defineProperty(content,'scrollHeight',{value:120});Object.defineProperty(first,'offsetHeight',{value:60,configurable:true});Object.defineProperty(details,'offsetHeight',{value:20,configurable:true});
+  expanded='first';await act(async()=>render());assert.equal(second.style.top,'240px','neighbors move toward the final open height immediately');
+  const measure=()=>observers.filter(o=>o.target===first).at(-1)!.callback([],{} as ResizeObserver);
+  Object.defineProperty(first,'offsetHeight',{value:140,configurable:true});Object.defineProperty(details,'offsetHeight',{value:100,configurable:true});await act(async()=>measure());assert.equal(second.style.top,'240px','intermediate animation heights never repack the column');
+  expanded=undefined;await act(async()=>render());assert.equal(second.style.top,'120px','closing uses the final preview height while content is still mounted');assert.ok(details.querySelector('.annotation-editor'));assert.equal(first.style.width,'220px');assert.equal(second.style.width,'220px');
+ }finally{await act(async()=>root.unmount());}
+});
+
 test('the continuous PDF reader tracks the page occupying most of its visible height, including the last page',async()=>{
  const {visiblePdfPage}=await import('../src/renderer/PdfReader');const reader=document.createElement('div');reader.innerHTML='<div class="pdf-reader-toolbar"></div><div data-pdf-page="1"></div><div data-pdf-page="2"></div>';
  const rect=(top:number,bottom:number)=>({top,bottom,left:0,right:340,width:340,height:bottom-top} as DOMRect);

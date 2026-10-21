@@ -22,7 +22,15 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
  const expandedPage=previewLimit?[...groups].find(([,items])=>items.findIndex(a=>a.id===expanded)>=previewLimit)?.[0]:undefined;
  useEffect(()=>{if(active&&expandedPage!==undefined)setShownPages(old=>old.includes(expandedPage)?old:[...old,expandedPage]);},[expanded,expandedPage]);
  const visibleIds=items.map(item=>item.id).join(',');
- useLayoutEffect(()=>{const root=rail.current!;const observer=new ResizeObserver(()=>{const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id],[data-note-more]').forEach(el=>{next[el.dataset.noteId??el.dataset.noteMore!]=el.offsetHeight;});setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);});root.querySelectorAll('[data-note-id],[data-note-more]').forEach(el=>observer.observe(el));return()=>observer.disconnect();},[body,expanded,visibleIds]);
+ useLayoutEffect(()=>{const root=rail.current!;
+  const measure=()=>{const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id],[data-note-more]').forEach(el=>{
+   const details=el.querySelector<HTMLElement>('.annotation-details'),heading=el.querySelector<HTMLElement>('.sticky-note-heading'),style=getComputedStyle(el);
+   // Pack the final height once; sampling the animated height makes neighboring notes chase it.
+   const height=details&&heading?heading.offsetHeight+['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key as keyof CSSStyleDeclaration] as string)||0),0)+(details.dataset.open==='true'?(details.firstElementChild?.scrollHeight??0):0):el.offsetHeight;
+   if(height>0)next[el.dataset.noteId??el.dataset.noteMore!]=height;
+  });setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);};
+  measure();const observer=new ResizeObserver(measure);root.querySelectorAll('[data-note-id],[data-note-more],.annotation-details>div').forEach(el=>observer.observe(el));return()=>observer.disconnect();
+ },[body,expanded,visibleIds]);
  const positions=pages?annotationPositions(items,pages):undefined;
  const colorNote=annotations.find(a=>a.id===colorPicker?.id&&a.id===expanded);
  const notesHeight=positions?Math.max(0,...items.map(a=>(positions.get(a.id)?.top??0)+a.height)):undefined;
@@ -44,8 +52,8 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
 }
 function AnnotationDetails({open,children}:{open:boolean;children:React.ReactNode}){
  const [present,setPresent]=useState(open);
- useEffect(()=>{if(open){setPresent(true);return;}if(!present)return;const timer=setTimeout(()=>setPresent(false),220);return()=>clearTimeout(timer);},[open,present]);
- return <div className="annotation-details" data-open={open} aria-hidden={!open} inert={!open} onTransitionEnd={e=>{if(e.target===e.currentTarget&&!open)setPresent(false);}}><div>{(open||present)&&children}</div></div>;
+ useEffect(()=>{if(open){setPresent(true);return;}if(!present)return;const timer=setTimeout(()=>setPresent(false),360);return()=>clearTimeout(timer);},[open,present]);
+ return <div className="annotation-details" data-open={open} data-present={open||present} aria-hidden={!open} inert={!open} onTransitionEnd={e=>{if(e.target===e.currentTarget&&!open)setPresent(false);}}><div>{(open||present)&&children}</div></div>;
 }
 export function useAssetAnnotations(card:CardInfo){
  const context=useContext(ViewBlockContext),[loaded,setLoaded]=useState<Card|null>(null),[expanded,setExpanded]=useState<string>(),[error,setError]=useState(''),pending=useRef(new Map<string,Annotation|null>());
