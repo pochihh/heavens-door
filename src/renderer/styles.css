@@ -618,11 +618,12 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .page-aligned-notes .sticky-note{transition:top var(--note-motion) var(--note-ease),left var(--note-motion) var(--note-ease)}
 /* The sheet lifts beyond its fixed slot, so opening it never squeezes other columns. */
 .sticky-note{position:relative;isolation:isolate;z-index:0;padding:1px;border:0;background:transparent}
-.sticky-note::before{content:'';position:absolute;z-index:-1;inset:0;border:1px solid color-mix(in srgb,var(--note-color) 55%,var(--border));border-radius:6px;background:color-mix(in srgb,var(--note-color) 13%,var(--surface));transition:inset var(--note-motion) var(--note-ease),box-shadow var(--note-motion) var(--note-ease)}
+.sticky-note::before{content:'';position:absolute;z-index:-1;inset:0;border:1px solid color-mix(in srgb,var(--note-color) 55%,var(--border));border-radius:6px;background:color-mix(in srgb,var(--note-color) 13%,var(--surface));transition:inset var(--note-motion) var(--note-ease),box-shadow var(--note-motion) var(--note-ease),background-color var(--note-motion) var(--note-ease),border-color var(--note-motion) var(--note-ease)}
 .sticky-note:has(.annotation-details[data-present=true]){z-index:1}
-.sticky-note.expanded{z-index:2}.sticky-note.expanded::before{inset:-12px;box-shadow:0 6px 18px #0003}
+.sticky-note.expanded{z-index:2}.sticky-note.expanded::before{inset:-12px;background:color-mix(in srgb,var(--note-color) 30%,var(--surface));border-color:color-mix(in srgb,var(--note-color) 80%,var(--text));box-shadow:0 6px 18px #0003}
 .sticky-note.expanded .sticky-note-heading>.tool{position:absolute;top:4px;right:-9px;margin:0}.sticky-note.expanded .sticky-preview{padding-right:24px}
 .sticky-note.uncolored::before{background:transparent;border-color:var(--border)}
+.sticky-note.expanded.uncolored::before{border-color:var(--muted)}
 .pdf-reading-layout>.annotation-rail .sticky-note::before{left:0}.pdf-reading-layout>.annotation-rail .annotation-details[data-present=true]{margin-left:0}.pdf-reading-layout>.annotation-rail .sticky-note.expanded::before{right:-24px}
 @media(prefers-reduced-motion:reduce){.annotation-rail{--note-motion:0ms}}
 @starting-style{.annotation-details[data-open=true]{grid-template-rows:0fr;opacity:0}}
