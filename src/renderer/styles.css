@@ -625,8 +625,8 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .sticky-note.expanded .sticky-note-heading{margin-inline:-12px}
 .sticky-note{cursor:grab}.sticky-quote,.annotation-editor{cursor:text}.annotation-note-actions{display:flex;align-items:center;gap:2px;cursor:default}
 .pdf-reading-layout>.annotation-rail .sticky-note.expanded .sticky-note-heading{margin-left:0}
-.sticky-note.uncolored::before{background:transparent;border-color:var(--border)}
-.sticky-note.expanded.uncolored::before{border-color:var(--muted)}
+.sticky-note.uncolored::before{background:var(--surface);border-color:var(--border)}
+.sticky-note.expanded.uncolored::before{background:color-mix(in srgb,var(--text) 6%,var(--surface));border-color:var(--muted)}
 .pdf-reading-layout>.annotation-rail .sticky-note::before{left:0}.pdf-reading-layout>.annotation-rail .annotation-details[data-present=true]{margin-left:0}.pdf-reading-layout>.annotation-rail .sticky-note.expanded::before{right:-24px}
 @media(prefers-reduced-motion:reduce){.annotation-rail{--note-motion:0ms}}
 @starting-style{.annotation-details[data-open=true]{grid-template-rows:0fr;opacity:0}}
@@ -651,3 +651,12 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .sticky-note.uncolored{background:transparent;border-color:var(--border)}.sticky-note.uncolored .sticky-quote{border-left-color:var(--border)}
 
 .pdf-source-error{padding:18px 16px;color:var(--text);font-size:13px;line-height:1.5}.pdf-source-error>strong{display:flex;gap:8px;align-items:center}.pdf-source-error p{margin:8px 0}.pdf-source-error>button{border:1px solid var(--border);margin:4px 0 10px}.pdf-source-error details,.pdf-source-details{font-size:12px;color:var(--muted)}.pdf-source-error summary,.pdf-source-details summary{cursor:pointer}.pdf-source-error pre,.pdf-source-details p{overflow-wrap:anywhere;white-space:pre-wrap}.pdf-source-details{margin-top:16px}.pdf-source-details small{display:block;line-height:1.5}.pdf-source-details button{display:block;margin-top:8px;text-align:left}.pdf-source-details button:first-of-type{border:1px solid var(--border)}
+
+/* PDF find marks are temporary and independent of saved annotation colors. */
+.pdf-reader-toolbar .pdf-search{display:flex;flex:1 1 260px;min-width:0;gap:2px;padding:2px 3px;border:1px solid var(--border);border-radius:5px}
+.pdf-reader-toolbar .pdf-search:focus-within{border-color:var(--accent)}.pdf-search>svg{flex-shrink:0;margin-inline:3px;color:var(--muted)}
+.pdf-reader-toolbar .pdf-search input{flex:1;min-width:40px;width:100%;padding:3px;border:0;outline:0;box-shadow:none}.pdf-search input::-webkit-search-cancel-button{display:none}
+.pdf-search-count{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--muted);padding-inline:4px}.pdf-search-count.no-results{color:var(--negative)}
+.pdf-reader-toolbar .pdf-search .tool{width:22px;height:24px;padding:3px;flex-shrink:0}
+.pdf-page .textLayer .pdf-find-match{color:transparent;background:#f5cc5273;border-radius:2px;padding:0;box-decoration-break:clone}
+.pdf-page .textLayer .pdf-find-match.current{background:#f59b398c;outline:2px solid #c86d16;outline-offset:0}

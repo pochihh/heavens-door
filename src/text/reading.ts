@@ -36,7 +36,7 @@ export const readingText={
   pdfPage:"PDF page",
   zoomOutPdf:"Zoom out PDF",
   zoomInPdf:"Zoom in PDF",
-  searchPdf:"Search PDF",
+  searchPdf:"Search PDF",searchingPdf:"Searching…",noPdfMatches:"No results",pdfMatchCount:(current:number,total:number)=>`${current} of ${total}`,previousPdfMatch:"Previous match · Shift+Enter",nextPdfMatch:"Next match · Enter",clearPdfSearch:"Clear PDF search",
   reloadPdfSource:"Reload PDF source",
   theSourceChangedEarlierHighlightPositionsAreUnresolved:"The source changed. Earlier highlight positions are unresolved; their notes are preserved.",
   loadingPdf:"Loading PDF…",
