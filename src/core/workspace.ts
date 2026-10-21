@@ -1107,8 +1107,11 @@ export class Workspace {
     if(annotation.cardId&&this.db.prepare('SELECT 1 FROM cards WHERE id=?').get(annotation.cardId))throw new Error('This highlight already links to a card.');
     const title=(searchDocument(annotation.text||annotation.quote!).text.split('\n').find(line=>line.trim())??'Asset note').trim().slice(0,80),stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Asset note';
     const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
-    const quote=annotation.quote?annotation.quote.split('\n').map(line=>'> '+line).join('\n')+'\n\n':'';
-    const body='# '+escape(title)+'\n\n'+quote+moveCardLinks(annotation.text,path,destination)+'\n\n[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+(annotation.kind==='highlight'?'#annotation='+annotation.id:'')+')\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
+    const text=moveCardLinks(annotation.text,path,destination);
+    // Promote a leading paragraph instead of copying its text into an extra title.
+    const content=marked.lexer(text)[0]?.type==='paragraph'?text.replace(/^([^\n]*)(?:\n+|$)/,'# $1\n\n'):text;
+    const quote=annotation.quote?annotation.quote.split('\n').map(line=>'> '+line).join('\n'):'';
+    const body=[content.trimEnd(),quote,'[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+(annotation.kind==='highlight'?'#annotation='+annotation.id:'')+')'].filter(part=>part.trim()).join('\n\n')+'\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
     const created=`---\n${front.toString()}---\n`+body,cardId=readCard(destination,created).id,updated=updateAnnotation(asset.body,annotation.kind==='highlight'?{...annotation,text:'',cardId}:null,note);
     return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,asset,updated),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
