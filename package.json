@@ -1,6 +1,6 @@
 {
   "name": "heavens-door",
-  "version": "0.1.27",
+  "version": "0.1.271",
   "private": true,
   "description": "A local Markdown workspace for connected thinking",
   "type": "module",
@@ -70,7 +70,7 @@
     "typescript-eslint": "^8.70.1",
     "vite": "^8.3.1"
   },
-  "buildNumber": 2,
+  "buildNumber": 3,
   "productName": "Heaven's Door",
   "author": "Heaven's Door contributors",
   "repository": {
