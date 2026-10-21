@@ -3,7 +3,7 @@ import {readingText} from '../text/reading';
 import {matchesBinding} from '../keybindings';
 import {AnnotationRail} from './Annotations';
 import {PdfReader} from './PdfReader';
-import {annotationView,splitAnnotations,updateAnnotation,type Annotation} from '../reading';
+import {DEFAULT_ANNOTATION_COLOR,annotationView,splitAnnotations,updateAnnotation,type Annotation} from '../reading';
 import {Icon} from './Icons';
 import {assetPath} from './markdown';
 import {searchDocument} from '../core/search';
@@ -59,7 +59,7 @@ export function NoteView({metadata=false,path,session,snapshot,active,memory,sus
   },[info?.id,snapshot,session]);
   const pendingAnnotations=useRef(new Map<string,Annotation|null>());
   const changeAnnotation=(value:Annotation|null,id:string)=>{pendingAnnotations.current.set(id,value);const apply=()=>{const current=session.state.draft;if(current?.card.path===path&&pendingAnnotations.current.get(id)===value)session.edit(updateAnnotation(current.body,value,id));};if(session.state.draft?.card.path===path)apply();else void session.select(path).then(apply).catch(e=>session.update({error:String(e)}));};
-  const addAnnotation=(attrs:Omit<Annotation,'id'|'kind'|'text'>={},note=true)=>{const id=(attrs.quote?'a-':'n-')+crypto.randomUUID();changeAnnotation({id,kind:attrs.quote?'highlight':'note',text:'',...attrs},id);if(note)setExpanded(id);};
+  const addAnnotation=(attrs:Omit<Annotation,'id'|'kind'|'text'>={},note=true)=>{const id=(attrs.quote?'a-':'n-')+crypto.randomUUID();changeAnnotation({id,kind:attrs.quote?'highlight':'note',text:'',color:DEFAULT_ANNOTATION_COLOR,...attrs},id);if(note)setExpanded(id);};
   const parts=annotationView(body),annotations=parts.annotations,sourceMode=memory.source||!!parts.error;
   const jumpTo=(id:string)=>{setJump(undefined);requestAnimationFrame(()=>setJump(id));container.current?.querySelector(`[data-annotation="${id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});};
   const tags=info&&featureEnabled(snapshot.preferences,'tags')?<CardTags defaultTag={info.source?'readlater':undefined} card={info} snapshot={snapshot} session={session} onOpen={onOpen}/>:undefined;

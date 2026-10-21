@@ -1101,9 +1101,8 @@ export class Workspace {
     const title=(searchDocument(annotation.text||annotation.quote!).text.split('\n').find(line=>line.trim())??'Asset note').trim().slice(0,80),stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Asset note';
     const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
     const quote=annotation.quote?annotation.quote.split('\n').map(line=>'> '+line).join('\n')+'\n\n':'';
-    const body='# '+escape(title)+'\n\n'+quote+moveCardLinks(annotation.text,path,destination)+'\n\n[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+')\n',created=newNote()+body;
-    // Keep the original highlighted passage, replacing its sticky note with a link to the new card.
-    const updated=updateAnnotation(asset.body,annotation.kind==='highlight'?{...annotation,text:'['+escape(title)+']('+referenceHref(path,destination)+')'}:null,note);
+    const body='# '+escape(title)+'\n\n'+quote+moveCardLinks(annotation.text,path,destination)+'\n\n[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+')\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
+    const created=`---\n${front.toString()}---\n`+body,updated=updateAnnotation(asset.body,null,note);
     return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,asset,updated),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:readCard(destination,created).id,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async createSlipboxCard(name:string,placement?:{folder:string;expected:string;x:number;y:number}){

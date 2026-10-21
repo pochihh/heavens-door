@@ -67,10 +67,10 @@ export function inlineHtmlToken(src:string){
 
 export const AnnotationMark=Mark.create({
  name:'annotation',inclusive:false,
- addAttributes(){return {id:{default:null,parseHTML:el=>el.dataset.annotation},color:{default:'#e6bb50',parseHTML:el=>isHexColor(el.getAttribute('data-color'))?el.getAttribute('data-color'):'#e6bb50'}};},
+ addAttributes(){return {id:{default:null,parseHTML:el=>el.dataset.annotation},color:{default:null,parseHTML:el=>isHexColor(el.getAttribute('data-color'))?el.getAttribute('data-color'):null}};},
  parseHTML(){return [{tag:'mark[data-annotation]'}];},
- renderHTML({mark}){return ['mark',{'data-annotation':mark.attrs.id,'data-color':mark.attrs.color,style:`background-color: ${mark.attrs.color}`},0];},
- markdownTokenName:'annotation',markdownTokenizer:{name:'annotation',level:'inline',start:src=>src.indexOf('<mark'),tokenize(src,_tokens,lexer){const match=/^<mark\s+data-annotation="([\w-]+)"(?:\s+data-color="(#[a-f\d]{3}(?:[a-f\d]{3})?)")?\s*>([\s\S]*?)<\/mark>(?:\[\^\1\])?/i.exec(src);if(match)return {type:'annotation',raw:match[0],attrs:{id:match[1],color:match[2]??'#e6bb50'},tokens:lexer.inlineTokens(match[3])};}},
+ renderHTML({mark}){return ['mark',{'data-annotation':mark.attrs.id,'data-color':mark.attrs.color,style:`background-color: ${mark.attrs.color??'transparent'}`},0];},
+ markdownTokenName:'annotation',markdownTokenizer:{name:'annotation',level:'inline',start:src=>src.indexOf('<mark'),tokenize(src,_tokens,lexer){const match=/^<mark\s+data-annotation="([\w-]+)"(?:\s+data-color="(#[a-f\d]{3}(?:[a-f\d]{3})?)")?\s*>([\s\S]*?)<\/mark>(?:\[\^\1\])?/i.exec(src);if(match)return {type:'annotation',raw:match[0],attrs:{id:match[1],color:match[2]??null},tokens:lexer.inlineTokens(match[3])};}},
  parseMarkdown(token,helpers){return helpers.applyMark('annotation',helpers.parseInline(token.tokens??[]),token.attrs as Record<string,string>);},
- renderMarkdown(node,helpers){return `<mark data-annotation="${node.attrs?.id}" data-color="${node.attrs?.color??'#e6bb50'}">${helpers.renderChildren(node)}</mark>[^${node.attrs?.id}]`;},
+ renderMarkdown(node,helpers){return `<mark data-annotation="${node.attrs?.id}"${node.attrs?.color?` data-color="${node.attrs.color}"`:""}>${helpers.renderChildren(node)}</mark>[^${node.attrs?.id}]`;},
 });

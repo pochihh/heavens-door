@@ -12,11 +12,11 @@ const DEFAULT_EDGE_WIDTHS=[1,2,4] as const;
 const ARROWHEAD_STYLES=['arrow','triangle','triangle-outline'] as const;
 const hasArrow=(value:Arrowhead|undefined):value is Exclude<Arrowhead,'none'>=>!!value&&value!=='none';
 const common=<T,>(values:T[])=>values.every(value=>value===values[0])?values[0]:undefined;
-export function Color({label,value,palette,onChange}:{label:string;value:string|undefined;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
+export function Color({label,value,palette,onChange,emptyLabel}:{label:string;emptyLabel?:string;value:string|undefined;palette:PaletteColor[];onChange:(color:string|undefined)=>void}) {
   const [custom,setCustom]=useState(value||'#8b929e'),[editing,setEditing]=useState(false);
   useEffect(()=>{setCustom(value||'#8b929e');setEditing(false);},[value]);
   return <fieldset className="style-color" aria-label={label}><legend>{label}</legend><div className="style-swatches">
-    <button className="color-swatch theme" aria-pressed={value===''} aria-label={ui.style.theme} data-tooltip={tooltips.style.theme} onClick={()=>onChange(undefined)}><span/></button>
+    <button className="color-swatch theme" aria-pressed={value===''} aria-label={emptyLabel??ui.style.theme} data-tooltip={emptyLabel??tooltips.style.theme} onClick={()=>onChange(undefined)}><span/></button>
     {palette.map(color=><button key={color.id} className="color-swatch" aria-pressed={value?.toLowerCase()===color.color.toLowerCase()} aria-label={color.name} data-tooltip={color.name} onClick={()=>onChange(color.color)}><span style={{background:color.color}}/></button>)}
     <Tool icon="plus" className={editing?'selected':''} label={tooltips.style.custom} aria-expanded={editing} onClick={()=>setEditing(!editing)}/>
   </div>

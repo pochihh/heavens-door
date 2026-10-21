@@ -114,7 +114,7 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
   const [view, setView] = useState<Camera>({ x: 20, y: 20, zoom: 0.85 });
   const [objectPreview,setObjectPreview]=useState<{id:string;width:number;x?:number}>();
   const [working, setWorking] = useState<Board | null>(null);
-  const [measuredHeights,setMeasuredHeights]=useState<Record<string,{height:number;width:number;top:number;signature:string}>>({});
+  const [measuredHeights,setMeasuredHeights]=useState<Record<string,{height:number;width:number;top:number;pdfHeight?:number;signature:string}>>({});
   const [contentVersion,setContentVersion]=useState(0);
   const contentReady=useCallback(()=>setContentVersion(version=>version+1),[]);
   const naturalHeight=(p:Placement)=>p.object?.type==='image'||p.object?.type==='text'||lookup.get(p.cardId)?.source?.type==='pdf'||autoHeight(p);
@@ -123,8 +123,8 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
   const widthOf=(p:Placement)=>objectPreview?.id===p.id?objectPreview.width:(p.object?.type==='text'||!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf')&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
   const heightOf=(placement:Placement)=>{const p=placements.get(placement.id)??placement;return p.collapsed||naturalHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;};
   const geometryTop=(item:Placement)=>{const p=placements.get(item.id)??item;return !p.collapsed&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]?.top??0:0;};
-  const geometryCard=(p:Placement)=>({...p,x:xOf(p),y:p.y+geometryTop(p),width:widthOf(p)});
-  const geometryHeight=(p:Placement)=>heightOf(p)-geometryTop(p);
+  const geometryCard=(p:Placement)=>({...p,x:xOf(p),y:p.y+geometryTop(p),width:!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf'?p.width:widthOf(p)});
+  const geometryHeight=(item:Placement)=>{const p=placements.get(item.id)??item;return measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.pdfHeight??heightOf(p)-geometryTop(p):heightOf(p);};
   const expandedHeight=(p:Placement)=>naturalHeight(p)?(measuredHeight({...p,collapsed:false})??p.height):p.height;
   const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
   const [reference,setReference]=useState<{x:number;y:number;screenX:number;screenY:number}|null>(null),[referenceAnchor,setReferenceAnchor]=useState<HTMLSpanElement|null>(null),[referenceBusy,setReferenceBusy]=useState(false),[referenceError,setReferenceError]=useState('');
@@ -560,9 +560,9 @@ export const Whiteboard = memo(function Whiteboard({ keybindings,hasCopiedStyle,
       let next=previous;
       for(const node of nodes){
         if(node.querySelector('.card-preview[data-ready=false]'))continue;
-        const top=node.querySelector<HTMLElement>('.board-pdf-selection')?.offsetTop??0;
+        const frame=node.querySelector<HTMLElement>('.board-pdf-selection'),top=frame?.offsetTop??0,pdfHeight=frame?.offsetHeight;
         const id=node.dataset.heightKey!,height=(node.classList.contains('board-image')?node.querySelector<HTMLElement>('.image-media')??node:node).offsetHeight,width=node.offsetWidth,signature=node.dataset.heightSignature!;
-        if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top)){if(next===previous)next={...previous};next[id]={height,width,top,signature};}
+        if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top||pdfHeight!==previous[id]?.pdfHeight)){if(next===previous)next={...previous};next[id]={height,width,top,pdfHeight,signature};}
       }
       return next;
     });

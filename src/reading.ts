@@ -1,6 +1,7 @@
 import type {TagField} from './shared';
 import {marked} from 'marked';
-import {isHexColor} from './colors';
+import {isHexColor,DEFAULT_PALETTE} from './colors';
+export const DEFAULT_ANNOTATION_COLOR=DEFAULT_PALETTE.find(color=>color.id==='ochre')!.color;
 export interface ReadingSource {type:'pdf'|'web';file?:string;url?:string;captured?:string;sha256?:string;feed?:string;entry?:string;missingImages?:string[]}
 export const READLATER_STATUS='readlater/status';
 export const DEFAULT_READING_STATUS:TagField={key:'status',label:'Status',type:'status',statusGroups:{todo:['New'],inProgress:['Reading'],done:['Done']},default:'New'};
@@ -48,7 +49,7 @@ export function withAnnotations(content:string,annotations:Annotation[]){
 export function updateAnnotation(body:string,value:Annotation|null,id=value?.id){
   const {content,annotations}=splitAnnotations(body),next=value?annotations.map(a=>a.id===id?value:a):annotations.filter(a=>a.id!==id);if(value&&!annotations.some(a=>a.id===id))next.push(value);
   const cleaned=value?content:content.replace(new RegExp(`<mark\\b[^>]*data-annotation=["']${id}["'][^>]*>([\\s\\S]*?)<\\/mark>(?:\\[\\^${id}\\])?`,'g'),'$1');
-  const colored=value?.color?cleaned.replace(new RegExp(`(<mark\\s+data-annotation="${id}")(?:\\s+data-color="[^"]*")?`,'g'),`$1 data-color="${value.color}"`):cleaned;
+  const colored=value?cleaned.replace(new RegExp(`(<mark\\s+data-annotation="${id}")(?:\\s+data-color="[^"]*")?`,'g'),`$1${value.color?` data-color="${value.color}"`:""}`):cleaned;
   return withAnnotations(colored,next);
 }
 export function annotationReferences(body:string){

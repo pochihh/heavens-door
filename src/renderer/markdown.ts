@@ -49,7 +49,7 @@ function renderPreview(html:string,path:string,reservedTitle=true) {
   const clean=DOMPurify.sanitize(html,{FORBID_TAGS:['script','style','iframe','object','embed','form','button','textarea','select','video','audio','source','link','meta'],ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|wiki:[^\s]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
   for(const code of template.content.querySelectorAll<HTMLElement>('pre>code'))highlightCodePreview(code);
-  for(const mark of template.content.querySelectorAll<HTMLElement>('mark[data-annotation]'))if(isHexColor(mark.dataset.color))mark.style.backgroundColor=mark.dataset.color!;
+  for(const mark of template.content.querySelectorAll<HTMLElement>('mark[data-annotation]'))mark.style.backgroundColor=isHexColor(mark.dataset.color)?mark.dataset.color!:'transparent';
   if(reservedTitle){let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
   title.classList.add('card-title');

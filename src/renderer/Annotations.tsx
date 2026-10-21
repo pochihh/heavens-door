@@ -1,7 +1,7 @@
 import {dragAssetNote} from './asset-note-drag';
 import {readingText} from '../text/reading';
 import {useContext,useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {annotationView,annotationOnPage,updateAnnotation,type Annotation} from '../reading';
+import {DEFAULT_ANNOTATION_COLOR,annotationView,annotationOnPage,updateAnnotation,type Annotation} from '../reading';
 import type {Card,CardInfo} from '../shared';
 import {AnnotationEditor} from './AnnotationEditor';
 import {annotationPositions,type PdfPageBox} from './annotation-layout';
@@ -20,7 +20,7 @@ export function AnnotationRail({body,path,expanded,onExpanded,onChange,onJump,on
  const notesHeight=positions?Math.max(28,...annotations.map(a=>(positions.get(a.id)?.top??0)+(heights[a.id]??42))):undefined;
  return <aside ref={rail} className={'annotation-rail'+(compact?' board-annotation-rail':'')+(pages?' page-aligned-notes':'')} style={pages?{'--annotation-columns':Math.max(1,...[...positions!.values()].map(p=>p.column+1)),...(compact?{height:notesHeight}:{} )} as React.CSSProperties:undefined} aria-label={readingText.annotations} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
   <div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span>{onAdd&&<Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/>}</div>
-  {annotations.map(a=>{const position=positions?.get(a.id),open=expanded===a.id;return <section key={a.id} data-note-id={a.id} className={'sticky-note'+(open?' expanded':'')} style={{'--note-color':a.color??'#e6bb50',...(position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{})} as React.CSSProperties}>
+  {annotations.map(a=>{const position=positions?.get(a.id),open=expanded===a.id;return <section key={a.id} data-note-id={a.id} className={'sticky-note'+(open?' expanded':'')+(!a.color?' uncolored':'')} style={{'--note-color':a.color??'transparent',...(position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{})} as React.CSSProperties}>
     <div className="sticky-note-heading"><button className="sticky-preview" onPointerDown={e=>{if(!context||!a.text.trim()&&!a.quote?.trim())return;cancelDrag.current();cancelDrag.current=dragAssetNote(e,()=>({key:'asset-note:'+a.id,path,note:{id:a.id,expected:context.session.state.snapshot?.cards.find(c=>c.path===path)?.revision??''}}));}} aria-expanded={open} aria-label={readingText.openNote+': '+(a.text||a.quote||readingText.emptyNote).split('\n')[0]} onClick={()=>{setColorPicker(undefined);onExpanded(open?undefined:a.id);if(!open)onJump?.(a.id);}}><span>{(a.text||a.quote||readingText.emptyNote).replace(/[#*_`]/g,'').split('\n')[0]}</span></button>{open&&<Tool icon="trash" className="danger" label={readingText.deleteAnnotation} onClick={()=>{void confirm({title:readingText.deleteAnnotation,message:a.text||a.quote||readingText.deleteAnnotation,accept:readingText.delete,danger:true}).then(yes=>{if(yes)onChange(null,a.id);});}}/>}</div>
     {open&&<>{a.quote&&<blockquote className="sticky-quote">{a.quote}</blockquote>}
       <AnnotationEditor path={path} text={a.text} onChange={text=>onChange({...a,text},a.id)}/>
@@ -29,7 +29,7 @@ export function AnnotationRail({body,path,expanded,onExpanded,onChange,onJump,on
     </>}
   </section>;})}
 
-  {colorPicker&&colorNote&&<PropertyPopover anchor={colorPicker.anchor} label={readingText.highlightColor} onClose={()=>setColorPicker(undefined)}><Color label={readingText.highlightColor} palette={palette} value={colorNote.color} onChange={color=>onChange({...colorNote,color:color??'#e6bb50'},colorNote.id)}/></PropertyPopover>}
+  {colorPicker&&colorNote&&<PropertyPopover anchor={colorPicker.anchor} label={readingText.highlightColor} onClose={()=>setColorPicker(undefined)}><Color label={readingText.highlightColor} palette={palette} emptyLabel={readingText.noColor} value={colorNote.color??''} onChange={color=>onChange({...colorNote,color},colorNote.id)}/></PropertyPopover>}
  </aside>;
 }
 export function useAssetAnnotations(card:CardInfo){
@@ -41,7 +41,7 @@ export function useAssetAnnotations(card:CardInfo){
   const apply=()=>{const current=context.session.state.draft;if(current?.card.id===card.id&&pending.current.get(id)===value)context.session.edit(updateAnnotation(current.body,value,id));};
   if(context.session.state.draft?.card.id===card.id)apply();else void context.session.select(card.path).then(apply).catch(e=>context.session.update({error:String(e)}));
  };
- const add=(attrs:Omit<Annotation,'id'|'kind'|'text'>={},note=true)=>{const id=(attrs.quote?'a-':'n-')+crypto.randomUUID();change({id,kind:attrs.quote?'highlight':'note',text:'',...attrs},id);if(note)setExpanded(id);};
+ const add=(attrs:Omit<Annotation,'id'|'kind'|'text'>={},note=true)=>{const id=(attrs.quote?'a-':'n-')+crypto.randomUUID();change({id,kind:attrs.quote?'highlight':'note',text:'',color:DEFAULT_ANNOTATION_COLOR,...attrs},id);if(note)setExpanded(id);};
  return {context,body,expanded,setExpanded,change,add,error};
 }
 export function BoardAnnotations({card,openNote}:{card:CardInfo;openNote?:string}){

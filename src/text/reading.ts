@@ -13,7 +13,7 @@ export const readingText={
   moveNoteToBoard:"Drag note onto a whiteboard to turn it into a card",
   collapseNote:"Collapse note",
   deleteAnnotation:"Delete annotation",
-  highlightColor:"Highlight color",
+  highlightColor:"Highlight color",noColor:"No color",
   thePassageIsUnresolvedYourNoteIsPreserved:"The passage is unresolved. Your note is preserved.",
   objectActions:"Object actions",
   duplicate:"Duplicate",

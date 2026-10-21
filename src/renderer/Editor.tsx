@@ -1,5 +1,5 @@
 import {readingText} from '../text/reading';
-import {annotationView,splitAnnotations,withAnnotations,type Annotation} from '../reading';
+import {DEFAULT_ANNOTATION_COLOR,annotationView,splitAnnotations,withAnnotations,type Annotation} from '../reading';
 import {EditorMath} from './EditorMath';
 import {ViewBlockContext} from './ViewBlock';
 import {DEFAULT_EDITOR_SETTINGS} from '../editor-settings';
@@ -94,7 +94,7 @@ function EditableCard({noteOnly=false,onAnnotation,onTitleDone,afterTitle,path,b
     <EditorCommands editor={editor}/>
     {links.picker}
     <EditorMentions editor={editor} path={path} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
-    <EditorControls onAnnotate={!noteOnly&&onAnnotation?()=>{const selection=editor.state.selection;if(selection.empty)return;const id='a-'+crypto.randomUUID(),quote=editor.state.doc.textBetween(selection.from,selection.to,' '),value:Annotation={id,kind:'highlight',text:'',quote,color:'#e6bb50'};footer.current=splitAnnotations(withAnnotations(cardMarkdown(editor),[...splitAnnotations(body).annotations,value])).footer;actionLabel.current='Add annotation';try{editor.chain().focus().setMark('annotation',{id,color:value.color}).run();}finally{actionLabel.current=undefined;}onAnnotation?.(id);}:undefined} path={path} zoom={zoom} canvas={canvas} editor={editor} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
+    <EditorControls onAnnotate={!noteOnly&&onAnnotation?()=>{const selection=editor.state.selection;if(selection.empty)return;const id='a-'+crypto.randomUUID(),quote=editor.state.doc.textBetween(selection.from,selection.to,' '),value:Annotation={id,kind:'highlight',text:'',quote,color:DEFAULT_ANNOTATION_COLOR};footer.current=splitAnnotations(withAnnotations(cardMarkdown(editor),[...splitAnnotations(body).annotations,value])).footer;actionLabel.current='Add annotation';try{editor.chain().focus().setMark('annotation',{id,color:value.color}).run();}finally{actionLabel.current=undefined;}onAnnotation?.(id);}:undefined} path={path} zoom={zoom} canvas={canvas} editor={editor} onImage={()=>imageInput.current?.click()} action={(label,apply)=>{actionLabel.current=label;try{apply();}finally{actionLabel.current=undefined;}}}/>
     <EditorContent editor={editor} className="prose editor-body" onBlur={e=>{const title=editor.view.dom.firstElementChild;if(title?.contains(e.target as Node)&&!title.contains(e.relatedTarget as Node))onTitleDone?.();}} onClick={links.click} onPointerDownCapture={event=>{
       if(!canvas||event.button!==0||event.defaultPrevented||(event.target as HTMLElement).closest('button,a,input,[contenteditable=false]'))return;
       const last=editor.view.dom.lastElementChild;if(!last||event.clientY<=last.getBoundingClientRect().bottom)return;

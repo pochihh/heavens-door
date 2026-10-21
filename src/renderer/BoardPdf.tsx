@@ -13,8 +13,7 @@ export function BoardPdf({card,width,settings,zoom,onRevealPage,onPage,onShowNot
  const {context,body,expanded,setExpanded,change,add,error}=useAssetAnnotations(card),[jump,setJump]=useState<string>(),[checksum,setChecksum]=useState(''),[pages,setPages]=useState<PdfPageBox[]>([]);
  const page=settings?.page??card.reading?.page??1;
  return <div className={'board-pdf'+(settings?.expanded?' continuous':'')} style={{'--pdf-width':width+'px'} as React.CSSProperties} onPointerDownCapture={()=>onSelect?.()} onClickCapture={()=>onSelect?.()} onFocusCapture={()=>onSelect?.()}>
-  <div className="board-pdf-selection" aria-hidden="true" style={{top:pages[0]?.top??0}}/>
-  <div className="board-pdf-main"><header className="board-pdf-heading"><span className="board-pdf-title">{card.title||card.name}</span><div className="board-pdf-actions">
+  <div className="board-pdf-main"><div className="board-pdf-selection" aria-hidden="true" style={{top:pages[0]?.top??0}}/><header className="board-pdf-heading"><span className="board-pdf-title">{card.title||card.name}</span><div className="board-pdf-actions">
    {onOpen&&<Tool icon="external" label={ui.common.openInPopup} onClick={onOpen}/>}
    <Tool icon="chevronUp" label={tooltips.whiteboard.collapseCard} onClick={onCollapse}/>
    <Tool icon="more" label={readingText.pdfActions} aria-haspopup="menu" onClick={e=>onMore(e.currentTarget)}/>
