@@ -11,9 +11,9 @@ import {Color} from './StyleView';
 import {DEFAULT_PALETTE} from '../colors';
 import {ViewBlockContext} from './ViewBlock';
 import {useConfirmation} from './Confirmation';
-export function AnnotationRail({body,path,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[]}){
+export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[]}){
  const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>();useEffect(()=>()=>cancelDrag.current(),[]);
- const annotations=annotationView(body).annotations.filter(a=>annotationOnPage(a,page)),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
+ const linkedCards=new Set(cards.map(card=>card.id)),annotations=annotationView(body).annotations.filter(a=>annotationOnPage(a,page)&&(!a.cardId||!linkedCards.has(a.cardId))),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
  useLayoutEffect(()=>{const root=rail.current!;const observer=new ResizeObserver(()=>{const next:Record<string,number>={};root.querySelectorAll<HTMLElement>('[data-note-id]').forEach(el=>{next[el.dataset.noteId!]=el.offsetHeight;});setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);});root.querySelectorAll('[data-note-id]').forEach(el=>observer.observe(el));return()=>observer.disconnect();},[body,expanded]);
  const positions=pages?annotationPositions(annotations.map(a=>({id:a.id,page:page??a.page??a.anchors?.[0]?.page,height:heights[a.id]??42})),pages):undefined;
  const colorNote=annotations.find(a=>a.id===colorPicker?.id&&a.id===expanded);

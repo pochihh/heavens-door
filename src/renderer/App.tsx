@@ -80,7 +80,8 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [reveal,setReveal]=useState<{pane:string;path:string;placement:string;token:number}>();
   const state=session.state,prefs=snapshot.preferences??defaults;
   const [boardSelection,setBoardSelection]=useState<BoardSelection>();
-  const [popup,setPopup]=useState<{key:string;pane:string;previousCard?:string}>();
+  const [popup,setPopup]=useState<{key:string;pane:string;previousCard?:string;annotation?:{id:string;token:number}}>();
+  const [annotationReveal,setAnnotationReveal]=useState<{pane:string;key:string;id:string;token:number}>();
   const [searchOpen,setSearchOpen]=useState(false);
   useEffect(()=>{const search=()=>setSearchOpen(true);window.addEventListener('editor:search',search);return()=>window.removeEventListener('editor:search',search);},[]);
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!document.querySelector('dialog[open]')&&!(e.target as HTMLElement)?.closest('[data-shortcut-record]')&&matchesBinding(e,'search',session.state.snapshot?.preferences?.keybindings,window.door.platform)&&!e.isComposing){e.preventDefault();setSearchOpen(true);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
@@ -265,7 +266,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   function star(key:string){changePrefs(p=>({starred:p.starred.includes(key)?p.starred.filter(k=>k!==key):[...p.starred,key]}));}
   function docIcon(key:string){const info=documentInfo(key,snapshot);return <DocumentIcon value={prefs.icons[key]} fallback={info.icon}/>;}
   function editIcon(key:string){setIconKey(key);setCustomIcon(prefs.icons[key]??'');setModal('icon');}
-  async function navigate(key:string,id:string,mode:NavigationMode='same'){
+  async function navigate(key:string,id:string,mode:NavigationMode='same',annotation?:{id:string;token:number}){
     try{
       const current=session.state.snapshot!,settings=current.preferences,info=documentInfo(key,current);
       if(!info.exists)throw new Error(ui.errors.fileMissing);
@@ -275,6 +276,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       await session.select(info.kind==='card'?info.path:null);
       const next=layoutRef.current===before?planned:visit(layoutRef.current);
       layoutRef.current=next.tree;setLayout(next.tree);setActiveId(next.active);setPulse(v=>v+1);
+      if(annotation)setAnnotationReveal({pane:next.active,key,...annotation});
       changePrefs(p=>({recent:[key,...p.recent.filter(k=>k!==key)].slice(0,30)}));
       return true;
     }catch(error){session.update({error:String(error)});return false;}
@@ -292,17 +294,17 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       changePrefs(p=>({recent:[boardKey,...p.recent.filter(k=>k!==boardKey)].slice(0,30)}));
     }));
   }
-  async function previewCard(key:string,id=activeId){
+  async function previewCard(key:string,id=activeId,annotation?:string){
     const info=documentInfo(key,session.state.snapshot!);if(info.kind!=='card'){if(await navigate(key,id))setPopup(undefined);return;}
     const previousCard=popup?popup.previousCard:session.state.draft?.card.id;
-    setPopup({key,pane:id,previousCard});
+    setPopup({key,pane:id,previousCard,...(annotation?{annotation:{id:annotation,token:Date.now()}}:{})});
     try{await session.select(info.path);}catch{/* Session retains the unsaved draft and reports the error. */}
   }
   async function closePopup(){
     const previous=snapshot.cards.find(c=>c.id===popup?.previousCard);
     await session.run(()=>session.flush());await session.select(previous?.path??null);setPopup(undefined);
   }
-  async function transferPopup(key:string,mode:NavigationMode){if(await navigate(key,popup!.pane,mode))setPopup(undefined);else throw new Error(session.state.error);}
+  async function transferPopup(key:string,mode:NavigationMode){if(await navigate(key,popup!.pane,mode,key===popup!.key?popup!.annotation:undefined))setPopup(undefined);else throw new Error(session.state.error);}
   function travel(p:Pane,offset:-1|1){attempt((async()=>{const next=travelTab(layout,p.id,offset),key=tabDocument(panes(next).find(group=>group.id===p.id)!);const info=documentInfo(key,session.state.snapshot!);if(!info.exists){session.update({error:ui.errors.fileMissing});return;}await session.select(info.kind==='card'?info.path:null);setLayout(next);setActiveId(p.id);})());}
   useEffect(()=>{
     const hover=(event:Event)=>{const {group,key}=(event as CustomEvent<{group:string;key:string}>).detail,p=panes(layoutRef.current).find(p=>p.id===group);if(p&&p.tabs.includes(key)&&p.active!==key&&!popup)selectTab(p,key);};
@@ -343,13 +345,13 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         <Tool icon="star" className={prefs.starred.includes(documentKey)?'is-starred':''} label={prefs.starred.includes(documentKey)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(documentKey)}/>
 
       </div>}
-      <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
+      <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={(key,annotation)=>previewCard(key,p.id,annotation)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
           !info.exists?<p className="notice">{info.kind==='system'||info.kind==='graph'?ui.system.disabled:ui.errors.fileMissing}</p>:
           info.kind==='graph'?<GraphView key={documentKey} snapshot={snapshot} onOpen={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onMode={graphMode=>changePrefs(()=>({graphMode}))}/>:info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id,'new')} onJournalOpen={key=>open(key,p.id,true)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
           board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y},p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag&&!featureEnabled(prefs,'tags')?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
-          info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
+          info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView revealAnnotation={annotationReveal?.pane===p.id&&annotationReveal.key===documentKey?annotationReveal:undefined} suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
       </ViewBlockProvider></div>
       {focused&&<div className="pane-focus-flash" key={pulse}/>}
     </section>;
@@ -404,7 +406,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <span data-tooltip={tooltips.status.syncOff}><Icon name="sync" size={13}/>{ui.status.syncOff}</span>
       <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>
     </footer>
-    {popup&&<CardPopup documentKey={popup.key} snapshot={snapshot} session={session} onClose={closePopup} onNavigate={transferPopup} onPreview={key=>previewCard(key,popup.pane)}/>}
+    {popup&&<CardPopup revealAnnotation={popup.annotation} documentKey={popup.key} snapshot={snapshot} session={session} onClose={closePopup} onNavigate={transferPopup} onPreview={(key,annotation)=>previewCard(key,popup.pane,annotation)}/>}
     {templateOpen&&featureEnabled(prefs,'templates')&&<TemplateDialog initialTemplate={templatePath} snapshot={snapshot} session={session} onOpen={open} onClose={()=>setTemplateOpen(false)}/>}
     {searchOpen&&<SearchDialog session={session} snapshot={snapshot} onReveal={showOnBoard} onOpen={open} onSplit={openBeside} onClose={()=>setSearchOpen(false)}/>}
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}

@@ -14,7 +14,7 @@ import {PropertyPopover} from './PropertyValue';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 
-export function CardPopup({documentKey,snapshot,session,onClose,onNavigate,onPreview}:{documentKey:string;snapshot:Snapshot;session:Session;onClose:()=>Promise<void>;onNavigate:(key:string,mode:NavigationMode)=>Promise<void>;onPreview:(key:string)=>Promise<void>}){
+export function CardPopup({revealAnnotation,documentKey,snapshot,session,onClose,onNavigate,onPreview}:{revealAnnotation?:{id:string;token:number};documentKey:string;snapshot:Snapshot;session:Session;onClose:()=>Promise<void>;onNavigate:(key:string,mode:NavigationMode)=>Promise<void>;onPreview:(key:string,annotation?:string)=>Promise<void>}){
   const confirm=useConfirmation();
   const ref=useRef<HTMLDialogElement>(null),memory=useRef<ViewMemory>({}),pending=useRef(false);
   const [source,setSource]=useState(false),[busy,setBusy]=useState(false),[menu,setMenu]=useState<HTMLElement|null>(null),[error,setError]=useState(''),[colorAnchor,setColorAnchor]=useState<HTMLElement|null>(null);
@@ -35,7 +35,7 @@ export function CardPopup({documentKey,snapshot,session,onClose,onNavigate,onPre
         <Tool icon="close" label={tooltips.common.closeDialog} disabled={busy} onClick={()=>void perform(onClose)}/>
       </header>
       {card?<ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>void perform(()=>onPreview(key))} onPreview={onPreview} onNavigate={(key,mode)=>void perform(()=>onNavigate(key,mode))}>
-        <NoteView metadata key={card.id} path={card.path} session={session} snapshot={snapshot} active memory={memory.current} onActivate={()=>void perform(()=>session.select(card.path))} onOpen={key=>void perform(()=>key.startsWith('card:')?onPreview(key):onNavigate(key,'same'))} onViewChange={()=>{}}/>
+        <NoteView revealAnnotation={revealAnnotation} metadata key={card.id} path={card.path} session={session} snapshot={snapshot} active memory={memory.current} onActivate={()=>void perform(()=>session.select(card.path))} onOpen={key=>void perform(()=>key.startsWith('card:')?onPreview(key):onNavigate(key,'same'))} onViewChange={()=>{}}/>
       </ViewBlockProvider>:<p className="notice">{ui.errors.fileMissing}</p>}
       {(error||session.state.error)&&<div className="card-popup-error" role="alert"><span>{error||session.state.error}</span>{session.state.draft?.dirty&&<><button onClick={()=>void perform(()=>session.copyDraft())}>{ui.common.copyDraft}</button><button onClick={()=>void perform(async()=>{if(await confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}))await session.reloadDraft();})}>{ui.common.reloadFromDisk}</button></>}</div>}
     </div>

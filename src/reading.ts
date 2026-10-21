@@ -8,7 +8,7 @@ export const DEFAULT_READING_STATUS:TagField={key:'status',label:'Status',type:'
 export function legacyReadingStatus(state:ReadingProgress['state'],field:TagField){const group=state==='done'?'done':state==='reading'?'inProgress':'todo';return field.statusGroups?.[group]?.[0]??field.default??field.options?.[0]??(state==='done'?'Done':state==='reading'?'Reading':'New');}
 export interface ReadingProgress {state?:'new'|'reading'|'done';page?:number;scroll?:number}
 export interface ReadingSettings {folder:string}
-export interface Annotation {id:string;kind:'highlight'|'note';text:string;quote?:string;color?:string;page?:number;rects?:number[][];anchors?:{page:number;rects:number[][]}[];source?:string;context?:string;unresolved?:boolean}
+export interface Annotation {id:string;kind:'highlight'|'note';text:string;quote?:string;color?:string;cardId?:string;page?:number;rects?:number[][];anchors?:{page:number;rects:number[][]}[];source?:string;context?:string;unresolved?:boolean}
 export function annotationOnPage(annotation:Annotation,page?:number){
   return page===undefined||annotation.page===page||!!annotation.anchors?.some(a=>a.page===page)||annotation.page===undefined&&!annotation.anchors?.length;
 }
@@ -26,6 +26,7 @@ export function readingMetadata(front:Record<string,unknown>,strict=false){
   return {...(front[READLATER_STATUS]!==undefined?{readLaterStatus:front[READLATER_STATUS]}:{}),...(source?{source}:{}),...(reading?{reading}:{})};
 }
 export function validateAnnotation(value:Annotation){
+  if(value?.cardId!==undefined&&(typeof value.cardId!=='string'||!idPattern.test(value.cardId)))throw new Error('Invalid annotation card reference.');
   if(value?.anchors){if(!Array.isArray(value.anchors)||value.anchors.length>1000)throw new Error('Invalid annotation anchors.');for(const anchor of value.anchors){if(!anchor||!Number.isInteger(anchor.page)||anchor.page<1||!Array.isArray(anchor.rects)||anchor.rects.length>1000||anchor.rects.some(r=>r.length!==4||r.some(n=>!Number.isFinite(n)||n<0||n>1)))throw new Error('Invalid annotation anchor.');}}
   if(value?.source!==undefined&&(typeof value.source!=='string'||value.source.length>128)||value?.context!==undefined&&(typeof value.context!=='string'||value.context.length>100000)||value?.unresolved!==undefined&&typeof value.unresolved!=='boolean')throw new Error('Invalid annotation metadata.');
   if(!value||!idPattern.test(value.id)||!['highlight','note'].includes(value.kind)||typeof value.text!=='string'||value.text.length>100000||value.quote!==undefined&&(typeof value.quote!=='string'||value.quote.length>100000)||value.color!==undefined&&!isHexColor(value.color)||value.page!==undefined&&(!Number.isInteger(value.page)||value.page<1)||value.rects!==undefined&&(!Array.isArray(value.rects)||value.rects.length>1000||value.rects.some(r=>r.length!==4||r.some(n=>!Number.isFinite(n)||n<0||n>1))))throw new Error('Invalid annotation.');

@@ -7,6 +7,7 @@ export function referenceHref(from:string,to:string){
   while(left.length&&right.length&&left[0]===right[0]){left.shift();right.shift();}
   return [...left.map(()=>'..'),...right.map(encodeURIComponent)].join('/');
 }
+export function annotationFragment(href:string){return /#annotation=([\w-]{1,128})$/.exec(href)?.[1];}
 export function referencePath(from:string,href:string){
   if(/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href))return;
   let link:string;try{link=decodeURIComponent(href.split(/[?#]/)[0]);}catch{return;}

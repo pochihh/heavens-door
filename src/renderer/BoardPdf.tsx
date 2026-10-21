@@ -12,13 +12,14 @@ import {tooltips} from '../text/tooltips';
 export function BoardPdf({card,width,settings,zoom,onRevealPage,onPage,onShowNotes,onMore,onCollapse,onOpen,onSelect,onLayout}:{card:CardInfo;width:number;settings:Placement['pdf'];zoom:number;onRevealPage:(page:HTMLElement)=>void;onPage:(page:number)=>void;onShowNotes:()=>void;onMore:(anchor:HTMLButtonElement)=>void;onCollapse:()=>void;onOpen?:()=>void;onSelect?:()=>void;onLayout?:()=>void}){
  const {context,body,expanded,setExpanded,change,add,error}=useAssetAnnotations(card),[jump,setJump]=useState<string>(),[checksum,setChecksum]=useState(''),[pages,setPages]=useState<PdfPageBox[]>([]);
  const page=settings?.page??card.reading?.page??1;
+ const openAnnotation=(id:string)=>{const linked=annotationView(body).annotations.find(a=>a.id===id)?.cardId,target=context?.snapshot.cards.find(c=>c.id===linked);if(target)(context!.onPreview??context!.onOpen)('card:'+target.id);else{if(settings?.notes===false)onShowNotes();setExpanded(id);}};
  return <div className={'board-pdf'+(settings?.expanded?' continuous':'')} style={{'--pdf-width':width+'px'} as React.CSSProperties} onPointerDownCapture={()=>onSelect?.()} onClickCapture={()=>onSelect?.()} onFocusCapture={()=>onSelect?.()}>
   <div className="board-pdf-main"><div className="board-pdf-selection" aria-hidden="true" style={{top:pages[0]?.top??0}}/><header className="board-pdf-heading"><span className="board-pdf-title">{card.title||card.name}</span><div className="board-pdf-actions">
    {onOpen&&<Tool icon="external" label={ui.common.openInPopup} onClick={onOpen}/>}
    <Tool icon="chevronUp" label={tooltips.whiteboard.collapseCard} onClick={onCollapse}/>
    <Tool icon="more" label={readingText.pdfActions} aria-haspopup="menu" onClick={e=>onMore(e.currentTarget)}/>
   </div></header>
-  <PdfReader onLayout={pages=>{setPages(pages);onLayout?.();}} path={card.path} source={card.source!} annotations={annotationView(body).annotations} initialPage={page} singlePage={!settings?.expanded} onRevealPage={settings?.expanded?onRevealPage:undefined} renderZoom={zoom} onPage={onPage} onAnnotate={attrs=>{if(settings?.notes===false)onShowNotes();add(attrs,false);}} onSource={setChecksum} onJump={jump} onAnnotation={id=>{if(settings?.notes===false)onShowNotes();setExpanded(id);}}/></div>
+  <PdfReader onLayout={pages=>{setPages(pages);onLayout?.();}} path={card.path} source={card.source!} annotations={annotationView(body).annotations} initialPage={page} singlePage={!settings?.expanded} onRevealPage={settings?.expanded?onRevealPage:undefined} renderZoom={zoom} onPage={onPage} onAnnotate={attrs=>{if(settings?.notes===false)onShowNotes();add(attrs,false);}} onSource={setChecksum} onJump={jump} onAnnotation={openAnnotation}/></div>
   {error&&<p role="alert">{error}</p>}
   {settings?.notes!==false&&context&&<AnnotationRail compact pages={pages} sourceHash={checksum} page={settings?.expanded?undefined:page} path={card.path} body={body} cards={context.snapshot.cards} expanded={expanded} onExpanded={setExpanded} onChange={change} onJump={id=>{setJump(undefined);requestAnimationFrame(()=>setJump(id));}}/>}
  </div>;

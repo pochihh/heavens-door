@@ -16,6 +16,11 @@ export function visiblePdfPage(reader:HTMLElement,viewport=reader){
   for(const el of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=el.getBoundingClientRect();if(r.top>=box.bottom)break;const amount=Math.max(0,Math.min(r.bottom,box.bottom)-Math.max(r.top,top));if(amount>overlap){visible=el;overlap=amount;}}
   return visible?Number(visible.dataset.pdfPage):undefined;
 }
+export function revealPdfHighlight(reader:HTMLElement,id:string){
+  const mark=[...reader.querySelectorAll<HTMLElement>('[data-annotation]')].find(el=>el.dataset.annotation===id);if(!mark)return;
+  const box=reader.getBoundingClientRect(),ratio=box.width/reader.offsetWidth||1;
+  reader.scrollTop+=(mark.getBoundingClientRect().top-box.top)/ratio-(reader.querySelector<HTMLElement>('.pdf-reader-toolbar')?.offsetHeight??0)-24;
+}
 export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSource,initialPage=1,singlePage=false,renderZoom=1,onAnnotation,onRevealPage,onLayout}:{source:ReadingSource;path:string;annotations:Annotation[];onAnnotate:(annotation:Omit<Annotation,'id'|'kind'|'text'>)=>void;onPage:(page:number)=>void;onJump?:string;onSource?:(checksum:string)=>void;initialPage?:number;singlePage?:boolean;renderZoom?:number;onAnnotation?:(id:string)=>void;onRevealPage?:(page:HTMLElement)=>void;onLayout?:(pages:PdfPageBox[])=>void}){
   const context=useContext(ViewBlockContext);const bindings=useRef(context?.snapshot.preferences?.keybindings);bindings.current=context?.snapshot.preferences?.keybindings;
   const root=useRef<HTMLDivElement>(null),[document,setDocument]=useState<PDFDocumentProxy|null>(null),[sizes,setSizes]=useState<{width:number;height:number}[]>([]),[error,setError]=useState(''),[width,setWidth]=useState(600),[zoom,setZoom]=useState(1),[page,setPage]=useState(initialPage),[query,setQuery]=useState(''),[searching,setSearching]=useState(false),[reload,setReload]=useState(0),[checksum,setChecksum]=useState('');
@@ -32,7 +37,15 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
   useEffect(()=>{if(document)jump(initialPage,false);},[document]);
   useEffect(()=>{if(document&&initialPage!==page)jump(initialPage,false);},[initialPage]);
   useEffect(()=>{if(singlePage&&root.current)root.current.scrollTop=0;else if(document)jump(page,false);},[singlePage]);
-  useEffect(()=>{const a=annotations.find(a=>a.id===onJump);if(a?.page&&(!a.source||a.source===checksum))jump(a.page);},[onJump]);
+  const revealed=useRef<{id:string;document:PDFDocumentProxy}|null>(null);
+  useEffect(()=>{
+    if(!onJump){revealed.current=null;return;}if(!document)return;
+    const a=annotations.find(a=>a.id===onJump),page=a?.page??a?.anchors?.[0]?.page;
+    if(a&&page&&(!a.source||a.source===checksum)&&(revealed.current?.id!==onJump||revealed.current.document!==document)){
+      revealed.current={id:onJump,document};jump(page);
+      if(!singlePage&&!onRevealPage)revealPdfHighlight(root.current!,onJump);
+    }
+  },[onJump,document,checksum,annotations,singlePage,onRevealPage]);
   useEffect(()=>{
     if(!onRevealPage||singlePage)return;const viewport=root.current?.closest<HTMLElement>('.canvas');if(!viewport)return;
     const update=()=>{const next=visiblePdfPage(root.current!,viewport);if(next!==undefined)reportPage(next);setSelection(null);};

@@ -249,7 +249,7 @@ export class Workspace {
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
         for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,target);}
         this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
-        const annotations=annotationView(card.body);marked.walkTokens(marked.lexer(annotations.content+'\n\n'+annotations.annotations.map(a=>a.text).join('\n\n')), token => {
+        const annotations=annotationView(card.body);for(const annotation of annotations.annotations)if(annotation.cardId)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,annotation.cardId);marked.walkTokens(marked.lexer(annotations.content+'\n\n'+annotations.annotations.map(a=>a.text).join('\n\n')), token => {
           if(token.type!=='link')return;
           const target=token.href.startsWith('card:')?token.href.slice(5):token.href.startsWith('wiki:')?token.href:referencePath(path,token.href);
           if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.startsWith('card:')||token.href.startsWith('wiki:')?target:'file:'+target);
@@ -1098,12 +1098,13 @@ export class Workspace {
     if(!board||board.revision!==boardExpected)throw new Error(ui.errors.whiteboardChanged(this.boardPath(folder)));
     const annotation=splitAnnotations(asset.body).annotations.find(a=>a.id===note);
     if(!annotation||!(annotation.text.trim()||annotation.quote?.trim()))throw new Error('Write a note before moving it onto a whiteboard.');
+    if(annotation.cardId&&this.db.prepare('SELECT 1 FROM cards WHERE id=?').get(annotation.cardId))throw new Error('This highlight already links to a card.');
     const title=(searchDocument(annotation.text||annotation.quote!).text.split('\n').find(line=>line.trim())??'Asset note').trim().slice(0,80),stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Asset note';
     const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
     const quote=annotation.quote?annotation.quote.split('\n').map(line=>'> '+line).join('\n')+'\n\n':'';
-    const body='# '+escape(title)+'\n\n'+quote+moveCardLinks(annotation.text,path,destination)+'\n\n[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+')\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
-    const created=`---\n${front.toString()}---\n`+body,updated=updateAnnotation(asset.body,null,note);
-    return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,asset,updated),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:readCard(destination,created).id,x,y,width:340,height:280}]}),expected:boardExpected}]);
+    const body='# '+escape(title)+'\n\n'+quote+moveCardLinks(annotation.text,path,destination)+'\n\n[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+(annotation.kind==='highlight'?'#annotation='+annotation.id:'')+')\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
+    const created=`---\n${front.toString()}---\n`+body,cardId=readCard(destination,created).id,updated=updateAnnotation(asset.body,annotation.kind==='highlight'?{...annotation,text:'',cardId}:null,note);
+    return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,asset,updated),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async createSlipboxCard(name:string,placement?:{folder:string;expected:string;x:number;y:number}){
     if(typeof name!=='string')throw new Error(ui.errors.invalidFilename);

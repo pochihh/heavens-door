@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {marked} from 'marked';
-import {referenceHref,referencePath,referenceMatches} from '../src/document-links';
+import {annotationFragment,referenceHref,referencePath,referenceMatches} from '../src/document-links';
 import {Workspace} from '../src/core/workspace';
 import {Session} from '../src/renderer/session';
 import type {Bridge,Mutation} from '../src/shared';
@@ -12,7 +12,7 @@ import {newNote,readCard} from '../src/core/format';
 
 test('portable mentions and wiki links resolve without interpreting code or escaping the workspace',()=>{
   const href=referenceHref('Boards/A source.md','Slipbox/控制 loop.md');assert.equal(href,'../Slipbox/%E6%8E%A7%E5%88%B6%20loop.md');assert.equal(referencePath('Boards/A source.md',href),'Slipbox/控制 loop.md');
-  assert.equal(referencePath('a.md','../../outside.md'),undefined);assert.equal(referencePath('a.md','javascript:alert(1)'),undefined);
+  assert.equal(referencePath('a.md','../../outside.md'),undefined);assert.equal(referencePath('a.md','javascript:alert(1)'),undefined);assert.equal(annotationFragment('Paper.md#annotation=a-123'),'a-123');assert.equal(annotationFragment('Paper.md#annotation=bad<script>'),undefined);
   const targets=[{kind:'card' as const,key:'card:1',path:'A/Note.md',name:'Note'},{kind:'card' as const,key:'card:2',path:'B/Note.md',name:'Note'},{kind:'board' as const,key:'board:Research',path:'Research/Research.whiteboard',name:'Research'}];
   assert.equal(referenceMatches('A/source.md','wiki:Note',targets)[0].key,'card:1');assert.equal(referenceMatches('source.md','wiki:Note',targets).length,2);assert.equal(referenceMatches('source.md','Research/Research.whiteboard',targets)[0].kind,'board');
   const links:string[]=[];marked.walkTokens(marked.lexer('[[Note|My note]] and `[[hidden]]`\n\n```\n[[also hidden]]\n```'),token=>{if(token.type==='link')links.push(token.href);});assert.deepEqual(links,['wiki:Note']);

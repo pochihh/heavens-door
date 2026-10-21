@@ -16,8 +16,8 @@ const t=ui.views;
 const layouts=['table','kanban','gallery','timeline'] as const;
 const layoutIcon={table:'list',list:'list',kanban:'kanban',gallery:'image',timeline:'calendar'} as const;
 
-export const ViewBlockContext=createContext<{snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}|null>(null);
-export function ViewBlockProvider({children,...value}:{children:ReactNode;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){return <ViewBlockContext.Provider value={value}>{children}</ViewBlockContext.Provider>;}
+export const ViewBlockContext=createContext<{snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string,annotation?:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}|null>(null);
+export function ViewBlockProvider({children,...value}:{children:ReactNode;snapshot:Snapshot;session:Session;onOpen:(key:string)=>void;onPreview?:(key:string,annotation?:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){return <ViewBlockContext.Provider value={value}>{children}</ViewBlockContext.Provider>;}
 function SearchChoice({label,value,choices,onChange,inline=false}:{inline?:boolean;label:string;value:string;choices:{id:string;name:string;detail?:string}[];onChange:(id:string)=>void}){
   const [open,setOpen]=useState(false),[search,setSearch]=useState(''),ref=useRef<HTMLDivElement>(null);
   const engine=useMemo(()=>{const engine=new TextSearch();for(const c of choices)engine.update({path:c.id,name:c.name,title:c.name,body:c.detail??''});return engine;},[choices]);
