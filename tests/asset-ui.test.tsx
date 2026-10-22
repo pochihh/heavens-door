@@ -40,7 +40,7 @@ test('a standalone image and PDF use direct media placements with no card shell 
   for(const id of ['image','pdf']){const placement=document.querySelector(`[data-placement="${id}"]`)!;assert.ok(placement.classList.contains('board-media'));assert.equal(placement.classList.contains('board-card'),false);assert.equal(placement.querySelector('.tiptap,.card-editor,.editor-body'),null);if(id==='image')assert.equal(placement.querySelector('.card-top-row,.card-actions'),null);assert.equal((placement as HTMLElement).style.height,'auto');}
   assert.equal(document.querySelector('[data-placement="image"] > .resize-handle'),null);assert.ok(document.querySelector('[data-placement="image"] .image-resize'));assert.equal(document.querySelector('.image-caption')?.textContent,'My image');assert.ok(document.querySelector('[data-placement="image"] img'));assert.ok(document.querySelector('[data-placement="pdf"] .pdf-reader'));assert.equal(document.querySelector('.board-pdf-title')?.textContent,pdf.name);assert.ok(document.querySelector('[aria-label="Next PDF page"]'));assert.ok(document.querySelector('[aria-label="PDF actions"]'));
   const text=document.querySelector<HTMLElement>('[data-placement="text"]')!;assert.ok(text.classList.contains('board-text'));assert.equal(text.querySelector('.card-top-row,.resize-handle,.card-editor'),null);
-  const image=document.querySelector<HTMLElement>('[data-placement="image"]')!,media=image.querySelector<HTMLElement>('.image-media')!;Object.defineProperty(image,'offsetHeight',{value:220});Object.defineProperty(image,'offsetWidth',{value:340});Object.defineProperty(media,'offsetHeight',{value:180});
+  const image=document.querySelector<HTMLElement>('[data-placement="image"]')!,media=image.querySelector<HTMLElement>('.image-media')!;Object.defineProperty(image,'offsetHeight',{value:220});Object.defineProperty(image,'offsetWidth',{value:340});Object.defineProperty(media,'offsetHeight',{value:180});Object.defineProperties(image.querySelector('img')!,{complete:{value:true},naturalWidth:{value:340}});
   await act(async()=>observers.find(o=>o.target===image)!.callback([],{} as ResizeObserver));
   const pointer=(target:Element,type:string)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:50,clientY:50}));await act(async()=>{pointer(media,'pointerdown');pointer(document.querySelector('.canvas')!,'pointerup');});
   assert.equal(document.querySelector('[data-anchor-card="image"][data-anchor-side="bottom"]')?.getAttribute('cy'),'180','anchors must exclude the caption height');
@@ -406,4 +406,14 @@ test('Zoom to fit includes a very large board below the old 20/25 percent floors
  const board={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'near',cardId:'',x:0,y:0,width:340,height:120,object:{type:'text' as const,shape:'none' as const,text:'Near'}},{id:'far',cardId:'',x:100000,y:100000,width:340,height:120,object:{type:'text' as const,shape:'none' as const,text:'Far'}}],edges:[]};
  try{await act(async()=>root.render(<Whiteboard board={board} cards={[]} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>));const canvas=document.querySelector<HTMLElement>('.canvas')!;Object.defineProperties(canvas,{clientWidth:{value:1000},clientHeight:{value:800}});await act(async()=>{document.querySelector<HTMLButtonElement>('.zoom-level')!.click();await new Promise(requestAnimationFrame);});const camera=document.querySelector<HTMLElement>('.board-world')!.style.transform;assert.match(camera,/scale\(0\.00/);assert.notEqual(document.querySelector('.zoom-level')!.textContent,'0%');}
  finally{await act(async()=>root.unmount());}
+});
+
+
+test('fully visible PDF pages keep the first page despite fractional camera rounding',async()=>{
+ const {visiblePdfPage}=await import('../src/renderer/PdfReader'),reader=document.createElement('div');reader.innerHTML='<div data-pdf-page="1"></div><div data-pdf-page="2"></div>';
+ reader.getBoundingClientRect=()=>({left:0,right:500,top:0,bottom:800,width:500,height:800} as DOMRect);
+ const pages=reader.querySelectorAll<HTMLElement>('[data-pdf-page]');
+ pages[0].getBoundingClientRect=()=>({left:0,right:300,top:20,bottom:33.6} as DOMRect);
+ pages[1].getBoundingClientRect=()=>({left:0,right:300,top:40,bottom:53.6000001} as DOMRect);
+ assert.equal(visiblePdfPage(reader),1);
 });

@@ -1,0 +1,6 @@
+// Shared vector/text PDF used only by disposable native fixtures.
+export function readerPdf(){
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+ const kids=[];for(let p=1;p<=20;p++){const page=objects.length+1,stream=page+1;kids.push(page+' 0 R');const text=['BT /F1 12 Tf 36 752 Td (Reader performance checks - page '+p+') Tj',...Array.from({length:55},(_,i)=>'0 -12 Td (Line '+(i+1)+' - select this passage, highlight it, and write a comment.) Tj'),'ET',...Array.from({length:180},(_,i)=>`${40+i%30*17} ${35+Math.floor(i/30)*3} 10 1 re f`)].join('\n');objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${stream} 0 R >>`,`<< /Length ${Buffer.byteLength(text)} >>\nstream\n${text}\nendstream`);}
+ objects[1]=`<< /Type /Pages /Kids [${kids.join(' ')}] /Count 20 >>`;let result='%PDF-1.4\n';const offsets=[0];objects.forEach((object,i)=>{offsets.push(Buffer.byteLength(result));result+=`${i+1} 0 obj\n${object}\nendobj\n`;});const xref=Buffer.byteLength(result);return result+`xref\n0 ${offsets.length}\n0000000000 65535 f \n`+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+}

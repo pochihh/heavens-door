@@ -1,10 +1,10 @@
 # Whiteboard foundation proposal
 
-Status: proposed for review, October 22, 2026. The user agreed to a target of 10,000 mixed elements. This is not a claim that the current renderer meets that target. No renderer replacement or new rendering dependency has been installed.
+Status: proposed for review, October 22, 2026. The user agreed to a target of 10,000 mixed elements. This is not a claim that the current renderer meets that target. No renderer replacement or new rendering dependency has been installed. Native experiments and adoption limits are recorded in the [rendering comparison](rendering-comparison.md).
 
 ## Recommendation
 
-Keep Electron, TypeScript, the Markdown/whiteboard formats, the workspace worker and the existing rich editor. Separate the whiteboard's scene, interactions and commands from its drawing backend. Evaluate a GPU overview using PixiJS/WebGL2, with the existing DOM editor and PDF reader used for live interaction. Choose the renderer after a representative 10,000-element prototype passes the gates below, before building more board features.
+Keep Electron, TypeScript, the Markdown/whiteboard formats, the workspace worker and the existing rich editor. Separate the whiteboard's scene, interactions and commands from its drawing backend. Evaluate a retained overview, with the existing DOM editor and PDF reader used for live interaction. Initial Canvas and WebGL experiments both remove most of the warm overview drawing cost, but do not yet pass the full adoption gates. Evaluate PixiJS only if a representative tile/scene implementation shows a reason to add it. Choose the renderer after a representative 10,000-element prototype passes the gates below, before building more board features.
 
 A language rewrite would not directly remove repeated DOM layout, full workspace snapshots, redundant preview generation or oversized PDF rendering. Rust/WASM or a native helper remains an option for an identified CPU-heavy task. That task should sit behind a narrow asynchronous interface, so moving it does not change the document format or interaction model. Native modules add binary/ABI and packaging work; Electron documents those requirements in its [native module guide](https://www.electronjs.org/docs/latest/tutorial/using-native-node-modules). Long computations belong outside the UI thread; see [Electron performance guidance](https://www.electronjs.org/docs/latest/tutorial/performance).
 

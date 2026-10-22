@@ -23,7 +23,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { placementHeight, type Board, type Card, type CardInfo, type EdgeStyle, type Placement, type Preferences, type WhiteboardInput } from '../shared';
 import { leadingTitle } from '../card-title';
 import { parent, portable } from './documents';
-import { preview, titlePreview } from './markdown';
+import { preview, previewHtml, titlePreview } from './markdown';
 import { BoardNavigation, MIN_ZOOM, type Camera } from './navigation';
 import { Icon, Tool } from './Icons';
 import { InlineName } from './InlineName';
@@ -68,7 +68,12 @@ const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=
     if (href) { e.preventDefault(); if (href.startsWith('card:')) onOpen(href.slice(5)); }
   }} html={collapsed?summary:html||preview('',card.path)} />;
 });
+const OverviewImage=memo(function OverviewImage({html,path}:{html:string;path:string}){
+  const content=useMemo(()=>previewHtml(html,path),[html,path]);
+  return <div className="board-overview-image" dangerouslySetInnerHTML={{__html:content}}/>;
+});
 interface Props {
+  adaptiveDetail?:boolean;
   onAttachPdf?:(files:(File|string)[]|undefined,x:number,y:number)=>Promise<void>;
   keybindings?:Preferences['keybindings'];hasCopiedStyle?:boolean;onCopyStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;onPasteStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;
   onConvertTopics?:(base:Board,ids:string[])=>Promise<CardInfo[]>;
@@ -94,7 +99,7 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
+export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
   const imageImportLive=useRef(true);
   const [objectError,setObjectError]=useState(''),[imageDrop,setImageDrop]=useState(false);
   useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
@@ -113,7 +118,7 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
   const dragPoint = useRef({ x: 0, y: 0 });
   const cache = useRef(new Map<string, string>());
   const [size, setSize] = useState({ width: 1000, height: 800 });
-  const [view, setView] = useState<Camera>({ x: 20, y: 20, zoom: 0.85 });
+  const [view, setView] = useState<Camera>(()=>initialCamera??{ x: 20, y: 20, zoom: 0.85 });
   const [objectPreview,setObjectPreview]=useState<{id:string;width:number;x?:number}>();
   const [working, setWorking] = useState<Board | null>(null);
   const [measuredHeights,setMeasuredHeights]=useState<Record<string,{height:number;width:number;top:number;pdfHeight?:number;signature:string}>>({});
@@ -559,11 +564,12 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
   const visible = current.cards.filter(p => p.id === editingObject || p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible({...p,x:xOf(p),width:widthOf(p)}, view, size.width, size.height, Math.max(size.width, size.height), naturalHeight(p)&&!p.collapsed&&measuredHeight(p)===undefined?Infinity:heightOf(p)));
   const measuredIds=visible.filter(p=>p.collapsed||naturalHeight(p)).map(p=>heightKey(p)+':'+heightSignature(p)).join(',');
   useLayoutEffect(()=>{
-    const nodes=[...world.current!.querySelectorAll<HTMLElement>('.board-placement.collapsed,.board-placement.auto-height')];
+    const nodes=[...world.current!.querySelectorAll<HTMLElement>('.board-placement.collapsed:not([data-overview]),.board-placement.auto-height:not([data-overview])')];
     const measure=()=>setMeasuredHeights(previous=>{
       let next=previous;
       for(const node of nodes){
         if(node.querySelector('.card-preview[data-ready=false],.pdf-reader[data-ready=false]'))continue;
+        const image=node.classList.contains('board-image')?node.querySelector('img'):null;if(image&&(!image.complete||!image.naturalWidth))continue;
         const frame=node.querySelector<HTMLElement>('.board-pdf-selection'),top=frame?.offsetTop??0,pdfHeight=frame?.offsetHeight;
         const id=node.dataset.heightKey!,height=(node.classList.contains('board-image')?node.querySelector<HTMLElement>('.image-media')??node:node).offsetHeight,width=node.offsetWidth,signature=node.dataset.heightSignature!;
         if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top||pdfHeight!==previous[id]?.pdfHeight)){if(next===previous)next={...previous};next[id]={height,width,top,pdfHeight,signature};}
@@ -619,14 +625,16 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
           // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
           const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
           const text=p.object?.type==='text',pdf=card?.source?.type==='pdf',media=p.object?.type==='image'||pdf||text;
-          return <article key={p.id} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${pdf?'board-pdf-placement':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:pdf?'max-content':objectPreview?.id===p.id?objectPreview.width:p.width,height: p.collapsed||naturalHeight(p)?'auto':p.height, background:pdf&&p.collapsed?tintColor(cardFill(savedCard,p))??'var(--card)':media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
+          const lowDetail=adaptiveDetail&&view.zoom<.08&&!selected.includes(p.id)&&active?.id!==p.id&&!p.collapsed&&!text&&!pdf&&!p.folder&&(!!card||p.object?.type==='image')&&(!naturalHeight(p)||measuredHeight(p)!==undefined);
+          return <article key={p.id} data-overview={lowDetail||undefined} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${pdf?'board-pdf-placement':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:pdf?'max-content':objectPreview?.id===p.id?objectPreview.width:p.width,height:lowDetail?heightOf(p):p.collapsed||naturalHeight(p)?'auto':p.height, background:pdf&&p.collapsed?tintColor(cardFill(savedCard,p))??'var(--card)':media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row,.pdf-reader,.annotation-rail'))return;
               if(p.object?.type==='text'){e.stopPropagation();editText(p.id);}
               else if(p.folder){e.stopPropagation();onOpenFolder?.(p.folder);}
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
+            {lowDetail?(p.object?.type==='image'?<OverviewImage html={p.object.html} path={board.path}/>:<TitleContent data-ready className="prose card-preview" path={card!.path} html={titlePreview(card!)}/>):<>
             {!p.folder&&!media&&<div className="card-drag-strip" data-tooltip={tooltips.whiteboard.dragCard}/>}
             {!media&&<div className="card-top-row">
               {!p.folder&&card&&<InlineName name={card.name} suffix=".md" tooltip={card.path} onRename={onRename?stem=>onRename(card.id,stem):undefined} onStart={()=>{setSelected([p.id]);onFinish?.();}}/>}
@@ -652,6 +660,7 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
                 {cardDetails}
               </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
               <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
+            </>}
             </>}
             {selected.includes(p.id)&&selected.length===1&&savedCard?.source?.type==='web'&&!p.collapsed&&view.zoom>=.65&&<BoardAnnotations card={savedCard}/>}
           </article>;

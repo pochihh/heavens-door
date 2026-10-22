@@ -701,3 +701,6 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .asset-tag-panel .tag-row>.tool{grid-column:1;grid-row:1}.asset-tag-panel .tag-chips{grid-column:2;flex-wrap:wrap;overflow:visible;max-width:100%}
 .asset-tag-panel .tag-inline-input{grid-column:2;width:100%;min-width:0;padding:3px 2px;min-height:24px}
 .asset-tag-panel .tag-chip{max-width:100%;min-width:0}.asset-tag-panel .tag-chip-label{min-width:0;white-space:normal;overflow-wrap:anywhere;text-align:left}
+
+/* Experimental overview keeps image pixels/crop/caption, with tools restored on selection. */
+.board-overview-image img{display:block;max-width:100%}.board-overview-image>div{max-width:100%}.board-overview-image p{font-size:.85em;color:var(--muted);margin:4px 0 0}

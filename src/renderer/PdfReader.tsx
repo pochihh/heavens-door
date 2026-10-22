@@ -1,3 +1,4 @@
+import {pdfPixelRatio,pdfRasterRatio,pdfDetailRegion,containsRaster,PDF_DETAIL_PIXELS,type RasterBox} from './pdf-resolution';
 import {pausePdfRendering,queuePdfRender} from './pdf-render-queue';
 import type {PdfPageBox} from './annotation-layout';
 import {usePdfSearch,highlightPdfMatches,type PdfSearchMatch} from './pdf-search';
@@ -20,7 +21,7 @@ export function visiblePdfPage(reader:HTMLElement,viewport=reader){
   const box=viewport.getBoundingClientRect(),bounds=reader.getBoundingClientRect();
   if(bounds.right<=box.left||bounds.left>=box.right||bounds.bottom<=box.top||bounds.top>=box.bottom)return;
   const top=Math.max(box.top,reader.querySelector('.pdf-reader-toolbar')?.getBoundingClientRect().bottom??box.top);let visible:HTMLElement|undefined,overlap=0;
-  for(const el of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=el.getBoundingClientRect();if(r.top>=box.bottom)break;const amount=r.right>box.left&&r.left<box.right?Math.max(0,Math.min(r.bottom,box.bottom)-Math.max(r.top,top)):0;if(amount>overlap){visible=el;overlap=amount;}}
+  for(const el of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=el.getBoundingClientRect();if(r.top>=box.bottom)break;const amount=r.right>box.left&&r.left<box.right?Math.max(0,Math.min(r.bottom,box.bottom)-Math.max(r.top,top)):0;if(amount>overlap+.5){visible=el;overlap=amount;}}
   return visible?Number(visible.dataset.pdfPage):undefined;
 }
 export function revealPdfHighlight(reader:HTMLElement,id:string){
@@ -76,7 +77,7 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
   const board=!!root.current?.closest('.board-pdf'),scale=(board?width/Math.max(1,...sizes.map(p=>p.width)):Math.min(width/Math.max(1,...sizes.map(p=>p.width)),1.5))*zoom;
   const [settledZoom,setSettledZoom]=useState(renderZoom);
   useEffect(()=>{const timer=setTimeout(()=>setSettledZoom(renderZoom),180);return()=>clearTimeout(timer);},[renderZoom]);
-  const pixelRatio=Math.ceil(Math.max(.25,Math.min(4,(window.devicePixelRatio||1)*settledZoom))*4)/4;
+  const pixelRatio=pdfPixelRatio(settledZoom,window.devicePixelRatio||1);
   const validAnnotations=useMemo(()=>annotations.filter(a=>!a.source||a.source===checksum),[annotations,checksum]);
 
   useLayoutEffect(()=>{if(document&&!onRevealPage&&!singlePage)jump(page,false);},[width]);
@@ -121,14 +122,14 @@ const PdfCanvas=memo(function PdfCanvas({pdf,page,scale,pixelRatio,textEnabled,m
     let live=true,cancelPending=()=>{},pageProxy:PDFPageProxy|undefined,render:ReturnType<PDFPageProxy['render']>|undefined;
     void(async()=>{
       const item=await pdf.getPage(page);pageProxy=item;if(!live){item.cleanup();return;}
-      const viewport=item.getViewport({scale}),ratio=Math.min(pixelRatio,Math.sqrt(16_000_000/(viewport.width*viewport.height)));
+      const viewport=item.getViewport({scale}),ratio=pdfRasterRatio(viewport.width,viewport.height,pixelRatio);
       buffer.width=Math.ceil(viewport.width*ratio);buffer.height=Math.ceil(viewport.height*ratio);
       render=item.render({canvas:buffer,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});
       render.onContinue=(next:()=>void)=>{cancelPending=queuePdfRender(next);};await render.promise;if(!live)return;
       // Keep the displayed bitmap intact until its replacement is complete.
       element.width=buffer.width;element.height=buffer.height;element.getContext('2d')!.drawImage(buffer,0,0);setError('');
     })().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));}).finally(()=>{buffer.width=0;buffer.height=0;});
-    return()=>{live=false;cancelPending();render?.cancel();pageProxy?.cleanup();buffer.width=0;buffer.height=0;};
+    return()=>{live=false;cancelPending();render?.cancel();pageProxy?.cleanup();buffer.width=0;buffer.height=0;if(!element.isConnected){element.width=0;element.height=0;}};
   },[pdf,page,scale,pixelRatio]);
   useEffect(()=>{
     const element=text.current!;let live=true,cancelPending=()=>{},textLayer:TextLayer|undefined;
@@ -141,5 +142,38 @@ const PdfCanvas=memo(function PdfCanvas({pdf,page,scale,pixelRatio,textEnabled,m
     })().catch(e=>{if(live&&e.name!=='RenderingCancelledException'&&e.name!=='AbortException')setError(String(e));});
     return()=>{live=false;cancelPending();textLayer?.cancel();};
   },[pdf,page,scale,textEnabled]);
-  return <><canvas ref={canvas} style={{width:'100%',height:'100%'}}/><div ref={text} className="textLayer"/>{error&&<p role="alert">{error}</p>}</>;
+  return <><canvas ref={canvas} style={{width:'100%',height:'100%'}}/><PdfDetailCanvas pdf={pdf} page={page} scale={scale} pixelRatio={pixelRatio}/><div ref={text} className="textLayer"/>{error&&<p role="alert">{error}</p>}</>;
 });
+
+
+function PdfDetailCanvas({pdf,page,scale,pixelRatio}:{pdf:PDFDocumentProxy;page:number;scale:number;pixelRatio:number}){
+ const canvas=useRef<HTMLCanvasElement>(null),root=useRef<HTMLSpanElement>(null),[area,setArea]=useState<RasterBox>();
+ useLayoutEffect(()=>{
+  const pageElement=root.current!.closest<HTMLElement>('.pdf-page')!,viewport=pageElement.closest<HTMLElement>('.canvas')??pageElement.closest<HTMLElement>('.pdf-reading-layout')??pageElement.closest<HTMLElement>('.pdf-reader')!;
+  let timer:ReturnType<typeof setTimeout>;
+  const measure=()=>{
+   const width=pageElement.offsetWidth,height=pageElement.offsetHeight;
+   const next=pdfRasterRatio(width,height,pixelRatio)<pixelRatio?pdfDetailRegion(width,height,pageElement.getBoundingClientRect(),viewport.getBoundingClientRect()):undefined;
+   setArea(previous=>next&&previous&&previous.x+previous.width<=width&&previous.y+previous.height<=height&&containsRaster(previous,next)?previous:next);
+  };
+  const settle=()=>{clearTimeout(timer);timer=setTimeout(measure,120);};
+  viewport.addEventListener(BOARD_CAMERA_EVENT,settle);viewport.addEventListener('scroll',settle);const resize=new ResizeObserver(settle);resize.observe(viewport);measure();
+  return()=>{clearTimeout(timer);resize.disconnect();viewport.removeEventListener(BOARD_CAMERA_EVENT,settle);viewport.removeEventListener('scroll',settle);};
+ },[scale,pixelRatio]);
+ useEffect(()=>{
+  const element=canvas.current;if(!element||!area)return;
+  let live=true,cancelPending=()=>{},render:ReturnType<PDFPageProxy['render']>|undefined;
+  const buffer=element.ownerDocument.createElement('canvas');
+  void(async()=>{
+   const item=await pdf.getPage(page);if(!live)return;
+   const viewport=item.getViewport({scale}),ratio=pdfRasterRatio(area.width,area.height,pixelRatio,PDF_DETAIL_PIXELS);
+   buffer.width=Math.ceil(area.width*ratio);buffer.height=Math.ceil(area.height*ratio);
+   render=item.render({canvas:buffer,viewport,transform:[ratio,0,0,ratio,-area.x*ratio,-area.y*ratio]});
+   render.onContinue=(next:()=>void)=>{cancelPending=queuePdfRender(next);};await render.promise;if(!live)return;
+   element.width=buffer.width;element.height=buffer.height;element.getContext('2d')!.drawImage(buffer,0,0);
+   Object.assign(element.style,{left:area.x/viewport.width*100+'%',top:area.y/viewport.height*100+'%',width:area.width/viewport.width*100+'%',height:area.height/viewport.height*100+'%'});
+  })().catch(error=>{if(live&&error.name!=='RenderingCancelledException')console.warn('PDF detail rendering failed',error);}).finally(()=>{buffer.width=0;buffer.height=0;});
+  return()=>{live=false;cancelPending();render?.cancel();buffer.width=0;buffer.height=0;if(!element.isConnected){element.width=0;element.height=0;}};
+ },[pdf,page,scale,pixelRatio,area]);
+ return <span ref={root} style={{display:'contents'}}>{area&&<canvas ref={canvas} className="pdf-detail-canvas" aria-hidden="true" style={{position:'absolute',pointerEvents:'none'}}/>}</span>;
+}

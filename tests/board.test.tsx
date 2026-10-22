@@ -422,3 +422,27 @@ test('search reveal expands and selects a card without editing or zooming, and c
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another Tab Group')!.click());assert.deepEqual(opened,['c:same','c:other']);
   }finally{await act(async()=>root.unmount());}
 });
+
+test('adaptive overview preserves bounds and image content, promotes selection, and restores readable detail',async()=>{
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+ dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+ Object.defineProperties(dom.window.HTMLElement.prototype,{offsetWidth:{get(){return 320;}},offsetHeight:{get(){return this.classList.contains('image-media')?180:240;}}});
+ Object.defineProperties(dom.window.HTMLImageElement.prototype,{complete:{get(){return true;}},naturalWidth:{get(){return 320;}}});
+ const {Whiteboard}=await import('../src/renderer/Board'),{imageHtml}=await import('../src/renderer/image-layout');
+ const card={id:'c',path:'Ideas/Card.md',name:'Card',title:'Card title',revision:'r',legacy:false},opened:string[]=[];let reads=0;
+ window.door={platform:'darwin',assetUrl:(path:string)=>'https://example.invalid/'+path,request:async()=>{reads++;return {...card,body:'# Card title\n\nFull body, code and links stay in the original card.'};}} as unknown as typeof window.door;
+ const board:Board={path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'r',cards:[{id:'p',cardId:card.id,x:0,y:0,width:320,height:240,autoHeight:false},{id:'img',cardId:'',x:420,y:0,width:320,height:240,object:{type:'image',html:imageHtml({kind:'single',src:'figure.png',width:'320px',alignment:'left',caption:'Caption remains'})}}],edges:[{id:'e',from:'img',to:'p',fromSide:'right',toSide:'left'}]};
+ const root=createRoot(document.getElementById('root')!);const pointer=(target:Element,type:string)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:25,clientY:25}));
+ try{
+  await act(async()=>root.render(<Whiteboard adaptiveDetail board={board} cards={[card]} initialCamera={{x:20,y:20,zoom:.05}} onOpen={path=>opened.push(path)} onCreate={()=>{}} onSave={()=>assert.fail('overview must not write files')}/>));
+  assert.equal(reads,0,'known fixed bounds do not require reading invisible card bodies');assert.equal(document.querySelectorAll('[data-overview]').length,2);assert.match(document.querySelector('.board-overview-image')!.textContent!,/Caption remains/);assert.ok(document.querySelector('.board-overview-image img'));
+  const edge=document.querySelector('.edge-stroke')!.getAttribute('d');
+  await act(async()=>{pointer(document.querySelector('[data-placement=p] .card-preview')!,'pointerdown');pointer(document.querySelector('.canvas')!,'pointerup');});
+  assert.deepEqual(opened,[card.path]);assert.equal(document.querySelector('[data-placement=p]')!.hasAttribute('data-overview'),false);assert.match(document.querySelector('[data-placement=p]')!.textContent!,/Full body/);
+  await act(async()=>{pointer(document.querySelector('.board-overview-image')!,'pointerdown');pointer(document.querySelector('.canvas')!,'pointerup');});
+  assert.ok(document.querySelector('[data-placement=img] .image-toolbar'));assert.equal(document.querySelector('.edge-stroke')!.getAttribute('d'),edge,'promotion preserves image anchor bounds');
+  await act(async()=>{document.querySelector<HTMLElement>('.canvas')!.focus();document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{bubbles:true,key:'0',metaKey:true}));await new Promise(r=>setTimeout(r,140));});
+  assert.equal(document.querySelectorAll('[data-overview]').length,0);assert.match(document.querySelector('[data-placement=p]')!.textContent!,/Full body/);
+ }finally{await act(async()=>root.unmount());}
+});

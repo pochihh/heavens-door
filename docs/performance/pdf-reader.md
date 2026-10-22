@@ -47,3 +47,12 @@ The 20% navigation and saved-layout limits, and separate 25% Zoom-to-fit floor, 
 Final validation: lint/type checking and all 342 tests pass. Native reader checks saved a camera at approximately 1.06%, read it back through the workspace backend, and restored the same transform after real tab changes without an application error. The packaged `0.1.2718-test.2` saved approximately 12.16% in the preserved Review workspace and restored it after switching tabs. The stable version remains `0.1.2718`.
 
 The October 22 continuity snapshot's overview pan/zoom frame intervals measured 41.5/32.2 ms at the 95th percentile; reading-zoom pan measured 17.4 ms. Its camera/workload differs from the October 21 snapshot, so these are not direct before/after comparisons. They still show that overview performance needs further work. Zero flashing observations does not mean the whole board meets the proposed frame-time budget. The copy had no Other tab open, so that benchmark explicitly skipped tab timings; the native generated fixture separately exercised actual tab switching.
+
+
+## Zoom sharpness
+
+The reader now requests raster density from board zoom and device pixel ratio, using power-of-two buckets with headroom. A bounded four-million-pixel base preview remains visible while a viewport crop (at most sixteen million pixels) refines large pages. Both commit from a completed buffer; text selection and annotation coordinates remain independent of raster resolution. Detail crop placement uses page-relative percentages during resizing, and detached canvases release their backing stores.
+
+`test:reader` includes a 1,200-pixel PDF at 300% board zoom on Retina. It checks display-pixel coverage, opacity, visible-area coverage and canvas identity through panning, then restores the prior width/camera and checks normal editing, saved low zoom, tab switching and popup reading. The fixture waits for the expand action to finish saving before its synthetic width mutation. A first run raced that mutation against the preceding UI save; the harness now explicitly waits for the saved expanded state.
+
+The [rendering comparison](rendering-comparison.md) distinguishes these verified reader changes from the unshipped cached-renderer experiments. A previous raster can remain visible briefly during very fast zoom jumps. Very large high-density viewports can exceed the crop budget; a future tiled renderer must address that case.
