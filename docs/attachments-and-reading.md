@@ -46,7 +46,7 @@ The release remains **0.1.27**. A temporary Test build does not enter the stable
 
 ### Import and ownership
 
-Importing a PDF copies the original file into the configured attachment location and creates a Markdown wrapper. Reuse the attachment-folder settings already used for images, including the choice between assets beside each card and a workspace-level folder. Never overwrite an existing asset.
+New external PDFs, images (including paste, drop and URL imports), and webpage snapshots default to `_assets` beside their owning card or whiteboard. For example, a PDF dropped onto `Projects/Organizer` is copied to `Projects/Organizer/_assets` and its Markdown wrapper stores a relative source link. **Settings → Files and folders → Attachments** controls both the folder name/path and whether it is local to each document or relative to the workspace root. Existing image storage preferences also apply to PDFs. Changing the setting affects new imports only. A PDF already inside the workspace is linked in place, including during relinking; never copy it again or overwrite an existing asset.
 
 For a webpage, keep its original HTML snapshot and source URL, and produce readable Markdown article content for the card. Download article images into local assets so the captured article works offline. Preserve the snapshot even when extraction is incomplete, and show an import result that lets the user inspect or retry it. Importing arbitrary HTML does not enable webpage scripts or remote resource loading in the app.
 

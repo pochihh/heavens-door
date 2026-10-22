@@ -19,7 +19,7 @@ export async function readingAsset(root:string,notePath:string,name:string,exten
     const bytes=await fs.readFile(file);validateImport({name,type:'pdf',data:bytes});
     return {file:referenceHref(notePath,existing),sha256:createHash('sha256').update(bytes).digest('hex')};
   }
-  const settings=(await readPreferences(root)).editor??DEFAULT_EDITOR_SETTINGS,folder=extension==='.pdf'?'_assets':join(settings.imageLocation==='workspace'?'':dirname(notePath),settings.imageFolder);
+  const settings=(await readPreferences(root)).editor??DEFAULT_EDITOR_SETTINGS,folder=join(settings.imageLocation==='workspace'?'':dirname(notePath),settings.imageFolder);
   let parent=root;for(const part of folder.split(/[\\/]/).filter(p=>p&&p!=='.')){await workspacePath(root,relative(root,parent));parent=join(parent,part);await fs.mkdir(parent).catch(e=>{if(e.code!=='EEXIST')throw e;});if((await fs.lstat(parent)).isSymbolicLink())throw new Error('Attachment folders cannot be symbolic links.');}
   const safe=basename(name,extname(name)).replace(/[^\p{L}\p{N}_-]+/gu,'-').slice(0,70)||'source',file=join(folder,safe+'-'+randomUUID().slice(0,8)+extension),handle=await fs.open(join(await workspacePath(root,folder),basename(file)),'wx');try{await handle.writeFile(data);await handle.sync();}finally{await handle.close();}
   return {file:relative(dirname(notePath),file).split('\\').join('/'),sha256:createHash('sha256').update(data).digest('hex')};
