@@ -30,11 +30,11 @@ export async function retainedSnapshot(source:string,webgl:boolean){
  return {bytes:image.naturalWidth*image.naturalHeight*4,displayBytes:canvas.width*canvas.height*4,headroom:image.naturalWidth/(width*ratio),restore};
 }
 
-export async function compareSnapshot(expected:string,actual:string){
+export async function compareSnapshot(expected:string,actual:string,alpha=false){
  const load=async(source:string)=>{const image=new Image();image.src=source;await image.decode();return image;};
  const [before,after]=await Promise.all([load(expected),load(actual)]),canvas=document.createElement('canvas');canvas.width=after.naturalWidth;canvas.height=after.naturalHeight;const context=canvas.getContext('2d')!;
  context.drawImage(before,0,0,canvas.width,canvas.height);const a=context.getImageData(0,0,canvas.width,canvas.height).data;
  context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(after,0,0);const b=context.getImageData(0,0,canvas.width,canvas.height).data;let total=0,bad=0,count=0;
- for(let i=0;i<a.length;i+=64){let peak=0;for(let c=0;c<3;c++){const difference=Math.abs(a[i+c]-b[i+c]);total+=difference;peak=Math.max(peak,difference);}if(peak>20)bad++;count++;}
- canvas.width=0;canvas.height=0;return {meanAbsoluteError:total/(count*3),changedFraction:bad/count};
+ for(let i=0;i<a.length;i+=64){let peak=0;for(let c=0;c<(alpha?4:3);c++){const difference=Math.abs(a[i+c]-b[i+c]);total+=difference;peak=Math.max(peak,difference);}if(peak>20)bad++;count++;}
+ canvas.width=0;canvas.height=0;return {meanAbsoluteError:total/(count*(alpha?4:3)),changedFraction:bad/count};
 }

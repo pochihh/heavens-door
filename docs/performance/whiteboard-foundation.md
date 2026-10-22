@@ -12,6 +12,8 @@ PixiJS is a drawing library rather than a complete board/editor replacement. Its
 
 A full SDK such as tldraw is an alternative if we decide its interaction model is preferable to ours. Its [performance design](https://tldraw.dev/sdk-features/performance) combines spatial indexing, granular updates, geometry caching, stable zoom and level of detail. Its [current production licensing](https://tldraw.dev/community/license) requires a commercial or discretionary hobby license. Adopting it would require explicit licensing and migration decisions. It is not an automatic shortcut for our rich cards and PDF readers.
 
+The [bounded preview follow-up](bounded-previews.md) provides additional evidence for retained tiles and a live editor handoff. It does not change the adoption requirements below.
+
 ## Boundaries to settle now
 
 ```mermaid

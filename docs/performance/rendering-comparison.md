@@ -72,3 +72,7 @@ A separate run profiles a copy of Review with seven PDF readers and 88 page layo
 The fixed reading-zoom method now waits for visible-page raster density and text readiness; older reader measurements used a relative zoom gesture and are not direct comparisons. Raw results are in `.local/reader-benchmark/sharpness-final/report.json`.
 
 Temporary package: `0.1.2718-test.3`, built and signature-verified under `.local/test-app-staged/mac-arm64/Heaven's Door Test.app`. The existing Test.2 bundle remains running at its original path because the Mac locked before normal Quit/relaunch; final packaged GUI verification is pending unlock. The stable release remains `0.1.2718`.
+
+## Bounded tile follow-up
+
+The [bounded preview experiment](bounded-previews.md) avoids retaining the complete rich DOM and compares separate preview drawing with cached tiles. It adds byte-budget, stale-render, transparency, first-click, saved-cache and repeated-pressure checks. It remains isolated because full interaction, layering, dynamic invalidation and resource gates are incomplete.
