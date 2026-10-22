@@ -569,7 +569,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
       let next=previous;
       for(const node of nodes){
         if(node.querySelector('.card-preview[data-ready=false],.pdf-reader[data-ready=false]'))continue;
-        const image=node.classList.contains('board-image')?node.querySelector('img'):null;if(image&&(!image.complete||!image.naturalWidth))continue;
+        const image=node.classList.contains('board-image')?node.querySelector('img'):null;if(image&&!image.complete)continue;
         const frame=node.querySelector<HTMLElement>('.board-pdf-selection'),top=frame?.offsetTop??0,pdfHeight=frame?.offsetHeight;
         const id=node.dataset.heightKey!,height=(node.classList.contains('board-image')?node.querySelector<HTMLElement>('.image-media')??node:node).offsetHeight,width=node.offsetWidth,signature=node.dataset.heightSignature!;
         if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top||pdfHeight!==previous[id]?.pdfHeight)){if(next===previous)next={...previous};next[id]={height,width,top,pdfHeight,signature};}

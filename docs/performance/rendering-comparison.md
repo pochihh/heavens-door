@@ -27,7 +27,6 @@ A browser trace attributed about 7.4 seconds to Chromium's `Layerize` work acros
 
 Matched source fingerprint: `d2e524e615d5e6bb604efe1f6cc84a71f7be0f1b7649fbd3595a400f8cbb7970`. All three native harnesses completed, with 6,000 placements, 1,300 images and all 80 PDF canvases painted before overview measurement. Cached image checks passed; cached interaction parity remains unimplemented.
 
-
 The retained runs compare the displayed image against the source capture, with automatic limits on pixel error. They also require extra resolution for the tested zoom range. The captured texture is bounded to 16 million pixels; the reference run uses about 56 MB of RGBA source pixels plus a 25 MB display surface. These are logical pixel allocations, not a measurement of total GPU memory.
 
 ## Adoption decision
@@ -42,11 +41,11 @@ Direct links, checkboxes, Text shortcuts, PDF selection, drag/drop, references, 
 
 ## Runtime changes in this pass
 
-The app keeps its existing renderer. PDF raster demand now follows display density and board zoom in power-of-two buckets with headroom. A four-million-pixel full-page preview stays visible while a sharper visible crop renders into a separate buffer. The crop is capped at sixteen million pixels. It replaces its displayed bitmap only after completion, tracks viewport movement after settling, and scales its placement with PDF resizing. Detached canvases release their backing buffers.
+The app keeps its existing renderer. PDF raster demand now follows display density and board zoom in power-of-two buckets with headroom. A four-million-pixel full-page preview stays visible while a sharper visible crop renders into a separate buffer. The crop is capped at sixteen million pixels. It replaces its displayed bitmap only after completion, tracks viewport movement after settling, and scales its placement with PDF resizing. Detached canvases release their backing buffers. An already-sharp base preview does not allocate an additional crop merely to satisfy oversampling headroom.
 
 Native checks verify a 1,200-pixel-wide PDF at 300% board zoom on Retina: the crop covers the visible page, provides about 1.33 source pixels per display pixel, stays opaque and retains its canvas through a pan. Source text is visibly crisp in the generated quality screenshot. Fast zoom jumps can temporarily show the previous raster while refinement finishes; source-image resolution and the crop budget still limit extreme cases. This is not a guarantee for arbitrary high-density displays.
 
-The first board render now uses the saved camera rather than a temporary default view. Image geometry waits for intrinsic dimensions. Fully visible PDF pages use a subpixel tolerance when choosing the current page, avoiding changes driven solely by rounding differences.
+The first board render now uses the saved camera rather than a temporary default view. Image geometry waits for loading to complete, including completed error placeholders. Fully visible PDF pages use a subpixel tolerance when choosing the current page, avoiding changes driven solely by rounding differences.
 
 ## Reproduce
 
@@ -63,3 +62,13 @@ npm run test:reader
 Other diagnostic modes are `retained`, `compositor`, `containment`, `gpu-edges`, `gpu-kernel`, `overview`, `overview-gpu` and `trace`. GPU-only probes do not establish complete edge styles or interaction parity. Trace mode uses six frames and saves a browser trace; normal modes save renderer CPU profiles, screenshots, source-capture comparisons and JSON results.
 
 The comparison checkpoint rejects mismatched sources/viewport/host, incomplete PDF painting, insufficient resolution headroom and image-fidelity failures. `passed` means the harness completed. `budgetPassed` concerns measured frame timing only. Neither establishes production readiness. The JS heap estimate exposed by Chromium is coarse; use the reported renderer process memory as a separate diagnostic, without treating it as GPU memory or a cache-plateau test.
+
+## Final reader validation
+
+Lint/type checking and all 349 tests pass. The native reader fixture checks a live DOM card at 300% zoom alongside the PDF crop, then exercises code editing, source selection, annotations, resizing, low-zoom persistence, tab switching and popup virtualization. Quality screenshots are saved under `.local/reader-check/`.
+
+A separate run profiles a copy of Review with seven PDF readers and 88 page layouts. At a fixed 100% reading zoom, all eight intersecting pages had painted previews with at least two source pixels per display pixel and completed text layers. Reading pan p95 was 18.6 ms; overview pan/zoom p95 was 18.1/18.3 ms at the saved 21.91% camera. There were zero idle repaints, zero observed blank/replaced canvases among continuously visible warmed pages, and no measured gesture long tasks. New pages still paint progressively. These numbers describe this Review snapshot, not the 10,000-element fixture.
+
+The fixed reading-zoom method now waits for visible-page raster density and text readiness; older reader measurements used a relative zoom gesture and are not direct comparisons. Raw results are in `.local/reader-benchmark/sharpness-final/report.json`.
+
+Temporary package: `0.1.2718-test.3`, built and signature-verified under `.local/test-app-staged/mac-arm64/Heaven's Door Test.app`. The existing Test.2 bundle remains running at its original path because the Mac locked before normal Quit/relaunch; final packaged GUI verification is pending unlock. The stable release remains `0.1.2718`.

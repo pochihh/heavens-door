@@ -1,4 +1,4 @@
-import {pdfPixelRatio,pdfRasterRatio,pdfDetailRegion,containsRaster,PDF_DETAIL_PIXELS,type RasterBox} from './pdf-resolution';
+import {pdfPixelRatio,pdfRasterRatio,pdfDetailRegion,containsRaster,needsPdfDetail,PDF_DETAIL_PIXELS,type RasterBox} from './pdf-resolution';
 import {pausePdfRendering,queuePdfRender} from './pdf-render-queue';
 import type {PdfPageBox} from './annotation-layout';
 import {usePdfSearch,highlightPdfMatches,type PdfSearchMatch} from './pdf-search';
@@ -153,7 +153,8 @@ function PdfDetailCanvas({pdf,page,scale,pixelRatio}:{pdf:PDFDocumentProxy;page:
   let timer:ReturnType<typeof setTimeout>;
   const measure=()=>{
    const width=pageElement.offsetWidth,height=pageElement.offsetHeight;
-   const next=pdfRasterRatio(width,height,pixelRatio)<pixelRatio?pdfDetailRegion(width,height,pageElement.getBoundingClientRect(),viewport.getBoundingClientRect()):undefined;
+   const base=pdfRasterRatio(width,height,pixelRatio),box=base<pixelRatio*.9?pageElement.getBoundingClientRect():undefined;
+   const next=box&&needsPdfDetail(base,pixelRatio,box.width/width*(window.devicePixelRatio||1))?pdfDetailRegion(width,height,box,viewport.getBoundingClientRect()):undefined;
    setArea(previous=>next&&previous&&previous.x+previous.width<=width&&previous.y+previous.height<=height&&containsRaster(previous,next)?previous:next);
   };
   const settle=()=>{clearTimeout(timer);timer=setTimeout(measure,120);};

@@ -16,3 +16,5 @@ export function pdfDetailRegion(width:number,height:number,page:Rect,viewport:Re
  return {x,y,width:right-x,height:bottom-y};
 }
 export function containsRaster(outer:RasterBox,inner:RasterBox){return outer.x<=inner.x&&outer.y<=inner.y&&outer.x+outer.width>=inner.x+inner.width&&outer.y+outer.height>=inner.y+inner.height;}
+
+export function needsPdfDetail(base:number,requested:number,display:number){return base<requested*.9&&base<display*1.1;}

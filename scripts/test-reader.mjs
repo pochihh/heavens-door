@@ -80,6 +80,12 @@ readerApp.whenReady().then(async()=>{
   await js('(()=>{const n=window.__readerTestNavigation;n.set({...n.current,x:n.current.x+64});n.flush();})()');await readerPause(500);
   result.pdfQuality.sameCanvas=await js('document.contains(window.__qualityCanvas)');if(!result.pdfQuality.sameCanvas)throw Error('Panning replaced the detail canvas');
   await js('(async()=>{const s=window.__readerTestSession,b=s.state.snapshot.boards.find(b=>b.folder==="Review");await s.board({...b,cards:b.cards.map(p=>p.id==="pdf"?{...p,width:'+qualityBefore.width+'}:p)},"Restore PDF size");window.__readerTestNavigation.set('+JSON.stringify(qualityBefore.camera)+');window.__readerTestNavigation.flush();})()');await readerPause(500);
+  phase('Retina card text');
+  await js('(()=>{const p=window.__readerTestSession.state.snapshot.boards.find(b=>b.folder==="Review").cards.find(p=>p.id==="editor"),n=window.__readerTestNavigation;n.set({x:30-p.x*3,y:30-p.y*3,zoom:3});n.flush();})()');await readerPause(350);
+  result.cardQuality=await js('(()=>{const c=document.querySelector("[data-placement=editor]"),r=c.getBoundingClientRect();return {scale:r.width/c.offsetWidth,liveCode:c.querySelector("pre").textContent,canvases:c.querySelectorAll("canvas").length};})()');
+  if(Math.abs(result.cardQuality.scale-3)>.01||result.cardQuality.canvases||!result.cardQuality.liveCode.includes('int answer = 42;'))throw Error('Card zoom lost live text '+JSON.stringify(result.cardQuality));
+  await readerFS.promises.writeFile(${JSON.stringify(join(folder,'card-quality.png'))},(await win.capturePage()).toPNG());
+  await js('(()=>{const n=window.__readerTestNavigation;n.set('+JSON.stringify(qualityBefore.camera)+');n.flush();})()');await readerPause(250);
   phase('editor geometry');
   result.codePreview=await js('(()=>{const b=document.querySelector("[data-placement=editor] .editor-code-block"),p=b.querySelector("pre");return {height:b.offsetHeight,code:p.textContent,checkboxes:document.querySelectorAll("[data-placement=editor] input[type=checkbox]").length}})()');
   const code=await js('(()=>{const r=document.querySelector("[data-placement=editor] pre").getBoundingClientRect();return {x:Math.round(r.left+35),y:Math.round(r.top+12)}})()');
