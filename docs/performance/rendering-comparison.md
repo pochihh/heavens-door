@@ -71,7 +71,7 @@ A separate run profiles a copy of Review with seven PDF readers and 88 page layo
 
 The fixed reading-zoom method now waits for visible-page raster density and text readiness; older reader measurements used a relative zoom gesture and are not direct comparisons. Raw results are in `.local/reader-benchmark/sharpness-final/report.json`.
 
-Temporary package: `0.1.2718-test.3`, built and signature-verified under `.local/test-app-staged/mac-arm64/Heaven's Door Test.app`. The existing Test.2 bundle remains running at its original path because the Mac locked before normal Quit/relaunch; final packaged GUI verification is pending unlock. The stable release remains `0.1.2718`.
+Temporary package: `0.1.2718-test.3`, installed and signature-verified under `.local/test-app/mac-arm64/Heaven's Door Test.app`. After unlock, Test.2 quit normally and its bundle was retained under `.local/test-app/previous-test.2/`. Test.3 reopened the preserved Review workspace; PDF previews loaded and switching to Other and back succeeded without an app error. No personal card content was edited. The Test counter remains 3 and the stable release remains `0.1.2718`. The renderer experiments remain outside the packaged runtime.
 
 ## Bounded tile follow-up
 
