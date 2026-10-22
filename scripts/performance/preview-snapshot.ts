@@ -20,3 +20,6 @@ export function validatePreviewSnapshot(value:unknown,signature:string,viewport:
  }
  return s;
 }
+export function assertTilePlan(width:number,height:number){
+ if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<=0||height<=0||!Number.isSafeInteger(width*height*4)||width*height*4>32*1024*1024)throw Error('Tile plan exceeds budget; viewport scheduling is required');
+}

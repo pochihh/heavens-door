@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {validatePreviewSnapshot,type PreviewSnapshot} from '../scripts/performance/preview-snapshot';
+import {validatePreviewSnapshot,assertTilePlan,type PreviewSnapshot} from '../scripts/performance/preview-snapshot';
 const viewport={width:1600,height:968,dpr:2},ids=new Set(['p0']);
 const snapshot=():PreviewSnapshot=>{
  const header=Buffer.alloc(33);Buffer.from([137,80,78,71,13,10,26,10]).copy(header);header.writeUInt32BE(13,8);header.write('IHDR',12);header.writeUInt32BE(512,16);header.writeUInt32BE(512,20);
@@ -12,4 +12,9 @@ test('preview snapshots reject changed identity, malformed geometry and unsafe P
  for(const mutate of [(s:PreviewSnapshot)=>s.signature='old',(s:PreviewSnapshot)=>s.viewport={...viewport,dpr:1},(s:PreviewSnapshot)=>s.geometry.push(s.geometry[0]),(s:PreviewSnapshot)=>s.geometry[0][1].height=NaN,(s:PreviewSnapshot)=>s.tiles[0].width=511,(s:PreviewSnapshot)=>s.tiles[0].width=100000,(s:PreviewSnapshot)=>s.tiles[0].src='data:image/png;base64,invalid',(s:PreviewSnapshot)=>s.tiles.push(s.tiles[0])]){const s=snapshot();mutate(s);assert.throws(()=>validatePreviewSnapshot(s,'source',viewport,ids));}
  const tooMany=snapshot();tooMany.tiles=Array.from({length:33},(_,i)=>({...tooMany.tiles[0],id:String(i)}));assert.throws(()=>validatePreviewSnapshot(tooMany,'source',viewport,ids),/budget/);
  assert.throws(()=>validatePreviewSnapshot(snapshot(),'source',viewport,new Set()));
+});
+
+test('whole-bounds tile plans reject oversized and invalid extents before allocating or evicting pixels',()=>{
+ assert.doesNotThrow(()=>assertTilePlan(2450,2670));
+ for(const [w,h] of [[1e12,2670],[NaN,5],[-1,2],[0,2],[1.5,2],[Number.MAX_SAFE_INTEGER,2]])assert.throws(()=>assertTilePlan(w,h),/budget/);
 });

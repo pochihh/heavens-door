@@ -78,8 +78,9 @@ app.whenReady().then(async()=>{
   await js(view,'window.__preview.setDraft(null)');await wait(view,'!!document.querySelector("[data-placement=p0] .card-preview a")');
   const link=await js(view,'(()=>{const r=document.querySelector("[data-placement=p0] .card-preview a").getClientRects()[0];return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()');click(link);await wait(view,'window.__preview.opened?.length===1');result.firstClick.externalLinks=await js(view,'window.__preview.opened');
   await fs.promises.writeFile(path.join(config.folder,'live-card.png'),(await view.webContents.capturePage()).toPNG());
-  await setCamera({x:20,y:20,zoom:.024});await js(view,'window.__preview.promote()');
+  await js(view,'window.__preview.closeLive()');await wait(view,'!document.querySelector(".live-preview")');result.cameraAfterClose=await js(view,'window.__preview.navigation.current');if(JSON.stringify(result.cameraAfterClose)!==JSON.stringify(initial))throw Error('Retired live view restored its camera');
   result.final=await js(view,'window.__preview.stats()');result.stageErrors=await js(stage,'window.__preview.errors');result.remainingStageDom=await js(stage,'document.querySelectorAll("*").length');
+  result.oversizeRejected=await js(view,'window.__preview.rejectOversize()');
   result.revisionRace=await js(view,'window.__preview.revisionRace()');
   const tileSnapshot=await js(view,'window.__preview.exportTiles('+JSON.stringify(config.sourceFingerprint)+')');const cachePath=path.join(config.folder,'tile-cache.json');fs.writeFileSync(cachePath,JSON.stringify(tileSnapshot));result.cacheFileBytes=fs.statSync(cachePath).size;
   await js(view,'window.__preview.clear()');result.afterClear=await js(view,'window.__preview.stats()');if(result.afterClear.bytes||result.afterClear.entries||result.afterClear.tileBytes||result.afterClear.sourceBytes||result.final.errors.length||result.stageErrors.length)throw Error('Resource/error check failed');
