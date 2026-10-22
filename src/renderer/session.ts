@@ -333,7 +333,7 @@ export class Session {
     }}
     return result;
   });}
-  setViewProperty(path:string,expected:string,key:string,value:TagValue){return this.tagEdit(path,expected,next=>({kind:'setViewProperty',path,expected:next,key,value}),ui.tags.properties);}
+  setViewProperty(path:string,expected:string,key:string|string[],value:TagValue){return this.tagEdit(path,expected,next=>({kind:'setViewProperty',path,expected:next,key,value}),ui.tags.properties);}
   setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {return this.tagEdit(path,expected,next=>({kind:'setTagProperty',path,expected:next,tag,key,value}),ui.tags.properties);}
   private tagEdit(path:string,expected:string,request:(next:string)=>Extract<import('../shared').Request,{kind:'setViewProperty'|'addTagProperty'|'setCardTag'|'setTagProperty'|'reorderTagProperties'|'reorderCardTags'}>,label:string) {
     return this.run(async()=>{

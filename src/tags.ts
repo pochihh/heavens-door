@@ -72,3 +72,16 @@ export function cardTagFields(tags:TagInfo[],name:string,properties:Record<strin
     return [{...fallback,key:key.slice(name.length+1),sourceTag:name,propertyKey:key}];
   });
 }
+
+// Property names are labels; only explicit namespaced keys identify write destinations.
+export function tagPropertyTargets(tags:TagInfo[],keys:readonly string[],properties:Record<string,unknown>,attach=false){
+  const wanted=new Set(keys),targets=tagsFrom(properties.tags).flatMap(tag=>{
+    const resolved=resolveTag(tags,tag),fields=resolved.fields.filter(field=>wanted.has(field.propertyKey));
+    if(fields.length&&resolved.warnings.length)throw new Error(resolved.warnings.join('\n'));
+    return fields.map(field=>({tag,field}));
+  });
+  if(targets.length||!attach)return targets;
+  const key=keys[0],tag=key.slice(0,key.lastIndexOf('/')),resolved=resolveTag(tags,tag),field=resolved.fields.find(field=>field.propertyKey===key);
+  if(!field||resolved.warnings.length)throw new Error(resolved.warnings.join('\n')||ui.tags.missingField(key));
+  return [{tag,field}];
+}

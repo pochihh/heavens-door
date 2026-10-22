@@ -2,7 +2,7 @@ import {featureEnabled} from '../features';
 import {createContext,useContext,useEffect,useMemo,useState,useRef,useId,type ReactNode} from 'react';
 import type {NavigationMode} from '../layout';
 import type {Snapshot,ViewResults,TagResult,TagValue} from '../shared';
-import {parseViewBlock,writeViewBlock,tableAppearance,newViewBlock,validateRule,validateView,queryFields,positiveTags,resolveField,sameField,fieldKeys,operators,OPERATORS,DEFAULT_QUERY_PREFERENCES,viewDisplayFields,viewPropertyTargets,moveCardId,viewCreationChoices,type ViewBlock as Definition,type BlockView,type Rule,type FieldRef,type QueryField} from '../view-block';
+import {parseViewBlock,writeViewBlock,tableAppearance,newViewBlock,validateRule,validateView,queryFields,queryTagScope,resolveField,sameField,fieldKeys,operators,OPERATORS,DEFAULT_QUERY_PREFERENCES,viewDisplayFields,viewPropertyTargets,moveCardId,viewCreationChoices,type ViewBlock as Definition,type BlockView,type Rule,type FieldRef,type QueryField} from '../view-block';
 import {TextSearch} from '../core/search';
 import type {Session} from './session';
 import {MenuCheck,Icon,Tool} from './Icons';
@@ -52,15 +52,14 @@ export function ViewBlock({source,onChange,onRemove,onDuplicate,path,blockIndex=
   useEffect(()=>{const version=++generation.current;let live=true;setError('');if(!context||!featureEnabled(context.snapshot.preferences,'views')||!block||!view||editing){setBusy(false);return;}setBusy(true);const timer=setTimeout(()=>{void context.session.bridge.request<ViewResults>({kind:'viewCards',source,view:view.id}).then(rows=>{if(live&&version===generation.current)setResult(rows);}).catch(e=>{if(live&&version===generation.current)setError(String(e).replace(/^Error: /,''));}).finally(()=>{if(live&&version===generation.current)setBusy(false);});},80);return()=>{live=false;generation.current++;clearTimeout(timer);};},[source,view?.id,identity,context?.session,editing]);
   const shown=draft??block,selected=checked.error?undefined:shown?.views.find(v=>v.id===(view?.id))??shown?.views[0];
   const fields=useMemo(()=>{
-    const fields=queryFields(tags,[...new Set([...positiveTags(shown?.query.where),...(result.scopeTags??result.rows.flatMap(row=>tagsFrom(row.properties.tags)))])],context?.snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES);
+    const fields=queryFields(tags,queryTagScope(shown?.query.where,result.scopeTags??result.rows.flatMap(row=>tagsFrom(row.properties.tags))),context?.snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES);
     const keep=(rule?:Rule)=>{if(!rule)return;if('all'in rule)rule.all.forEach(keep);else if('any'in rule)rule.any.forEach(keep);else if('not'in rule)keep(rule.not);else if(!fields.some(f=>sameField(f.keys,rule.field)))try{fields.push(resolveField(rule.field,tags));}catch{/* The unavailable key remains visible in its condition. */}};
     keep(shown?.query.where);keep(selected?.filter);return fields;
   },[tags,shown,selected,result,context?.snapshot.preferences?.query]);
   const options=useMemo(()=>{
-    const scope=[...positiveTags(shown?.query.where),...(result.scopeTags??result.rows.flatMap(row=>tagsFrom(row.properties.tags)))];
+    const scope=queryTagScope(shown?.query.where,result.scopeTags??result.rows.flatMap(row=>tagsFrom(row.properties.tags)));
     const refs:FieldRef[]=[...queryFields(tags,scope.length?scope:[...new Set(result.rows.flatMap(row=>tagsFrom(row.properties.tags)))],context?.snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).map(f=>f.keys),...(selected?.fields??[]),...(selected?.groupBy?[selected.groupBy]:[]),...(selected?.dateBy?[selected.dateBy]:[]),...(typeof selected?.sort==='object'?[selected.sort.field]:[])];
-    const keys=new Set(refs.flatMap(fieldKeys));
-    return queryFields(tags,tags.map(t=>t.tag),context?.snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES).filter(f=>f.keys.some(key=>keys.has(key)));
+    return viewDisplayFields(refs,tags,context?.snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES);
   },[tags,shown,selected,result.rows,context?.snapshot.preferences?.query]);
   const owner=context?.snapshot.cards.find(c=>c.path===path),change=onChange??(owner?(next:string)=>context!.session.saveViewBlock(owner.path,owner.revision,blockIndex,source,next):undefined);
   const remove=onRemove??(owner?()=>context!.session.saveViewBlock(owner.path,owner.revision,blockIndex,source,null):undefined);
@@ -89,7 +88,7 @@ export function ViewBlock({source,onChange,onRemove,onDuplicate,path,blockIndex=
   const editableFields=options.filter(f=>f.definition),groupChoices=editableFields.filter(f=>f.type==='status'||f.type==='select'&&!multipleChoices(f.definition!));
   const sort=typeof selected?.sort==='object'?selected.sort:selected?.sort==='manual'||selected?.type==='kanban'?undefined:{field:'file.name',direction:'asc' as const};
   const label=(ref?:FieldRef)=>ref?displayed([ref]).map(f=>f.name).join(' / '):t.none;
-  async function saveProperty(row:TagResult,key:string,value:TagValue){
+  async function saveProperty(row:TagResult,key:FieldRef,value:TagValue){
     await context!.session.setViewProperty(row.card.path,row.card.revision,key,value);
     const keys=viewPropertyTargets(key,tags,row.properties,prefs,true).map(t=>t.field.propertyKey),card=context!.session.state.snapshot?.cards.find(c=>c.path===row.card.path)??row.card;
     setResult(old=>({...old,rows:old.rows.map(r=>r.card.path===row.card.path?{card,properties:{...r.properties,...Object.fromEntries(keys.map(k=>[k,value]))}}:r)}));
@@ -97,7 +96,7 @@ export function ViewBlock({source,onChange,onRemove,onDuplicate,path,blockIndex=
   async function moveCard(row:TagResult,from:string,to:string,position:{before?:string;after?:string;date?:TagValue}){
     if(!path||!view)return;
     const owner=context!.snapshot.cards.find(c=>c.path===path)??tags.find(t=>t.path===path);if(!owner)return;
-    const previous=result,id=row.card.id,key=view.type==='timeline'&&position.date!==undefined?dateField?.keys[0]:from!==to?group?.keys[0]:undefined,value=view.type==='timeline'?position.date:to||null;
+    const previous=result,id=row.card.id,key=view.type==='timeline'&&position.date!==undefined?dateField?.keys:from!==to?group?.keys:undefined,value=view.type==='timeline'?position.date:to||null;
     const keys=key?viewPropertyTargets(key,tags,row.properties,prefs,true).map(t=>t.field.propertyKey):[];
     // Keep the dropped slot visible while the file transaction and indexed refresh finish.
     generation.current++;

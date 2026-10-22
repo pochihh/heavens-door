@@ -2,7 +2,7 @@ import {marked} from 'marked';
 import {viewText} from './text/views';
 import {parseDocument,LineCounter} from 'yaml';
 import type {TagInfo,TagField} from './shared';
-import {resolveTag,propertyType,multipleChoices,validTagDate,tagsFrom} from './tags';
+import {resolveTag,propertyType,multipleChoices,validTagDate,tagPropertyTargets} from './tags';
 
 export type FieldRef=string|string[];
 export type Rule={field:FieldRef;op:string;value?:unknown}|{all:Rule[]}|{any:Rule[]}|{not:Rule};
@@ -17,9 +17,13 @@ export const OPERATORS:Record<string,string>=viewText.operators;
 export const fieldKeys=(ref:FieldRef)=>typeof ref==='string'?[ref]:ref;
 export const sameField=(a:FieldRef,b:FieldRef)=>JSON.stringify(fieldKeys(a))===JSON.stringify(fieldKeys(b));
 export function positiveTags(rule?:Rule):string[]{if(!rule)return [];if('not'in rule)return [];if('all'in rule)return [...new Set(rule.all.flatMap(positiveTags))];if('any'in rule)return [...new Set(rule.any.flatMap(positiveTags))];return rule.field==='tags'&&['contains','eq'].includes(rule.op)&&typeof rule.value==='string'?[rule.value]:[];}
-export function queryFields(tags:TagInfo[],scope:string[],prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES):QueryField[]{
+export function queryTagScope(rule:Rule|undefined,matchingTags:string[]):string[]{
+  const selected=positiveTags(rule);return [...new Set(selected.length?selected:matchingTags)];
+}
+export function queryFields(tags:TagInfo[],scope:string[],prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES,keys?:ReadonlySet<string>):QueryField[]{
   const grouped=new Map<string,QueryField>();
   for(const name of scope)for(const f of resolveTag(tags,name).fields){
+    if(keys&&!keys.has(f.propertyKey))continue;
     const type=propertyType(f.type),identity=prefs.mergeProperties?(prefs.caseSensitive?f.key:f.key.toLowerCase())+'\0'+type+'\0'+multipleChoices(f):f.propertyKey;
     const previous=grouped.get(identity);
     if(previous){if(!previous.keys.includes(f.propertyKey))previous.keys.push(f.propertyKey);if(!previous.tags.includes(name))previous.tags.push(name);
@@ -88,28 +92,17 @@ export function viewFence(tag?:string){return '\n\n```view-block\n'+writeViewBlo
 
 export function viewBlockRanges(body:string){let offset=0;const blocks:{start:number;end:number;source:string}[]=[];for(const token of marked.lexer(body)){const start=body.indexOf(token.raw,offset);if(start<0)continue;offset=start+token.raw.length;if(token.type==='code'&&token.lang==='view-block')blocks.push({start,end:offset,source:token.text});}return blocks;}
 
-// Display grouping follows preferences; saved query predicates keep their explicit keys.
+// Group only the selected keys; a saved binding must never expand to the whole workspace.
 export function viewDisplayFields(refs:FieldRef[],tags:TagInfo[],prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES):QueryField[]{
-  const choices=queryFields(tags,tags.map(t=>t.tag),prefs),out:QueryField[]=[];
-  for(const key of refs.flatMap(fieldKeys)){
-    const f=choices.find(f=>f.keys.includes(key))??resolveField(key,tags);
-    if(!out.some(previous=>sameField(previous.keys,f.keys)))out.push(f);
-  }
+  const keys=[...new Set(refs.flatMap(fieldKeys))];
+  const choices=queryFields(tags,tags.map(t=>t.tag),prefs,new Set(keys)),out:QueryField[]=[];
+  for(const key of keys){const field=choices.find(field=>field.keys.includes(key))??resolveField(key,tags);if(!out.includes(field))out.push(field);}
   return out;
 }
-export function viewPropertyTargets(key:string,tags:TagInfo[],properties:Record<string,unknown>,prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES,attach=false){
-  const seed=resolveField(key,tags);if(!seed.definition)throw new Error(viewText.errors.chooseProperty);
-  const name=(name:string)=>prefs.caseSensitive?name:name.toLowerCase();
-  const targets=tagsFrom(properties.tags).flatMap(tag=>{
-    const resolved=resolveTag(tags,tag);
-    const fields=resolved.fields.filter(f=>prefs.mergeProperties?name(f.key)===name(seed.definition!.key)&&propertyType(f.type)===seed.type&&multipleChoices(f)===multipleChoices(seed.definition!):f.propertyKey===key);
-    if(fields.length&&resolved.warnings.length)throw new Error(resolved.warnings.join('\n'));
-    return fields.map(field=>({tag,field}));
-  });
-  if(targets.length||!attach)return targets;
-  const tag=key.slice(0,-seed.definition.key.length-1),resolved=resolveTag(tags,tag),field=resolved.fields.find(f=>f.propertyKey===key);
-  if(!field||resolved.warnings.length)throw new Error(resolved.warnings.join('\n')||viewText.errors.chooseProperty);
-  return [{tag,field}];
+export function viewPropertyTargets(ref:FieldRef,tags:TagInfo[],properties:Record<string,unknown>,prefs:QueryPreferences=DEFAULT_QUERY_PREFERENCES,attach=false){
+  field(ref);const fields=viewDisplayFields([ref],tags,prefs),selected=fields[0];
+  if(fields.length!==1||!selected?.definition)throw new Error(viewText.errors.chooseProperty);
+  return tagPropertyTargets(tags,selected.keys,properties,attach);
 }
 
 // Missing results stay in the saved list; new matches live only in the unsaved tail until a drop.

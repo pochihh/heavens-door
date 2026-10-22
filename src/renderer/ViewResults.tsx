@@ -18,7 +18,7 @@ import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 const t=ui.views;
 function cardField(field:QueryField,row:TagResult,snapshot:Snapshot){
-  const targets=field.definition?viewPropertyTargets(field.keys[0],snapshot.tags??[],row.properties,snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES,true):[];
+  const targets=field.definition?viewPropertyTargets(field.keys,snapshot.tags??[],row.properties,snapshot.preferences?.query??DEFAULT_QUERY_PREFERENCES,true):[];
   const keys=targets.length?[...new Set(targets.map(t=>t.field.propertyKey))]:field.keys;
   const values=[...new Map(keys.flatMap(key=>{const value=key==='file.name'?row.card.name:key==='file.path'?row.card.path:key==='file.folder'?row.card.path.split('/').slice(0,-1).join('/'):row.properties[key];return value===undefined||value===null?[]:[[JSON.stringify(value),value] as const];})).values()];
   let definition:TagField|undefined=targets[0]?.field;
@@ -41,17 +41,17 @@ function Cell({field,row,snapshot,editing,onEditing,onSave,onOpen,readOnly=false
       <button type="button" aria-label={data.definition?t.editProperty(field.name):field.name} disabled={!data.definition} onClick={()=>onEditing(true)}><Values field={field} values={data.values}/></button>}
   </div>;
 }
-export function ViewResultContent({view,result,columns,group,snapshot,editing,onEditing,onSave,onOpen,onPreview=onOpen,onNavigate,onMove,scroll,dateField,onCreate,onSort,onViewChange}:{dateField?:QueryField;onCreate?:(anchor:HTMLElement,column?:string,date?:TagValue)=>void;onSort?:(field:FieldRef,direction:'asc'|'desc')=>void;onViewChange:(patch:Partial<BlockView>)=>void|Promise<void>;scroll?:{left:number;top:number};view:BlockView;result:ViewResults;columns:QueryField[];group?:QueryField;snapshot:Snapshot;editing:string|null;onEditing:(key:string|null)=>void;onMove?:(row:TagResult,from:string,to:string,position:{before?:string;after?:string;date?:TagValue})=>Promise<void>;onSave:(row:TagResult,key:string,value:TagValue)=>Promise<void>;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){
+export function ViewResultContent({view,result,columns,group,snapshot,editing,onEditing,onSave,onOpen,onPreview=onOpen,onNavigate,onMove,scroll,dateField,onCreate,onSort,onViewChange}:{dateField?:QueryField;onCreate?:(anchor:HTMLElement,column?:string,date?:TagValue)=>void;onSort?:(field:FieldRef,direction:'asc'|'desc')=>void;onViewChange:(patch:Partial<BlockView>)=>void|Promise<void>;scroll?:{left:number;top:number};view:BlockView;result:ViewResults;columns:QueryField[];group?:QueryField;snapshot:Snapshot;editing:string|null;onEditing:(key:string|null)=>void;onMove?:(row:TagResult,from:string,to:string,position:{before?:string;after?:string;date?:TagValue})=>Promise<void>;onSave:(row:TagResult,key:FieldRef,value:TagValue)=>Promise<void>;onOpen:(key:string)=>void;onPreview?:(key:string)=>void;onNavigate?:(key:string,mode:NavigationMode)=>void}){
   const compact=(view.type==='table'||view.type==='list')&&tableAppearance(view)==='compact';
   const kanban=useRef<HTMLDivElement>(null),exportTarget=useRef<HTMLDivElement>(null),exportDrag=useBookmarkDrag(exportTarget,()=>{});
   useLayoutEffect(()=>{if(kanban.current&&scroll&&result.total){kanban.current.scrollLeft=scroll.left;kanban.current.scrollTop=scroll.top;}},[view.id,result,scroll]);
   const cancel=useRef<()=>void>(()=>{}),[moveMenu,setMoveMenu]=useState<{anchor:HTMLElement;row:TagResult}|null>(null),[moveError,setMoveError]=useState('');
   useEffect(()=>()=>cancel.current(),[]);
   useEffect(()=>{cancel.current();setMoveMenu(null);},[view.id,view.type,group?.keys.join('\0')]);
-  function cell(row:TagResult,field:QueryField,column=''){const id=column+'\0'+row.card.path+'\0'+field.keys.join('\0');return <Cell readOnly={view.type==='kanban'||view.type==='gallery'||compact} key={field.keys.join('\0')} field={field} row={row} snapshot={snapshot} editing={editing===id} onEditing={active=>onEditing(active?id:null)} onSave={value=>onSave(row,field.keys[0],value)} onOpen={onOpen}/>;}
+  function cell(row:TagResult,field:QueryField,column=''){const id=column+'\0'+row.card.path+'\0'+field.keys.join('\0');return <Cell readOnly={view.type==='kanban'||view.type==='gallery'||compact} key={field.keys.join('\0')} field={field} row={row} snapshot={snapshot} editing={editing===id} onEditing={active=>onEditing(active?id:null)} onSave={value=>onSave(row,field.keys.length===1?field.keys[0]:field.keys,value)} onOpen={onOpen}/>;}
   function names(row:TagResult){if(!group)return [];try{return cardField(group,row,snapshot).values.map(propertyText).filter(Boolean);}catch{return [];}}
   function allowed(row:TagResult){if(!group?.definition||!['status','select'].includes(group.type)||multipleChoices(group.definition))return [];try{const f=cardField(group,row,snapshot).definition;return f?['',...fieldOptions(f)]:[];}catch{return [];}}
-  async function move(row:TagResult,value:string){if(!group)return;setMoveError('');onEditing('@move');try{await onSave(row,group.keys[0],value||null);setMoveMenu(null);}catch(e){setMoveError(String(e).replace(/^Error: /,''));}finally{onEditing(null);}}
+  async function move(row:TagResult,value:string){if(!group)return;setMoveError('');onEditing('@move');try{await onSave(row,group.keys.length===1?group.keys[0]:group.keys,value||null);setMoveMenu(null);}catch(e){setMoveError(String(e).replace(/^Error: /,''));}finally{onEditing(null);}}
   function drag(e:ReactPointerEvent<HTMLDivElement>,row:TagResult){
     if(editing||e.button!==0||(e.target as HTMLElement).closest('button.tool'))return;
     const options=allowed(row),root=e.currentTarget.closest<HTMLElement>('.view-kanban'),from=e.currentTarget.closest<HTMLElement>('[data-tag-column]')?.dataset.tagColumn;

@@ -28,7 +28,7 @@ fields:
 
 The optional `propertiesCollapsed` boolean stores the tag page’s Properties section state in the `.tag` frontmatter; absent means expanded. It affects only presentation, survives reopening and ordinary schema edits, and participates in shared undo/history. Collapsing hides Default, Optional, Color and the inline new-property editor, preserving its draft; floating property settings close; Views remain visible. Collapsing or expanding Properties preserves the loaded Views and never starts a card query or loading state. Views refresh for card-data or filter changes; schema controls update in place.
 
-A card stores `tags: [project]` and `project/status: Todo` in its frontmatter. The UI offers seven types:
+A card stores `tags: [project]` and `project/status: Todo` in its frontmatter. Properties belong to their full namespaced key: `todo/Status` and `readlater/status` are independent even when their labels match. Shared editors and drag-and-drop resolve only explicitly selected keys; inheritance retains the defining tag's namespace. Views may intentionally combine an explicit key array, but never infer extra write destinations by name. The UI offers seven types:
 
 | UI type | File definition | Stored value |
 | --- | --- | --- |

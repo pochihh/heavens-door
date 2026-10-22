@@ -54,11 +54,11 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
  const snapshot:Snapshot={root:'/test',name:'Test',cards:[{id:'a',path:'A.md',name:'A',title:'Task A',fillColor:'#c9838a',revision:'r1',legacy:false}],boards:[],issues:[],historyAvailable:false,tags:['project','task'].map(tag=>({path:tag+'.tag',name:tag,tag,revision:'r',inherits:[],overrides:[],fields:[{key:'Status',type:'status',statusGroups:{todo:['Todo'],inProgress:['Doing'],done:['Done']}},{key:'Date',type:'date'},{key:'Location',type:'text'},{key:'Checked',type:'boolean'}]}))};
  const row:ViewResults['rows'][number]={card:snapshot.cards[0],properties:{tags:['project','task'],'project/Status':'Todo','task/Status':'Todo','project/Date':'2026-10-01','project/Location':'Here','task/Location':'There'}};
- let queries=0,opened=0,previewed=0;const writes:{key:string;value:unknown}[]=[];
+ let queries=0,opened=0,previewed=0;const writes:{key:string|string[];value:unknown}[]=[];
  const session=new Session({request:async request=>{if(request.kind==='viewCards'){queries++;return {rows:[row],total:1};}throw new Error(request.kind);}} as Bridge);session.state.snapshot=snapshot;
- session.setViewProperty=async(_path,_revision,key,value)=>{writes.push({key,value});row.properties={...row.properties,...Object.fromEntries(['project','task'].map(tag=>[tag+'/'+key.split('/')[1],value]))};};
+ session.setViewProperty=async(_path,_revision,key,value)=>{writes.push({key,value});row.properties={...row.properties,...Object.fromEntries((typeof key==='string'?[key]:key).map(key=>[key,value]))};};
  const {createRoot}=await import('react-dom/client'),{ViewBlock,ViewBlockProvider}=await import('../src/renderer/ViewBlock');const root=createRoot(document.getElementById('root')!);
- const block=newViewBlock('project');block.views[0].fields=['file.title','project/Status','project/Date','project/Location','project/Checked'];let source=writeViewBlock('',block);
+ const block=newViewBlock('project');block.views[0].fields=['file.title',...['Status','Date','Location','Checked'].map(key=>['project/'+key,'task/'+key])];let source=writeViewBlock('',block);
  const render=()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{opened++;}} onPreview={()=>{previewed++;}}><ViewBlock source={source} onChange={next=>{source=next;render();}}/></ViewBlockProvider>);
  const settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});
  const click=async(selector:string)=>{const el=document.querySelector<HTMLElement>(selector);assert.ok(el,selector);await act(async()=>el.click());};
@@ -80,7 +80,7 @@ test('compact subpanels keep anchors, table values edit and Kanban properties op
   card().getBoundingClientRect=()=>rect(0,30,38,80);
   await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointerup',20);});assert.equal(writes.length,0);
   await act(async()=>{pointer(card(),'pointerdown',20);pointer(document,'pointermove',60);});assert.ok(document.querySelector('.drag-phantom'));await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(writes.length,0);assert.equal(document.querySelector('.drag-phantom'),null);
-  await act(async()=>{pointer(card().querySelector('[data-property]')!,'pointerdown',20);pointer(document,'pointermove',80);pointer(document,'pointerup',80);});await settle();assert.deepEqual(writes[0],{key:'project/Status',value:'Done'});assert.ok(document.querySelector('[data-tag-column="Done"] .view-result-card'));assert.equal(opened,0);
+  await act(async()=>{pointer(card().querySelector('[data-property]')!,'pointerdown',20);pointer(document,'pointermove',80);pointer(document,'pointerup',80);});await settle();assert.deepEqual(writes[0],{key:['project/Status','task/Status'],value:'Done'});assert.ok(document.querySelector('[data-tag-column="Done"] .view-result-card'));assert.equal(opened,0);
   assert.equal(document.querySelector('.view-result-card [aria-label^="Edit "],.view-result-card input'),null,'Kanban properties have no editing controls');const saved=writes.length;await click('.view-result-card [data-property="project/Date"]');assert.equal(previewed,1);assert.equal(writes.length,saved);
   await click('[aria-label="View options"]');await click('.view-menu-list button');await textClick('Table');await escape();await settle();
   await click('[aria-label="Edit Status"]');await textClick('Todo');await settle();assert.equal(row.properties['task/Status'],'Todo');assert.equal(opened,0);
@@ -199,5 +199,28 @@ test('preview setup stays editable, configured properties stay available, and vi
   await contextClick('list');await action('Duplicate view');await settle();assert.equal(parseViewBlock(source).views.length,4);assert.equal(parseViewBlock(source).views.at(-1)!.name,'Renamed list copy');
   await contextClick('list');await action('Delete view');await settle();assert.equal(parseViewBlock(source).views.some(v=>v.id==='list'),false);assert.equal(parseViewBlock(source).views.length,3,'delete applies to the clicked view, not the previously active copy');
   while(order().length>1){const id=order()[0];await contextClick(id);await action('Delete view');await settle();}await contextClick(order()[0]);assert.ok(![...document.querySelectorAll('.view-menu-list button')].some(el=>el.textContent==='Delete view'),'last-view deletion belongs to the block menu');await escape();await click('[aria-label="View block options"]');await action('Delete view block');await settle();assert.equal(document.querySelector('.view-block'),null);
+ }finally{await act(async()=>root.unmount());session.dispose();}
+});
+
+test('a Todo-only binding shows no Read later columns or options even when the card has both tags',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
+ const tags:NonNullable<Snapshot['tags']>=[{tag:'readlater',name:'readlater',path:'readlater.tag',revision:'r',fields:[{key:'status',label:'Status',type:'status',statusGroups:{todo:['New'],inProgress:['Reading'],done:['Done']}}],inherits:[],overrides:[]},{tag:'todo',name:'todo',path:'todo.tag',revision:'t',fields:[{key:'Status',type:'status',statusGroups:{todo:['Listed'],inProgress:['Today'],done:['Done']}}],inherits:[],overrides:[]}];
+ const card={id:'a',path:'A.md',name:'A',title:'Both tags',revision:'r1',legacy:false},row={card,properties:{tags:['todo','readlater'],'todo/Status':'Today','readlater/status':'Reading'}};
+ const snapshot:Snapshot={root:'/test',name:'Test',cards:[card],boards:[],tags,issues:[],historyAvailable:false};const session=new Session({request:async request=>{if(request.kind==='viewCards')return {rows:[row],total:1,scopeTags:['todo','readlater'],columns:[{value:'Today',ids:['a'],total:1}]};throw Error(request.kind);}} as Bridge);session.state.snapshot=snapshot;
+ const saved:unknown[]=[];session.setViewProperty=async(_path,_revision,key,value)=>{saved.push(key);for(const property of typeof key==='string'?[key]:key)Object.assign(row.properties,{[property]:value});};
+ const definition=newViewBlock('todo');definition.views=[{id:'board',name:'Tasks',type:'kanban',groupBy:['todo/Status'],fields:['file.title']}];let source=writeViewBlock('',definition);
+ const {createRoot}=await import('react-dom/client'),{ViewBlock,ViewBlockProvider}=await import('../src/renderer/ViewBlock'),root=createRoot(document.getElementById('root')!);
+ const render=()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={source} onChange={next=>{source=next;render();}}/></ViewBlockProvider>);
+ const click=async(selector:string)=>{const element=document.querySelector<HTMLElement>(selector);assert.ok(element,selector);await act(async()=>element.click());};
+ try{
+  await act(async()=>render());await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});
+  assert.deepEqual([...document.querySelectorAll('[data-tag-column]')].map(node=>node.getAttribute('data-tag-column')),['Listed','Today','Done']);assert.equal(document.querySelectorAll('[data-card-id=a]').length,1);
+  definition.views[0]={...definition.views[0],type:'table',fields:['todo/Status']};source=writeViewBlock('',definition);await act(async()=>render());await act(async()=>{await new Promise(resolve=>setTimeout(resolve,140));});
+  assert.equal(document.querySelector('[data-property="todo/Status"]')?.textContent,'Today');await click('[aria-label="Edit Status"]');
+  assert.deepEqual([...document.querySelectorAll('.property-choices [role=option]')].map(node=>node.textContent),['Listed','Today','Done']);
+  const done=[...document.querySelectorAll<HTMLButtonElement>('.property-choices [role=option]')].find(node=>node.textContent==='Done')!;await act(async()=>done.click());
+  assert.deepEqual(saved,['todo/Status']);assert.equal(row.properties['readlater/status'],'Reading');assert.equal(parseViewBlock(source).query.where&&JSON.stringify(parseViewBlock(source).query.where).includes('todo'),true);
  }finally{await act(async()=>root.unmount());session.dispose();}
 });

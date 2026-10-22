@@ -1,6 +1,6 @@
 import {useContext,useEffect,useLayoutEffect,useRef,useState,type PointerEvent as ReactPointerEvent} from 'react';
 import type {TagResult,TagValue} from '../shared';
-import {orderedCardIds,type BlockView,type QueryField} from '../view-block';
+import {orderedCardIds,type BlockView,type QueryField,type FieldRef} from '../view-block';
 import {validTagDate} from '../tags';
 import {dateDraft,dateValue,dateSummary,formatDay,shiftDay,wallTime} from '../dates';
 import {DateDisplayContext} from './DateProperty';
@@ -17,7 +17,7 @@ export function timelineDates(value:unknown){
   const end=value&&typeof value==='object'&&'end'in value?value.end:start;
   return validTagDate(start)&&validTagDate(end)&&(start.length===10)===(end.length===10)&&Date.parse(end)>=Date.parse(start)?{start:start as string,end:end as string}:null;
 }
-export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onViewChange,onEditing,busy}:{view:BlockView;rows:TagResult[];field?:QueryField;onSave:(row:TagResult,key:string,value:TagValue)=>Promise<void>;onMove?:(row:TagResult,position:{before?:string;after?:string;date?:TagValue})=>Promise<void>;onOpen:(key:string)=>void;onCreate?:(anchor:HTMLElement,column?:string,date?:TagValue)=>void;onViewChange:(patch:Partial<BlockView>)=>void|Promise<void>;onEditing:(key:string|null)=>void;busy:boolean}){
+export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onViewChange,onEditing,busy}:{view:BlockView;rows:TagResult[];field?:QueryField;onSave:(row:TagResult,key:FieldRef,value:TagValue)=>Promise<void>;onMove?:(row:TagResult,position:{before?:string;after?:string;date?:TagValue})=>Promise<void>;onOpen:(key:string)=>void;onCreate?:(anchor:HTMLElement,column?:string,date?:TagValue)=>void;onViewChange:(patch:Partial<BlockView>)=>void|Promise<void>;onEditing:(key:string|null)=>void;busy:boolean}){
   const {display}=useContext(DateDisplayContext),today=wallTime(new Date().toISOString(),display).slice(0,10);
   const [anchor,setAnchor]=useState(today),[preview,setPreview]=useState<{id:string;value:TagValue;top?:number;index?:number}|null>(null),[error,setError]=useState(''),[scaleMenu,setScaleMenu]=useState<HTMLElement|null>(null);
   const [windowRange,setWindowRange]=useState({left:0,width:0}),[hover,setHover]=useState<TagValue|null>(null),[localOrder,setLocalOrder]=useState<string[]|null>(null);
@@ -66,7 +66,7 @@ export function TimelineView({view,rows,field,onSave,onMove,onOpen,onCreate,onVi
     const draft=dateDraft('',display),part=(epoch:number)=>{const iso=new Date(epoch).toISOString();return {day:formatDay(iso.slice(0,10),display.format),time:iso.slice(11,19)};};
     return dateValue({...draft,start:part(from),end:part(to??from),range:to!==undefined,time:scale==='day'},display);
   };
-  async function save(row:TagResult,value:TagValue){if(!field)return;setError('');onEditing('@timeline');setPreview({id:row.card.id,value});try{await onSave(row,field.keys[0],value);}catch(e){setError(String(e).replace(/^Error: /,''));}finally{setPreview(null);onEditing(null);}}
+  async function save(row:TagResult,value:TagValue){if(!field)return;setError('');onEditing('@timeline');setPreview({id:row.card.id,value});try{await onSave(row,field.keys.length===1?field.keys[0]:field.keys,value);}catch(e){setError(String(e).replace(/^Error: /,''));}finally{setPreview(null);onEditing(null);}}
   function pan(e:ReactPointerEvent<HTMLDivElement>){
     if(e.button!==0||(e.target as Element).closest('button,[role="button"]'))return;
     e.preventDefault();cancel.current();setHover(null);

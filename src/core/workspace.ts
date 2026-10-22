@@ -475,8 +475,8 @@ export class Workspace {
     const card=editTagProperty(cardRaw,path,nextTags,tag,tag+'/'+field.key,value);
     return this.write([{path:definition.path,content,expected:tagExpected},{path,content:card,expected}]);
   }
-  private viewPropertyContent(raw:string,path:string,key:string,value:TagValue){
-    if(!path.endsWith('.md')||typeof key!=='string'||!key||key.length>256)throw new Error(ui.errors.invalidQuery);
+  private viewPropertyContent(raw:string,path:string,key:string|string[],value:TagValue){
+    if(!path.endsWith('.md'))throw new Error(ui.errors.invalidQuery);
     const {front,body}=splitNote(raw),stored=front.toJSON()?.tags;
     if(stored!==undefined&&stored!==null&&!(validTag(stored)||Array.isArray(stored)&&stored.every(validTag)))throw new Error(ui.tags.invalidStoredTags);
     const targets=viewPropertyTargets(key,[...this.tags.values()],front.toJSON()??{},this.preferences.query,true);
@@ -486,7 +486,7 @@ export class Workspace {
     front.set('card-id',readCard(path,raw).id);
     return '---\n'+front.toString()+'---\n'+body;
   }
-  async setViewProperty(path:string,expected:string,key:string,value:TagValue){
+  async setViewProperty(path:string,expected:string,key:string|string[],value:TagValue){
     return this.write([{path,expected,content:this.viewPropertyContent(await this.read(path),path,key,value)}]);
   }
   async setTagProperty(path:string,expected:string,tag:string,key:string,value:TagValue) {
@@ -572,9 +572,9 @@ export class Workspace {
       else if(!key.startsWith('file.')){if(values.has(key)&&values.get(key)!==value)throw new Error(viewText.errors.invalidCondition);values.set(key,value as TagValue);}
     }
     if(exactFolder!==undefined&&folder!==exactFolder)throw new Error(viewText.errors.invalidCondition);
-    const contextKey=column!==undefined?fieldKeys(plan.view.groupBy??[])[0]:date!==undefined?fieldKeys(plan.view.dateBy??[])[0]:undefined;
+    const contextKey=column!==undefined?plan.view.groupBy:date!==undefined?plan.view.dateBy:undefined;
     if(column!==undefined&&plan.view.type!=='kanban'||date!==undefined&&plan.view.type!=='timeline'||(column!==undefined||date!==undefined)&&!contextKey)throw new Error(ui.errors.invalidQuery);
-    for(const key of [...values.keys(),...(contextKey?[contextKey]:[])]){
+    for(const key of [...values.keys(),...(contextKey?[fieldKeys(contextKey)[0]]:[])]){
       const field=resolveField(key,tags);if(!field.definition)throw new Error(viewText.errors.chooseProperty);
       if(![...attached].some(tag=>resolveTag(tags,tag).fields.some(f=>f.propertyKey===key)))attached.add(key.slice(0,-field.definition.key.length-1));
     }
@@ -1144,7 +1144,7 @@ export class Workspace {
     for(const row of rows){
       const props=JSON.parse(String(row.frontmatter)),signature=JSON.stringify(props.tags??[]);
       let keys=keysByTags.get(signature);
-      if(!keys){const targets=viewPropertyTargets(group.keys[0],tags,props,this.preferences.query);keys=targets.length?[...new Set(targets.map(t=>t.field.propertyKey))]:group.keys;keysByTags.set(signature,keys);}
+      if(!keys){const targets=viewPropertyTargets(group.keys,tags,props,this.preferences.query);keys=targets.length?[...new Set(targets.map(t=>t.field.propertyKey))]:group.keys;keysByTags.set(signature,keys);}
       const values=[...new Set(keys.map(key=>props[key]).filter(v=>typeof v==='string'&&v))];if(!values.length)values.push('');
       for(const value of values){if(!columns.has(value))columns.set(value,[]);columns.get(value)!.push(String(row.id));}
     }
@@ -1204,7 +1204,7 @@ export class Workspace {
       if(move.from!=='rows'||move.to!=='rows'||(view.type==='timeline'?!view.dateBy:move.date!==undefined))throw new Error(ui.errors.invalidQuery);
       const plan=compileView(move.owner.source,move.view,[...this.tags.values()]),ids=this.viewRowIds(move.owner.source,move.view,plan);
       if(!ids.includes(card.id)||[move.before,move.after].some(id=>id!==undefined&&(id===card.id||!ids.includes(id))))throw new Error(viewText.errors.viewChanged);
-      if(move.date!==undefined)content=this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.dateBy!)[0],move.date);
+      if(move.date!==undefined)content=this.viewPropertyContent(cardRaw,card.path,view.dateBy!,move.date);
       // Keep hidden IDs for returning results; freeze the current sort before switching to manual.
       const saved=view.sort==='manual'?view.order?.rows??[]:[...ids,...(view.order?.rows??[])];
       view.order={...view.order,rows:moveCardId(saved,ids,card.id,move.before,move.after)};
@@ -1214,7 +1214,7 @@ export class Workspace {
       if(!data.columns.get(move.from)?.includes(card.id))throw new Error(viewText.errors.viewChanged);
       const target=data.columns.get(move.to)??[];
       if([move.before,move.after].some(id=>id!==undefined&&(id===card.id||!target.includes(id))))throw new Error(viewText.errors.viewChanged);
-      if(move.from!==move.to)content=this.viewPropertyContent(cardRaw,card.path,fieldKeys(view.groupBy!)[0],move.to||null);
+      if(move.from!==move.to)content=this.viewPropertyContent(cardRaw,card.path,data.group!.keys,move.to||null);
       if(typeof view.sort==='object'){
         // Freeze every current column before switching modes, including unloaded cards.
         view.order={...view.order,...Object.fromEntries([...data.columns].map(([value,ids])=>[value,[...new Set([...ids,...(view.order&&Object.hasOwn(view.order,value)?view.order[value]:[])])]]))};

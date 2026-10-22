@@ -70,7 +70,7 @@ async function dispatch(request: Request) {
     case 'reorderCardTags': string(request.path);string(request.expected);return workspace.reorderCardTags(request.path,request.expected,request.tags);
     case 'reorderTagProperties': string(request.path);string(request.expected);string(request.tag);return workspace.reorderTagProperties(request.path,request.expected,request.tag,request.keys);
     case 'addTagProperty': string(request.path);string(request.expected);string(request.tag);string(request.tagExpected);return workspace.addTagProperty(request.path,request.expected,request.tag,request.tagExpected,request.field,request.value);
-    case 'setViewProperty': string(request.path);string(request.expected);string(request.key);return workspace.setViewProperty(request.path,request.expected,request.key,request.value);
+    case 'setViewProperty': string(request.path);string(request.expected);return workspace.setViewProperty(request.path,request.expected,request.key,request.value);
     case 'setTagProperty': string(request.path);string(request.expected);string(request.tag);string(request.key);return workspace.setTagProperty(request.path,request.expected,request.tag,request.key,request.value);
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
     case 'prepareBoardTrash':string(request.folder);return workspace.prepareBoardTrash(request.folder);
