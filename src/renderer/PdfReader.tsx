@@ -1,3 +1,4 @@
+import {pausePdfRendering,queuePdfRender} from './pdf-render-queue';
 import type {PdfPageBox} from './annotation-layout';
 import {usePdfSearch,highlightPdfMatches,type PdfSearchMatch} from './pdf-search';
 import {createPortal} from 'react-dom';
@@ -16,8 +17,10 @@ export const pdfPageDragTarget=(target:EventTarget|null)=>target instanceof HTML
 const library=()=>import('pdfjs-dist').then(pdf=>{pdf.GlobalWorkerOptions.workerSrc=new URL('./pdf-assets/pdf.worker.min.mjs',window.location.href).href;return pdf;});
 function pdfScrollContainer(reader:HTMLElement){return reader.closest<HTMLElement>('.pdf-reading-layout')??reader;}
 export function visiblePdfPage(reader:HTMLElement,viewport=reader){
-  const box=viewport.getBoundingClientRect(),top=Math.max(box.top,reader.querySelector('.pdf-reader-toolbar')?.getBoundingClientRect().bottom??box.top);let visible:HTMLElement|undefined,overlap=0;
-  for(const el of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=el.getBoundingClientRect();if(r.top>=box.bottom)break;const amount=Math.max(0,Math.min(r.bottom,box.bottom)-Math.max(r.top,top));if(amount>overlap){visible=el;overlap=amount;}}
+  const box=viewport.getBoundingClientRect(),bounds=reader.getBoundingClientRect();
+  if(bounds.right<=box.left||bounds.left>=box.right||bounds.bottom<=box.top||bounds.top>=box.bottom)return;
+  const top=Math.max(box.top,reader.querySelector('.pdf-reader-toolbar')?.getBoundingClientRect().bottom??box.top);let visible:HTMLElement|undefined,overlap=0;
+  for(const el of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=el.getBoundingClientRect();if(r.top>=box.bottom)break;const amount=r.right>box.left&&r.left<box.right?Math.max(0,Math.min(r.bottom,box.bottom)-Math.max(r.top,top)):0;if(amount>overlap){visible=el;overlap=amount;}}
   return visible?Number(visible.dataset.pdfPage):undefined;
 }
 export function revealPdfHighlight(reader:HTMLElement,id:string){
@@ -52,9 +55,11 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
     }
   },[onJump,document,checksum,annotations,singlePage,onRevealPage]);
   useEffect(()=>{
-    if(!onRevealPage||singlePage)return;const viewport=root.current?.closest<HTMLElement>('.canvas');if(!viewport)return;
-    const update=()=>{const next=visiblePdfPage(root.current!,viewport);if(next!==undefined)reportPage(next);setSelection(null);};
-    viewport.addEventListener(BOARD_CAMERA_EVENT,update);return()=>viewport.removeEventListener(BOARD_CAMERA_EVENT,update);
+    const viewport=root.current?.closest('.board-pdf')?.closest<HTMLElement>('.canvas');if(!viewport)return;
+    // Camera frames must not synchronously measure every page or save the board.
+    let timer:ReturnType<typeof setTimeout>;
+    const update=()=>{pausePdfRendering();if(selectionRef.current)setSelection(null);if(singlePage)return;clearTimeout(timer);timer=setTimeout(()=>{const next=visiblePdfPage(root.current!,viewport);if(next!==undefined)reportPage(next);},180);};
+    viewport.addEventListener(BOARD_CAMERA_EVENT,update);return()=>{clearTimeout(timer);viewport.removeEventListener(BOARD_CAMERA_EVENT,update);};
   },[document,singlePage,!!onRevealPage]);
   const choose=()=>{const sel=window.getSelection();if(!sel||sel.isCollapsed||!sel.rangeCount||!root.current?.contains(sel.anchorNode)||!root.current.contains(sel.focusNode)){setSelection(null);return;}const range=sel.getRangeAt(0),quote=sel.toString().trim();if(!quote){setSelection(null);return;}const anchors=[...root.current.querySelectorAll<HTMLElement>('[data-pdf-page]')].flatMap(el=>{const p=el.getBoundingClientRect(),rects=[...range.getClientRects()].filter(r=>r.width>0&&r.height>0&&r.top<p.bottom&&r.bottom>p.top&&r.left<p.right&&r.right>p.left).map(r=>[(Math.max(r.left,p.left)-p.left)/p.width,(Math.max(r.top,p.top)-p.top)/p.height,(Math.min(r.right,p.right)-Math.max(r.left,p.left))/p.width,(Math.min(r.bottom,p.bottom)-Math.max(r.top,p.top))/p.height]);return rects.length?[{page:Number(el.dataset.pdfPage),rects}]:[];});if(!anchors.length)return;const r=range.getBoundingClientRect();setSelection({quote,...anchors[0],anchors,x:r.left,y:r.top});};
   const annotate=()=>{const value=selectionRef.current;if(!value)return;onAnnotate({quote:value.quote,page:value.page,rects:value.rects,anchors:value.anchors,source:checksum,color:DEFAULT_ANNOTATION_COLOR});setSelection(null);window.getSelection()?.removeAllRanges();};
@@ -83,8 +88,8 @@ export function PdfReader({source,path,annotations,onAnnotate,onPage,onJump,onSo
     const el=root.current!,container=el.closest<HTMLElement>('.board-pdf')??el.closest<HTMLElement>('.pdf-reading-layout')??el.closest<HTMLElement>('.reading-main');if(!container||!layoutCallback.current)return;
     let frame=0;const measure=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{const origin=container.getBoundingClientRect(),ratio=origin.width/container.offsetWidth||1;layoutCallback.current?.([...el.querySelectorAll<HTMLElement>('[data-pdf-page]')].map(p=>({page:Number(p.dataset.pdfPage),top:(p.getBoundingClientRect().top-origin.top)/ratio+(container.classList.contains('pdf-reading-layout')?container.scrollTop:0),height:p.offsetHeight})));});};
     const observer=new ResizeObserver(measure);observer.observe(el);el.querySelectorAll('[data-pdf-page]').forEach(p=>observer.observe(p));el.addEventListener('scroll',measure);measure();return()=>{cancelAnimationFrame(frame);observer.disconnect();el.removeEventListener('scroll',measure);};
-  },[document,singlePage,page,scale]);
-  return <div className="pdf-reader" ref={root} tabIndex={0} onKeyDown={e=>e.stopPropagation()} onPointerDown={e=>{if(!pdfPageDragTarget(e.target))e.stopPropagation();}} onWheel={e=>{if(!e.ctrlKey&&!e.metaKey&&e.currentTarget.scrollHeight>e.currentTarget.clientHeight)e.stopPropagation();}} onMouseUp={choose} onKeyUp={choose} onClick={e=>{
+  },[document,singlePage,singlePage?page:undefined,scale]);
+  return <div className="pdf-reader" data-ready={!!document||!!loadError} ref={root} tabIndex={0} onKeyDown={e=>e.stopPropagation()} onPointerDown={e=>{if(!pdfPageDragTarget(e.target))e.stopPropagation();}} onWheel={e=>{if(!e.ctrlKey&&!e.metaKey&&e.currentTarget.scrollHeight>e.currentTarget.clientHeight)e.stopPropagation();}} onMouseUp={choose} onKeyUp={choose} onClick={e=>{
       if(!window.getSelection()?.isCollapsed)return;const el=(e.target as HTMLElement).closest<HTMLElement>('[data-pdf-page]');if(!el)return;const box=el.getBoundingClientRect(),x=(e.clientX-box.left)/box.width,y=(e.clientY-box.top)/box.height;
       const annotation=annotations.find(a=>(!a.source||a.source===checksum)&&(a.anchors?.find(p=>p.page===Number(el.dataset.pdfPage))?.rects??(a.page===Number(el.dataset.pdfPage)?a.rects:[])??[]).some(r=>x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3]));if(annotation){e.stopPropagation();onAnnotation?.(annotation.id);}
     }} onScroll={()=>{setSelection(null);if(singlePage)return;const next=visiblePdfPage(root.current!);if(next!==undefined)reportPage(next);}}>
@@ -112,9 +117,9 @@ const PdfCanvas=memo(function PdfCanvas({pdf,page,scale,pixelRatio,textEnabled,m
   const canvas=useRef<HTMLCanvasElement>(null),text=useRef<HTMLDivElement>(null),[error,setError]=useState(''),[layer,setLayer]=useState<TextLayer|null>(null),revealMatch=useRef(onSearchMatch);revealMatch.current=onSearchMatch;
   useLayoutEffect(()=>{if(!layer)return;const focused=highlightPdfMatches(layer.textDivs,layer.textContentItemsStr,matches,current);if(focused)revealMatch.current(focused);},[layer,matches,current,reveal]);
   useEffect(()=>{
-    const element=canvas.current!;let live=true,pageProxy:PDFPageProxy|undefined,render:ReturnType<PDFPageProxy['render']>|undefined,textLayer:{cancel:()=>void}|undefined;
-    void(async()=>{const pdfjs=await library(),item=await pdf.getPage(page);pageProxy=item;if(!live){item.cleanup();return;}const viewport=item.getViewport({scale}),ratio=Math.min(pixelRatio,Math.sqrt(16_000_000/(viewport.width*viewport.height))),el=element;el.width=Math.ceil(viewport.width*ratio);el.height=Math.ceil(viewport.height*ratio);el.style.width=viewport.width+'px';el.style.height=viewport.height+'px';render=item.render({canvas:el,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});await render.promise;if(!live||!textEnabled)return;const content=await item.getTextContent();if(!live)return;text.current!.replaceChildren();const layer=new pdfjs.TextLayer({textContentSource:content,container:text.current!,viewport});textLayer=layer;await layer.render();if(live)setLayer(layer);})().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));});
-    return()=>{live=false;render?.cancel();textLayer?.cancel();pageProxy?.cleanup();element.width=0;element.height=0;};
+    const element=canvas.current!;let live=true,cancelPending=()=>{},pageProxy:PDFPageProxy|undefined,render:ReturnType<PDFPageProxy['render']>|undefined,textLayer:{cancel:()=>void}|undefined;
+    void(async()=>{const pdfjs=await library(),item=await pdf.getPage(page);pageProxy=item;if(!live){item.cleanup();return;}const viewport=item.getViewport({scale}),ratio=Math.min(pixelRatio,Math.sqrt(16_000_000/(viewport.width*viewport.height))),el=element;el.width=Math.ceil(viewport.width*ratio);el.height=Math.ceil(viewport.height*ratio);el.style.width=viewport.width+'px';el.style.height=viewport.height+'px';render=item.render({canvas:el,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});render.onContinue=(next:()=>void)=>{cancelPending=queuePdfRender(next);};await render.promise;if(!live||!textEnabled)return;const content=await item.getTextContent();if(!live)return;await new Promise<void>(resolve=>{cancelPending=queuePdfRender(resolve);});if(!live)return;text.current!.replaceChildren();const layer=new pdfjs.TextLayer({textContentSource:content,container:text.current!,viewport});textLayer=layer;await layer.render();if(live)setLayer(layer);})().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));});
+    return()=>{live=false;cancelPending();render?.cancel();textLayer?.cancel();pageProxy?.cleanup();element.width=0;element.height=0;};
   },[pdf,page,scale,pixelRatio,textEnabled]);
   return <><canvas ref={canvas}/><div ref={text} className="textLayer"/>{error&&<p role="alert">{error}</p>}</>;
 });

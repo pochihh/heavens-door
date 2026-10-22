@@ -365,3 +365,37 @@ test('PDF page whitespace drags the attachment, text stays selectable, and middl
  const world=document.querySelector<HTMLElement>('.board-world')!,camera=world.style.transform;await act(async()=>{pointer(page.querySelector('span')!,'pointerdown',100,1);pointer(document,'pointerup',160,1);await new Promise(requestAnimationFrame);});assert.notEqual(world.style.transform,camera);assert.equal(saved,undefined,'panning never writes attachment geometry');
  }finally{await act(async()=>root.unmount());}
 });
+
+test('PDF page tracking ignores a reader outside the horizontal viewport',async()=>{
+ const {visiblePdfPage}=await import('../src/renderer/PdfReader'),viewport=document.createElement('div'),reader=document.createElement('div');reader.innerHTML='<div data-pdf-page="1"></div>';
+ viewport.getBoundingClientRect=()=>({left:0,right:800,top:0,bottom:600} as DOMRect);
+ reader.getBoundingClientRect=()=>({left:900,right:1240,top:-200,bottom:1000} as DOMRect);reader.firstElementChild!.getBoundingClientRect=()=>reader.getBoundingClientRect();
+ assert.equal(visiblePdfPage(reader,viewport),undefined);
+ reader.getBoundingClientRect=()=>({left:700,right:1040,top:-200,bottom:1000} as DOMRect);assert.equal(visiblePdfPage(reader,viewport),1,'a partially visible reader still tracks its page');
+});
+
+test('board camera frames defer PDF page reporting and cancel it on unmount',async()=>{
+ const {PdfReader}=await import('../src/renderer/PdfReader'),{BOARD_CAMERA_EVENT}=await import('../src/renderer/navigation'),root=createRoot(document.getElementById('root')!),original=window.door,reported:number[]=[];
+ window.door={...original,attachmentData:()=>new Promise(()=>{})};
+ try{
+  await act(async()=>root.render(<div className="canvas"><div className="board-pdf"><PdfReader source={{type:'pdf',file:'paper.pdf'}} path={card.path} annotations={[]} onAnnotate={()=>{}} onPage={page=>reported.push(page)} onRevealPage={()=>{}}/></div></div>));
+  const viewport=document.querySelector<HTMLElement>('.canvas')!,reader=document.querySelector<HTMLElement>('.pdf-reader')!;
+  viewport.getBoundingClientRect=()=>({left:0,right:800,top:0,bottom:600} as DOMRect);reader.getBoundingClientRect=()=>({left:0,right:340,top:-200,bottom:1200} as DOMRect);
+  const page=document.createElement('div');page.dataset.pdfPage='2';page.getBoundingClientRect=()=>({left:0,right:340,top:0,bottom:600} as DOMRect);reader.append(page);
+  await act(async()=>{for(let i=0;i<30;i++)viewport.dispatchEvent(new dom.window.Event(BOARD_CAMERA_EVENT));});assert.deepEqual(reported,[],'camera paint performs no immediate page save');
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,220));});assert.deepEqual(reported,[2]);
+  page.dataset.pdfPage='3';await act(async()=>{viewport.dispatchEvent(new dom.window.Event(BOARD_CAMERA_EVENT));root.unmount();await new Promise(resolve=>setTimeout(resolve,220));});assert.deepEqual(reported,[2]);
+ }finally{window.door=original;}
+});
+
+test('expanded PDFs above the viewport are not culled while their dimensions load',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board'),root=createRoot(document.getElementById('root')!),original=window.door;
+ window.door={...original,attachmentData:()=>new Promise(()=>{})};
+ const asset={...card,id:'loading-pdf',source:{type:'pdf' as const,file:'paper.pdf'}},board={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'loading-pdf',cardId:asset.id,x:0,y:0,width:340,height:480,pdf:{expanded:true,page:5}}],edges:[]};
+ try{
+  const render=(expanded:boolean,page:number)=>root.render(<Whiteboard board={{...board,cards:[{...board.cards[0],pdf:{expanded,page}}]}} cards={[asset]} initialCamera={{x:0,y:-2400,zoom:1}} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>);
+  await act(async()=>render(true,5));const node=document.querySelector<HTMLElement>('[data-placement=loading-pdf]')!;assert.ok(node);assert.equal(node.querySelector('.pdf-reader')?.getAttribute('data-ready'),'false');const signature=node.dataset.heightSignature;
+  Object.defineProperties(node,{offsetHeight:{value:200},offsetWidth:{value:340}});await act(async()=>observers.findLast(o=>o.target===node)!.callback([],{} as ResizeObserver));assert.ok(document.querySelector('[data-placement=loading-pdf]'),'temporary loading height must not hide a tall attachment');
+  await act(async()=>render(true,6));assert.equal(node.dataset.heightSignature,signature,'tracking a page does not invalidate the full reader geometry');
+ }finally{await act(async()=>root.unmount());window.door=original;}
+});

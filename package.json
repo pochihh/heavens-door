@@ -24,7 +24,8 @@
     "test:app": "node scripts/test-app.mjs",
     "release": "node scripts/release.mjs",
     "release:verify": "node scripts/release.mjs verify",
-    "test:release": "node --test tests/release*.test.mjs tests/version.test.mjs"
+    "test:release": "node --test tests/release*.test.mjs tests/version.test.mjs",
+    "benchmark:reader": "node scripts/benchmark-reader.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
