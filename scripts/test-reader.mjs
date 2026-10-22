@@ -1,0 +1,89 @@
+// Native renderer checks in an isolated workspace and app profile; never opens personal files.
+import assert from 'node:assert/strict';
+import {promises as fs} from 'node:fs';
+import {join} from 'node:path';
+import {spawn} from 'node:child_process';
+import electron from 'electron';
+import {build} from 'vite';
+import {buildEngine} from './build.mjs';
+process.env.HEAVENS_DOOR_TEST_BUILD='1';
+await buildEngine();
+const root=process.cwd(),folder=join(root,'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
+await fs.rm(workspace,{recursive:true,force:true});await fs.rm(join(folder,'profile'),{recursive:true,force:true});
+await fs.mkdir(join(project,'dist'),{recursive:true});await fs.mkdir(join(workspace,'Review'),{recursive:true});await fs.mkdir(join(workspace,'Other'),{recursive:true});await fs.mkdir(join(workspace,'.heavens-door'),{recursive:true});await fs.rm(report,{force:true});
+// Each page has text plus vector work, so the test exercises raster and text-layer costs.
+function pdf(){
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+ const kids=[];for(let p=1;p<=20;p++){const page=objects.length+1,stream=page+1;kids.push(page+' 0 R');const text=['BT /F1 12 Tf 36 752 Td (Reader performance checks - page '+p+') Tj',...Array.from({length:55},(_,i)=>'0 -12 Td (Line '+(i+1)+' - select this passage, highlight it, and write a comment.) Tj'),'ET',...Array.from({length:180},(_,i)=>`${40+i%30*17} ${35+Math.floor(i/30)*3} 10 1 re f`)].join('\n');objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${stream} 0 R >>`,`<< /Length ${Buffer.byteLength(text)} >>\nstream\n${text}\nendstream`);}
+ objects[1]=`<< /Type /Pages /Kids [${kids.join(' ')}] /Count 20 >>`;let result='%PDF-1.4\n';const offsets=[0];objects.forEach((object,i)=>{offsets.push(Buffer.byteLength(result));result+=`${i+1} 0 obj\n${object}\nendobj\n`;});const xref=Buffer.byteLength(result);return result+`xref\n0 ${offsets.length}\n0000000000 65535 f \n`+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+}
+await fs.writeFile(join(workspace,'Review/paper.pdf'),pdf());
+await fs.writeFile(join(workspace,'Review/Paper.md'),'---\ncard-id: reader-paper\nsource:\n  type: pdf\n  file: paper.pdf\n---\n# Twenty-page PDF\n');
+await fs.writeFile(join(workspace,'Review/Editor.md'),'---\ncard-id: reader-editor\n---\n# Editor checks\n\n```cpp\nint answer = 42;\nreturn answer;\n```\n\n- [x] Done\n- [ ] Next\n- [ ] \n\n```sp-bar\nTask progress\n```\n\nAlpha paragraph to extract.\n\nBeta paragraph to extract.\n');
+const board=(name,cards)=>`---\nwhiteboard: true\n---\n# ${name}\n\n## Cards\n${cards.map(p=>`- [Card](card:${p.cardId}) ^${p.id}`).join('\n')}\n\n%% whiteboard-layout\n${JSON.stringify({version:1,cards:cards.map(p=>({...p,cardId:undefined})),edges:[]})}\n%%\n`;
+await fs.writeFile(join(workspace,'Review/Review.whiteboard'),board('Review',[{id:'pdf',cardId:'reader-paper',x:20,y:20,width:440,height:280,pdf:{expanded:true}},{id:'editor',cardId:'reader-editor',x:740,y:20,width:380,height:280}]));await fs.writeFile(join(workspace,'Other/Other.whiteboard'),board('Other',[]));
+await fs.writeFile(join(workspace,'.heavens-door/settings.json'),JSON.stringify({theme:'dark',stem:'untitled',starred:[],recent:[],icons:{},features:{reading:false},documents:{tree:{type:'pane',id:'reader',tabs:['board:Review','board:Other'],active:'board:Review'},active:'reader',views:{'reader:board:Review':{camera:{x:20,y:20,zoom:.8}}},formatting:[]}}));
+await build({configFile:join(root,'vite.config.ts'),define:{__HEAVENS_TEST__:'true'},plugins:[{name:'reader-test-session',transform(code,id){if(id.endsWith('/src/renderer/main.tsx'))return code+'\nwindow.__readerTestSession=session;';}}],build:{outDir:join(project,'dist/renderer'),emptyOutDir:true}});
+for(const name of ['main.cjs','preload.cjs','workspace-worker.cjs'])await fs.copyFile(join(root,'dist',name),join(project,'dist',name));
+try{await fs.symlink(join(root,'node_modules'),join(project,'node_modules'),'junction');}catch(error){if(error.code!=='EEXIST')throw error;}
+await fs.writeFile(join(project,'package.json'),JSON.stringify({name:'heavens-door-reader-check',version:'0.1.2',main:'dist/main.cjs'}));
+const prefix=`require('electron').app.setPath('userData',${JSON.stringify(join(folder,'profile'))});process.env.HEAVENS_DOOR_WORKSPACE=${JSON.stringify(workspace)};\n`;
+const probe=`
+const readerFS=require('node:fs'),readerApp=require('electron').app;
+const fsPreview=async win=>readerFS.writeFileSync(${JSON.stringify(join(folder,'editor.png'))},(await win.capturePage()).toPNG());
+const readerPause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const readerWait=async(fn,label)=>{const end=Date.now()+90000;while(Date.now()<end){const result=await fn();if(result)return result;await readerPause(60);}throw Error('Timed out: '+label);};
+readerApp.whenReady().then(async()=>{
+ const result={passed:false},save=()=>readerFS.writeFileSync(${JSON.stringify(report)},JSON.stringify(result,null,2));
+ const phase=value=>{result.phase=value;save();};
+ try{
+  const desktop=await readerWait(()=>[...desktops.values()][0],'window'),win=desktop.window,js=async code=>{const value=await Promise.race([win.webContents.executeJavaScript('(async()=>{try{return {ok:true,value:await ('+code+')}}catch(error){return {ok:false,error:error.stack}}})()',true),readerPause(12000).then(()=>{throw Error('Renderer timed out: '+code.slice(0,120));})]);if(!value.ok)throw Error(value.error);return value.value;};
+  win.webContents.setBackgroundThrottling(false);
+  const wait=(code,label)=>readerWait(()=>js(code),label);
+  phase('loading');
+  await wait('document.querySelectorAll(".board-pdf .pdf-page").length===20 && [...document.querySelectorAll(".pdf-page canvas")].some(c=>c.width>0)','20-page reader');await readerPause(700);
+  result.initial=await js('({pages:document.querySelectorAll(".pdf-page").length,canvases:document.querySelectorAll(".pdf-page canvas").length,pixels:[...document.querySelectorAll(".pdf-page canvas")].reduce((sum,c)=>sum+c.width*c.height,0)})');
+  if(result.initial.canvases>5)throw Error('Offscreen pages rasterized: '+JSON.stringify(result.initial));
+  phase('pdf pointer checks');
+  const rect=await js('(()=>{const r=document.querySelector(".pdf-page").getBoundingClientRect();return {x:Math.round(r.right-25),y:Math.round(r.top+220)}})()');
+  const point=await js('(()=>{const p=window.__readerTestSession.state.snapshot.boards.find(b=>b.folder==="Review").cards.find(p=>p.id==="pdf");return {x:p.x,y:p.y}})()');
+  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...rect});win.webContents.sendInputEvent({type:'mouseMove',x:rect.x+48,y:rect.y+32});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:rect.x+48,y:rect.y+32});
+  await wait('window.__readerTestSession.state.snapshot.boards.find(b=>b.folder==="Review").cards.find(p=>p.id==="pdf").x>'+point.x,'drag PDF on blank page');result.dragPdf=true;
+  const camera=await js('document.querySelector(".board-world").style.transform');
+  win.webContents.sendInputEvent({type:'mouseDown',button:'middle',clickCount:1,...rect});win.webContents.sendInputEvent({type:'mouseMove',x:rect.x+36,y:rect.y+24});win.webContents.sendInputEvent({type:'mouseUp',button:'middle',clickCount:1,x:rect.x+36,y:rect.y+24});
+  await wait('document.querySelector(".board-world").style.transform!=='+JSON.stringify(camera),'middle-button pan on PDF');result.panPdf=true;
+  phase('editor geometry');
+  result.codePreview=await js('(()=>{const b=document.querySelector("[data-placement=editor] .editor-code-block"),p=b.querySelector("pre");return {height:b.offsetHeight,code:p.textContent,checkboxes:document.querySelectorAll("[data-placement=editor] input[type=checkbox]").length}})()');
+  const code=await js('(()=>{const r=document.querySelector("[data-placement=editor] pre").getBoundingClientRect();return {x:Math.round(r.left+35),y:Math.round(r.top+12)}})()');
+  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...code});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...code});
+  await wait('!!document.querySelector("[data-placement=editor] .tiptap")','edit code card');
+  result.codeEditor=await js('(()=>{const b=document.querySelector("[data-placement=editor] .editor-code-block"),p=b.querySelector("pre");return {height:b.offsetHeight,code:p.textContent,checkboxes:document.querySelectorAll("[data-placement=editor] input[type=checkbox]").length}})()');
+  if(result.codeEditor.height!==result.codePreview.height||result.codeEditor.code!==result.codePreview.code||result.codePreview.checkboxes!==3)throw Error('Code/checkbox geometry changed '+JSON.stringify({before:result.codePreview,after:result.codeEditor}));
+  await fsPreview(win);
+  result.progress=await js('document.querySelector("[data-progress-count]").textContent');if(result.progress!=='1/3 (33%)')throw Error('Wrong card progress '+result.progress);
+  await js('document.querySelector("button.code-language-trigger").click()');await wait('!!document.querySelector(".code-language-picker input")','code language search');await js('[...document.querySelectorAll(".code-language-picker [role=option]")].find(b=>b.textContent==="Python").click()');result.languagePicker=true;
+  phase('block extraction');
+  const paragraphs=await js('(()=>{const editor=document.querySelector("[data-placement=editor] .tiptap").editor,positions=[];editor.state.doc.forEach((node,pos)=>{if(node.type.name==="paragraph"&&node.textContent.includes("paragraph to extract"))positions.push({from:pos+1,to:pos+node.nodeSize-1});});editor.commands.setTextSelection({from:positions[0].from,to:positions.at(-1).to});return positions.length;})()');if(paragraphs!==2)throw Error('Missing extraction paragraphs');
+  await readerPause(120);const grip=await js('(()=>{const r=document.querySelector(".editor-block-grip").getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()'),drop=await js('(()=>{const r=document.querySelector(".canvas").getBoundingClientRect();return {x:Math.round(r.right-300),y:Math.round(r.bottom-80)}})()');
+  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...grip});win.webContents.sendInputEvent({type:'mouseMove',button:'left',x:drop.x,y:drop.y});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...drop});
+  await wait('window.__readerTestSession.state.snapshot.cards.some(c=>c.id!=="reader-editor"&&c.title?.includes("Alpha paragraph"))','extract selected blocks onto board');
+  result.extraction=await js('(async()=>{const s=window.__readerTestSession,source=await window.door.request({kind:"card",path:"Review/Editor.md"}),created=s.state.snapshot.cards.find(c=>c.id!=="reader-editor"&&c.title?.includes("Alpha paragraph")),card=await window.door.request({kind:"card",path:created.path});return {reference:source.body.includes("[Alpha paragraph"),paragraphs:(card.body.match(/paragraph to extract/g)||[]).length,placements:s.state.snapshot.boards.find(b=>b.folder==="Review").cards.filter(p=>p.cardId===created.id).length};})()');
+  if(!result.extraction.reference||result.extraction.paragraphs!==2||result.extraction.placements!==1)throw Error('Extraction duplicated or lost content '+JSON.stringify(result.extraction));
+  await js('(()=>{document.querySelector(".canvas").focus();document.querySelector(".canvas").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));})()');
+  phase('zoom performance');
+  result.zoom=await js('(async()=>{const canvas=document.querySelector(".canvas"),r=canvas.getBoundingClientRect(),samples=[];let last=performance.now();for(let i=0;i<45;i++){await new Promise(requestAnimationFrame);const now=performance.now();samples.push(now-last);last=now;canvas.dispatchEvent(new WheelEvent("wheel",{bubbles:true,cancelable:true,ctrlKey:true,deltaY:10,clientX:r.left+100,clientY:r.top+100}));}await new Promise(r=>setTimeout(r,500));samples.sort((a,b)=>a-b);return {p95:samples[Math.floor(samples.length*.95)],max:samples.at(-1),canvases:document.querySelectorAll(".pdf-page canvas").length,pixels:[...document.querySelectorAll(".pdf-page canvas")].reduce((sum,c)=>sum+c.width*c.height,0),textLayers:document.querySelectorAll(".pdf-page .textLayer span").length};})()');
+  phase('tab switching');
+  const switches=[];for(let i=0;i<4;i++)for(const name of ['Other','Review'])switches.push(await js('(async()=>{const start=performance.now();document.querySelector('+JSON.stringify('[data-tab-key="board:'+name+'"]')+').click();await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);return performance.now()-start;})()'));
+  result.tabSwitchMs=switches;await wait('document.querySelectorAll(".pdf-page").length===20','return to PDF');
+  phase('popup');
+  await js('document.querySelector(".board-pdf-actions button").click()');await wait('document.querySelectorAll(".pdf-reading-layout .pdf-page").length===20','PDF popup');await readerPause(700);
+  result.popup=await js('({canvases:document.querySelectorAll(".pdf-reading-layout .pdf-page canvas").length,pages:document.querySelectorAll(".pdf-reading-layout .pdf-page").length})');if(result.popup.canvases>4)throw Error('Popup rendered offscreen pages '+JSON.stringify(result.popup));
+  result.passed=true;
+ }catch(error){result.error=String(error);console.error(error);const desktop=[...desktops.values()][0];if(desktop){await desktop.window.capturePage().then(image=>readerFS.writeFileSync(${JSON.stringify(join(folder,'failure.png'))},image.toPNG())).catch(()=>{});}}
+ readerFS.writeFileSync(${JSON.stringify(report)},JSON.stringify(result,null,2));for(const d of desktops.values())d.closing=true;readerApp.exit(result.passed?0:1);
+});
+`;
+await fs.writeFile(join(project,'dist/main.cjs'),prefix+await fs.readFile(join(project,'dist/main.cjs'),'utf8')+probe);
+const child=spawn(electron,[project],{cwd:root,stdio:'inherit',env:{...process.env,HEAVENS_DOOR_WORKSPACE:workspace}}),timer=setTimeout(()=>child.kill(),120000);
+const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve);});clearTimeout(timer);
+const result=JSON.parse(await fs.readFile(report,'utf8'));console.log(JSON.stringify(result,null,2));assert.equal(code,0,'Native reader checks failed; see '+report);assert.equal(result.passed,true,'Native reader checks did not finish; see '+report);

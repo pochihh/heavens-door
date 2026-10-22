@@ -1,6 +1,6 @@
 import type {Board} from '../shared';
 
-export interface DocumentDrag {note?:{id:string;expected:string};key:string;path?:string;source?:string;placement?:string;selection?:{ids:string[];folders:string[];board:Board;offset:{x:number;y:number}}}
+export interface DocumentDrag {blocks?:import('../shared').ExtractedBlocks;note?:{id:string;expected:string};key:string;path?:string;source?:string;placement?:string;selection?:{ids:string[];folders:string[];board:Board;offset:{x:number;y:number}}}
 
 export interface DocumentDrop extends DocumentDrag {folder:string;kind:'board'|'folder';intoBoard?:boolean;atPointer?:boolean;x:number;y:number;screenX:number;screenY:number}
 let highlighted:HTMLElement|null=null;
@@ -32,7 +32,7 @@ export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:
   targets.sort((a,b)=>Number(a.classList.contains('canvas'))-Number(b.classList.contains('canvas')));
   for(const target of targets){
     const folder=target.dataset.dropFolder!,kind=dropKind(target,drag);
-    if(drag.note&&(kind!=='board'||!folder))continue;
+    if((drag.note||drag.blocks)&&(kind!=='board'||!folder))continue;
     if(kind!=='board'&&kind!=='folder'||folder===drag.source&&kind==='board'&&(!!drag.placement||!board||!target.classList.contains('canvas'))||kind==='board'&&!folder&&!board)continue;
     if(drag.selection&&(kind!=='board'&&drag.selection.ids.length>1||folder===drag.source||!folder&&drag.selection.ids.length!==drag.selection.folders.length||drag.selection.folders.some(p=>folder===p||folder.startsWith(p+'/'))))continue;
     if(path&&(folder===path||folder.startsWith(path+'/')||kind==='folder'&&folder===path.split('/').slice(0,-1).join('/')))continue;

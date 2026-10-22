@@ -134,6 +134,7 @@ async function dispatch(request: Request) {
     case 'searchWorkspace': string(request.text);return workspace.searchWorkspace(request.text);
     case 'queryReferences': string(request.text);return workspace.queryReferences(request.text,request.cardsOnly,request.exclude);
     case 'convertTopic':string(request.path);string(request.expected);if(Array.isArray(request.placement)){if(request.placement.length>10000)throw new Error(ui.errors.invalidRequestValue);request.placement.forEach(string);}else string(request.placement);return workspace.convertTopic(request.path,request.expected,request.placement);
+    case 'extractCardBlocks': return workspace.extractCardBlocks(request.path,request.expected,request.value,request.folder,request.boardExpected,request.x,request.y);
     case 'extractAssetNote': return workspace.extractAssetNote(request.path,request.expected,request.note,request.folder,request.boardExpected,request.x,request.y);
     case 'createSlipboxCard': string(request.name);return workspace.createSlipboxCard(request.name,request.board);
     case 'queryCards': return workspace.queryCards(request.query);

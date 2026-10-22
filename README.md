@@ -149,3 +149,9 @@ The card editor supports source mode, contextual block moves and styling, config
 Boards also support standalone images, plain text and simple text shapes. They share selection, movement, connectors, undo and transfers. See [Attachments, annotations and reading](docs/attachments-and-reading.md) for controls, storage and testing limits, and [Chrome capture setup](extensions/chrome/README.md).
 
 Whiteboard Text supports compact in-place editing, connected creation from an unfinished arrow, Tab/Enter child/sibling creation directly while editing, Alt+Enter line breaks, and conversion into ordinary Markdown cards. Defaults live under Settings → Whiteboard → Text. See [Text interactions](docs/interactions/topics.md).
+
+### Card progress blocks
+
+Insert **Progress bar** with the editor block menu or slash menu, or type a fenced `sp-bar` block. Its text is the editable label. Like the Simple Progress Bar Obsidian plugin, it counts tasks in the surrounding heading section; a bar under the card title counts the entire card. Nested tasks count individually, and code examples and other cards never count. Checkbox changes update the bar immediately. The file keeps ordinary `sp-bar` Markdown fences.
+
+`npm run test:reader` runs native Electron checks in a synthetic 20-page PDF workspace, including raster visibility, dragging, middle-button pan, code geometry, empty tasks, progress, language selection, block extraction, zoom and tab switching. Reports live in `.local/reader-check/`; personal workspaces and stable releases are untouched.

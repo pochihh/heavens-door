@@ -1,3 +1,4 @@
+import {progressPreview,updateCardProgress} from './progress-bar';
 import {highlightCodePreview} from './code-highlight';
 import {isHexColor} from '../colors';
 import {annotationView,annotationReferences} from '../reading';
@@ -28,7 +29,10 @@ export function unsupported(body: string) {
 export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.
   body=annotationReferences(annotationView(body).content);
-  const tokens=extractAbsorbedBlankLines(marked.lexer(reservedTitle?withCardTitle(body):body)) as Token[];
+  const source=marked.lexer(reservedTitle?withCardTitle(body):body);
+  // GFM requires text after the checkbox; an editor's empty task is still a task.
+  marked.walkTokens(source,token=>{if(token.type==='list_item'&&!token.task&&/^\[[ xX]\][ \t]*(?:\n|$)/.test(token.text)){token.task=true;token.checked=/^\[[xX]\]/.test(token.text);token.text=token.text.replace(/^\[[ xX]\][ \t]*/,'');const checkbox={type:'checkbox' as const,raw:token.checked?'[x] ':'[ ] ',checked:token.checked};(token.tokens??=[]).splice(0,1,token.loose?{type:'paragraph',raw:'',text:'',tokens:[checkbox]}:checkbox);}});
+  const tokens=extractAbsorbedBlankLines(source) as Token[];
   const first=tokens.findIndex(token=>token.type!=='space'),last=tokens.findLastIndex(token=>token.type!=='space');
   const rendered=tokens.map((token,index)=>{
     if(token.type!=='space')return token;
@@ -48,7 +52,7 @@ export function previewHtml(html:string,path:string){return renderPreview(html,p
 function renderPreview(html:string,path:string,reservedTitle=true) {
   const clean=DOMPurify.sanitize(html,{FORBID_TAGS:['script','style','iframe','object','embed','form','button','textarea','select','video','audio','source','link','meta'],ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto):|card:[\w-]+$|wiki:[^\s]+$|[^:]*$)/i});
   const template=document.createElement('template'); template.innerHTML=clean;
-  for(const code of template.content.querySelectorAll<HTMLElement>('pre>code'))highlightCodePreview(code);
+  for(const code of template.content.querySelectorAll<HTMLElement>('pre>code')){if(code.classList.contains('language-sp-bar'))code.parentElement!.replaceWith(progressPreview((code.textContent??'').trim()));else highlightCodePreview(code);}
   for(const mark of template.content.querySelectorAll<HTMLElement>('mark[data-annotation]'))mark.style.backgroundColor=isHexColor(mark.dataset.color)?mark.dataset.color!:'transparent';
   if(reservedTitle){let title=template.content.firstElementChild;
   if(title?.tagName!=='H1'){title=document.createElement('h1');template.content.prepend(title);}
@@ -81,6 +85,7 @@ function renderPreview(html:string,path:string,reservedTitle=true) {
     }
     item.replaceChildren(label,content);
   }
+  updateCardProgress(template.content);
   // Image previews share the editor's block spacing and wrapping captions.
   // This only changes rendered DOM, never the portable HTML stored in the card.
   for(const block of template.content.querySelectorAll<HTMLElement>('[data-better-edit-image-row], [data-better-edit-image]')){

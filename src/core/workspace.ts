@@ -1,3 +1,4 @@
+import {boardDropPosition} from '../board-drop';
 import {readingAsset,validateImport,readFeeds} from './reading';
 import {annotationView,splitAnnotations,withAnnotations,updateAnnotation} from '../reading';
 import {READLATER_STATUS,DEFAULT_READING_STATUS,legacyReadingStatus,readingMetadata} from '../reading';
@@ -722,7 +723,7 @@ export class Workspace {
       if(movingBoard&&b.folder===destination){
         const existing=cards.find(p=>p.folder===to);
         if(existing){if(position){existing.x=position.x;existing.y=position.y;}}
-        else cards.push({...tile,id:tile?.id??randomUUID(),cardId:'',folder:to,x:position?.x??tile?.x??60,y:position?.y??tile?.y??60,width:tile?.width??320,height:tile?.height??160});
+        else {const point=position??(dirname(from)===dirname(to)&&tile?tile:boardDropPosition(displayed.find(board=>board.folder===destination),this.snapshot().cards)),id=tile?.id&&!cards.some(p=>p.id===tile.id)?tile.id:randomUUID();cards.push({...tile,id,cardId:'',folder:to,x:point.x,y:point.y,width:tile?.width??320,height:tile?.height??160});}
       }
       if(movingCard&&b.folder===cardFolder&&cardFolder&&cardFolder!==home&&!cards.some(p=>p.cardId===movingCard.id))cards.push({...owned,id:owned?.id??randomUUID(),cardId:movingCard.id,x:position?.x??owned?.x??80,y:position?.y??owned?.y??80,width:owned?.width??340,height:owned?.height??280});
       const ids=new Set(cards.map(p=>p.id)),edges=b.edges.filter(e=>ids.has(e.from)&&ids.has(e.to));
@@ -1110,6 +1111,19 @@ export class Workspace {
       ...this.db.prepare('SELECT path FROM cards ORDER BY name').all().map(row=>String(row.path)),...boards.keys()
     ].filter(path=>!omitted.has(path)).sort((a,b)=>a.localeCompare(b)).slice(0,30);
     return paths.flatMap<import('../shared').ReferenceTarget>(path=>{const b=boards.get(path);if(b)return [{kind:'board' as const,key:'board:'+b.folder,path,name:b.name}];const c=cardAt.get(path);return c?[{kind:'card' as const,key:'card:'+c.id,path,name:String(c.title||c.name)}]:[];});
+  }
+  async extractCardBlocks(path:string,expected:string,value:import('../shared').ExtractedBlocks,folder:string,boardExpected:string,x:number,y:number){
+    if(typeof path!=='string'||!path.endsWith('.md')||typeof expected!=='string'||!value||typeof value.id!=='string'||!/^[-\w]{1,128}$/.test(value.id)||typeof value.title!=='string'||!value.title.trim()||value.title.length>80||[value.before,value.body,value.content].some(text=>typeof text!=='string'||text.length>1024*1024)||!value.content.trim()||!value.body.includes('](card:'+value.id+')')||typeof folder!=='string'||!folder||typeof boardExpected!=='string'||![x,y].every(Number.isFinite))throw new Error(ui.errors.invalidQuery);
+    const raw=await this.read(path),source=readCard(path,raw),board=this.boards.get(this.boardPath(folder));
+    if(source.revision!==expected||source.body!==value.before)throw new Error(ui.errors.draftConflict(path));
+    if(source.source)throw new Error('Extract blocks from an ordinary card.');
+    if(this.snapshot().cards.some(card=>card.id===value.id))throw new Error(ui.errors.invalidCardId);
+    if(!board||board.revision!==boardExpected)throw new Error(ui.errors.whiteboardChanged(this.boardPath(folder)));
+    const stem=value.title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Extracted blocks';
+    const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),{front}=splitNote(newNote());front.set('card-id',value.id);
+    if(source.fillColor!==undefined)front.set('card-color',source.fillColor);
+    const created=`---\n${front.toString()}---\n`+moveCardLinks(value.content,path,destination),body=value.body.replace('](card:'+value.id+')',']('+referenceHref(path,destination)+')');
+    return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,source,body),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:value.id,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async extractAssetNote(path:string,expected:string,note:string,folder:string,boardExpected:string,x:number,y:number){
     if(typeof path!=='string'||typeof expected!=='string'||typeof note!=='string'||typeof folder!=='string'||!folder||typeof boardExpected!=='string'||!Number.isFinite(x)||!Number.isFinite(y))throw new Error(ui.errors.invalidQuery);

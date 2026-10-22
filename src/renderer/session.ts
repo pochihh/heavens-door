@@ -231,6 +231,14 @@ export class Session {
     const result=await this.bridge.request<Mutation>({kind:'convertTopic',path:board.path,expected:board.revision,placement});this.accept(result,placement.length===1?'Convert text to card':'Convert text to cards');
     return result.snapshot.cards.filter(c=>result.edits.some(e=>e.before===null&&e.path===c.path));
   });}
+  extractCardBlocks(path:string,value:import('../shared').ExtractedBlocks,folder:string,x:number,y:number){return this.run(async()=>{
+    const draft=this.state.draft;if(draft?.card.path===path&&draft.body!==value.before)throw new Error(ui.errors.draftConflict(path));
+    await this.flush();
+    const source=this.state.snapshot?.cards.find(card=>card.path===path),board=this.state.snapshot?.boards.find(b=>b.folder===folder);
+    if(!source||!board)throw new Error(ui.errors.whiteboardMissing);
+    const result=await this.bridge.request<Mutation>({kind:'extractCardBlocks',path,expected:source.revision,value,folder,boardExpected:board.revision,x,y});this.accept(result,'Move blocks to card');
+    if(this.state.draft?.card.id===source.id){const card=await this.bridge.request<Card>({kind:'card',path});if(this.state.draft?.card.id===source.id){if(this.state.draft.body!==value.before)throw new Error(ui.errors.draftConflict(path));this.update({draft:{card,body:card.body,dirty:false}});}}
+  });}
   extractAssetNote(path:string,expected:string,note:string,folder:string,x:number,y:number){return this.run(async()=>{
     const before=this.state.snapshot?.cards.find(c=>c.path===path);if(before?.revision!==expected)throw new Error(ui.errors.externalEdit(path));
     await this.flush();

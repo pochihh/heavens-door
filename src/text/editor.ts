@@ -1,5 +1,6 @@
 // Contextual editor controls and migration settings.
 export const editorText = {
+  searchCodeLanguages: 'Search code languages',searchLanguages: 'Search languages…',noMatchingLanguages: 'No matching languages',progressBar: 'Progress bar',taskProgress: 'Task progress',noCheckboxes: 'No checkboxes',
   codeLanguage: "Code language",
   plainText: "Plain text",
   "sourceMode": "Source mode",

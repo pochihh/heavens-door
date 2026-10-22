@@ -1,3 +1,5 @@
+import {cardMarkdown} from './editor-schema';
+import {clearDocumentDrop,clearDocumentNavigation,previewDocumentDrop,dropDocumentAt,type DocumentDrag} from './card-drop';
 import {readingText} from '../text/reading';
 import {featureEnabled} from '../features';
 import {trackEditorOverlay} from './editor-overlay';
@@ -18,10 +20,10 @@ import {PropertyPopover} from './PropertyValue';
 import {Color} from './StyleView';
 import {ViewBlockContext,defaultViewSource} from './ViewBlock';
 import {createDragPhantom} from './sortable';
-import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,type EditorBlock} from './editor-blocks';
+import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,extractEditorBlocks,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
-export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,canvas=false}:{onAnnotate?:()=>void;editor:Editor;path:string;onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
+export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onImage,action,zoom=1,canvas=false}:{sourceBody?:string;footer?:string;onAnnotate?:()=>void;editor:Editor;path:string;onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
   const context=useContext(ViewBlockContext);
   const [revision,update]=useState(0),[block,setBlock]=useState<EditorBlock|null>(null),[menu,setMenu]=useState<MenuState|null>(null),[popup,setPopup]=useState<{kind:'color'|'link'|'symbols';anchor:HTMLElement}|null>(null);
   const controls=useRef<HTMLDivElement>(null),bubble=useRef<HTMLDivElement>(null),cancel=useRef<()=>void>(()=>{}),dragging=useRef(false);
@@ -93,6 +95,7 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
         {label:tooltips.editor.checklist,icon:'tasks',run:()=>add({type:'taskList',content:[{type:'taskItem',attrs:{checked:false},content:[{type:'paragraph'}]}]})},
         {label:tooltips.editor.quote,icon:'quote',run:()=>add({type:'blockquote',content:[{type:'paragraph'}]})},
         {label:tooltips.editor.codeBlock,icon:'code',run:()=>add({type:'codeBlock'})},
+        {label:ui.editorTools.progressBar,icon:'tasks',run:()=>add({type:'codeBlock',attrs:{language:'sp-bar'}})},
         ...(featureEnabled(context?.snapshot.preferences,'views')?[{label:tooltips.views.add,icon:'database' as const,run:()=>add({type:'codeBlock',attrs:{language:'view-block'},content:[{type:'text',text:defaultViewSource()}]})}]:[]),
         {label:ui.editor.insertImage,icon:'image',run:()=>add({type:'htmlBlock',attrs:{source:imageHtml({kind:'placeholder'})}})},
         {label:ui.editorTools.uploadImage,icon:'image',run:()=>{editor.commands.setTextSelection(Math.min(positionAfter(editor,block),editor.state.doc.content.size));onImage();}},
@@ -107,6 +110,10 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
         const pointer=event.pointerId,startX=event.clientX,startY=event.clientY,offsetY=startY-rect.top,offsetX=startX-rect.left;
         const allItems=sources.every(b=>b.item),targets:EditorBlock[]=allItems?blocks:[];
         if(!allItems)before.forEach((node,from,index)=>{if(index)targets.push({path:[index],from,to:from+node.nodeSize,depth:0,item:false});});
+        const info=context?.snapshot.cards.find(card=>card.path===path),id=crypto.randomUUID(),title=(before.nodeAt(sources[0].from)?.textContent??'').trim().slice(0,80)||'Extracted blocks';
+        const extracted=info&&!info.source?extractEditorBlocks(editor.getJSON(),paths,'card:'+id,title):null;
+        const exportDrag:DocumentDrag|undefined=extracted?{key:'blocks:'+id,path,blocks:{id,title,before:sourceBody??cardMarkdown(editor)+footer,body:cardMarkdown(editor,extracted.document)+footer,content:editor.markdown!.serialize(extracted.content)}}:undefined;
+        let exportReady=false;
         let phantom:HTMLElement|null=null,marker:HTMLElement|null=null,choice:{target:EditorBlock;edge:'before'|'after';nest:boolean}|null=null,active=false,frame=0,lastPointer:PointerEvent|null=null;
         const transformed=new Set<HTMLElement>();
         const reset=()=>{transformed.forEach(el=>{el.style.transition='none';el.style.removeProperty('transform');});transformed.clear();};
@@ -117,7 +124,10 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
           if(!editor.state.doc.eq(before)){finish(false);return;}
           reset();phantom!.style.left=e.clientX-offsetX+'px';phantom!.style.top=e.clientY-offsetY+'px';
           const area=editor.view.dom.getBoundingClientRect();choice=null;marker!.hidden=true;
-          if(e.clientX<area.left-55||e.clientX>area.right+30||e.clientY<area.top||e.clientY>area.bottom)return;
+          const outside=e.clientX<area.left-55||e.clientX>area.right+30||e.clientY<area.top||e.clientY>area.bottom;
+          exportReady=!!exportDrag&&outside&&previewDocumentDrop(exportDrag,e.clientX,e.clientY,editor.view.dom.closest<HTMLElement>('.board-placement')??undefined);
+          if(!exportReady){clearDocumentDrop();clearDocumentNavigation();}
+          if(outside)return;
           const eligible=targets.filter(b=>!paths.some(path=>path.length<=b.path.length&&path.every((v,i)=>v===b.path[i])));
           // Use real block boundaries, never the animated phantom or displaced preview.
           // Horizontal movement selects hierarchy depth; staying in the gutter keeps siblings.
@@ -137,8 +147,8 @@ export function EditorControls({onAnnotate,editor,path,onImage,action,zoom=1,can
           }
         };
         const autoScroll=()=>{if(!active)return;const scroll=editor.view.dom.closest('.editor-body');if(scroll&&lastPointer){const clip=scroll.getBoundingClientRect(),before=scroll.scrollTop;if(lastPointer.clientY<clip.top+28)scroll.scrollTop-=8;else if(lastPointer.clientY>clip.bottom-28)scroll.scrollTop+=8;if(before!==scroll.scrollTop)movePointer(lastPointer);}if(active)frame=requestAnimationFrame(autoScroll);};
-        const finish=(save:boolean)=>{cancelAnimationFrame(frame);document.removeEventListener('pointermove',movePointer);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);reset();elements.forEach(el=>el.style.removeProperty('opacity'));phantom?.remove();marker?.remove();document.body.classList.remove('list-dragging');dragging.current=false;cancel.current=()=>{};if(active){const suppress=(event:MouseEvent)=>{event.preventDefault();event.stopPropagation();};document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}active=false;if(save&&choice&&editor.state.doc.eq(before))apply(moveEditorBlocks(editor.getJSON(),paths,choice.target.path,choice.edge,choice.nest));};
-        const up=(e:PointerEvent)=>{if(e.pointerId===pointer)finish(true);},abort=()=>finish(false),key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();abort();}};
+        const finish=(save:boolean)=>{cancelAnimationFrame(frame);document.removeEventListener('pointermove',movePointer);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',abort);document.removeEventListener('keydown',key,true);window.removeEventListener('blur',abort);reset();elements.forEach(el=>el.style.removeProperty('opacity'));phantom?.remove();marker?.remove();document.body.classList.remove('list-dragging');dragging.current=false;cancel.current=()=>{};if(active){const suppress=(event:MouseEvent)=>{event.preventDefault();event.stopPropagation();};document.addEventListener('click',suppress,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',suppress,true),0);}active=false;if(save&&exportReady&&exportDrag&&lastPointer&&editor.state.doc.eq(before))dropDocumentAt(exportDrag,lastPointer.clientX,lastPointer.clientY,editor.view.dom.closest<HTMLElement>('.board-placement')??undefined);else if(save&&choice&&editor.state.doc.eq(before))apply(moveEditorBlocks(editor.getJSON(),paths,choice.target.path,choice.edge,choice.nest));clearDocumentDrop();clearDocumentNavigation();};
+        const up=(e:PointerEvent)=>{if(e.pointerId===pointer){if(active)movePointer(e);finish(true);}},abort=()=>finish(false),key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();abort();}};
         cancel.current=abort;document.addEventListener('pointermove',movePointer);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',abort);document.addEventListener('keydown',key,true);window.addEventListener('blur',abort);
       }}/>
     </div>}

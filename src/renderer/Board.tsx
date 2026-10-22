@@ -1,3 +1,4 @@
+import {pdfPageDragTarget} from './PdfReader';
 import {binding,matchesBinding} from '../keybindings';
 import {flushSync} from 'react-dom';
 import {topicText,textNeighbor,type TextNavigation} from '../topics';
@@ -245,6 +246,7 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
     // React portals still bubble through the board; floating editor controls are not canvas presses.
     if(!e.currentTarget.contains(target))return;
     rightPress.current=e.button===2;
+    if(e.button===1||(e.button===0&&spaceDown.current)){begin(e,'pan');return;}
     if (target.closest('.edge-layer,.edge-handles')) return;
     if (target.closest('.canvas-controls,.canvas-empty button,.card-editor,.pdf-reader,.annotation-rail') || editable(target)) return;
     const card = target.closest<HTMLElement>('[data-placement]');
@@ -259,7 +261,7 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
     }
   }
   function startCard(e: PointerEvent, id: string) {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor,.pdf-reader,.annotation-rail')) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor,.annotation-rail') || (e.target as HTMLElement).closest('.pdf-reader')&&!pdfPageDragTarget(e.target)) return;
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       onFinish?.();
       setSelected(previous => e.shiftKey ? [...new Set([...previous, id])] : previous.includes(id) ? previous.filter(p => p !== id) : [...previous, id]);

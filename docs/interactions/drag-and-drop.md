@@ -99,7 +99,7 @@ Explorer rows (including real folders), saved entries, Slipbox/Journal/Template 
 
 A canvas multi-selection moves as one undoable transaction. Keep every selected placement’s relative X/Y, size, color, collapse state and stroke; carry all edges between those placements with their labels, anchors, arrowheads and styles. Remove edges crossing the selection boundary. Real card files and board folder trees move; selected reference placements move without moving their originals. Pointer drops into another open canvas retain the grab offset; tile/row/tab drops place the group below existing content. The group phantom includes all selected items and their internal edges. Any selected board or descendant is an invalid destination. Validate the whole transfer before writing, journal it, and recover the entire group after an interrupted move. Undo/redo refuses to overwrite external edits.
 
-All committed moves are undoable. Within view blocks, existing property/date/manual-order gestures retain their meaning and do not change file ownership. Within a canvas, ordinary geometry moves retain their meaning. Block/editor text drags and tab drags stay separate from document transfers.
+All committed moves are undoable. Within view blocks, existing property/date/manual-order gestures retain their meaning and do not change file ownership. Within a canvas, ordinary geometry moves retain their meaning. Tab drags stay separate from document transfers.
 
 ## Timeline rows
 
@@ -122,3 +122,11 @@ Horizontal drags across displayed cells or empty table space pan the table. Ordi
 Manage workspaces reuses the shared vertical reorder gesture for every registration, including missing folders. A six-dot handle appears on row hover or keyboard focus and remains visible in the phantom. The current-workspace check occupies a separate leading slot. Drag the handle or folder/status details; name editing and action buttons never start dragging. Alt+Up/Down reorders a focused row. Save registration order only on release; cancellation preserves it.
 
 Main-tab navigation during document dragging waits 650 ms over an inactive tab, then activates it while retaining the drag. The phantom outlives its originating view when this navigation unmounts that view. Outside Kanban it follows the pointer freely; inside Kanban it keeps its existing column and top/bottom capping behavior. Dropping on the destination canvas uses the shared document transfer flow and does not also write a Kanban order change. Empty Kanban space uses the same horizontal pan gesture as tables.
+
+## Editor blocks to cards
+
+Drag a block handle, or select several blocks and drag one of their handles. Inside the editor this reorders complete blocks. Over a whiteboard canvas or child-board tile, the shared drop highlight instead creates one new card containing those blocks in document order. The original card keeps a Markdown link at the first selected block; a selected list item leaves that link in its list. Nested items carry their descendants. The title cannot be extracted. The first extracted paragraph becomes the new title without duplicating it. Relative image and document paths are rebased; the source metadata stays with the original card. Creation, replacement and placement form one checked, undoable write. Stale content, Escape, cancellation and invalid drops leave the source intact.
+
+A drop into a closed board uses a new column beside existing items, reserving room for PDF comments. It does not use saved card heights, which can be shorter than an expanded PDF or an automatically sized card. Dropping on an open canvas still uses the pointer position.
+
+On a PDF, drag the header or blank page area to move the attachment; dragging a text passage keeps text selection for highlights. Middle-button drag and Space-drag pan the whiteboard even over the reader, toolbar or notes.

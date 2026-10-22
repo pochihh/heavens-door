@@ -1,3 +1,4 @@
+import {boardDropPosition} from '../board-drop';
 import {ActionHub} from './ActionHub';
 import {hubModule,type HubCommand} from '../action-hub';
 import {matchesBinding} from '../keybindings';
@@ -99,17 +100,18 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   useEffect(()=>{
     const drop=(event:Event)=>{
       const d=(event as CustomEvent<DocumentDrop>).detail,current=session.state.snapshot;if(!current)return;
+      if(d.blocks&&d.path){const point=d.atPointer?{x:d.x,y:d.y}:boardDropPosition(current.boards.find(b=>b.folder===d.folder),current.cards);attempt(session.extractCardBlocks(d.path,d.blocks,d.folder,point.x,point.y));return;}
       if(d.note&&d.path){attempt(session.extractAssetNote(d.path,d.note.expected,d.note.id,d.folder,d.x,d.y));return;}
       if(d.selection&&d.kind==='board'&&d.source!==undefined){
         const destination=current.boards.find(b=>b.folder===d.folder);if(!destination)return;
-        const point=d.atPointer?{x:d.x-d.selection.offset.x,y:d.y-d.selection.offset.y}:{x:80,y:Math.max(48,...destination.cards.map(p=>p.y+p.height))+32};
+        const point=d.atPointer?{x:d.x-d.selection.offset.x,y:d.y-d.selection.offset.y}:boardDropPosition(destination,current.cards);
         attempt(session.moveSelection(d.source,d.selection.ids,d.folder,point.x,point.y,d.selection.board));return;
       }
       const board=d.key.startsWith('board:')?current.boards.find(b=>b.folder===d.key.slice(6)):undefined;
       const card=d.key.startsWith('card:')?current.cards.find(c=>c.id===d.key.slice(5)):undefined;
       const path=board?.folder??card?.path??(d.key.startsWith('file:')?d.key.slice(5):undefined);
       if(path===undefined||!path)return;
-      const destination=current.boards.find(b=>b.folder===d.folder),point=d.atPointer?{x:d.x,y:d.y}:{x:80,y:Math.max(48,...(destination?.cards??[]).map(p=>p.y+p.height))+32};
+      const destination=current.boards.find(b=>b.folder===d.folder),point=d.atPointer?{x:d.x,y:d.y}:boardDropPosition(destination,current.cards);
       if(!card&&!board&&d.kind==='board'&&/\.pdf$/i.test(path)){attempt(session.attachPdfFiles(d.folder,[path],point.x,point.y));return;}
       const target=(d.folder?d.folder+'/':'')+path.split('/').at(-1);
       if(board||!card||d.kind==='folder'){

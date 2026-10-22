@@ -354,3 +354,14 @@ test('an untagged PDF popup works independently of Read later and ignores its sh
   assert.equal(readingActions,0);assert.equal(opened,0);
  }}finally{await act(async()=>root.unmount());}
 });
+
+test('PDF page whitespace drags the attachment, text stays selectable, and middle-button pan works over the reader',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react'),pdf={...card,source:{type:'pdf' as const,file:'paper.pdf'}};let saved:import('../src/shared').Board|undefined;
+ function Harness(){const [board,setBoard]=useState<import('../src/shared').Board>({path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'pdf',cardId:pdf.id,x:10,y:20,width:440,height:280}],edges:[]});return <Whiteboard board={board} cards={[pdf]} initialCamera={{x:0,y:0,zoom:1}} onSave={board=>{saved=board;setBoard({...board,revision:crypto.randomUUID()});}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ const root=createRoot(document.getElementById('root')!),pointer=(target:EventTarget,type:string,x:number,button=0)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,clientX:x,clientY:100,button}));
+ try{await act(async()=>root.render(<Harness/>));const reader=document.querySelector('.pdf-reader')!,page=document.createElement('div');page.className='pdf-page';page.innerHTML='<canvas></canvas><div class="textLayer"><span>PDF text</span></div>';reader.append(page);
+ await act(async()=>{pointer(page,'pointerdown',100);pointer(document,'pointerup',180);});assert.equal(saved!.cards[0].x,90);
+ saved=undefined;await act(async()=>{pointer(page.querySelector('span')!,'pointerdown',100);pointer(document,'pointerup',180);});assert.equal(saved,undefined,'selecting a PDF passage cannot move the attachment');
+ const world=document.querySelector<HTMLElement>('.board-world')!,camera=world.style.transform;await act(async()=>{pointer(page.querySelector('span')!,'pointerdown',100,1);pointer(document,'pointerup',160,1);await new Promise(requestAnimationFrame);});assert.notEqual(world.style.transform,camera);assert.equal(saved,undefined,'panning never writes attachment geometry');
+ }finally{await act(async()=>root.unmount());}
+});

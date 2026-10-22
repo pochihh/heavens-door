@@ -83,3 +83,17 @@ export function changeEditorBlock(document:JSONContent,path:number[],kind:string
   }else parent.content!.splice(index,1,...next);
   return doc;
 }
+
+export function extractEditorBlocks(document:JSONContent,sources:number[][],href:string,title:string){
+  const paths=sources.filter((path,i)=>!sources.some((parent,j)=>j!==i&&prefix(parent,path)&&(parent.length<path.length||j<i))).sort((a,b)=>{for(let i=0;i<Math.min(a.length,b.length);i++)if(a[i]!==b[i])return a[i]-b[i];return a.length-b.length;});
+  if(!paths.length||paths.some(path=>!path[0]))return null;
+  const doc=structuredClone(document),moving=paths.map(path=>({node:at(doc,path),parent:at(doc,path.slice(0,-1))}));
+  if(moving.some(item=>!item.node||!item.parent))return null;
+  const content:JSONContent[]=[];let previous:JSONContent|undefined;
+  for(const {node,parent} of moving){if(isItem(node)){if(previous===parent)content.at(-1)!.content!.push(node);else content.push({type:parent.type,attrs:parent.attrs,content:[node]});previous=parent;}else{content.push(node);previous=undefined;}}
+  const reference:JSONContent={type:'paragraph',content:[{type:'text',text:title,marks:[{type:'link',attrs:{href}}]}]};
+  moving.forEach(({node,parent},i)=>{const index=parent.content!.indexOf(node);parent.content!.splice(index,1,...i?[]:isItem(node)?[{type:node.type,attrs:node.attrs,content:[reference]}]:[reference]);});
+  const prune=(node:JSONContent)=>{node.content?.forEach(prune);if(node.content)node.content=node.content.filter(child=>!isList(child)||!!child.content?.length);};prune(doc);
+  if(content[0]?.type==='paragraph')content[0]={...content[0],type:'heading',attrs:{level:1}};
+  return {document:doc,content:{type:'doc',content}};
+}

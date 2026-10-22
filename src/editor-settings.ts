@@ -7,6 +7,7 @@ export const DEFAULT_COMMANDS:EditorCommand[]=[
   {id:'task',name:'Checklist',enabled:true,template:'- [ ] {{cursor}}'},
   {id:'quote',name:'Quote',enabled:true,template:'> {{cursor}}'},
   {id:'code',name:'Code block',enabled:true,template:'```\n{{cursor}}\n```'},
+  {id:'progress',name:'Progress bar',enabled:true,template:'```sp-bar\n{{cursor}}\n```'},
   {id:'divider',name:'Divider',enabled:true,template:'---\n'},
   {id:'image',name:'Image',enabled:true,action:'image'},
   {id:'view',name:'View block',enabled:true,action:'view'},

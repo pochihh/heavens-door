@@ -40,10 +40,10 @@ const CardTitle=Extension.create({
     }},
   })];},
 });
-export function cardMarkdown(editor:Editor){
-  const doc=editor.getJSON(),first=editor.state.doc.firstChild;
-  if(first?.type.name==='heading'&&first.attrs.level===1&&!first.content.size)doc.content?.shift();
-  return editor.markdown!.serialize(doc);
+export function cardMarkdown(editor:Editor,doc:JSONContent=editor.getJSON()){
+  const first=doc.content?.[0];
+  if(first?.type==='heading'&&first.attrs?.level===1&&!first.content?.length)doc.content?.shift();
+  return editor.markdown!.serialize(doc as ReturnType<Editor['getJSON']>);
 }
 
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}

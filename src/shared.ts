@@ -122,6 +122,7 @@ export type Request =
   | { kind: 'queryTags'; text:string;exclude?:string[];limit?:number }
   | { kind: 'searchWorkspace'; text:string }
   | { kind: 'queryReferences';text:string;cardsOnly?:boolean;exclude?:string[] }
+  | {kind:'extractCardBlocks';path:string;expected:string;value:ExtractedBlocks;folder:string;boardExpected:string;x:number;y:number}
   | {kind:'extractAssetNote';path:string;expected:string;note:string;folder:string;boardExpected:string;x:number;y:number}
   | { kind: 'createSlipboxCard';name:string;board?:{folder:string;expected:string;x:number;y:number} }
   | { kind: 'checkpoint'; label: string }
@@ -189,3 +190,5 @@ export const DEFAULT_CARD_FOLDER='Slipbox';
 export const DEFAULT_WHITEBOARD_NAME='A new board';
 export const COLLAPSED_CARD_HEIGHT=70;
 export function placementHeight(placement:Placement){return placement.collapsed?COLLAPSED_CARD_HEIGHT:placement.height;}
+
+export interface ExtractedBlocks {id:string;title:string;before:string;body:string;content:string}

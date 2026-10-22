@@ -570,10 +570,12 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 .board-text[data-text-grow-left=true] .board-object-text.shape-none{text-align:right}
 /* Code controls and previews share geometry; tokens never enter the stored Markdown. */
 .editor-code-block{position:relative;margin:1em 0;background:color-mix(in srgb,var(--text) 4%,transparent);border-radius:5px;min-width:0}
-.prose .editor-code-block pre{margin:0;background:transparent;padding:34px 12px 12px;white-space:pre-wrap}
-.code-block-toolbar{position:absolute;top:4px;right:6px;max-width:calc(100% - 12px);font-size:11px;line-height:22px;color:var(--muted)}
-.code-block-toolbar select{max-width:100%;border:0;background:transparent;color:inherit;font:inherit;padding:2px 4px;cursor:pointer}
-.code-block-toolbar span{display:block;padding:2px 4px;line-height:22px}
+.prose .editor-code-block pre{margin:0;background:transparent;padding:2px 12px 10px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9em;line-height:1.6}
+.prose .editor-code-block pre code{display:block;min-height:1.6em;font:inherit;white-space:inherit}
+.code-block-toolbar{display:flex;align-items:center;justify-content:flex-end;min-height:26px;padding:2px 7px 0;font-size:11px;line-height:20px;color:var(--muted)}
+.code-language-trigger,.code-block-toolbar>span{display:flex;align-items:center;gap:5px;max-width:100%;height:22px;padding:1px 5px;font:inherit;color:inherit;background:transparent;border-radius:4px}
+.code-language-trigger:hover{background:var(--hover)}.code-language-picker{width:240px}.code-language-picker>input{width:100%;margin-bottom:6px}.code-language-picker .property-choices{max-height:260px;overflow:auto}
+.card-progress{margin:1em 0;padding:8px 0}.card-progress-heading{display:flex;align-items:center;gap:12px;margin-bottom:7px}.card-progress-label{flex:1;min-width:0;font:inherit}.card-progress-label:empty::before{content:'Progress';color:var(--muted);pointer-events:none}.card-progress [data-progress-count]{font-size:.8em;color:var(--muted);white-space:nowrap}.card-progress-track{height:6px;overflow:hidden;border-radius:6px;background:var(--border)}.card-progress-fill{height:100%;background:var(--accent);border-radius:inherit;transition:width var(--motion-normal) var(--motion-ease)}
 .prose pre .hljs-comment,.prose pre .hljs-quote{color:var(--muted);font-style:italic}
 .prose pre .hljs-keyword,.prose pre .hljs-selector-tag,.prose pre .hljs-literal{color:#a12972}
 .prose pre .hljs-string,.prose pre .hljs-regexp,.prose pre .hljs-addition{color:#28703c}

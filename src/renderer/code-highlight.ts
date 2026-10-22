@@ -9,6 +9,7 @@ export const codeLabel=(value:string)=>labels[codeLanguage(value)]??value.charAt
 export const codeLanguages=codeHighlight.listLanguages().sort((a,b)=>codeLabel(a).localeCompare(codeLabel(b)));
 // Lowlight emits only token spans and text; never interpret code as document HTML.
 export function highlightCodePreview(code:HTMLElement){
+ code.textContent=(code.textContent??'').replace(/\n$/,'');
  const language=code.className.match(/(?:^|\s)language-(\S+)/)?.[1]??'',value=code.textContent??'';
  type Token={type:string;value?:string;properties?:{className?:unknown};children?:Token[]};
  const render=(tokens:Token[]):Node[]=>tokens.map(token=>{if(token.type==='text')return document.createTextNode(token.value??'');const span=document.createElement('span');if(Array.isArray(token.properties?.className))span.className=token.properties.className.join(' ');span.append(...render(token.children??[]));return span;});

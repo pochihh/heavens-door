@@ -57,3 +57,14 @@ test('one shared gap represents adjacent sibling blocks; nesting stays distinct'
   const boundaries=editorDropBoundaries(blocks,0);assert.deepEqual(boundaries.map(b=>b.y),[0,40,90,130]);
   assert.equal(editorDropBoundaries(blocks,1).filter(b=>b.edge==='after').length,3,'Nesting remains a separate operation');
 });
+
+test('block extraction retains nested items, leaves one reference in place, and protects the title',async()=>{
+ const {extractEditorBlocks}=await import('../src/renderer/editor-blocks');
+ const child=extractEditorBlocks(doc,[[1,0,1,0]],'card:new','Child')!;
+ assert.equal(child.document.content![1].content![0].content![0].content![0].text,'Parent');
+ assert.equal(child.document.content![1].content![0].content![1].content![0].content![0].content![0].marks![0].attrs!.href,'card:new');
+ assert.equal(child.content.content![0].type,'bulletList');assert.equal(child.content.content![0].content![0].content![0].content![0].text,'Child');
+ const all=extractEditorBlocks(doc,[[1,0],[1,0,1,0],[1,1],[2]],'card:new','Selected')!;
+ assert.equal(all.content.content![0].content!.length,2);assert.equal(all.content.content![1].content![0].text,'End');
+ assert.equal(JSON.stringify(all.document).match(/card:new/g)?.length,1);assert.equal(extractEditorBlocks(doc,[[0]],'card:new','Title'),null);assert.equal(doc.content![1].content!.length,3);
+});

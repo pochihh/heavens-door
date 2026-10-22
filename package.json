@@ -20,6 +20,7 @@
     "sparkle:rebuild": "node scripts/sparkle-rebuild.mjs",
     "sparkle:appcast": "node scripts/sparkle-appcast.mjs",
     "test:sparkle": "npm run sparkle:rebuild && npm run build && node scripts/test-sparkle.mjs",
+    "test:reader": "node scripts/test-reader.mjs",
     "test:app": "node scripts/test-app.mjs",
     "release": "node scripts/release.mjs",
     "release:verify": "node scripts/release.mjs verify",
