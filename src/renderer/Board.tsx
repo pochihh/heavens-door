@@ -24,7 +24,7 @@ import { placementHeight, type Board, type Card, type CardInfo, type EdgeStyle, 
 import { leadingTitle } from '../card-title';
 import { parent, portable } from './documents';
 import { preview, titlePreview } from './markdown';
-import { BoardNavigation, type Camera } from './navigation';
+import { BoardNavigation, MIN_ZOOM, type Camera } from './navigation';
 import { Icon, Tool } from './Icons';
 import { InlineName } from './InlineName';
 import {ReferencePicker} from './ReferencePicker';
@@ -551,7 +551,7 @@ export const Whiteboard = memo(function Whiteboard({ onAttachPdf,keybindings,has
     const left = Math.min(...cards.map(p => p.x)), top = Math.min(...cards.map(p => p.y));
     const width = Math.max(1, Math.max(...cards.map(p => p.x + widthOf(p))) - left);
     const height = Math.max(1, Math.max(...cards.map(p => p.y + latest.current.heightOf(p))) - top);
-    const zoom = Math.min(1.6, Math.max(0.25, Math.min((element.clientWidth - 120) / width, (element.clientHeight - 120) / height)));
+    const zoom = Math.min(1.6, Math.max(MIN_ZOOM, Math.min((element.clientWidth - 120) / width, (element.clientHeight - 120) / height)));
     nav.flush(); nav.set({ zoom, x: element.clientWidth / 2 - (left + width / 2) * zoom, y: element.clientHeight / 2 - (top + height / 2) * zoom });
   }
   // Measure unknown auto-height cards above the viewport before deciding to cull them.

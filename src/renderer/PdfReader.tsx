@@ -109,7 +109,7 @@ const PdfPage=memo(function PdfPage({pdf,page,size,scale,pixelRatio,textEnabled,
   const ref=useRef<HTMLDivElement>(null),[visible,setVisible]=useState(false);
   useEffect(()=>{const observer=new IntersectionObserver(entries=>setVisible(entries[0].isIntersecting),{root:ref.current?.closest('.board-pdf')?.closest('.canvas')??ref.current?.closest('.pdf-reading-layout')??ref.current?.closest('.pdf-reader'),rootMargin:'200px'});observer.observe(ref.current!);return()=>observer.disconnect();},[]);
   return <div className="pdf-page" data-pdf-page={page} ref={ref} style={{width:size.width*scale,height:size.height*scale,'--scale-factor':scale,'--total-scale-factor':scale,'--user-unit':1} as CSSProperties}>
-    {(visible||current?.page===page)&&<PdfCanvas key={scale+':'+pixelRatio+':'+textEnabled} pdf={pdf} page={page} scale={scale} pixelRatio={pixelRatio} textEnabled={textEnabled} matches={matches} current={current} reveal={reveal} onSearchMatch={onSearchMatch}/>}
+    {(visible||current?.page===page)&&<PdfCanvas pdf={pdf} page={page} scale={scale} pixelRatio={pixelRatio} textEnabled={textEnabled} matches={matches} current={current} reveal={reveal} onSearchMatch={onSearchMatch}/>}
     <div className="pdf-highlights">{annotations.flatMap(a=>(a.anchors?.find(v=>v.page===page)?.rects??(a.page===page?a.rects:[])??[]).map((r,i)=><span key={a.id+':'+i} data-annotation={a.id} className="pdf-highlight" style={{left:r[0]*100+'%',top:r[1]*100+'%',width:r[2]*100+'%',height:r[3]*100+'%',background:a.color??'transparent'}}/>))}</div>
   </div>;
 });
@@ -117,9 +117,29 @@ const PdfCanvas=memo(function PdfCanvas({pdf,page,scale,pixelRatio,textEnabled,m
   const canvas=useRef<HTMLCanvasElement>(null),text=useRef<HTMLDivElement>(null),[error,setError]=useState(''),[layer,setLayer]=useState<TextLayer|null>(null),revealMatch=useRef(onSearchMatch);revealMatch.current=onSearchMatch;
   useLayoutEffect(()=>{if(!layer)return;const focused=highlightPdfMatches(layer.textDivs,layer.textContentItemsStr,matches,current);if(focused)revealMatch.current(focused);},[layer,matches,current,reveal]);
   useEffect(()=>{
-    const element=canvas.current!;let live=true,cancelPending=()=>{},pageProxy:PDFPageProxy|undefined,render:ReturnType<PDFPageProxy['render']>|undefined,textLayer:{cancel:()=>void}|undefined;
-    void(async()=>{const pdfjs=await library(),item=await pdf.getPage(page);pageProxy=item;if(!live){item.cleanup();return;}const viewport=item.getViewport({scale}),ratio=Math.min(pixelRatio,Math.sqrt(16_000_000/(viewport.width*viewport.height))),el=element;el.width=Math.ceil(viewport.width*ratio);el.height=Math.ceil(viewport.height*ratio);el.style.width=viewport.width+'px';el.style.height=viewport.height+'px';render=item.render({canvas:el,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});render.onContinue=(next:()=>void)=>{cancelPending=queuePdfRender(next);};await render.promise;if(!live||!textEnabled)return;const content=await item.getTextContent();if(!live)return;await new Promise<void>(resolve=>{cancelPending=queuePdfRender(resolve);});if(!live)return;text.current!.replaceChildren();const layer=new pdfjs.TextLayer({textContentSource:content,container:text.current!,viewport});textLayer=layer;await layer.render();if(live)setLayer(layer);})().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));});
-    return()=>{live=false;cancelPending();render?.cancel();textLayer?.cancel();pageProxy?.cleanup();element.width=0;element.height=0;};
-  },[pdf,page,scale,pixelRatio,textEnabled]);
-  return <><canvas ref={canvas}/><div ref={text} className="textLayer"/>{error&&<p role="alert">{error}</p>}</>;
+    const element=canvas.current!,buffer=element.ownerDocument.createElement('canvas');
+    let live=true,cancelPending=()=>{},pageProxy:PDFPageProxy|undefined,render:ReturnType<PDFPageProxy['render']>|undefined;
+    void(async()=>{
+      const item=await pdf.getPage(page);pageProxy=item;if(!live){item.cleanup();return;}
+      const viewport=item.getViewport({scale}),ratio=Math.min(pixelRatio,Math.sqrt(16_000_000/(viewport.width*viewport.height)));
+      buffer.width=Math.ceil(viewport.width*ratio);buffer.height=Math.ceil(viewport.height*ratio);
+      render=item.render({canvas:buffer,viewport,transform:ratio===1?undefined:[ratio,0,0,ratio,0,0]});
+      render.onContinue=(next:()=>void)=>{cancelPending=queuePdfRender(next);};await render.promise;if(!live)return;
+      // Keep the displayed bitmap intact until its replacement is complete.
+      element.width=buffer.width;element.height=buffer.height;element.getContext('2d')!.drawImage(buffer,0,0);setError('');
+    })().catch(e=>{if(live&&e.name!=='RenderingCancelledException')setError(String(e));}).finally(()=>{buffer.width=0;buffer.height=0;});
+    return()=>{live=false;cancelPending();render?.cancel();pageProxy?.cleanup();buffer.width=0;buffer.height=0;};
+  },[pdf,page,scale,pixelRatio]);
+  useEffect(()=>{
+    const element=text.current!;let live=true,cancelPending=()=>{},textLayer:TextLayer|undefined;
+    setLayer(null);element.replaceChildren();if(!textEnabled)return;
+    void(async()=>{
+      const pdfjs=await library(),item=await pdf.getPage(page),content=await item.getTextContent();if(!live)return;
+      await new Promise<void>(resolve=>{cancelPending=queuePdfRender(resolve);});if(!live)return;
+      textLayer=new pdfjs.TextLayer({textContentSource:content,container:element,viewport:item.getViewport({scale})});
+      await textLayer.render();if(live)setLayer(textLayer);
+    })().catch(e=>{if(live&&e.name!=='RenderingCancelledException'&&e.name!=='AbortException')setError(String(e));});
+    return()=>{live=false;cancelPending();textLayer?.cancel();};
+  },[pdf,page,scale,textEnabled]);
+  return <><canvas ref={canvas} style={{width:'100%',height:'100%'}}/><div ref={text} className="textLayer"/>{error&&<p role="alert">{error}</p>}</>;
 });

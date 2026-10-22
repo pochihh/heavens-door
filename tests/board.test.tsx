@@ -182,8 +182,9 @@ test('200 full previews keep their DOM through saves and distant zoom, and cache
     await wheel({deltaX:-120},100);
     assert.equal(document.querySelectorAll('.card-preview').length,200);assert.equal(reads,200,'returning to a 200-card board reuses cached previews');
     assert.equal(document.querySelector('.canvas-controls input'),null);
+    Object.defineProperties(canvas,{clientWidth:{value:1000},clientHeight:{value:800}});
     await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="Zoom to fit"]')!.click();await new Promise(resolve=>setTimeout(resolve,130));});
-    assert.equal(document.querySelector('.zoom-level')!.textContent,'25%','clicking the percentage fits all placements (zero-sized test viewport)');
+    assert.equal(document.querySelector('.zoom-level')!.textContent,'59%','clicking the percentage fits all placements in the actual viewport');
   } finally {await act(async()=>root.unmount());}
 });
 

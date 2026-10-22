@@ -38,3 +38,11 @@ test('temporary builds reject unstable versions and invalid or exhausted counter
   for(const number of [-1,1.5,'2',9999])assert.throws(()=>nextTestBuild('0.1.2718',{number,version:'0.1.2718-test.'+number}),/counter/);
   assert.throws(()=>nextTestBuild('0.1.2718',{number:79,version:'0.1.2718-test.80'}),/counter/);
 });
+
+test('the real stable bump workflow starts a fresh Test series without carrying its previous local count',async t=>{
+  const dir=await mkdtemp(join(tmpdir(),'heavens-test-series-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const pkg={version:'0.1.271',buildNumber:3},lock={version:pkg.version,packages:{'':{version:pkg.version}}},previous={number:79,version:'0.1.271-test.79'};
+  await writeFile(join(dir,'package.json'),JSON.stringify(pkg));await writeFile(join(dir,'package-lock.json'),JSON.stringify(lock));await writeFile(join(dir,'test-counter.json'),JSON.stringify(previous));
+  bumpVersion(dir);const stable=JSON.parse(await readFile(join(dir,'package.json'),'utf8')),counter=JSON.parse(await readFile(join(dir,'test-counter.json'),'utf8'));
+  const first=nextTestBuild(stable.version,counter);assert.deepEqual(first,{number:1,version:'0.1.2718-test.1'});assert.equal(nextTestBuild(stable.version,first).number,2);assert.deepEqual(counter,previous);
+});

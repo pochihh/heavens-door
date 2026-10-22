@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { BoardNavigation, normalizedWheelDelta, zoomAt } from '../src/renderer/navigation';
+import { BoardNavigation, MIN_ZOOM, normalizedWheelDelta, zoomAt } from '../src/renderer/navigation';
 
 function setup(t: TestContext) {
   const dom = new JSDOM('<div id="viewport"><div id="grid"></div><svg><g class="edge-camera"><path d="M 0 0 L 100 100"/></g></svg><svg><g class="edge-camera"/></svg><div id="world"><article class="board-card"><div class="card-preview" style="overflow-x:auto;overflow-y:auto"><p>Note</p></div></article></div><button>85%</button></div>');
@@ -54,7 +54,8 @@ test('automatic navigation paints once per frame, switches devices between gestu
   f.wheel({ deltaY: -2, ctrlKey: true }); f.frame();
   assert.ok(Math.abs(f.nav.current.zoom - after.zoom * Math.exp(16 * 0.0012)) < 1e-9);
   assert.equal(zoomAt(start, 0, 0, 100).zoom, 3);
-  assert.equal(zoomAt(start, 0, 0, 0.001).zoom, 0.2);
+  assert.equal(zoomAt(start, 0, 0, 0.001).zoom, 0.001);
+  assert.equal(zoomAt(start,0,0,MIN_ZOOM/10).zoom,MIN_ZOOM);
 });
 
 test('small leading mouse events wait, and variable wheel deltas never alternate pan and zoom', t => {
@@ -183,4 +184,11 @@ test('grid camera variables follow the same frame as the world without rewriting
     assert.equal(f.grid.style.getPropertyValue('--grid-spacing'),'30px','themes own grid appearance');
     assert.equal(f.grid.style.backgroundSize,'','CSS derives both aligned grid spacings');
   }
+});
+
+
+test('large-board zoom continues below 20 percent without losing the cursor anchor or showing zero percent',t=>{
+  const f=setup(t);f.nav.set({x:20,y:30,zoom:.2});f.frame();
+  for(const zoom of [.1,.01,.001,MIN_ZOOM]){const before={...f.nav.current},after=zoomAt(before,300,200,zoom);assertAnchored(before,after);f.nav.set(after);f.frame();assert.ok(f.nav.current.zoom<=.1);assert.notEqual(f.viewport.querySelector('button')!.textContent,'0%');}
+  assert.equal(f.viewport.querySelector('button')!.textContent,'0.01%');
 });

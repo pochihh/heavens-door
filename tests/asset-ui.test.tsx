@@ -399,3 +399,11 @@ test('expanded PDFs above the viewport are not culled while their dimensions loa
   await act(async()=>render(true,6));assert.equal(node.dataset.heightSignature,signature,'tracking a page does not invalidate the full reader geometry');
  }finally{await act(async()=>root.unmount());window.door=original;}
 });
+
+
+test('Zoom to fit includes a very large board below the old 20/25 percent floors',async()=>{
+ const {Whiteboard}=await import('../src/renderer/Board'),root=createRoot(document.getElementById('root')!);
+ const board={path:'Board/Board.whiteboard',folder:'Board',name:'Board',revision:'r',cards:[{id:'near',cardId:'',x:0,y:0,width:340,height:120,object:{type:'text' as const,shape:'none' as const,text:'Near'}},{id:'far',cardId:'',x:100000,y:100000,width:340,height:120,object:{type:'text' as const,shape:'none' as const,text:'Far'}}],edges:[]};
+ try{await act(async()=>root.render(<Whiteboard board={board} cards={[]} onSave={()=>{}} onOpen={()=>{}} onCreate={()=>{}}/>));const canvas=document.querySelector<HTMLElement>('.canvas')!;Object.defineProperties(canvas,{clientWidth:{value:1000},clientHeight:{value:800}});await act(async()=>{document.querySelector<HTMLButtonElement>('.zoom-level')!.click();await new Promise(requestAnimationFrame);});const camera=document.querySelector<HTMLElement>('.board-world')!.style.transform;assert.match(camera,/scale\(0\.00/);assert.notEqual(document.querySelector('.zoom-level')!.textContent,'0%');}
+ finally{await act(async()=>root.unmount());}
+});

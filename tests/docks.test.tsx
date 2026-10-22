@@ -10,6 +10,7 @@ import {activeAfterRemoval,moveTab,defaultDocks,findModule,moveModule,closeModul
 import {readPreferences,writePreferences,defaultPreferences,validatePreferences} from '../src/core/preferences';
 import {WorkspaceRegistry} from '../src/core/registry';
 import {SideDock} from '../src/renderer/Docks';
+import {MIN_ZOOM,MAX_ZOOM} from '../src/board-camera';
 import {useTabDrag} from '../src/renderer/tab-drag';
 
 test('module layouts keep every module once, persist per workspace, and registration removal keeps files',async t=>{
@@ -53,6 +54,22 @@ test('module layouts keep every module once, persist per workspace, and registra
   assert.equal(closed.left.collapsed,true);assert.equal(closed.right.collapsed,true);assert.deepEqual(validateDocks(closed),closed);
   assert.equal(revealModule(closed,'history').right.collapsed,false,'Action Ribbon can reopen a View after all tabs are closed');
   const registry=new WorkspaceRegistry(join(root,'registered.json'));await registry.register(one);await registry.register(two);await registry.unregister(await fs.realpath(two));assert.equal((await registry.list()).length,1);assert.equal((await fs.stat(two)).isDirectory(),true);
+});
+
+test('deep board zoom persists with the same bounds as navigation',async t=>{
+  const root=await fs.mkdtemp(join(tmpdir(),'heavens-camera-'));
+  t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const tree=pane('board:'),key=tree.id+':board:';
+  const documents=(zoom:number)=>({tree,active:tree.id,formatting:[],views:{[key]:{camera:{x:-12345,y:6789,zoom}}}});
+  for(const zoom of [.1,.01,.001,MIN_ZOOM,MAX_ZOOM]){
+    await writePreferences(root,defaultPreferences(),{documents:documents(zoom)});
+    assert.deepEqual((await readPreferences(root)).documents,documents(zoom));
+  }
+  const before=await fs.readFile(join(root,'.heavens-door/settings.json'),'utf8');
+  for(const zoom of [0,-1,MIN_ZOOM/2,MAX_ZOOM+1,NaN,Infinity]){
+    await assert.rejects(()=>writePreferences(root,defaultPreferences(),{documents:documents(zoom)}),/Invalid document view/);
+  }
+  assert.equal(await fs.readFile(join(root,'.heavens-door/settings.json'),'utf8'),before);
 });
 
 test('tab pointer drags preserve empty sources until commit, respect dock families, and cancel without saving',async()=>{

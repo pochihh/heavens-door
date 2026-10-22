@@ -1,9 +1,9 @@
 import type { WhiteboardInput } from '../shared';
+import { MIN_ZOOM, MAX_ZOOM } from '../board-camera';
+export { MIN_ZOOM, MAX_ZOOM } from '../board-camera';
 // Navigation adapted from Toby's obsidian-whiteboard (MIT); see THIRD_PARTY_NOTICES.md.
 export const BOARD_CAMERA_EVENT='board-camera-change';
 export interface Camera { x: number; y: number; zoom: number }
-export const MIN_ZOOM = 0.2;
-export const MAX_ZOOM = 3;
 export function normalizedWheelDelta(delta: number, mode: number) {
   if (mode === 1) return delta * 16;
   if (mode === 2) return delta * 800;
@@ -165,7 +165,7 @@ export class BoardNavigation {
     this.grid.style.setProperty('--board-zoom', String(c.zoom));
     this.grid.style.setProperty('--grid-x', `${c.x}px`);
     this.grid.style.setProperty('--grid-y', `${c.y}px`);
-    this.zoomLabel.textContent = `${Math.round(c.zoom * 100)}%`;
+    const percent=c.zoom*100;this.zoomLabel.textContent=(percent<1?Number(percent.toPrecision(2)):Math.round(percent))+'%';
     const ratio = c.zoom / p.zoom;
     if (Math.abs(c.x - p.x * ratio) > width * 0.4 || Math.abs(c.y - p.y * ratio) > height * 0.4 || ratio < 0.8 || ratio > 1.25) this.publishCurrent();
   }
