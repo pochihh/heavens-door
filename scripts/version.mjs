@@ -3,9 +3,10 @@ import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 
+const stableVersion=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const euler='271828182845904523536028747135266249775724709369995';
 export function nextVersion(version,kind='patch') {
-  if(!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version))throw new Error('Use a stable major.minor.patch version.');
+  if(!stableVersion.test(version))throw new Error('Use a stable major.minor.patch version.');
   const [major,minor,patch]=version.split('.');let next;
   if(kind==='major')next=`${BigInt(major)+1n}.0.2`;
   else if(kind==='minor')next=`${major}.${BigInt(minor)+1n}.2`;
@@ -16,6 +17,17 @@ export function nextVersion(version,kind='patch') {
   }else throw new Error('Choose patch, minor, or major.');
   if(next.split('.').some(part=>BigInt(part)>BigInt(Number.MAX_SAFE_INTEGER)))throw new Error('Version exceeds the updater’s numeric limit; bump the minor version.');
   return next;
+}
+export function nextTestBuild(version,previous) {
+  if(!stableVersion.test(version))throw new Error('Leave the release version stable.');
+  const prefix=version+'-test.';let number=0;
+  if(typeof previous?.version==='string'&&previous.version.startsWith(prefix)){
+    number=previous.number;
+    if(previous.version!==prefix+number)throw new Error('Invalid temporary build counter.');
+  }
+  if(!Number.isInteger(number)||number<0||number>=9999)throw new Error('Invalid temporary build counter.');
+  number++;
+  return {number,version:prefix+number};
 }
 export function bumpVersion(directory,kind='patch',dryRun=false) {
   const files=['package.json','package-lock.json'].map(name=>join(directory,name)),original=files.map(file=>readFileSync(file,'utf8')),data=original.map(text=>JSON.parse(text)),[pkg,lock]=data;
