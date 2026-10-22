@@ -2,7 +2,7 @@ import {readingAsset,validateImport,readFeeds} from './reading';
 import {annotationView,splitAnnotations,withAnnotations,updateAnnotation} from '../reading';
 import {READLATER_STATUS,DEFAULT_READING_STATUS,legacyReadingStatus,readingMetadata} from '../reading';
 import {operateFile,fileTrashEntries,fileStamp,editablePath,vacant,availableFilePath} from './files';
-import {systemFolder,systemPath} from '../features';
+import {systemFolder,systemPath,featureEnabled} from '../features';
 import {DEFAULT_JOURNAL,DEFAULT_TEMPLATES,validNotePath,validJournalDay,journalWeek,journalDays,journalPath,journalToday,type JournalEntry,type JournalPeriod} from '../journal';
 import {wallTime,DEFAULT_DATE_DISPLAY} from '../dates';
 import {loadTemplate} from './templates';
@@ -952,25 +952,25 @@ export class Workspace {
     const change=await this.newTagChange('readlater');change.content=editTag(change.content,[DEFAULT_READING_STATUS],[]);return {field:DEFAULT_READING_STATUS,changes:[change]};
   }
   private readingStatusContent(raw:string,field:TagField){
-    const {front,body}=splitNote(raw),data=front.toJSON()??{},tags=tagsFrom(data.tags);let changed=false;
-    if(!tags.includes('readlater')){front.set('tags',[...tags,'readlater']);changed=true;}
+    const {front,body}=splitNote(raw),data=front.toJSON()??{};let changed=false;
     if(!front.has(READLATER_STATUS)){const value=legacyReadingStatus(data.reading?.state,field);validateTagValue(field,value);front.set(READLATER_STATUS,value);changed=true;}
     if(['new','reading','done'].includes(data.reading?.state)){const {state:_,...bookmark}=data.reading;void _;if(Object.keys(bookmark).length)front.set('reading',bookmark);else front.delete('reading');changed=true;}
     return changed?`---\n${front.toString()}---\n${body}`:raw;
   }
   async migrateReadingStatuses(){
-    const cards=this.snapshot().cards.filter(c=>c.source);if(!cards.length)return;
+    const cards=this.snapshot().cards.filter(c=>c.source&&c.tags?.includes('readlater')&&c.reading?.state!==undefined);if(!cards.length)return;
     const {field,changes}=await this.readingStatusSchema();
     for(const card of cards){const raw=await this.read(card.path),content=this.readingStatusContent(raw,field);if(content!==raw)changes.push({path:card.path,expected:card.revision,content});}
     if(changes.length){if(this.history.available)await this.history.checkpoint('Before attachment status migration');else await fs.writeFile(join(this.cache,'reading-status-backup-'+randomUUID()+'.json'),JSON.stringify(await Promise.all(changes.map(async change=>({...change,before:await this.raw(change.path)})))),{flag:'wx'});await this.write(changes);}
   }
   async importReading(value:import('../shared').ReadingImport){
-    validateImport(value);const folder=value.folder??systemPath('reading',this.preferences);if(!validNotePath(folder))throw new Error('Invalid import folder.');await this.ensureFolder(folder);
+    validateImport(value);if(value.readLater&&!featureEnabled(this.preferences,'reading'))throw new Error('Enable Read later for this workspace.');const folder=value.folder??systemPath(value.readLater?'reading':'slipbox',this.preferences);if(!validNotePath(folder))throw new Error('Invalid import folder.');await this.ensureFolder(folder);
     if(value.entry){const existing=this.db.prepare("SELECT path FROM cards WHERE coalesce(json_extract(frontmatter,'$.source.feed'),'')=? AND json_extract(frontmatter,'$.source.entry')=?").get(value.feed??'',value.entry);if(existing)return {snapshot:this.snapshot(),edits:[],path:String(existing.path)};}
     const board=value.placement?this.boards.get(this.boardPath(folder)):undefined;
     if(value.placement&&(!board||typeof value.placement.expected!=='string'||board.revision!==value.placement.expected||![value.placement.x,value.placement.y].every(Number.isFinite)))throw new Error(ui.errors.whiteboardChanged(this.boardPath(folder)));
     const stem=value.name.replace(/[<>:"/\\|?*]/g,' ').replace(/^[. ]+|[. ]+$/g,'').slice(0,100).trim()||'Reading item',path=await this.newCardPath(folder,stem),asset=await readingAsset(this.root,path,value.name,value.type==='pdf'?'.pdf':'.html',value.data,value.file);
-    const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});const {field,changes}=await this.readingStatusSchema();front.set('tags',['readlater']);front.set(READLATER_STATUS,legacyReadingStatus('new',field));
+    const raw=newNote(),{front}=splitNote(raw);front.set('source',{type:value.type,...asset,...(value.url?{url:value.url}:{}),captured:new Date().toISOString(),...(value.missingImages?.length?{missingImages:value.missingImages}:{}),...(value.feed?{feed:value.feed}:{}),...(value.entry?{entry:value.entry}:{})});const changes:Write[]=[];
+    if(value.readLater){const status=await this.readingStatusSchema();changes.push(...status.changes);front.set('tags',['readlater']);front.set(READLATER_STATUS,legacyReadingStatus('new',status.field));}
     const content=`---\n${front.toString()}---\n# ${stem}\n\n${value.body??''}`;
     if(board&&value.placement)changes.push({path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:readCard(path,content).id,x:value.placement.x,y:value.placement.y,width:420,height:560,autoHeight:true}]}),expected:board.revision});
     return {...await this.write([...changes,{path,content,expected:null}]),path};
@@ -981,7 +981,18 @@ export class Workspace {
     const asset=await readingAsset(this.root,path,value.name,'.pdf',value.data,value.file),{front,body}=splitNote(raw);front.set('source',{...card.source,...asset});
     return this.write([{path,expected,content:`---\n${front.toString()}---\n${body}`}]);
   }
-  async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);const raw=await this.read(path),{field,changes}=await this.readingStatusSchema(),{front,body}=splitNote(this.readingStatusContent(raw,field));const {state,...bookmark}=value;if(state!==undefined){const status=legacyReadingStatus(state,field);validateTagValue(field,status);front.set(READLATER_STATUS,status);}front.set('reading',{...(front.toJSON()?.reading??{}),...bookmark});return this.write([...changes,{path,expected,content:`---\n${front.toString()}---\n${body}`}]);}
+  async readingProgress(path:string,expected:string,value:import('../reading').ReadingProgress){
+    if(!path.endsWith('.md'))throw new Error('Reading progress belongs in a Markdown card.');readingMetadata({reading:value},true);
+    let raw=await this.read(path);const {state,...bookmark}=value,changes:Write[]=[];let field:TagField|undefined;
+    if(state!==undefined){
+      if(!tagsFrom(splitNote(raw).front.toJSON()?.tags).includes('readlater'))throw new Error('Add #readlater before changing its reading status.');
+      const status=await this.readingStatusSchema();field=status.field;changes.push(...status.changes);raw=this.readingStatusContent(raw,field);
+    }
+    const {front,body}=splitNote(raw);
+    if(field){const status=legacyReadingStatus(state,field);validateTagValue(field,status);front.set(READLATER_STATUS,status);}
+    front.set('reading',{...(front.toJSON()?.reading??{}),...bookmark});
+    return this.write([...changes,{path,expected,content:`---\n${front.toString()}---\n${body}`}]);
+  }
   async readingFeeds(){const path=systemPath('reading',this.preferences)+'/Feeds.opml',source=await this.raw(path);return {source:source??'',expected:source===null?null:revision(source)};}
   async saveReadingFeeds(source:string,expected:string|null){readFeeds(source);const path=systemPath('reading',this.preferences)+'/Feeds.opml';await this.ensureFolder(systemPath('reading',this.preferences));return this.write([{path,content:source,expected}]);}
   async saveCard(path: string, body: string, expected: string, source?:string) {

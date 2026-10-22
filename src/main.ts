@@ -73,10 +73,10 @@ async function importReading(host:Host,value:ReadingImport){
 async function captureArticle(host:Host,url:string,html?:string,name?:string,feed?:string,entry?:string){
   webAddress(url);const snapshot=await host.call<Snapshot>({kind:'snapshot'});if(!featureEnabled(snapshot.preferences,'reading'))throw new Error('Enable Read later for this workspace.');
   if(entry){const existing=snapshot.cards.find(c=>c.source?.entry===entry&&(c.source.feed??'')===(feed??''));if(existing)return {snapshot,edits:[],path:existing.path};}
-  const download=html===undefined?await boundedDownload(url,10*1024*1024):null;if(download?.type.includes('application/pdf')||download?.data.subarray(0,5).toString()==='%PDF-')return importReading(host,{name:name??'PDF',url,type:'pdf',data:download.data});
+  const download=html===undefined?await boundedDownload(url,10*1024*1024):null;if(download?.type.includes('application/pdf')||download?.data.subarray(0,5).toString()==='%PDF-')return importReading(host,{name:name??'PDF',url,type:'pdf',data:download.data,readLater:true});
   const raw=html??download!.data.toString('utf8'),article=extractArticle(raw,url);
   const localized=await articleImages(host,article,image=>boundedDownload(image,25*1024*1024));
-  return importReading(host,{name:name??article.name,url,type:'web',data:Buffer.from(raw),...localized,feed,entry});
+  return importReading(host,{name:name??article.name,url,type:'web',data:Buffer.from(raw),...localized,feed,entry,readLater:true});
 }
 async function articleImages(host:Host,article:ReturnType<typeof extractArticle>,load:(url:string)=>Promise<{data:Buffer;type:string}>){
   const snapshot=await host.call<Snapshot>({kind:'snapshot'}),id=randomBytes(8).toString('hex');let body=article.body;
@@ -212,12 +212,12 @@ void app.whenReady().then(async()=>{
   });
   ipcMain.handle('reading:choose',async(event,folder?:string,placement?:ReadingImport['placement'])=>{
     const d=trusted(event);if(!d.host)throw new Error('Open a workspace.');
-    const chosen=await dialog.showOpenDialog(d.window,{title:folder?readingText.attachPdf:'Import reading material',defaultPath:d.host.root,properties:['openFile','multiSelections'],filters:[{name:folder?'PDF':'PDF and HTML',extensions:folder?['pdf']:['pdf','html','htm']}]});
+    const chosen=await dialog.showOpenDialog(d.window,{title:folder!==undefined?readingText.attachPdf:'Import reading material',defaultPath:d.host.root,properties:['openFile','multiSelections'],filters:[{name:folder!==undefined?'PDF':'PDF and HTML',extensions:folder!==undefined?['pdf']:['pdf','html','htm']}]});
     if(chosen.canceled)return {imports:[],errors:[]};if(chosen.filePaths.length>20)throw new Error('Import at most 20 files at a time.');
     const results:(Mutation&{path:string})[]=[],errors:string[]=[];
     for(const file of chosen.filePaths){try{const type=extname(file).toLowerCase()==='.pdf'?'pdf':'web',stat=await fs.stat(file);if(!stat.isFile()||stat.size>(type==='pdf'?MAX_READING_BYTES:10*1024*1024))throw new Error('The attachment is too large.');
       const name=file.split(/[\\/]/).at(-1)!.replace(/\.(pdf|html?)$/i,'');
-      if(type==='pdf'){const result=await importReading(d.host,{...await readPdfFile(d.host.root,file),folder,placement});results.push(result);if(placement)placement={...placement,expected:result.snapshot.boards.find(b=>b.folder===folder)!.revision,x:placement.x+440};}else{const data=await fs.readFile(file),article=extractArticle(data.toString('utf8'),pathToFileURL(file).href),localized=await articleImages(d.host,article,image=>localArticleImage(image,file));results.push(await importReading(d.host,{name,type,data,...localized}));}
+      if(type==='pdf'){const result=await importReading(d.host,{...await readPdfFile(d.host.root,file),folder,placement,readLater:folder===undefined});results.push(result);if(placement)placement={...placement,expected:result.snapshot.boards.find(b=>b.folder===folder)!.revision,x:placement.x+440};}else{const data=await fs.readFile(file),article=extractArticle(data.toString('utf8'),pathToFileURL(file).href),localized=await articleImages(d.host,article,image=>localArticleImage(image,file));results.push(await importReading(d.host,{name,type,data,...localized,readLater:true}));}
     }catch(e){errors.push(file.split(/[\\/]/).at(-1)+': '+String(e));}}return {imports:results,errors};
   });
   ipcMain.handle('reading:attach-pdf',async(event,file:string,folder:string,placement:ReadingImport['placement'])=>{

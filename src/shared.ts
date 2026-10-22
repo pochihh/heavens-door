@@ -63,7 +63,7 @@ export interface FileOperation {action:'copy'|'move'|'trash'|'restore';path:stri
 export interface FileMutation extends Mutation {path:string;inverse:FileOperation}
 export interface BoardTransfer {moves:{from:string;to:string;expected:string}[];changes:Write[]}
 export interface TransferMutation extends Mutation {inverse:BoardTransfer}
-export interface ReadingImport {missingImages?:string[];name:string;type:'pdf'|'web';data:Uint8Array;file?:string;placement?:{expected:string;x:number;y:number};url?:string;body?:string;folder?:string;feed?:string;entry?:string}
+export interface ReadingImport {readLater?:boolean;missingImages?:string[];name:string;type:'pdf'|'web';data:Uint8Array;file?:string;placement?:{expected:string;x:number;y:number};url?:string;body?:string;folder?:string;feed?:string;entry?:string}
 export type Request =
   | {kind:'importReading';value:ReadingImport}
   | {kind:'relinkPdfSource';path:string;expected:string;value:Pick<ReadingImport,'name'|'data'|'file'>}

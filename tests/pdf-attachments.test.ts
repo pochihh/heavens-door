@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Workspace} from '../src/core/workspace';
-import {readPdfFile} from '../src/core/reading';
+import {readPdfFile,validateImport} from '../src/core/reading';
 import {importImage} from '../src/core/images';
 import {DEFAULT_EDITOR_SETTINGS} from '../src/editor-settings';
 import {revision} from '../src/core/format';
@@ -48,3 +48,31 @@ test('PDFs, webpage snapshots and card or board images share local and workspace
  await assert.rejects(fs.access(join(root,'_assets')),'no global assets folder is created by default or by a custom location');
  const outside=join(base,'outside');await fs.mkdir(outside);await fs.symlink(outside,join(root,folder,'Escape'));await w.setPreferences({editor:{...DEFAULT_EDITOR_SETTINGS,imageFolder:'Escape/Nested'}});await assert.rejects(()=>w.importReading({name:'Blocked',type:'pdf',data:bytes,folder}),/symbolic/i);assert.deepEqual(await fs.readdir(outside),[]);
 });
+
+test('PDF attachments work without Read later and never enroll during bookmarks, relink or a fresh index',async t=>{
+ const base=await fs.mkdtemp(join(tmpdir(),'heavens-independent-pdf-')),root=join(base,'notes'),cache=join(base,'cache');await fs.mkdir(root);let w=await Workspace.open(root,cache);t.after(async()=>{w.close();await fs.rm(base,{recursive:true,force:true});});await w.setPreferences({features:{reading:false}});await w.createFolder('','Board');
+ const board=w.snapshot().boards.find(b=>b.folder==='Board')!,imported=await w.importReading({name:'Independent PDF',type:'pdf',data:bytes,folder:'Board',placement:{expected:board.revision,x:25,y:75}});let card=await w.card(imported.path);
+ const untagged=()=>{assert.ok(!card.tags?.includes('readlater'));assert.equal(card.readLaterStatus,undefined);assert.equal(w.cardProperties(card.path).properties['readlater/status'],undefined);assert.ok(!w.snapshot().tags!.some(t=>t.tag==='readlater'));};untagged();
+ assert.equal(imported.edits.length,2,'only the PDF wrapper and its placement are changed');
+ const body=withAnnotations('# Independent PDF\n\nSummary',[{id:'highlight',kind:'highlight',quote:'Selected passage',text:'Saved comment',page:1,rects:[[.1,.1,.4,.05]]}]);await w.saveCard(card.path,body,card.revision);card=await w.card(card.path);
+ await w.readingProgress(card.path,card.revision,{page:2,scroll:80});card=await w.card(card.path);untagged();assert.deepEqual(card.reading,{page:2,scroll:80});
+ await w.relinkPdfSource(card.path,card.revision,{name:'Replacement.pdf',data:bytes});card=await w.card(card.path);untagged();assert.equal(card.body,body);
+ const raw=await w.read(card.path);await assert.rejects(w.readingProgress(card.path,card.revision,{state:'done'}),/#readlater/);assert.equal(await w.read(card.path),raw);untagged();
+ const path=card.path;w.close();w=await Workspace.open(root,join(base,'rebuilt-cache'));card=await w.card(path);untagged();assert.equal(await w.read(path),raw);assert.equal(card.body,body);assert.deepEqual(card.reading,{page:2,scroll:80});
+ await assert.rejects(w.importReading({name:'Explicit inbox item',type:'pdf',data:bytes,readLater:true}),/Enable Read later/);
+});
+
+test('Read later enrollment is explicit, and removing its tag is not undone by reading or reopening',async t=>{
+ const base=await fs.mkdtemp(join(tmpdir(),'heavens-opt-in-reading-')),root=join(base,'notes');await fs.mkdir(root);let w=await Workspace.open(root,join(base,'cache'));t.after(async()=>{w.close();await fs.rm(base,{recursive:true,force:true});});
+ const ordinary=await w.importReading({name:'Ordinary PDF',type:'pdf',data:bytes});assert.equal(ordinary.path,'Slipbox/Ordinary PDF.md');assert.ok(!w.snapshot().tags!.some(t=>t.tag==='readlater'));
+ const item=await w.importReading({name:'Explicit inbox item',type:'pdf',data:bytes,readLater:true});let card=await w.card(item.path);assert.equal(card.path,'Inbox/Explicit inbox item.md');assert.deepEqual(card.tags,['readlater']);assert.equal(card.readLaterStatus,'New');
+ await w.setCardTag(card.path,card.revision,'readlater',false);card=await w.card(card.path);await w.readingProgress(card.path,card.revision,{page:3});const raw=await w.read(card.path);
+ w.close();w=await Workspace.open(root,join(base,'fresh-cache'));card=await w.card(item.path);assert.ok(!card.tags?.includes('readlater'));assert.equal(card.readLaterStatus,undefined);assert.equal(await w.read(card.path),raw);assert.deepEqual(card.reading,{page:3});
+});
+
+test('opening an untagged legacy PDF never creates a Read later schema or rewrites its metadata',async t=>{
+ const base=await fs.mkdtemp(join(tmpdir(),'heavens-legacy-pdf-independence-')),root=join(base,'notes');await fs.mkdir(root);const raw='---\ncard-id: standalone\ntags: [research]\nsource: {type: pdf, file: Original.pdf}\nreading: {state: reading, page: 3}\ncustom: keep\n---\n# Plain PDF\n\nUser notes\n';await fs.writeFile(join(root,'Plain.md'),raw);
+ const w=await Workspace.open(root,join(base,'cache'));t.after(async()=>{w.close();await fs.rm(base,{recursive:true,force:true});});assert.equal(await w.read('Plain.md'),raw);assert.deepEqual((await w.card('Plain.md')).tags,['research']);assert.equal((await w.card('Plain.md')).readLaterStatus,undefined);assert.ok(!w.snapshot().tags!.some(t=>t.tag==='readlater'));
+});
+
+test('Read later import enrollment accepts only an explicit boolean',()=>{for(const readLater of ['true',1,{},null])assert.throws(()=>validateImport({name:'PDF',type:'pdf',data:bytes,readLater} as unknown as Parameters<typeof validateImport>[0]));});

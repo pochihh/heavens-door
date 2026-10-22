@@ -1,14 +1,17 @@
 # Attachments, annotations and reading
 
-Updated October 14, 2026. Implemented for review in the temporary Test app.
+Updated October 21, 2026. PDF attachments are the independent foundation; Read later remains a separate feature under development.
 
-This pass adds PDF and webpage reading, highlights and sticky notes, standalone whiteboard images and text shapes, and a local Read later Inbox. Assets share the existing links, tags, file operations and undo system. Ordinary cards remain directly editable without reading controls. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search.
+Adding a PDF to a whiteboard creates its Markdown wrapper and source link, without `#readlater`, a reading status, or an Inbox destination. PDF rendering, highlights/comments, bookmark saves and source relinking work with the Read later plugin disabled. Attachments use their selected board folder; an unplaced import defaults to Slipbox. Tags remain optional user metadata, with the normal tag picker.
 
-The approved scope is implemented: local readers and annotations, standalone board images/text shapes, an Inbox library, a paired Chrome capture extension and local RSS. The stable release version remains unchanged. Use the Test app for review before deciding on a release bump.
+Only an explicit import/capture through Read later enrolls an item: it adds `#readlater`, initializes that tag's status and uses the configured Read later folder. The shared import request carries `readLater: true` for those entry points; ordinary attachment requests omit it. Bookmark writes never enroll an attachment. Startup only converts legacy status metadata on items already tagged `#readlater`; it does not infer membership from a PDF source, a bookmark or a folder. Existing tags are preserved, and removing `#readlater` stays removed after reopening. Read later shortcuts apply only to explicitly tagged items while that plugin is enabled.
+
+Assets share the existing links, tags, file operations and undo system. Ordinary cards remain directly editable without reading controls. Ordinary Markdown and local source files remain authoritative; the database only accelerates navigation and search. Older design notes below describe experiments as well as the current PDF foundation; they do not make Read later a requirement for attachments. Stable releases continue through the documented approval and release workflow.
 
 ## Try it
 
-- Open **System → Read later** to import PDF/HTML files or capture a webpage by URL. The folder defaults to Inbox and can be changed in **Settings → Core plugins → Read later**.
+- Add a PDF directly from the whiteboard, File explorer or an external file drop. This does not enroll it in Read later.
+- The separate experimental **System → Read later** entry imports PDF/HTML files or captures a webpage by URL. The folder defaults to Inbox and can be changed in **Settings → Core plugins → Read later**.
 - Open a PDF to read continuous pages. Select text and choose **Highlight** or **Add note**. Search, page jump and zoom stay in the reader toolbar.
 - In an ordinary card or captured article, select text and use **Annotate**. General notes are available through **Add note**. Source mode shows the complete portable file.
 - Notes start collapsed with a one-line preview on the right. Expand one to edit, change its color, jump to its quote or delete it. A selected board card shows the same rail outside its geometry.
@@ -20,7 +23,7 @@ The existing local UI test workspace now includes a **Reading review** board, a 
 
 ### Reader shortcuts
 
-PDF text selection: **H** highlights and **N** adds a note. **Command/Ctrl+F** focuses PDF search. With focus outside an editable field, **J** opens the next Inbox item, **Shift+J** returns to Inbox, **D** marks it done and **N** adds a general note. Change these in Keyboard shortcuts. Normal text editing keeps its normal typing behavior.
+PDF text selection: **H** highlights and **N** adds a note. **Command/Ctrl+F** focuses PDF search. For an explicitly enrolled Read later item, with focus outside an editable field, **J** opens the next Inbox item, **Shift+J** returns to Inbox, **D** marks it done and **N** adds a general note. Change these in Keyboard shortcuts. Normal text editing keeps its normal typing behavior.
 
 ### Validation and limits
 
@@ -100,7 +103,7 @@ For a first pass at mind maps, users can arrange text shapes and connect them ma
 
 Read later is an optional Core plugin with a configurable folder and an editable Markdown guide. Its System entry, starred/recent items and searchable table/compact library follow the existing special-folder behavior. The guide starts collapsed.
 
-Recommended library fields are title, source type, captured date, reading state and tags. Start with **New**, **Reading** and **Done** states, plus search and filters. These are feature metadata in the card, not a centralized replacement for tag properties. A library row opens the normal reading-card popup.
+Recommended library fields are title, source type, captured date, reading state and tags. Start with **New**, **Reading** and **Done** states, plus search and filters. Only explicitly enrolled items receive the real `#readlater` tag and its namespaced status property. Ordinary PDF attachments receive neither automatically. A library row opens the normal reading-card popup.
 
 Keep reading state and progress in the wrapper. Save progress on a pause or when leaving the reader rather than on every scroll pixel. Keyboard actions should cover opening the next item, returning to the library, searching, highlighting, adding a note and marking an item done. Reuse the app's command and shortcut settings.
 
@@ -136,7 +139,6 @@ source:
   captured: 2026-10-13T12:00:00-07:00
   sha256: source-file-checksum
 reading:
-  state: reading
   page: 3
 tags: [research]
 ---
