@@ -9,7 +9,24 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check release state before packaging
+        id: plan
+        run: node scripts/release.mjs ci-plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
   build:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -28,10 +45,6 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Verify release version
-        shell: bash
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if (process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME !== `v${p.version}`) throw Error("Tag must match package version");'
       - run: npm run check
       - name: Test native macOS updates
         if: matrix.name == 'mac'
@@ -53,6 +66,8 @@ jobs:
         run: npm run sparkle:appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      - name: Verify packaged app and update metadata
+        run: npm run release -- verify --platform ${{ matrix.name }}
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
@@ -65,22 +80,24 @@ jobs:
             release/sparkle/appcast.xml
           if-no-files-found: error
   draft:
-    needs: build
-    if: github.ref_type == 'tag'
+    needs: [plan, build]
+    if: github.ref_type == 'tag' && needs.plan.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
       - uses: actions/download-artifact@v4
         with:
+          pattern: installer-*
           path: release
           merge-multiple: true
-      - name: Create draft release
+      - name: Verify and upload draft release
+        run: npm run release -- ci-draft
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Heaven's Door $TAG" --generate-notes
-          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" || { echo "Published releases are immutable. Bump the version."; exit 1; }
-          gh release upload "$TAG" release/* --clobber

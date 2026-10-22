@@ -1,67 +1,135 @@
 # Packaging and releases
 
-The installable app is **Heaven's Door**, with application ID `com.pochihh.heavens-door`. macOS uses a DMG plus update ZIP; Windows uses a per-user NSIS installer with Start menu and desktop shortcuts. The supplied logo source is `src/assets/logo_v2_black.svg`. `build/icon.svg` uses it unchanged, and the PNG, ICNS and ICO exports live beside it. The Test icon uses the same logo with a warm-orange background (`#d85b32`) instead of black. Packaging includes built code and production dependencies, excluding workspaces, development references and source maps.
+The installable app is **Heaven's Door** (`com.pochihh.heavens-door`). Stable releases contain a universal macOS DMG and update ZIP, a Windows x64 NSIS installer, and signed update metadata. The normal release path below uses the existing Mac Keychain signing key; no CI signing secret is needed. Keep development on **Heaven's Door Test** until the user explicitly approves a stable version bump.
 
-## Versions
+## Normal release workflow
 
-`package.json` and its lock file hold the displayed version, initially **0.1.2**. `buildNumber` is a separate increasing native build identifier. It maps to `CFBundleVersion`/Windows file version as `N.0.0`, keeping the Euler patch sequence independent of native installer limits.
+Run these commands from the repository root on macOS, with Node.js 24.21+, Git, Xcode command-line tools, and an authenticated GitHub CLI (`gh auth status`). Install dependencies with `npm ci` when the lock file changes. The push URL for `origin` must match `package.json`'s GitHub repository. Commit the feature changes before preparing a release.
+
+1. Write the release notes in `.local/release-notes.md`, including the user-facing changes and any known limitations. `.local/` is ignored by Git.
+2. Preview the next Euler version without changing any files:
+
+   ```sh
+   npm run release -- plan
+   ```
+
+3. After approval to bump, prepare the candidate:
+
+   ```sh
+   npm run release -- prepare --notes .local/release-notes.md
+   ```
+
+   This increments the displayed version and native build number once, copies the notes to `docs/releases/<version>.md`, and commits those three files. The prepared commit becomes the source for every subsequent checkpoint. Repeating this command resumes an unfinished preparation instead of bumping again. `--kind minor` and `--kind major` start a new Euler series at `.2`.
+
+4. Build and stage a private draft:
+
+   ```sh
+   npm run release -- stage
+   npm run release -- status
+   ```
+
+   Staging runs the checks below, builds both platforms, signs the Mac feed, pushes the prepared commit to `origin/main` without force, waits for **Check** to pass for that exact commit, creates a GitHub draft, and verifies every uploaded file. It does not publish a release or expose an update in the app. Review the release notes and the draft. Test the Windows installer on Windows before broader distribution; a successful cross-build does not verify Windows runtime behavior.
+
+5. After release approval, publish:
+
+   ```sh
+   npm run release -- publish
+   ```
+
+   This rechecks the source, local artifacts, CI, draft assets and release tag, then publishes the draft as the latest stable release. It verifies the anonymous public feed and download URLs, retrying briefly for GitHub propagation. Publishing creates the `v<version>` tag at the prepared commit; it never force-pushes a tag or replaces a published asset.
+
+`prepare` changes versions and commits; `stage` pushes source and uploads a draft; **`publish` is the only local command that makes the update public**. No command installs the release into your regular app. Use that app's updater afterward for longer-term testing.
+
+## Checkpoints and recovery
+
+State and append-only build logs live in `.local/releases/<version>/`. `state.json` records the source SHA, completed checkpoints, artifact sizes and SHA-256 hashes; it contains no signing key. A lock prevents overlapping local release commands. These files are local recovery data, not source files to commit.
+
+| Checkpoint | Required evidence |
+| --- | --- |
+| Prepared | Clean source tree; synchronized package/lock versions; committed release notes and version bump |
+| Checks | Lint, TypeScript, all tests and production build pass |
+| Sparkle | Isolated native update/relaunch test passes, including tamper rejection, save-conflict cancellation and two-window saves |
+| Mac | Universal arm64/x86_64 bundle; valid code signature; correct identity/version/build/feed/public key; required application bundles; signed ZIP and signed appcast; ZIP contents agree with the verified app |
+| Windows | x64 installer and manifest; required application bundles with the stable app identity/version/build |
+| Verified | Both manifests match installer sizes and SHA-512 hashes; all eight distribution files and a SHA-256 checksum file are recorded |
+| CI | GitHub **Check** passed for the prepared source SHA |
+| Staged | Draft targets the prepared SHA; all nine uploads match GitHub's reported sizes and SHA-256 digests |
+| Published | Immutable release/tag agree with the candidate; anonymous latest-release API, feed, manifests, checksums and download URLs work |
+
+When interrupted, repeat the same command. Completed checkpoints are reused only while the source commit and recorded artifact bytes are unchanged. A partially successful upload resumes with the missing files. An incomplete GitHub `starter` asset can be removed and retried; a different completed asset stops the process for inspection. The workflow never uses upload `--clobber`.
+
+- **Failed version commit:** fix the Git hook or other reported error, then repeat `prepare`. Its pending journal preserves the original and intended files; the version does not increase again. Unrelated edits stop recovery instead of being overwritten or committed.
+- **Failed test/build:** inspect `checks.log`, `sparkle.log`, `mac.log` or `win.log` in the version's checkpoint folder. Fix an environment problem and repeat `stage`. If source code must change, commit the fix and prepare a new candidate with `prepare --next --notes .local/release-notes.md`.
+- **Source changed after preparation:** complete and commit the changes, then use `prepare --next`. Keep the abandoned draft unpublished. The driver deliberately refuses to reuse the old version for different source.
+- **Recorded artifacts changed or were deleted:** restore the exact recorded files from a trusted copy, or prepare a new candidate with `--next`. Do not clear a successful checkpoint just to bypass a mismatch.
+- **Upload/network failure:** repeat `stage`. Correctly uploaded assets are compared and retained.
+- **Publication succeeded but public verification failed:** repeat `publish`. It verifies the already-published release and retries the public endpoints without publishing a second time. You can also run `npm run release -- verify-public` when the current package version is the latest release and its local distribution files are available.
+- **Stopped process left a lock:** run `npm run release -- unlock`, then repeat the command. Unlock refuses while the recorded release process or its build child is still running. Stop that work normally first.
+
+Keep `.local/releases/` and `release/` until publication and verification finish. After a successful release, retain the checkpoint data for diagnosis; GitHub retains the immutable published artifacts. Fix published releases by creating a new version, never by replacing their files.
+
+## Automated verification and tests
 
 ```sh
-npm run version:bump -- --dry-run
-npm run version:bump
-# 0.1.2 -> 0.1.27 -> 0.1.271 -> 0.1.2718
-npm run version:bump -- minor
-# Starts the next minor series at .2
-```
+npm run test:release
+# Release/version unit and recovery tests only; uses temporary repositories,
+# synthetic signing keys and mocked GitHub responses, never a real publication.
 
-The script synchronizes both package versions, increments the build number, rejects mismatched files and non-Euler patches, and rolls back a failed write. SemVer components must remain safe integers; before the next Euler patch exceeds that limit, explicitly start a new minor series. Native build numbers stop at 9999. It does not commit, tag or publish automatically.
-
-## Local packages
-
-```sh
-npm ci
 npm run check
-npm run package:mac -- --arm64
-# On a Mac: --universal for Apple Silicon and Intel together.
-npm run package:win -- --x64
-# Prefer a Windows machine or the Windows Actions runner.
+# Full application checks, including the release tests.
+
+npm run release -- verify
+# Audit current local Mac + Windows distribution files and unpacked apps.
+npm run release -- verify --platform mac
+npm run release -- verify --platform win
+
+npm run release -- verify-public
+# Audit the current latest stable release using anonymous public requests.
+# Requires all nine local distribution files; does not change any files.
 ```
 
-Outputs are in `release/`. Drag the macOS app to Applications; the Windows installer registers the app and creates its shortcuts. Neither installer removes Markdown workspaces. Uninstall does not remove app-owned preferences.
+The tests exercise failed preparation commits, checkpoint reuse, changed source/artifacts, concurrent command protection, interrupted uploads, wrong/missing signing metadata, tampered feed/archive bytes, incorrect packaged app identity, exact-SHA CI gating, publication recovery and the GitHub preflight. `stage` additionally runs `npm run test:sparkle` on every new candidate: this uses temporary notes and a loopback update feed, leaving personal workspaces and public releases untouched.
 
-Without an Apple Developer account, macOS builds are ad-hoc signed for local use, without notarization. Downloads on another Mac will receive Gatekeeper warnings; the first installation needs explicit user approval. Sparkle verifies signed updates independently of Apple membership; **Open download page** remains available if the native bridge or feed fails. Windows builds are initially unsigned and can receive SmartScreen warnings.
+Local verification cannot establish first-install Gatekeeper or SmartScreen behavior on another machine. It also does not replace testing new UI behavior in the Test app or testing the Windows installer on Windows.
 
 ## GitHub Actions
 
-`Check` runs lint, tests and the production build for branches and pull requests. `Release` runs checks on macOS and Windows, builds a universal Mac package and a Windows x64 installer, and uploads installers, blockmaps and updater manifests. A `v<package version>` tag creates a **draft** GitHub release only after both builds succeed. Manual dispatch builds downloadable workflow artifacts without creating a release.
+**Check** runs lint, tests and the production build on branch pushes and pull requests. Local staging waits for its success at the prepared commit.
 
-For a release:
+**Release** handles `v*` tags and manual dispatch. Its first job verifies package metadata and the tag. If that version is already published, it skips packaging successfully: a locally published release no longer starts redundant builds that need a CI signing key. If packaging is needed but `SPARKLE_PRIVATE_KEY` is absent, it stops immediately with an actionable message, before expensive builds.
 
-1. Complete `npm run check` and test the installers on the target systems.
-2. Commit the app changes, including package files and `buildNumber`.
-3. Tag the same commit (initially `v0.1.2`) and push that tag to `pochihh/heavens-door`.
-4. Inspect both installers and update metadata in the draft release.
-5. Publish the draft after testing. Never replace a published version; bump the version instead. Workflow reruns refuse to overwrite a published release.
+Hosted packaging is optional. To use it, deliberately configure `SPARKLE_PRIVATE_KEY` in repository Actions secrets. The private key is never uploaded automatically by local tooling. The matrix runs checks, native Mac update tests, builds a universal Mac package and Windows x64 installer, then calls the same artifact verifier as the local driver. Successful tag builds create a **draft only**, using committed `docs/releases/<version>.md`, with verified checksums and resumable uploads. Manual dispatch creates workflow artifacts only. No Actions job automatically publishes a release.
 
-No credentials are stored in the app or source. Public GitHub releases work without a user token. The repository must contain the workflow before Actions can run it.
+Use one packaging route for each candidate. The recommended prepare/stage/publish path owns its local checkpoint state. A separately built hosted draft is a separate review path; it is not automatically adopted by local checkpoints, because installers rebuilt from the same source can have different signatures/timestamps. Do not mix the routes or overwrite a mismatched draft. Keep the local driver as the standard path while the signing key stays in Keychain.
 
-## Signing
+## Versions and low-level packaging
 
-To enable signed and notarized macOS builds, add repository Actions secrets `CSC_LINK` (Developer ID Application certificate as base64), `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. A paid Apple Developer Program account is needed. An App Store release is a separate workflow.
+`package.json` and its lock file hold the displayed version. Patches append Euler digits: `0.1.2 → 0.1.27 → 0.1.271 → 0.1.2718`. `buildNumber` independently increases and maps to native `N.0.0`, avoiding native installer component limits. Before an Euler patch exceeds JavaScript's safe integer range, start a new minor series. Native build numbers stop at 9999.
 
-For signed Windows builds, add `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`. Signing does not immediately establish SmartScreen reputation. Configure certificates through GitHub secrets, never in the repository or client application.
+The lower-level `npm run version:bump -- --dry-run` and `npm run version:bump -- [patch|minor|major]` remain available for maintenance. They synchronize package files and roll back a failed write, but do not record release checkpoints, commit, tag or publish. Use `release prepare` for regular releases; do not manually bump again during a prepared release.
 
-## Update behavior
+For an installer without a release:
 
-Packaged apps check once after startup. **Settings → About and updates** and the macOS application menu offer an explicit check. A newer version prompts the user; downloads and restarts require an explicit choice. Prereleases and downgrades are disabled, and checks/downloads are coalesced.
+```sh
+npm run package:mac -- --universal
+npm run package:win -- --x64
+```
 
-Windows uses `electron-updater` and its generated GitHub feed. macOS uses Sparkle with an Ed25519 public key embedded in the signed bundle. Both the appcast and update archive are authenticated, and archives are verified before extraction. Native build numbers decide Sparkle upgrade order; the Euler version remains the display version. Development builds and macOS bridge failures use website updates. An error always retains the website option; the updater never opens a URL supplied by release content. The current fallback URL is the GitHub latest-release page; change `DOWNLOAD_PAGE` in `src/updates.ts` when the landing page is ready.
+Outputs are in `release/`. macOS also supports `--arm64` for local packaging, but stable artifact verification requires the universal bundle. The Windows NSIS installer is per-user and creates Start menu/desktop shortcuts. Neither installer removes Markdown workspaces. Uninstall keeps app-owned preferences.
 
-An install asks **every open window** to flush drafts and workspace preferences through the existing save queue. A conflict, failed write, closed window or timeout cancels the install. The native installer runs only after all windows acknowledge their saves. Closing the app never silently installs a downloaded update.
+The supplied logo source is `src/assets/logo_v2_black.svg`. `build/icon.svg` uses it unchanged; PNG, ICNS and ICO exports live beside it. The Test icon has a warm-orange background (`#d85b32`). Packaging excludes workspaces, development references and source maps.
 
-Run `npm run test:sparkle` on a Mac before rollout. It builds isolated 0.1.2 and 0.1.27 apps, rejects a tampered archive, verifies that a save conflict cancels installation, saves drafts in two windows, and checks the native replacement and relaunch. It uses temporary notes and a loopback feed; neither personal workspaces nor public releases are touched. This test does not verify first-install Gatekeeper behavior on another Mac or the live GitHub feed.
+## Signing and update behavior
 
-References: [Electron Builder auto update](https://www.electron.build/v26/docs/features/auto-update/), [macOS signing](https://www.electron.build/v26/docs/features/code-signing/).
+Sparkle's public key and latest-stable feed URL live in `build/sparkle.json`. Keep that key and `com.pochihh.heavens-door` stable. The private key is stored locally in macOS Keychain under account `com.pochihh.heavens-door`; losing it prevents existing installations from trusting future updates. Back it up to protected storage using Sparkle's key-export tooling, outside the repository. Never print it in logs, chat, release notes or artifacts.
+
+The bridge is pinned to `electron-sparkle-updater@0.5.3`, rebuilt for both architectures against unmodified upstream Sparkle 2.10.0. The rebuild script checks the official archive's pinned SHA-256. Updates use a full ZIP, with delta chains disabled. `sparkle:appcast` validates the signing key against the embedded public key and signs both the archive and feed. It reads Keychain locally or `SPARKLE_PRIVATE_KEY` on CI and passes the secret through standard input.
+
+Ad-hoc macOS signing works with Sparkle without Apple membership, but first-time downloads on another Mac can receive Gatekeeper warnings and require explicit approval. Developer ID signing/notarization improves that first-install experience. Windows builds are initially unsigned and may receive SmartScreen warnings. For Windows signing, configure `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`; certificates belong in protected local storage or GitHub secrets, not source.
+
+Packaged apps check after startup. **Settings → General** shows the installed version and update controls; the macOS application menu also offers an explicit check. A newer version prompts the user; downloading and restarting require explicit choices. Prereleases and downgrades are disabled. The macOS native feed is `https://github.com/pochihh/heavens-door/releases/latest/download/appcast.xml`; Windows uses `latest.yml`. **Open download page** remains available if in-app updating fails. Its URL comes from `DOWNLOAD_PAGE` in `src/updates.ts`, never from arbitrary release content.
+
+Before installation, every open window must flush drafts and workspace preferences through the save queue. A conflict, failed write, closed window or timeout cancels installation. Ordinary quit does not silently install a downloaded update. A pre-Sparkle app needs one manual replacement; later Sparkle-enabled versions can use the in-app updater.
 
 ## First-time Apple setup
 
@@ -82,37 +150,16 @@ References: [Electron Builder auto update](https://www.electron.build/v26/docs/f
 
 7. Build and test the first signed/notarized release, then publish its draft on GitHub. The workflow handles signing, notarization and the updater ZIP/manifest. Direct distribution does not require a Mac App Store listing.
 
-The currently installed ad-hoc build cannot install native macOS updates. Replace it manually with the first Developer ID signed build once. Subsequent published signed versions can use the in-app updater. Test that transition with two signed versions before inviting users. Keep the bundle ID `com.pochihh.heavens-door` and Apple Team identity stable.
+Sparkle also supports our ad-hoc signed builds; Apple membership is not required for the current in-app update path. Developer ID signing and notarization improve first-install distribution. Test the transition to Developer ID signing before inviting more users, keeping the bundle ID `com.pochihh.heavens-door` and the Sparkle public key stable.
 
-## Sparkle for early macOS iterations
+## Temporary local Test app
 
-The bridge is pinned to `electron-sparkle-updater@0.5.3`. Its native addon is compiled for both architectures against unmodified upstream Sparkle 2.10.0 before packaging. The rebuild script pins and verifies the official archive SHA-256; the bridge’s older bundled framework is never shipped. Delta chains are disabled for this first pass; updates use the full ZIP. The public feed and public key live in `build/sparkle.json`. Only the public key is committed and embedded; never regenerate it for each release.
-
-The private key was created in macOS Keychain under account `com.pochihh.heavens-door`, in the Sparkle signing-key item. Back it up securely: losing it prevents existing installations from trusting future updates. Use Sparkle's `generate_keys --account com.pochihh.heavens-door -x /secure/path/key` to export it to protected storage; keep the export out of the repository.
-
-Local builds use that Keychain key:
-
-```sh
-npm run package:mac -- --universal
-npm run sparkle:appcast
-```
-
-The appcast script checks that the signing key matches the app, signs the appcast and ZIP, and writes `release/sparkle/appcast.xml`. The release workflow uploads this file alongside the universal ZIP. For Actions, set repository secret `SPARKLE_PRIVATE_KEY` to the exported base64 seed. The script passes it to Sparkle through standard input; it is not written into a build artifact or printed. Release-feed creation fails if the secret is absent or mismatched. Apple credentials are optional while using ad-hoc builds.
-
-The feed is `https://github.com/pochihh/heavens-door/releases/latest/download/appcast.xml`. Keep each ZIP at its immutable versioned release URL. The app checks GitHub's latest stable release to announce an update; Sparkle checks the corresponding signed feed only after the user chooses Download. Installation requires the user to choose Restart and install and all windows to finish saving. No update installs on ordinary quit.
-
-The currently installed pre-Sparkle build needs one manual replacement with a Sparkle-enabled build. Later versions can update in the app. Publishing and the first real GitHub update remain separate from the local smoke test; a draft or prerelease will not appear in the current latest-stable feed.
-
-## Temporary local test app
-
-Keep the release version unchanged during back-and-forth development. Run:
+Keep the stable version unchanged during back-and-forth development:
 
 ```sh
 npm run test:app -- /absolute/path/to/workspace
 ```
 
-This creates and opens `.local/test-app/mac-arm64/Heaven's Door Test.app` on an Apple Silicon Mac (or `mac/` on Intel). Its name, Test badge icon, bundle ID (`com.pochihh.heavens-door.test`), and app data are separate from the installed release. Temporary versions are `current-release-test.N`; the local counter lives in `.local/test-app/build.json`. Nothing changes `package.json`'s release version, creates a tag or publishes a release. The Test build disables the release updater and automatic update checks. It uses an ad-hoc signature and is for local testing.
+This creates and opens `.local/test-app/mac-arm64/Heaven's Door Test.app` on Apple Silicon (`mac/` on Intel). Its name, orange Test icon, bundle ID `com.pochihh.heavens-door.test`, and app data are separate from the installed stable app. Versions use `current-release-test.N`, with the counter in `.local/test-app/build.json`; package versions, tags and public releases stay unchanged. Test builds disable the stable updater.
 
-Quit Heaven's Door Test normally before rebuilding; the command refuses to overwrite a running Test app. Use `--no-open` to build without launching. Passing a workspace opens its real local files, so edits remain normal persistent edits; use a sample workspace for disposable tests. Avoid opening the same workspace in the stable and Test apps at the same time.
-
-Only after the user confirms a release is ready should the Euler version script bump the regular version. Then use the existing build/sign/release workflow, and test updating the installed regular app through the release feed. The current local Test command targets macOS; it does not publish a Windows test installer.
+Quit the Test app normally before rebuilding; the command refuses to overwrite a running copy. Use `--no-open` to build without launching. A workspace passed to this command contains real files and edits persist. Avoid opening the same workspace in the stable and Test apps simultaneously. The local Test command currently targets macOS.
