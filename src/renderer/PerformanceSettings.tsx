@@ -1,9 +1,12 @@
+import {TEST_BUILD} from '../identity';
+import {useRetainedEnabled,setRetainedEnabled} from './retained-setting';
 import {useEffect,useState} from 'react';
 import type {AppSettings,GraphicsDiagnostics} from '../shared';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 
 export function PerformanceSettings({section}:{section?:'performance'|'developer'}) {
+  const retained=useRetainedEnabled();
   const [settings,setSettings]=useState<AppSettings>(),[saving,setSaving]=useState(false),[error,setError]=useState('');
   const [diagnostics,setDiagnostics]=useState<GraphicsDiagnostics>(),[loading,setLoading]=useState(false),[diagnosticError,setDiagnosticError]=useState('');
   useEffect(()=>{
@@ -40,6 +43,7 @@ export function PerformanceSettings({section}:{section?:'performance'|'developer
       <summary data-tooltip={tooltips.settings.developer}>{ui.developer.title}</summary>
       <section aria-label={ui.developer.graphics}>
         <h3>{ui.developer.graphics}</h3>
+        {TEST_BUILD&&<><label className="settings-toggle"><span>{ui.developer.retainedRenderer}</span><input type="checkbox" role="switch" checked={retained} onChange={e=>setRetainedEnabled(e.target.checked)}/></label><small>{ui.developer.retainedHelp}</small></>}
         <button disabled={loading} data-tooltip={tooltips.settings.refreshGraphics} onClick={()=>{void refreshDiagnostics();}}>{ui.developer.refresh}</button>
         {loading&&<small role="status">{ui.developer.loading}</small>}
         {diagnostics&&<>

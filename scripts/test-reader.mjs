@@ -9,7 +9,7 @@ import {build} from 'vite';
 import {buildEngine} from './build.mjs';
 process.env.HEAVENS_DOOR_TEST_BUILD='1';
 await buildEngine();
-const root=process.cwd(),folder=join(root,'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
+const retained=process.argv.includes('--retained'),root=process.cwd(),folder=join(root,retained?'.local/reader-retained-check':'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
 await fs.rm(workspace,{recursive:true,force:true});await fs.rm(join(folder,'profile'),{recursive:true,force:true});
 await fs.mkdir(join(project,'dist'),{recursive:true});await fs.mkdir(join(workspace,'Review'),{recursive:true});await fs.mkdir(join(workspace,'Other'),{recursive:true});await fs.mkdir(join(workspace,'.heavens-door'),{recursive:true});await fs.rm(report,{force:true});
 // Each page has text plus vector work, so the test exercises raster and text-layer costs.
@@ -19,7 +19,7 @@ await fs.writeFile(join(workspace,'Review/Editor.md'),'---\ncard-id: reader-edit
 const board=(name,cards)=>`---\nwhiteboard: true\n---\n# ${name}\n\n## Cards\n${cards.map(p=>`- [Card](card:${p.cardId}) ^${p.id}`).join('\n')}\n\n%% whiteboard-layout\n${JSON.stringify({version:1,cards:cards.map(p=>({...p,cardId:undefined})),edges:[]})}\n%%\n`;
 await fs.writeFile(join(workspace,'Review/Review.whiteboard'),board('Review',[{id:'pdf',cardId:'reader-paper',x:20,y:20,width:440,height:280,pdf:{expanded:true}},{id:'editor',cardId:'reader-editor',x:740,y:20,width:380,height:280}]));await fs.writeFile(join(workspace,'Other/Other.whiteboard'),board('Other',[]));
 await fs.writeFile(join(workspace,'.heavens-door/settings.json'),JSON.stringify({theme:'dark',stem:'untitled',starred:[],recent:[],icons:{},features:{reading:false},documents:{tree:{type:'pane',id:'reader',tabs:['board:Review','board:Other'],active:'board:Review'},active:'reader',views:{'reader:board:Review':{camera:{x:20,y:20,zoom:.8}}},formatting:[]}}));
-await build({configFile:join(root,'vite.config.ts'),define:{__HEAVENS_TEST__:'true'},plugins:[{name:'reader-test-session',transform(code,id){if(id.endsWith('/src/renderer/Board.tsx'))return code.replace('navigation.current = nav;','navigation.current = nav; window.__readerTestNavigation=nav;');if(id.endsWith('/src/renderer/main.tsx'))return code+'\nwindow.__readerTestSession=session;';}}],build:{outDir:join(project,'dist/renderer'),emptyOutDir:true}});
+await build({configFile:join(root,'vite.config.ts'),define:{__HEAVENS_TEST__:'true'},plugins:[{name:'reader-test-session',enforce:'pre',transform(code,id){if(retained&&id.endsWith('/src/renderer/retained-setting.ts'))return code.replace("localStorage.getItem(key)==='1'","localStorage.getItem(key)!=='0'");if(id.endsWith('/src/renderer/Board.tsx'))return code.replace('navigation.current = nav;','navigation.current = nav; window.__readerTestNavigation=nav;');if(id.endsWith('/src/renderer/main.tsx'))return code+'\nwindow.__readerTestSession=session;';}}],build:{outDir:join(project,'dist/renderer'),emptyOutDir:true}});
 for(const name of ['main.cjs','preload.cjs','workspace-worker.cjs'])await fs.copyFile(join(root,'dist',name),join(project,'dist',name));
 try{await fs.symlink(join(root,'node_modules'),join(project,'node_modules'),'junction');}catch(error){if(error.code!=='EEXIST')throw error;}
 await fs.writeFile(join(project,'package.json'),JSON.stringify({name:'heavens-door-reader-check',version:'0.1.2',main:'dist/main.cjs'}));
@@ -113,9 +113,10 @@ readerApp.whenReady().then(async()=>{
   const savedCamera=await js('document.querySelector(".board-world").style.transform');
   phase('tab switching');
   const switches=[];for(let i=0;i<4;i++)for(const name of ['Other','Review'])switches.push(await js('(async()=>{const start=performance.now();document.querySelector('+JSON.stringify('[data-tab-key="board:'+name+'"] [role=tab]')+').click();await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);return performance.now()-start;})()'));
-  result.tabSwitchMs=switches;await wait('document.querySelectorAll(".pdf-page").length===20','return to PDF');
+  result.tabSwitchMs=switches;if(!${retained})await wait('document.querySelectorAll(".pdf-page").length===20','return to PDF');
   if(await js('document.querySelector(".board-world").style.transform')!==savedCamera)throw Error('Returning to a board lost its deep camera');
   if(await js('window.__readerTestSession.state.error'))throw Error('Reader checks left an app error');
+  if(${retained}){await js('(()=>{const p=window.__readerTestSession.state.snapshot.boards.find(b=>b.folder==="Review").cards.find(p=>p.id==="pdf");window.__readerTestNavigation.set({x:20-p.x,y:40-p.y,zoom:1});window.__readerTestNavigation.flush();})()');await wait('document.querySelectorAll(".board-pdf .pdf-page").length===20','promote readable PDF');}
   phase('popup');
   await js('document.querySelector(".board-pdf-actions button").click()');await wait('document.querySelectorAll(".pdf-reading-layout .pdf-page").length===20','PDF popup');await readerPause(700);
   result.popup=await js('({canvases:document.querySelectorAll(".pdf-reading-layout .pdf-page canvas").length,pages:document.querySelectorAll(".pdf-reading-layout .pdf-page").length})');if(result.popup.canvases>4)throw Error('Popup rendered offscreen pages '+JSON.stringify(result.popup));

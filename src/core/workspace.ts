@@ -352,10 +352,13 @@ export class Workspace {
     await fs.mkdir(dirname(await this.path(destination)),{recursive:true});
     return this.write([{path:destination,content:raw,expected:null},{path,content:null,expected},...(metaRaw?[{path:metaPath,content:null,expected:revision(metaRaw)}]:[])]);
   }
-  async setPreferences(patch: Partial<Preferences>) {
+  setPreferences(patch:Partial<Preferences>):Promise<Snapshot>;
+  setPreferences(patch:Partial<Preferences>,compact:true):Promise<Pick<Snapshot,'preferences'>>;
+  async setPreferences(patch:Partial<Preferences>,compact=false) {
     this.assertReady();
+    if(compact&&(!patch||typeof patch!=='object'||Array.isArray(patch)||Object.keys(patch).some(key=>!['documents','docks','navigation'].includes(key))))throw new Error(ui.errors.invalidRequestValue);
     this.preferences=await writePreferences(this.root,this.preferences,patch);
-    return this.snapshot();
+    return compact?{preferences:this.preferences}:this.snapshot();
   }
   async createFolder(parent: string, name?: string, position?:{x:number;y:number}) {
     if(position!==undefined&&(!position||!Number.isFinite(position.x)||!Number.isFinite(position.y)))throw new Error(ui.errors.invalidWhiteboardPosition);

@@ -1,5 +1,7 @@
 # Whiteboard rendering comparison
 
+Current follow-up: the [integrated cached renderer](integrated-renderer.md) is now implemented inside Whiteboard behind a Test-only switch. The measurements and limitations below describe the earlier isolated experiment.
+
 October 22, 2026. These are native macOS renderer experiments, not a declaration that the application meets its 10,000-element performance target. The cached renderers remain isolated in the benchmark and are not enabled in the Test app.
 
 ## Workload and method

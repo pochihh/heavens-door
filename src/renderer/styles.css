@@ -704,3 +704,7 @@ button,summary,[role=tab],[role=menu],.tool,[data-tooltip]{user-select:none;-web
 
 /* Experimental overview keeps image pixels/crop/caption, with tools restored on selection. */
 .board-overview-image img{display:block;max-width:100%}.board-overview-image>div{max-width:100%}.board-overview-image p{font-size:.85em;color:var(--muted);margin:4px 0 0}
+
+.retained-board-surface{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.board-placement[data-retained-preparing]{opacity:0;pointer-events:none}.retained-status{position:absolute;bottom:12px;left:12px;pointer-events:none;color:var(--muted);font-size:11px}
+
+.board-placement[data-retained-warming]{opacity:0}

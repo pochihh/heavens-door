@@ -24,6 +24,7 @@ export const ui = {
     loadFailed:(reason:string)=>`Application settings could not be read. Hardware acceleration defaults to On. ${reason}`,
   },
   developer: {
+    retainedRenderer:'Experimental cached whiteboard',retainedStatus:'Experimental renderer',preparingPreviews:' · Preparing previews…',retainedHelp:'Test build only. Uses the existing editor and workspace commands. Turn off to return to the current renderer.',
     title:'Developer',graphics:'Graphics diagnostics',refresh:'Refresh diagnostics',loading:'Loading diagnostics…',
     hardwareAcceleration:'Hardware acceleration in this session',unavailable:'Not available yet',
     pending:'Graphics information is not ready. Refresh to try again.',electron:'Electron',chromium:'Chromium',

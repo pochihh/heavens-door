@@ -58,7 +58,7 @@ async function dispatch(request: Request) {
     case 'readingProgress':string(request.path);string(request.expected);return workspace.readingProgress(request.path,request.expected,request.value);
     case 'readingFeeds':return workspace.readingFeeds();
     case 'saveReadingFeeds':string(request.source);return workspace.saveReadingFeeds(request.source,request.expected);
-    case 'preferences': return workspace.setPreferences(request.patch);
+    case 'preferences': return request.compact===true?workspace.setPreferences(request.patch,true):workspace.setPreferences(request.patch);
     case 'createFolder': string(request.parent); if(request.name!==undefined)string(request.name); return workspace.createFolder(request.parent,request.name,request.position);
     case 'migrateRoot': return workspace.migrateRoot();
     case 'tagCards': string(request.tag); return workspace.tagCards(request.tag,request.text,request.offset);

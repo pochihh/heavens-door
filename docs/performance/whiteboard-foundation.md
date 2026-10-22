@@ -1,6 +1,6 @@
 # Whiteboard foundation proposal
 
-Status: proposed for review, October 22, 2026. The user agreed to a target of 10,000 mixed elements. This is not a claim that the current renderer meets that target. No renderer replacement or new rendering dependency has been installed. Native experiments and adoption limits are recorded in the [rendering comparison](rendering-comparison.md).
+Status: architecture approved for implementation, October 22, 2026. The first [integrated Test-only renderer](integrated-renderer.md) is implemented behind an off-by-default switch; the remaining gates below still apply. The user agreed to a target of 10,000 mixed elements. This is not a claim that the current renderer meets that target. The default renderer remains available and no new rendering dependency has been installed. Native experiments and adoption limits are recorded in the [rendering comparison](rendering-comparison.md).
 
 ## Recommendation
 

@@ -1,5 +1,7 @@
 # Bounded previews and cached tiles
 
+Current follow-up: the [integrated cached renderer](integrated-renderer.md) is now implemented inside Whiteboard behind a Test-only switch. The measurements and limitations below describe the earlier isolated experiment.
+
 October 22, 2026. This is an isolated renderer experiment. It is not enabled in the Test app and does not establish complete interaction parity or a production memory limit. The normal app retains the renderer and PDF sharpness changes described in [the earlier comparison](rendering-comparison.md).
 
 ## What this tests

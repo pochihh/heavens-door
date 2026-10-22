@@ -89,7 +89,7 @@ export type Request =
   | {kind:'prepareBoardTrash';folder:string}
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
-  | { kind: 'preferences'; patch: Partial<Preferences> }
+  | { kind: 'preferences'; patch: Partial<Preferences>; compact?:true }
   | {kind:'ensureFolder';path:string}
   | {kind:'createEntry';folder:string;name:string;type:'file'|'folder'}
   | { kind: 'createFolder'; parent: string; name?: string; position?:{x:number;y:number} }

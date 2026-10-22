@@ -12,6 +12,9 @@ import { tooltips } from '../text/tooltips';
 import { ActionMenu, type MenuState } from './Overlays';
 
 interface Props {
+  drawn?:ReadonlySet<string>;
+  geometry?:(ReturnType<typeof edgeGeometry>&{edge:Edge})[];
+  connectors?:ReturnType<typeof connectorScene>;
   styleActions?:(id:string)=>import('./Overlays').MenuAction[];
   onCreateTopic?:(x:number,y:number,from:string,side:AnchorSide)=>void;
   edgeDefaults?:EdgeStyle;
@@ -26,7 +29,7 @@ export function Edges(props:Props) {
   const preview=useRef<SVGPathElement>(null),pending=useRef<Pending|null>(null),frame=useRef<number|null>(null),point=useRef({x:0,y:0});
   const [connecting,setConnecting]=useState(false),[menu,setMenu]=useState<MenuState|null>(null),[label,setLabel]=useState<{id:string;text:string}|null>(null);
   const placements=new Map(board.cards.map(p=>[p.id,p]));
-  const scene=useMemo(()=>connectorScene(board.cards,heightOf),[board.cards,heightOf]),sceneRef=useRef(scene);sceneRef.current=scene;
+  const scene=useMemo(()=>props.connectors??connectorScene(board.cards,heightOf),[props.connectors,board.cards,heightOf]),sceneRef=useRef(scene);sceneRef.current=scene;
   function clear(){pending.current=null;setConnecting(false);preview.current?.setAttribute('d','');if(frame.current!==null)viewport.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame.current);frame.current=null;}
   function worldPoint(x:number,y:number):Point {const r=viewport.current!.getBoundingClientRect(),c=latest.current.camera();return {x:(x-r.left-c.x)/c.zoom,y:(y-r.top-c.y)/c.zoom};}
   function targetAt(x:number,y:number) {
@@ -96,7 +99,7 @@ export function Edges(props:Props) {
   },[]);
   useEffect(()=>{if(!props.enabled)clear();},[props.enabled]);
   useLayoutEffect(()=>{if(connecting)draw(point.current.x,point.current.y);},[connecting]);
-  const geometries=board.edges.flatMap(edge=>{const a=placements.get(edge.from),b=placements.get(edge.to);return a&&b?[{edge,...edgeGeometry(edge,a,b,heightOf)}]:[];});
+  const geometries=props.geometry??board.edges.flatMap(edge=>{const a=placements.get(edge.from),b=placements.get(edge.to);return a&&b?[{edge,...edgeGeometry(edge,a,b,heightOf)}]:[];});
   const endpoints=geometries.filter(g=>selectedEdges.includes(g.edge.id)).flatMap(g=>(['from','to'] as const).map(endpoint=>{const at=endpoint==='from'?g.start:g.end,fixed=endpoint==='from'?'to':'from';return {...at,key:'edge:'+g.edge.id+':'+endpoint,card:placements.get(g.edge[fixed])!,side:fixed==='from'?g.fromSide:g.toSide,edge:g.edge,endpoint};}));
   const select=(event:React.MouseEvent|React.PointerEvent,edge:Edge)=>{event.preventDefault();event.stopPropagation();onFinish();onSelect([edge.id],event.shiftKey||event.metaKey||event.ctrlKey,event.metaKey||event.ctrlKey);};
   const editLabel=(edge:Edge)=>{onSelect([edge.id],false);setLabel({id:edge.id,text:edge.label??''});};
@@ -108,10 +111,10 @@ export function Edges(props:Props) {
     <svg className="edge-layer" aria-label={ui.edges.edge}><g className="edge-camera" transform={transform} style={{'--edge-zoom':camera.zoom} as React.CSSProperties}>
       <defs>{(['arrow','triangle','triangle-outline'] as const).map(type=><marker key={type} id={`${markerId}-${type}`} markerWidth="10" markerHeight="10" viewBox="0 0 10 10" refX="9" refY="5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M 1 1 L 9 5 L 1 9" fill={type==='triangle'?'context-stroke':type==='triangle-outline'?'var(--canvas)':'none'} stroke="context-stroke" strokeWidth="1" strokeLinejoin="round" {...(type!=='arrow'?{d:'M 1 1 L 9 5 L 1 9 Z'}:{})}/></marker>)}</defs>
       {board.showMentions!==false&&mentions.flatMap(m=>(byCard.get(m.from)??[]).flatMap(a=>(byCard.get(m.to)??[]).map(b=><line className="mention-link" key={`${a.id}:${b.id}`} x1={a.x+a.width/2} y1={a.y+heightOf(a)/2} x2={b.x+b.width/2} y2={b.y+heightOf(b)/2} strokeLinecap="round"/>)))}
-      {geometries.map(({edge,path,midpoint})=>{const selected=selectedEdges.includes(edge.id),color=tintColor(edge.strokeColor,'stroke')??'var(--muted)',width=edge.strokeWidth??2;return <g key={edge.id} className={'board-edge '+(selected?'selected':'')} data-edge={edge.id}>
-        <path className="edge-hit" d={path} tabIndex={0} role="button" aria-label={edge.label||ui.edges.edge} data-tooltip={tooltips.edges.select} onPointerDown={e=>select(e,edge)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onFinish();onSelect([edge.id],e.shiftKey||e.metaKey||e.ctrlKey,e.metaKey||e.ctrlKey);}}} onDoubleClick={()=>editLabel(edge)} onContextMenu={e=>{e.preventDefault();e.stopPropagation();onSelect([edge.id],false);setMenu({label:ui.edges.actions,x:e.clientX,y:e.clientY,actions:[...(latest.current.styleActions?.(edge.id)??[]),{label:ui.edges.editLabel,icon:'edit',run:()=>editLabel(edge)},{label:ui.edges.showStyle,icon:'art',run:onStyle},{label:ui.edges.delete,icon:'close',danger:true,run:()=>{onSave({...board,edges:board.edges.filter(item=>item.id!==edge.id)},ui.history.deleteEdges);onSelect([],false);}}]});}}/>
+      {geometries.filter(g=>!props.drawn||props.drawn.has(g.edge.id)||!!g.edge.label).map(({edge,path,midpoint})=>{const cached=!!props.drawn&&!props.drawn.has(edge.id),selected=selectedEdges.includes(edge.id),color=tintColor(edge.strokeColor,'stroke')??'var(--muted)',width=edge.strokeWidth??2;return <g key={edge.id} className={'board-edge '+(selected?'selected':'')} data-edge={edge.id}>
+        {!cached&&<><path className="edge-hit" d={path} tabIndex={0} role="button" aria-label={edge.label||ui.edges.edge} data-tooltip={tooltips.edges.select} onPointerDown={e=>select(e,edge)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onFinish();onSelect([edge.id],e.shiftKey||e.metaKey||e.ctrlKey,e.metaKey||e.ctrlKey);}}} onDoubleClick={()=>editLabel(edge)} onContextMenu={e=>{e.preventDefault();e.stopPropagation();onSelect([edge.id],false);setMenu({label:ui.edges.actions,x:e.clientX,y:e.clientY,actions:[...(latest.current.styleActions?.(edge.id)??[]),{label:ui.edges.editLabel,icon:'edit',run:()=>editLabel(edge)},{label:ui.edges.showStyle,icon:'art',run:onStyle},{label:ui.edges.delete,icon:'close',danger:true,run:()=>{onSave({...board,edges:board.edges.filter(item=>item.id!==edge.id)},ui.history.deleteEdges);onSelect([],false);}}]});}}/>
         {selected&&<path className="edge-selection" d={path} strokeWidth={width+5}/>}
-        <path className="edge-stroke" d={path} stroke={color} strokeWidth={width} strokeDasharray={strokeDash(edge.strokeStyle,width)} strokeLinecap={edge.strokeStyle==='dotted'?'round':'butt'} markerStart={marker(edge.fromArrowhead)} markerEnd={marker(edge.toArrowhead)}/>
+        <path className="edge-stroke" d={path} stroke={color} strokeWidth={width} strokeDasharray={strokeDash(edge.strokeStyle,width)} strokeLinecap={edge.strokeStyle==='dotted'?'round':'butt'} markerStart={marker(edge.fromArrowhead)} markerEnd={marker(edge.toArrowhead)}/></>}
         {(edge.label||selected||label?.id===edge.id)&&<foreignObject x={midpoint.x-100} y={midpoint.y-18} width="200" height="72" className="edge-label-wrap" style={{fontSize:fontSizeCSS(edge.labelSize??'s')}}>
           {label?.id===edge.id?<div className="edge-label">
             <span className="edge-label-text" aria-hidden="true">{label.text||'\u200b'}</span>

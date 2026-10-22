@@ -69,7 +69,12 @@ export class Session {
     if(!Object.keys(this.pendingPreferences).length)return;
     const patch=this.pendingPreferences;this.pendingPreferences={};
     if(patch.navigation){const navigation={...this.state.snapshot?.preferences?.navigation};for(const [id,value] of Object.entries(patch.navigation)){const key=id as keyof typeof navigation;navigation[key]={...navigation[key],...value};}patch.navigation=navigation;}
-    try{const snapshot=await this.bridge.request<Snapshot>({kind:'preferences',patch});this.update({snapshot});}
+    try{
+      if(Object.keys(patch).every(key=>['documents','docks','navigation'].includes(key))){
+        const result=await this.bridge.request<Pick<Snapshot,'preferences'>>({kind:'preferences',patch,compact:true});
+        this.update({snapshot:{...this.state.snapshot!,preferences:result.preferences}});
+      }else this.update({snapshot:await this.bridge.request<Snapshot>({kind:'preferences',patch})});
+    }
     catch(error){
       const pending=this.pendingPreferences;this.pendingPreferences={...patch,...pending};
       if(patch.navigation||pending.navigation){

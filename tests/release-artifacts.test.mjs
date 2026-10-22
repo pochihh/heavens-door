@@ -4,6 +4,7 @@ import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {generateKeyPairSync} from 'node:crypto';
 import {createPackage} from '@electron/asar';
+import {finished} from 'node:stream/promises';
 import {fixture,feed,remote,publicRequest} from './release-fixture.mjs';
 import {readRelease,releaseFiles,signedFeed,verifyDownloads,verifyArtifacts,addChecksums,readChecksums,assertFiles,verifyRemote,verifyPublic} from '../scripts/release-artifacts.mjs';
 
@@ -39,14 +40,16 @@ test('an authenticated feed still rejects stale versions, native builds and wron
 test('Windows bundle validation follows index.html and rejects Test or incomplete apps',async t=>{
   const {root,info}=await fixture(t,{artifacts:true}),source=join(root,'.local/app'),output=join(root,'release/win-unpacked/resources/app.asar');
   await fs.mkdir(join(source,'dist/renderer/assets'),{recursive:true});await fs.mkdir(join(root,'release/win-unpacked/resources'),{recursive:true});
+  // asar 3 returns its writable before its final bytes finish draining.
+  const pack=async()=>{const stream=await createPackage(source,output);if(stream)await finished(stream);};
   const pkg={name:'heavens-door',version:info.version,buildNumber:info.buildNumber};
   await fs.writeFile(join(source,'package.json'),JSON.stringify(pkg));
   for(const name of ['main','preload','workspace-worker'])await fs.writeFile(join(source,'dist',name+'.cjs'),'engine');
   await fs.writeFile(join(source,'dist/renderer/index.html'),'<script type="module" src="./assets/current.js"></script>');
   await fs.writeFile(join(source,'dist/renderer/assets/stale.js'),'old');await fs.writeFile(join(source,'dist/renderer/assets/current.js'),'current');
-  await createPackage(source,output);await verifyArtifacts(root,'win');
-  await fs.rm(join(source,'dist/renderer/assets/current.js'));await createPackage(source,output);await assert.rejects(verifyArtifacts(root,'win'));
-  await fs.writeFile(join(source,'package.json'),JSON.stringify({...pkg,name:'heavens-door-test'}));await createPackage(source,output);await assert.rejects(verifyArtifacts(root,'win'),/Test app/);
+  await pack();await verifyArtifacts(root,'win');
+  await fs.rm(join(source,'dist/renderer/assets/current.js'));await pack();await assert.rejects(verifyArtifacts(root,'win'));
+  await fs.writeFile(join(source,'package.json'),JSON.stringify({...pkg,name:'heavens-door-test'}));await pack();await assert.rejects(verifyArtifacts(root,'win'),/Test app/);
 });
 test('remote checks reject changed, missing, extra, incomplete or already-published draft assets',async t=>{
   const {root,info}=await fixture(t,{artifacts:true}),report=await verifyDownloads(root),candidate={...info,commit:'a'.repeat(40)},release=remote(candidate,report.files);

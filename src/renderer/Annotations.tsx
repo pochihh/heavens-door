@@ -74,7 +74,7 @@ function AnnotationDetails({open,children}:{open:boolean;children:React.ReactNod
 }
 export function useAssetAnnotations(card:CardInfo){
  const context=useContext(ViewBlockContext),[loaded,setLoaded]=useState<Card|null>(null),[expanded,setExpanded]=useState<string>(),[error,setError]=useState(''),pending=useRef(new Map<string,Annotation|null>());
- useEffect(()=>{let live=true;void window.door.request<Card>({kind:'card',path:card.path}).then(c=>{if(live){setLoaded(c);setError('');}}).catch(e=>{if(live)setError(String(e));});return()=>{live=false;};},[card.path,card.revision]);
+ useEffect(()=>{let live=true;setError('');void window.door.request<Card>({kind:'card',path:card.path}).then(c=>{if(live){setLoaded(c);setError('');}}).catch(e=>{if(live)setError(String(e));});return()=>{live=false;};},[card.path,card.revision]);
  const draft=context?.session.state.draft,body=draft?.card.id===card.id?draft.body:loaded?.body??'';
  const change=(value:Annotation|null,id:string)=>{
   if(!context)return;pending.current.set(id,value);
@@ -82,7 +82,7 @@ export function useAssetAnnotations(card:CardInfo){
   if(context.session.state.draft?.card.id===card.id)apply();else void context.session.select(card.path).then(apply).catch(e=>context.session.update({error:String(e)}));
  };
  const add=(attrs:Omit<Annotation,'id'|'kind'|'text'>={},note=true)=>{const id=(attrs.quote?'a-':'n-')+crypto.randomUUID();change({id,kind:attrs.quote?'highlight':'note',text:'',color:DEFAULT_ANNOTATION_COLOR,...attrs},id);if(note)setExpanded(id);};
- return {context,body,expanded,setExpanded,change,add,error};
+ return {context,body,expanded,setExpanded,change,add,error,ready:draft?.card.id===card.id||loaded?.path===card.path&&loaded.revision===card.revision||!!error};
 }
 export function BoardAnnotations({card,openNote}:{card:CardInfo;openNote?:string}){
  const {context,body,expanded,setExpanded,change,add,error}=useAssetAnnotations(card);

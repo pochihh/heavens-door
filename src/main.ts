@@ -63,8 +63,8 @@ async function getHost(folder:string):Promise<Host> {
   hosts.set(root,starting);
   try{return await starting;}catch(error){hosts.delete(root);throw error;}
 }
-function broadcast(host:Host) {
-  for(const d of desktops.values())if(d.host===host&&!d.window.isDestroyed())d.window.webContents.send('workspace:change');
+function broadcast(host:Host,except?:number) {
+  for(const d of desktops.values())if(d.host===host&&d.window.id!==except&&!d.window.isDestroyed())d.window.webContents.send('workspace:change');
 }
 async function importReading(host:Host,value:ReadingImport){
   validateImport(value);if(value.type==='web'&&value.body===undefined){const url=value.url??'https://local.invalid/',article=extractArticle(Buffer.from(value.data).toString('utf8'),url);value={...value,name:value.name||article.name,body:article.body};}
@@ -302,7 +302,7 @@ void app.whenReady().then(async()=>{
     // ponytail: block cross-window history switches until a shared draft-flush barrier exists.
     if(['restore','applyCheckpoint'].includes(request.kind)&&[...desktops.values()].filter(w=>w.host===d.host).length>1)throw new Error(ui.errors.historyOtherWindows);
     const result=await d.host.call(request);
-    if(['importReading','readingProgress','saveReadingFeeds','createSlipboxCard','fileOperation','moveSelection','extractCardBlocks','transfer','placeCard','ensureFolder','createEntry','createFromTemplate','createTemplate','openJournal','trashCard','restoreTrash','create','createFolder','saveCard','saveBoard','setFill','moveViewCard','setViewProperty','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host);
+    if(['importReading','readingProgress','saveReadingFeeds','createSlipboxCard','fileOperation','moveSelection','extractCardBlocks','transfer','placeCard','ensureFolder','createEntry','createFromTemplate','createTemplate','openJournal','trashCard','restoreTrash','create','createFolder','saveCard','saveBoard','setFill','moveViewCard','setViewProperty','write','restore','applyCheckpoint','preferences','checkpoint','migrateRoot'].includes(request.kind))broadcast(d.host,request.kind==='preferences'&&request.compact===true?d.window.id:undefined);
     return result;
   });
   ipcMain.handle('workspace:current',async event=>{const d=trusted(event),opening=d.opening;try{if(opening)await opening;return await snapshot(d);}finally{d.opening=undefined;}});

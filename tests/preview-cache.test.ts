@@ -20,3 +20,5 @@ test('preview cache enforces decoded bytes through repeated pressure and release
  cache.clear();assert.equal(cache.size,0);assert.equal(cache.bytes,0);assert.equal(a.closed,1);assert.equal(c.closed,1);assert.equal(cache.peakBytes,128);
  assert.throws(()=>new PreviewCache(-1));
 });
+
+test('a retired preview producer cannot cancel a newer producer for the same key',()=>{const cache=new PreviewCache<ReturnType<typeof image>>(128),old=cache.begin('card','old'),newer=cache.begin('card','new');cache.cancel(old.id,old.token);assert.ok(cache.commit(newer,image()));assert.equal(cache.get('card','new')?.closed,0);cache.clear();});
