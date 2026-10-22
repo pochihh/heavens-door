@@ -73,3 +73,9 @@ This is an integrated experimental renderer, not the older isolated screenshot p
 - Windows, repeated long-duration memory plateau, real GPU loss and a complete reference/connector/external-drop replay remain unverified.
 
 Keep the default renderer available while these gates are addressed. The historical [renderer comparison](rendering-comparison.md), [bounded preview experiment](bounded-previews.md) and [foundation budgets](whiteboard-foundation.md) explain the earlier measurements and adoption criteria.
+
+## Packaged Test verification
+
+`0.1.2718-test.4` was built with the existing temporary-build script, and its bundle identifier/version and ad-hoc signature were verified. Test.3 quit normally before packaging and its previous bundle remains under `.local/test-app/previous-test.3/`. The counter is now 4; stable `0.1.2718` and build number 4 are unchanged. No release, tag or remote push was created.
+
+The packaged Test.4 reopened the preserved Review workspace. Its General settings visibly reported Test.4, and **Experimental cached whiteboard** was enabled through Settings → Developer. Review → Other → Review switched successfully, the saved camera returned, and PDF content rendered without a visible application error. No personal card content was edited during this packaged check. The switch remains enabled for the user's review; turning it off returns to the original renderer. It is off by default in a fresh Test profile and unavailable in stable builds.
