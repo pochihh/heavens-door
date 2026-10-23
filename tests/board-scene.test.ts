@@ -7,7 +7,7 @@ test('live promotion follows transitive overlap without promoting separated obje
 test('preview density retains headroom at deep zoom without an exploding tile count',()=>{for(const zoom of [.000001,.001,.024,.2,1]){const density=previewDensity(zoom,2);assert.ok(density>=zoom*2*1.5);assert.ok(density<zoom*2*3);const box=sceneViewport({x:20,y:40,zoom},1600,968);assert.ok(Math.ceil(box.width*density/512)*Math.ceil(box.height*density/512)<200);}});
 test('viewport uses the same camera coordinates as the live board',()=>{assert.deepEqual(sceneViewport({x:20,y:-40,zoom:.5},1000,800,100),{x:-240,y:-120,width:2400,height:2000});});
 
-test('tile admission fits a complete viewport at all zooms, sizes and DPRs',()=>{for(const width of [800,1600,4000])for(const height of [600,1000,2200])for(const dpr of [1,2,4])for(const zoom of [.0001,.024,.2,1,3]){const d=viewportPreviewDensity(zoom,dpr,width,height),count=(Math.ceil(width*d/zoom/512)+1)*(Math.ceil(height*d/zoom/512)+1);assert.ok(count<=64);assert.ok(d>0);}});
+test('tile admission fits a complete viewport at all zooms, sizes and DPRs',()=>{for(const width of [800,1600,4000])for(const height of [600,1000,2200])for(const dpr of [1,2,4])for(const zoom of [.0001,.024,.2,1,3]){const d=viewportPreviewDensity(zoom,dpr,width,height),count=(Math.ceil(width*d/zoom/512)+1)*(Math.ceil(height*d/zoom/512)+1);assert.ok(count<=63);assert.ok(d>0);}});
 
 test('shared edge geometry reuses unchanged paths and invalidates only affected geometry or style',()=>{
  const placements=Array.from({length:4},(_,i)=>({id:'p'+i,cardId:'c'+i,x:i*400,y:0,width:300,height:200})),edges=[{id:'e1',from:'p0',to:'p1'},{id:'e2',from:'p2',to:'p3'}],height=(p:typeof placements[number])=>p.height;
@@ -16,3 +16,5 @@ test('shared edge geometry reuses unchanged paths and invalidates only affected 
  const styled=sceneEdges(edges.map(e=>e.id==='e2'?{...e,strokeWidth:5}:e),moved,height,'geometry-check');assert.equal(styled[0],second[0]);assert.notEqual(styled[1],second[1]);
  assert.notEqual(sceneEdges(edges,placements,height,'another-workspace')[0],first[0]);assert.deepEqual(sceneEdges([{id:'missing',from:'p0',to:'absent'}],placements,height),[]);
 });
+
+test('the admitted padded tiles stay within the decoded byte budget',()=>{assert.ok(63*516*516*4<=64*1024*1024);assert.ok(64*516*516*4>64*1024*1024);});

@@ -136,9 +136,11 @@ export class BoardNavigation {
     this.set(zoomAt(this.current, this.viewport.clientWidth / 2, this.viewport.clientHeight / 2, zoom));
   }
   private requestFrame() {
+    // Reuse rasterized content during motion, then repaint at the settled scale.
+    this.world.style.willChange='transform';this.viewport.dataset.navigating='true';
     if (this.frame === null) this.frame = this.win.requestAnimationFrame(() => { this.frame = null; this.flush(); });
     clearTimeout(this.settle);
-    this.settle = setTimeout(() => { this.flush(); this.publishCurrent(); }, 100);
+    this.settle = setTimeout(() => { this.flush(); this.publishCurrent(); this.world.style.willChange='';delete this.viewport.dataset.navigating; }, 150);
   }
   flush() {
     if (this.frame !== null) { this.win.cancelAnimationFrame(this.frame); this.frame = null; }
@@ -172,6 +174,6 @@ export class BoardNavigation {
   dispose() {
     this.stopWheel();
     if (this.frame !== null) this.win.cancelAnimationFrame(this.frame);
-    clearTimeout(this.settle);
+    clearTimeout(this.settle);this.world.style.willChange='';delete this.viewport.dataset.navigating;
   }
 }

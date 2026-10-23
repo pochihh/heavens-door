@@ -10,7 +10,7 @@ import {SceneIndex,sceneViewport,viewportPreviewDensity,intersects,type SceneBox
 import {PreviewCache} from './preview-cache';
 import {snapshotPlacement,allowSnapshotAttempt} from './board-snapshot';
 
-const TILE=512;
+const TILE=512,PADDING=2;
 export class RetainedSurface {
  entries:SceneEntry[]=[];index=new SceneIndex<SceneEntry>([]);edges:SceneEdge[]=[];edgeIndex=new SceneIndex<SceneEdge>([]);
  live=new Set<string>();edgeLive=new Set<string>();failed=new Set<string>();error='';captures=0;frames=0;compositions=0;pendingPreviews=0;pdfPages=0;images=0;
@@ -66,9 +66,17 @@ export class RetainedSurface {
   const canvas=this.canvas,nav=this.getCamera;if(!canvas||!nav||this.disposed)return;this.frames++;const c=nav(),w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio||1,Math.sqrt(16_000_000/Math.max(1,w*h)));if(canvas.width!==Math.ceil(w*dpr)||canvas.height!==Math.ceil(h*dpr)){canvas.width=Math.ceil(w*dpr);canvas.height=Math.ceil(h*dpr);}const ctx=canvas.getContext('2d');if(!ctx){setRetainedEnabled(false);return;}ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
   const density=viewportPreviewDensity(c.zoom,dpr,w,h);this.density=density;const box=sceneViewport(c,w,h),step=TILE/density;ctx.setTransform(dpr*c.zoom,0,0,dpr*c.zoom,dpr*c.x,dpr*c.y);
   const missing:{id:string;box:SceneBox;epoch:number}[]=[];
-  for(let y=Math.floor(box.y/step);y<=Math.floor((box.y+box.height)/step);y++)for(let x=Math.floor(box.x/step);x<=Math.floor((box.x+box.width)/step);x++){const tileBox={x:x*step,y:y*step,width:step,height:step},id=density+':'+x+':'+y,image=this.tiles.get(id);if(image)ctx.drawImage(image,tileBox.x,tileBox.y,step,step);else{ctx.save();ctx.beginPath();ctx.rect(tileBox.x,tileBox.y,step,step);ctx.clip();this.drawWorld(ctx,tileBox,density);ctx.restore();missing.push({id,box:tileBox,epoch:this.epoch});}}
+  for(let y=Math.floor(box.y/step);y<=Math.floor((box.y+box.height)/step);y++)for(let x=Math.floor(box.x/step);x<=Math.floor((box.x+box.width)/step);x++){
+   const tileBox={x:x*step,y:y*step,width:step,height:step},id=density+':'+x+':'+y,image=this.tiles.get(id);
+   const left=Math.round((tileBox.x*c.zoom+c.x)*dpr),top=Math.round((tileBox.y*c.zoom+c.y)*dpr),right=Math.round(((tileBox.x+step)*c.zoom+c.x)*dpr),bottom=Math.round(((tileBox.y+step)*c.zoom+c.y)*dpr);
+   // Integer device-pixel clips and padded source pixels prevent transparent tile seams.
+   ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(left,top,right-left,bottom-top);ctx.clip();ctx.setTransform(dpr*c.zoom,0,0,dpr*c.zoom,dpr*c.x,dpr*c.y);
+   if(image)ctx.drawImage(image,tileBox.x-PADDING/density,tileBox.y-PADDING/density,step+2*PADDING/density,step+2*PADDING/density);
+   else{this.drawWorld(ctx,tileBox,density);missing.push({id,box:tileBox,epoch:this.epoch});}
+   ctx.restore();
+  }
   canvas.dataset.retainedReady=String(missing.length===0);canvas.dataset.previewCount=String(this.captures);
-  if(missing.length&&!this.timer)this.timer=setTimeout(()=>{this.timer=undefined;if(this.disposed)return;const tile=missing[0];if(tile.epoch!==this.epoch){this.schedule();return;}const surface=new OffscreenCanvas(TILE,TILE),context=surface.getContext('2d')!;context.setTransform(density,0,0,density,-tile.box.x*density,-tile.box.y*density);this.drawWorld(context,tile.box,density);const image=surface.transferToImageBitmap();surface.width=surface.height=0;this.tiles.commit(this.tiles.begin(tile.id,String(tile.epoch)),image);this.tileBounds.set(tile.id,tile.box);if(this.tileBounds.size>128)for(const id of this.tileBounds.keys())if(!this.tiles.get(id))this.tileBounds.delete(id);this.compositions++;this.schedule();},0);
+  if(missing.length&&!this.timer)this.timer=setTimeout(()=>{this.timer=undefined;if(this.disposed)return;const tile=missing[0];if(tile.epoch!==this.epoch){this.schedule();return;}const surface=new OffscreenCanvas(TILE+2*PADDING,TILE+2*PADDING),context=surface.getContext('2d')!;const padded={x:tile.box.x-PADDING/density,y:tile.box.y-PADDING/density,width:tile.box.width+2*PADDING/density,height:tile.box.height+2*PADDING/density};context.setTransform(density,0,0,density,PADDING-tile.box.x*density,PADDING-tile.box.y*density);this.drawWorld(context,padded,density);const image=surface.transferToImageBitmap();surface.width=surface.height=0;this.tiles.commit(this.tiles.begin(tile.id,String(tile.epoch)),image);this.tileBounds.set(tile.id,padded);if(this.tileBounds.size>128)for(const id of this.tileBounds.keys())if(!this.tiles.get(id))this.tileBounds.delete(id);this.compositions++;this.schedule();},0);
  }
  hit(x:number,y:number){return this.index.query({x,y,width:0,height:0}).at(-1);}
  edgeHit(x:number,y:number,zoom:number){const radius=10/zoom;let found:SceneEdge|undefined,best=radius;for(const g of this.edgeIndex.query({x:x-radius,y:y-radius,width:radius*2,height:radius*2}))for(let i=1;i<g.samples.length;i++){const a=g.samples[i-1],b=g.samples[i],dx=b.x-a.x,dy=b.y-a.y,t=Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/(dx*dx+dy*dy||1))),distance=Math.hypot(x-a.x-t*dx,y-a.y-t*dy);if(distance<best){best=distance;found=g;}}return found;}

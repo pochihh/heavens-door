@@ -120,6 +120,8 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   const surface=useMemo(()=>retained?new RetainedSurface(window.door.assetUrl('')+board.path):null,[retained,board.path]);
   const [hovered,setHovered]=useState(''),[hoveredEdge,setHoveredEdge]=useState(''),[previewVersion,setPreviewVersion]=useState(0),[theme,setTheme]=useState(boardTheme);
   const [readyLive,setReadyLive]=useState<Set<string>>(new Set());
+  const hoverPending=useRef<{id:string;edge:string;timer:ReturnType<typeof setTimeout>}|undefined>(undefined);
+  useEffect(()=>()=>clearTimeout(hoverPending.current?.timer),[surface]);
   const relayed=useRef<{target:HTMLElement;pointer:number;x:number;y:number}|null>(null),suppressClick=useRef(false);
   useEffect(()=>{const refresh=()=>setTheme(boardTheme());refresh();const observer=new window.MutationObserver(refresh);observer.observe(document.documentElement,{attributes:true,attributeFilter:['style','class','data-theme']});return()=>observer.disconnect();},[]);
   const spaceDown = useRef(false);
@@ -264,17 +266,22 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
     if (type === 'pan') element.dataset.panning = 'true';
     else if (type === 'move' || type === 'resize') setDragged(ids);
   }
-  function promoteAt(x:number,y:number){
+  function promoteAt(x:number,y:number,immediate=false){
     if(!surface||!viewport.current||!navigation.current)return;const rect=viewport.current.getBoundingClientRect();if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return;const camera=navigation.current.current,point={x:(x-rect.left-camera.x)/camera.zoom,y:(y-rect.top-camera.y)/camera.zoom,width:0,height:0};
-    const hit=surface.index.query(point).filter(p=>!gesture.current?.ids.includes(p.id)).at(-1),edge=hit?undefined:surface.edgeHit(point.x,point.y,camera.zoom);
-    if((hit?.id??'')!==hovered||(edge?.id??'')!==hoveredEdge)flushSync(()=>{setHovered(hit?.id??'');setHoveredEdge(edge?.id??'');});return hit;
+    const hit=surface.index.query(point).filter(p=>!gesture.current?.ids.includes(p.id)).at(-1),edge=hit?undefined:surface.edgeHit(point.x,point.y,camera.zoom),id=hit&&surface.live.has(hit.id)?hovered:hit?.id??'',edgeId=edge?.id??'';
+    const apply=()=>{hoverPending.current=undefined;if(id!==hovered||edgeId!==hoveredEdge)flushSync(()=>{setHovered(id);setHoveredEdge(edgeId);});};
+    if(immediate||gesture.current){clearTimeout(hoverPending.current?.timer);apply();}
+    else if(viewport.current.dataset.navigating){clearTimeout(hoverPending.current?.timer);hoverPending.current=undefined;}
+    else if(id!==hovered||edgeId!==hoveredEdge){if(hoverPending.current?.id!==id||hoverPending.current?.edge!==edgeId){clearTimeout(hoverPending.current?.timer);hoverPending.current={id,edge:edgeId,timer:setTimeout(apply,150)};}}
+    else{clearTimeout(hoverPending.current?.timer);hoverPending.current=undefined;}
+    return hit;
   }
   function capture(e: PointerEvent) {
-    if(surface&&e.button===0&&!spaceDown.current&&e.target===viewport.current){
-      const hit=promoteAt(e.clientX,e.clientY),rect=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current,edge=hit?undefined:surface.edgeHit((e.clientX-rect.left-camera.x)/camera.zoom,(e.clientY-rect.top-camera.y)/camera.zoom,camera.zoom);
+    if(surface&&(e.button===0||e.button===2)&&!spaceDown.current&&e.target===viewport.current){
+      const hit=promoteAt(e.clientX,e.clientY,true),rect=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current,edge=hit?undefined:surface.edgeHit((e.clientX-rect.left-camera.x)/camera.zoom,(e.clientY-rect.top-camera.y)/camera.zoom,camera.zoom);
       const target=hit?document.elementFromPoint(e.clientX,e.clientY) as HTMLElement:null,path=edge?viewport.current!.querySelector<SVGElement>('[data-edge="'+edge.id+'"] .edge-hit'):null;
       const receiver=target?.closest('[data-placement]')?target:hit?[...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].find(node=>node.dataset.placement===hit.id):path;
-      if(receiver){e.preventDefault();e.stopPropagation();if(receiver instanceof HTMLElement)relayed.current={target:receiver,pointer:e.pointerId,x:e.clientX,y:e.clientY};receiver.dispatchEvent(new window.PointerEvent('pointerdown',{bubbles:true,cancelable:true,button:e.button,buttons:e.buttons,pointerId:e.pointerId,clientX:e.clientX,clientY:e.clientY,shiftKey:e.shiftKey,metaKey:e.metaKey,ctrlKey:e.ctrlKey}));return;}
+      if(receiver){e.preventDefault();e.stopPropagation();if(e.button===0&&receiver instanceof HTMLElement)relayed.current={target:receiver,pointer:e.pointerId,x:e.clientX,y:e.clientY};receiver.dispatchEvent(new window.PointerEvent('pointerdown',{bubbles:true,cancelable:true,button:e.button,buttons:e.buttons,pointerId:e.pointerId,clientX:e.clientX,clientY:e.clientY,shiftKey:e.shiftKey,metaKey:e.metaKey,ctrlKey:e.ctrlKey}));if(e.button===2){rightPress.current=true;receiver.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:e.clientX,clientY:e.clientY}));}return;}
     }
     const target = e.target as HTMLElement;
     // React portals still bubble through the board; floating editor controls are not canvas presses.
@@ -640,7 +647,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
       onDragOver={e=>{if(!acceptsImage(e.target)||(e.target as HTMLElement).closest('.editor-image'))return;if([...e.dataTransfer.items].some(item=>item.kind==='file'&&(!item.type||item.type.startsWith('image/')||!!onAttachPdf&&item.type==='application/pdf'))||e.dataTransfer.types.includes('text/html')||e.dataTransfer.types.includes('text/uri-list')){e.preventDefault();e.dataTransfer.dropEffect='copy';setImageDrop(true);}}}
       onDragLeave={e=>{if(!(e.relatedTarget instanceof Node)||!e.currentTarget.contains(e.relatedTarget))setImageDrop(false);}}
       onDropCapture={()=>setImageDrop(false)} onDrop={e=>{setImageDrop(false);if(e.defaultPrevented||!acceptsImage(e.target))return;const pdfs=[...e.dataTransfer.files].filter(file=>file.type==='application/pdf'||/\.pdf$/i.test(file.name));if(pdfs.length&&onAttachPdf){e.preventDefault();e.stopPropagation();const point=imagePosition(e.clientX,e.clientY);void onAttachPdf(pdfs,point.x,point.y).catch(error=>setObjectError(String(error)));return;}const files=imageFiles(e.dataTransfer),url=files.length?undefined:imageTransferUrl(e.dataTransfer);if(!files.length&&!url)return;e.preventDefault();e.stopPropagation();void addImages(files,imagePosition(e.clientX,e.clientY),url);}}
-      data-renderer={surface?'retained':'dom'} onPointerLeave={()=>{if(!gesture.current){setHovered('');setHoveredEdge('');}}} onDragOverCapture={e=>{if(surface)promoteAt(e.clientX,e.clientY);}} onPointerDownCapture={capture} onContextMenu={e=>{
+      data-renderer={surface?'retained':'dom'} onPointerLeave={()=>{if(!gesture.current){clearTimeout(hoverPending.current?.timer);hoverPending.current=undefined;setHovered('');setHoveredEdge('');}}} onDragOverCapture={e=>{if(surface)promoteAt(e.clientX,e.clientY,true);}} onPointerDownCapture={capture} onContextMenu={e=>{
         e.preventDefault();
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
         if(!rightPress.current&&!(e.target as HTMLElement).closest('[data-placement],.edge-layer,.edge-handles,button,input'))openCanvasMenu(e.clientX,e.clientY);
@@ -659,7 +666,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
         if(e.target===e.currentTarget&&(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();openCanvasMenu(r.left+r.width/2,r.top+r.height/2);}
       }}
       onDoubleClick={e => {
-        if(surface&&e.target===viewport.current){const hit=promoteAt(e.clientX,e.clientY),target=document.elementFromPoint(e.clientX,e.clientY);if(hit&&target?.closest('[data-placement]')){e.preventDefault();e.stopPropagation();target.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:e.clientX,clientY:e.clientY}));return;}}
+        if(surface&&e.target===viewport.current){const hit=promoteAt(e.clientX,e.clientY,true),target=document.elementFromPoint(e.clientX,e.clientY);if(hit&&target?.closest('[data-placement]')){e.preventDefault();e.stopPropagation();target.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:e.clientX,clientY:e.clientY}));return;}}
         if (e.target === viewport.current) {
           const rect = viewport.current.getBoundingClientRect(), camera = navigation.current!.current;
           onCreate((e.clientX - rect.left - camera.x) / camera.zoom, (e.clientY - rect.top - camera.y) / camera.zoom);

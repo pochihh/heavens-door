@@ -2,13 +2,15 @@
 
 October 22, 2026. Implemented in the actual Whiteboard behind the Test-only **Experimental cached whiteboard** switch under Settings → Developer. It is off by default. The stable version remains `0.1.2718`; this is not a release or an assertion that all performance gates are met.
 
+**Navigation correction:** the earlier warmed rAF timings below did not establish real interaction performance. The [Retina navigation follow-up](#retina-navigation-follow-up) reproduces the user-reported zoom delay and tile seams, records compositor presentation timing, and documents the fixes.
+
 ## Architecture and ownership
 
 The existing Whiteboard owns the camera, selection, gestures, rich editors and workspace commands. The new Canvas surface is a disposable drawing cache within that same board. It does not own files, references, annotations or undo, and requires no file migration, new rendering dependency or native module.
 
 - A spatial index provides viewport and pointer queries. Edge geometry is shared with the existing SVG path, connector and label UI; unchanged geometry survives subsequent renders.
 - At very small zoom, fixed-size cards and board tiles show their shape, color and title; Text uses measured geometry and vector drawing. Rich images and PDFs use snapshots of their actual components. Preparation runs in small batches, yields between expensive work and pauses during camera movement.
-- The surface composes 512-pixel viewport tiles. Content, geometry and style changes invalidate affected tiles instead of redrawing every element on every camera frame. The original grid remains independent.
+- The surface composes 512-pixel viewport tiles with a two-pixel sampling bleed. Content, geometry and style changes invalidate affected tiles instead of redrawing every element on every camera frame. The original grid remains independent.
 - Hover, selection or readable zoom promotes content to the existing DOM editor/reader. Transitive overlaps are promoted together to preserve stacking order. Completed cached content remains visible until live images, PDF pixels and selectable text are ready. The first pointer press uses the existing gesture handlers, including while a PDF reader is loading.
 - Fonts and theme values participate in geometry and source signatures. Measured dimensions survive tab switches for the current session. Editing and file moves still use revision-checked workspace transactions and the original undo groups.
 - Camera/layout saves now have a compact preferences response. They neither construct a full workspace snapshot nor broadcast another snapshot back to the initiating window. Other windows continue receiving change notifications. Save failure recovery and save-before-close still use the existing preference queue.
@@ -79,3 +81,40 @@ Keep the default renderer available while these gates are addressed. The histori
 `0.1.2718-test.4` was built with the existing temporary-build script, and its bundle identifier/version and ad-hoc signature were verified. Test.3 quit normally before packaging and its previous bundle remains under `.local/test-app/previous-test.3/`. The counter is now 4; stable `0.1.2718` and build number 4 are unchanged. No release, tag or remote push was created.
 
 The packaged Test.4 reopened the preserved Review workspace. Its General settings visibly reported Test.4, and **Experimental cached whiteboard** was enabled through Settings → Developer. Review → Other → Review switched successfully, the saved camera returned, and PDF content rendered without a visible application error. No personal card content was edited during this packaged check. The switch remains enabled for the user's review; turning it off returns to the original renderer. It is off by default in a fresh Test profile and unavailable in stable builds.
+
+## Retina navigation follow-up
+
+The Test.4 user reported slower navigation, black tile grids during zoom and delayed PDF refinement. The earlier 17 ms numbers measured gaps between JavaScript animation callbacks during a warmed pan, on the 1× reference display. They did not measure click latency, time to finish PDF refinement or actual compositor presentation. The packaged app was running at 2× density on the other display. Those numbers were insufficient grounds for enabling the renderer as an improvement to the user's Review experience.
+
+The new native replay places its disposable window on the actual Retina display and verifies **1710 × 1073 CSS pixels at DPR 2**. It records rAF and Chromium `AnimationFrame::Presentation` timestamps separately, along with PDF document loads, zoom range, visible-page resolution and graphics traces. A true-pan check explicitly uses Trackpad mode in the disposable app and asserts that zoom did not change. This matters because Review's saved Mouse mode intentionally turns wheel input into zoom; the first diagnostic labelled “pan” was therefore another zoom replay and is superseded by the corrected reports below. No input preference is changed in the personal workspace.
+
+The corrected before replay reproduced reading zoom at **99.9 ms rAF p95** and **83.335 ms presentation p95 / 100.049 ms p99**. The trace showed GPU waits while repeatedly rasterizing the transformed live readers. An experimental constant compositing hint removed most of that cost, but could retain soft text after zoom. The implemented version applies the hint only while navigating and removes it after 150 ms of inactivity, including cleanup on disposal. Settled PDF/text rendering remains live and sharp. No graphics backend or hardware acceleration setting was changed.
+
+The cached path also synchronously promoted a PDF reader on every pointer crossing. The corrected before sweep caused **69 document loads**. Hover now waits for a 150 ms dwell, does not promote new readers during navigation, and keeps an already-live overlap group stable. Pointer presses, double-clicks and drag targets still promote immediately. The matching final sweep caused **3 document loads**, rather than repeatedly recreating every crossed reader.
+
+The tile grid was a separate correctness bug: fractional placement of separately sampled/clipped bitmaps left partially transparent border pixels. Tiles now carry a two-pixel bleed and composite through adjacent integer device-pixel clips. Admission is limited to 63 padded tiles so their decoded bytes still fit the 64 MiB tile budget. A native uniform-white regression checks 1,598,400 interior pixels at each of four fractional zooms (21.37%, 27.48%, 34.99%, 48.81%). Before the fix it found 7,272–13,850 under-opaque pixels per case; after the fix every sampled color and alpha value is 255. This isolates tile sampling; it is not a PDF content-fidelity test.
+
+Final native Review replay (`navigation-verified-retina/report.json`, under `.local/retained-check/`):
+
+| Gesture | rAF p95 | Presentation p95 / p99 |
+| --- | ---: | ---: |
+| Overview pan | 17.7 ms | 33.331 / 35.936 ms |
+| Overview zoom, 18% → 57% → 18% | 17.6 ms | 17.890 / 37.117 ms |
+| Reading pan | 17.5 ms | 16.778 / 50.003 ms |
+| Reading zoom, 65% → 206% → 65% | 17.7 ms | 33.334 / 49.998 ms |
+
+These short replay distributions are hardware diagnostics, not a universal latency guarantee. In particular, occasional 37–50 ms presentation gaps remain; this does not meet every foundation budget. The settled reading view had 15 intersecting PDF pages, all with completed selectable text and at least 1.538 source pixels per display pixel. Both native reader suites also passed on the actual Retina display, including PDF dragging, middle-button panning, highlighting/comment input, resizing, code/checkbox geometry, extraction, deep zoom and popup checks. Their 300% PDF detail crop covered the visible page, stayed opaque, retained its canvas through a pan and supplied 1.333 source pixels per display pixel within the 16-million-pixel budget. All 369 tests and lint/type checks passed.
+
+Evidence: `navigation-corrected-cached` is the before replay; `navigation-verified-retina` is the final replay; `navigation-seams-before` and `navigation-seams-fixed-2` isolate tile opacity. `navigation-composite-cached` is the constant-hint experiment, not the shipped behavior. Each folder contains its report, source fingerprint, screenshots and per-gesture trace files. The current replay commands are:
+
+```sh
+npm run test:retained -- navigation-review --navigation --retina --review=/absolute/workspace
+npm run test:retained -- navigation-dom --navigation --dom --retina --review=/absolute/workspace
+npm run test:retained -- tile-opacity --navigation --retina --seams --review=/absolute/workspace
+npm run test:reader -- --retained --retina
+npm run test:reader -- --retina
+```
+
+Retina checks fail if a matching physical 2× display is unavailable; the harness does not silently substitute a lower-density run. All workspaces are disposable copies. The 10,000-element replay remains a separate warmed scale and command regression, rather than evidence for Review zoom responsiveness.
+
+The post-fix 10,000-element native command regression (`navigation-regression-10000`) prepared all 1,300 images and 80 PDF pages, completed first-click editing, actual save/undo, dragging, group movement/internal-edge preservation and cached-board file transfer/undo without renderer errors. Its cold preparation remained 48.8 seconds and warmed rAF pan p95 was 17.6 ms on the original 1× scale fixture; neither supersedes the Retina Review presentation results above. A separate native smoke check verifies that a right press on a cached card opens its card menu immediately and Escape closes it, preserving that behavior despite delayed hover promotion.

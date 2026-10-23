@@ -16,7 +16,7 @@ export function sceneViewport(camera:{x:number;y:number;zoom:number},width:numbe
 // shortcut: cached/live regions share one layer; promote overlaps together until ordered layers are justified by dense-scene measurements.
 export function overlappingLive<T extends SceneBox&{id:string}>(index:SceneIndex<T>,ids:Iterable<string>){const found=new Set(ids),lookup=new Map(index.items.map(p=>[p.id,p])),queue=[...found];for(let i=0;i<queue.length;i++){const item=lookup.get(queue[i]);if(item)for(const next of index.query(item))if(!found.has(next.id)){found.add(next.id);queue.push(next.id);}}return found;}
 
-export function viewportPreviewDensity(zoom:number,dpr:number,width:number,height:number){let density=previewDensity(zoom,Math.min(dpr,Math.sqrt(16_000_000/Math.max(1,width*height))));while((Math.ceil(width*density/zoom/512)+1)*(Math.ceil(height*density/zoom/512)+1)>64)density/=2;return density;}
+export function viewportPreviewDensity(zoom:number,dpr:number,width:number,height:number){let density=previewDensity(zoom,Math.min(dpr,Math.sqrt(16_000_000/Math.max(1,width*height))));while((Math.ceil(width*density/zoom/512)+1)*(Math.ceil(height*density/zoom/512)+1)>63)density/=2;return density;}
 
 export interface SceneEntry extends SceneBox {id:string;revision:string;simple:boolean;measured:boolean;placement:Placement;title:string;fill?:string}
 export type SceneEdge=ReturnType<typeof edgeGeometry>&SceneBox&{id:string;edge:Edge};

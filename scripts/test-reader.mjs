@@ -9,7 +9,7 @@ import {build} from 'vite';
 import {buildEngine} from './build.mjs';
 process.env.HEAVENS_DOOR_TEST_BUILD='1';
 await buildEngine();
-const retained=process.argv.includes('--retained'),root=process.cwd(),folder=join(root,retained?'.local/reader-retained-check':'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
+const retina=process.argv.includes('--retina'),retained=process.argv.includes('--retained'),root=process.cwd(),folder=join(root,retained?'.local/reader-retained-check':'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
 await fs.rm(workspace,{recursive:true,force:true});await fs.rm(join(folder,'profile'),{recursive:true,force:true});
 await fs.mkdir(join(project,'dist'),{recursive:true});await fs.mkdir(join(workspace,'Review'),{recursive:true});await fs.mkdir(join(workspace,'Other'),{recursive:true});await fs.mkdir(join(workspace,'.heavens-door'),{recursive:true});await fs.rm(report,{force:true});
 // Each page has text plus vector work, so the test exercises raster and text-layer costs.
@@ -34,7 +34,7 @@ readerApp.whenReady().then(async()=>{
  const phase=value=>{result.phase=value;save();};
  try{
   const desktop=await readerWait(()=>[...desktops.values()][0],'window'),win=desktop.window,js=async code=>{const value=await Promise.race([win.webContents.executeJavaScript('(async()=>{try{return {ok:true,value:await ('+code+')}}catch(error){return {ok:false,error:error.stack}}})()',true),readerPause(12000).then(()=>{throw Error('Renderer timed out: '+code.slice(0,120));})]);if(!value.ok)throw Error(value.error);return value.value;};
-  win.webContents.setBackgroundThrottling(false);
+  win.webContents.setBackgroundThrottling(false);if(${retina}){const display=require('electron').screen.getAllDisplays().find(d=>d.scaleFactor===2);if(!display)throw Error('No Retina reference display');win.setPosition(display.workArea.x+10,display.workArea.y+10);win.setContentSize(1710,1073);}result.display=await js('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio})');
   const wait=(code,label)=>readerWait(()=>js(code),label);
   phase('loading');
   await wait('document.querySelectorAll(".board-pdf .pdf-page").length===20 && [...document.querySelectorAll(".pdf-page canvas")].some(c=>c.width>0)','20-page reader');await readerPause(700);

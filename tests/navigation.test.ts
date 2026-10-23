@@ -192,3 +192,9 @@ test('large-board zoom continues below 20 percent without losing the cursor anch
   for(const zoom of [.1,.01,.001,MIN_ZOOM]){const before={...f.nav.current},after=zoomAt(before,300,200,zoom);assertAnchored(before,after);f.nav.set(after);f.frame();assert.ok(f.nav.current.zoom<=.1);assert.notEqual(f.viewport.querySelector('button')!.textContent,'0%');}
   assert.equal(f.viewport.querySelector('button')!.textContent,'0.01%');
 });
+
+test('camera reuses a compositor layer during motion and releases it at rest and disposal',t=>{
+ const f=setup(t);assert.equal(f.world.style.willChange,'');f.wheel({deltaX:4,deltaY:2});f.frame();assert.equal(f.world.style.willChange,'transform');assert.equal(f.viewport.dataset.navigating,'true');
+ f.advance(149);assert.equal(f.world.style.willChange,'transform');f.wheel({deltaY:-2,ctrlKey:true});f.frame();f.advance(149);assert.equal(f.viewport.dataset.navigating,'true');f.advance(1);assert.equal(f.world.style.willChange,'');assert.equal(f.viewport.dataset.navigating,undefined);
+ f.nav.set({...f.nav.current,zoom:2});f.frame();assert.equal(f.world.style.willChange,'transform');f.nav.dispose();assert.equal(f.world.style.willChange,'');assert.equal(f.viewport.dataset.navigating,undefined);
+});
