@@ -117,6 +117,31 @@ readerApp.whenReady().then(async()=>{
   if(await js('document.querySelector(".board-world").style.transform')!==savedCamera)throw Error('Returning to a board lost its deep camera');
   if(await js('window.__readerTestSession.state.error'))throw Error('Reader checks left an app error');
   if(${retained}){await js('(()=>{const p=window.__readerTestSession.state.snapshot.boards.find(b=>b.folder==="Review").cards.find(p=>p.id==="pdf");window.__readerTestNavigation.set({x:20-p.x,y:40-p.y,zoom:1});window.__readerTestNavigation.flush();})()');await wait('document.querySelectorAll(".board-pdf .pdf-page").length===20','promote readable PDF');}
+  phase('PDF overlap stacking');
+  const beforeOverlap=await js('window.__readerTestSession.state.snapshot.boards.find(b=>b.folder==="Review")');
+  await js('(async()=>{const s=window.__readerTestSession,b=s.state.snapshot.boards.find(b=>b.folder==="Review"),p=b.cards.find(p=>p.id==="pdf");await s.board({...b,cards:[{...p,x:180,y:120,width:440,pdf:{expanded:false,notes:false}},{...p,id:"pdf-front",x:20,y:20,width:440,pdf:{expanded:false,notes:false}}],edges:[]},"Test overlapping PDFs");window.__readerTestNavigation.set({x:20,y:20,zoom:1});window.__readerTestNavigation.flush();})()');
+  await wait('document.querySelectorAll(".board-pdf .pdf-page").length===2&&[...document.querySelectorAll(".board-pdf .pdf-reader")].every(e=>e.dataset.ready==="true")&&[...document.querySelectorAll(".board-pdf canvas")].every(c=>c.dataset.pdfPainted==="true")','two overlapping PDF readers');
+  const overlapHit=async(under,over,expected)=>{
+   const hit=await js('(()=>{const a=document.querySelector('+JSON.stringify(under)+').getBoundingClientRect(),b=document.querySelector('+JSON.stringify(over)+').getBoundingClientRect(),left=Math.max(a.left,b.left),right=Math.min(a.right,b.right),top=Math.max(a.top,b.top),bottom=Math.min(a.bottom,b.bottom);if(right-left<4||bottom-top<4)throw Error("Missing overlap");const x=Math.round((left+right)/2),y=Math.round((top+bottom)/2),e=document.elementFromPoint(x,y);return {x,y,placement:e?.closest("[data-placement]")?.dataset.placement,tag:e?.tagName,className:e?.className};})()');
+   if(hit.placement!==expected)throw Error('PDF layers interleaved: '+JSON.stringify({under,over,expected,hit}));return hit;
+  };
+  const selectPdf=async id=>{
+   const at=await js('(()=>{const r=document.querySelector("[data-placement='+id+'] .board-pdf-heading").getBoundingClientRect();return {x:Math.round(r.left+'+(id==='pdf'?300:100)+'),y:Math.round(r.top+r.height/2)}})()');
+   win.webContents.sendInputEvent({type:'mouseMove',...at});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...at});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...at});await readerPause(100);
+   await wait('document.querySelector("[data-placement='+id+']").classList.contains("selected")','selected overlapping PDF');await wait('document.querySelectorAll(".board-pdf-placement.selected").length===1','PDF selection count');
+  };
+  const emptyCanvas=await js('(()=>{const r=document.querySelector(".canvas").getBoundingClientRect();return {x:Math.round(r.right-40),y:Math.round(r.top+40)}})()');
+  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...emptyCanvas});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...emptyCanvas});
+  await wait('document.querySelectorAll(".board-pdf-placement.selected").length===0','unselected PDFs');
+  result.overlap={unselected:await overlapHit('[data-placement=pdf] .pdf-reader-toolbar','[data-placement=pdf-front] .pdf-page','pdf-front')};
+  await selectPdf('pdf-front');result.overlap.frontSelected=await overlapHit('[data-placement=pdf] .pdf-reader-toolbar','[data-placement=pdf-front] .pdf-page','pdf-front');
+  await selectPdf('pdf');result.overlap.backSelected=await overlapHit('[data-placement=pdf-front] .pdf-page','[data-placement=pdf] .pdf-reader-toolbar','pdf');
+  const region=await js('(()=>{const a=document.querySelector("[data-placement=pdf]").getBoundingClientRect(),b=document.querySelector("[data-placement=pdf-front]").getBoundingClientRect();return {x:Math.round(Math.min(a.left,b.left)-15),y:Math.round(Math.min(a.top,b.top)-15),right:Math.round(Math.max(a.right,b.right)+15),bottom:Math.round(Math.max(a.bottom,b.bottom)+15)}})()');
+  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:region.x,y:region.y});win.webContents.sendInputEvent({type:'mouseMove',button:'left',x:region.right,y:region.bottom});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:region.right,y:region.bottom});
+  await wait('document.querySelectorAll(".board-pdf-placement.selected").length===2','marquee-selected PDFs');result.overlap.bothSelected=await overlapHit('[data-placement=pdf] .pdf-reader-toolbar','[data-placement=pdf-front] .pdf-page','pdf-front');
+  readerFS.writeFileSync(${JSON.stringify(join(folder,'overlap.png'))},(await win.capturePage()).toPNG());
+  await js('(async()=>{const s=window.__readerTestSession;await s.board('+JSON.stringify(beforeOverlap)+',"Restore reader fixture");const p='+JSON.stringify(beforeOverlap)+'.cards.find(p=>p.id==="pdf");window.__readerTestNavigation.set({x:20-p.x,y:40-p.y,zoom:1});window.__readerTestNavigation.flush();})()');
+  await wait('!document.querySelector("[data-placement=pdf-front]")&&document.querySelectorAll(".board-pdf .pdf-page").length===20','restored reader fixture');
   phase('popup');
   await js('document.querySelector(".board-pdf-actions button").click()');await wait('document.querySelectorAll(".pdf-reading-layout .pdf-page").length===20','PDF popup');await readerPause(700);
   result.popup=await js('({canvases:document.querySelectorAll(".pdf-reading-layout .pdf-page canvas").length,pages:document.querySelectorAll(".pdf-reading-layout .pdf-page").length})');if(result.popup.canvases>4)throw Error('Popup rendered offscreen pages '+JSON.stringify(result.popup));
