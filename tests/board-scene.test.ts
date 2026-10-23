@@ -18,3 +18,9 @@ test('shared edge geometry reuses unchanged paths and invalidates only affected 
 });
 
 test('the admitted padded tiles stay within the decoded byte budget',()=>{assert.ok(63*516*516*4<=64*1024*1024);assert.ok(64*516*516*4>64*1024*1024);});
+
+
+test('both mixed native fixtures retain 10,000 elements; the no-PDF fixture excludes every PDF source',async()=>{
+ const {boardFixture}=await import('../scripts/performance/board-fixture');
+ for(const pdfs of [true,false]){const fixture=boardFixture(pdfs);assert.equal(fixture.board.cards.length+fixture.board.edges.length,10000);assert.equal(fixture.cards.filter(c=>c.source?.type==='pdf').length,pdfs?4:0);assert.equal(fixture.board.cards.filter(p=>p.object?.type==='image').length,1300);assert.equal(fixture.board.cards.filter(p=>p.object?.type==='text').length,2000);}
+});

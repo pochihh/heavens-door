@@ -98,7 +98,7 @@ interface Props {
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
   board: Board; camera: Camera; rect: DOMRect; button:number; additive: boolean; initialSelection: string[]; initialEdges:string[];
-  moved: boolean; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
+  moved: boolean; placements?:Map<string,Placement>; movingEdges?:Edge[]; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
 
@@ -141,8 +141,10 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   useEffect(()=>rememberBoardMeasurements(measurementKey,measuredHeights),[measurementKey,measuredHeights]);
   const [contentVersion,setContentVersion]=useState(0);
   const contentReady=useCallback(()=>setContentVersion(version=>version+1),[]);
+  const lookup = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards]);
+  const heightSignatures=useMemo(()=>new WeakMap<Placement,string>(),[theme,lookup]);
   const naturalHeight=(p:Placement)=>p.object?.type==='image'||p.object?.type==='text'||lookup.get(p.cardId)?.source?.type==='pdf'||autoHeight(p);
-  const heightSignature=(p:Placement)=>theme+':'+p.width+':'+(p.object?JSON.stringify(p.object):lookup.get(p.cardId)?.revision??'')+':'+JSON.stringify(p.pdf?.expanded?{...p.pdf,page:undefined}:p.pdf);
+  const heightSignature=(p:Placement)=>{let value=heightSignatures.get(p);if(value===undefined){value=theme+':'+p.width+':'+(p.object?JSON.stringify(p.object):lookup.get(p.cardId)?.revision??'')+':'+JSON.stringify(p.pdf?.expanded?{...p.pdf,page:undefined}:p.pdf);heightSignatures.set(p,value);}return value;};
   const measuredHeight=(p:Placement)=>{const measured=measuredHeights[heightKey(p)];return measured?.signature===heightSignature(p)?measured.height:undefined;};
   const widthOf=(p:Placement)=>objectPreview?.id===p.id?objectPreview.width:(p.object?.type==='text'||!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf')&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.width:p.width;
   const heightOf=(placement:Placement)=>{const p=placements.get(placement.id)??placement;return p.collapsed||naturalHeight(p)?(measuredHeight(p)??placementHeight(p)):p.height;};
@@ -161,7 +163,6 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   const current = working ?? board;
   const draftTitle=useMemo(()=>draft?leadingTitle(draft.body)?.text??'':undefined,[draft?.body]);
   const active = current.cards.find(p => !p.collapsed && p.id === editingPlacement && p.cardId === draft?.card.id) ?? current.cards.find(p => !p.collapsed && p.cardId === draft?.card.id);
-  const lookup = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards]);
   const boardLookup = useMemo(() => new Map(boards.map(b => [b.folder, b])), [boards]);
   const branchEnds=useMemo(()=>new Map(current.edges.filter(e=>e.kind==='branch').map(e=>[e.to,e.toSide??opposite[e.fromSide??'right']])),[current.edges]);
   const xOf=(p:Placement)=>objectPreview?.id===p.id&&objectPreview.x!==undefined?objectPreview.x:p.x;
@@ -257,7 +258,8 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
     const element = viewport.current!, nav = navigation.current!;
     nav.stopWheel(); nav.flush();
     e.preventDefault(); e.stopPropagation(); element.focus({ preventScroll: true });
-    gesture.current = { type, ids, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: pendingSave.current ?? current,
+    const base=pendingSave.current??current;
+    gesture.current = { type, ids, placements:base===current?placements:undefined, x: e.clientX, y: e.clientY, pointerId: e.pointerId, board: base,
       camera: { ...nav.current }, rect: element.getBoundingClientRect(), button:e.button,
       additive: e.shiftKey || e.metaKey || e.ctrlKey, initialSelection: selected, initialEdges:selectedEdges, moved:false,
       resizeHeight:type==='resize'?heightOf(current.cards.find(p=>p.id===ids[0])!):undefined };
@@ -361,6 +363,16 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
     }
     return phantom;
   }
+  // Pointer frames move the live selection; commit the board once on release.
+  function previewMove(g:Gesture,x:number,y:number){
+    const dx=(x-g.x)/g.camera.zoom,dy=(y-g.y)/g.camera.zoom,moved=new Map<string,Placement>(),base=g.placements??=new Map(g.board.cards.map(p=>[p.id,p]));
+    for(const id of g.ids){const p=base.get(id);if(!p)continue;moved.set(id,{...p,x:p.x+dx,y:p.y+dy});const node=world.current?.querySelector<HTMLElement>('[data-placement="'+id+'"]');if(node)node.style.transform=dx||dy?`translate(${dx}px,${dy}px)`:'';}
+    g.movingEdges??=g.board.edges.filter(e=>moved.has(e.from)||moved.has(e.to));
+    for(const edge of g.movingEdges){const a=moved.get(edge.from)??base.get(edge.from),b=moved.get(edge.to)??base.get(edge.to);if(!a||!b)continue;
+      const geometry=edgeGeometry(edge,geometryCard(a),geometryCard(b),geometryHeight),node=viewport.current?.querySelector('[data-edge="'+edge.id+'"]');node?.querySelectorAll('path').forEach(path=>path.setAttribute('d',geometry.path));const label=node?.querySelector('foreignObject');label?.setAttribute('x',String(geometry.midpoint.x-100));label?.setAttribute('y',String(geometry.midpoint.y-18));
+    }
+    viewport.current?.querySelectorAll<SVGLineElement>('line[data-mention-from]').forEach(line=>{const a=line.dataset.mentionFrom!,b=line.dataset.mentionTo!;if(!moved.has(a)&&!moved.has(b))return;for(const [id,n] of [[a,1],[b,2]] as const){const item=moved.get(id)??base.get(id);if(!item)continue;const p=geometryCard(item);line.setAttribute('x'+n,String(p.x+p.width/2));line.setAttribute('y'+n,String(p.y+geometryHeight(p)/2));}});
+  }
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
@@ -383,7 +395,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
       dragPoint.current = { x: e.clientX, y: e.clientY };
       if (dragFrame.current === null) dragFrame.current = viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(() => {
         dragFrame.current = null;
-        if (gesture.current === g) setWorking(movedBoard(g, dragPoint.current.x, dragPoint.current.y));
+        if (gesture.current === g) {if(g.type==='move')previewMove(g,dragPoint.current.x,dragPoint.current.y);else setWorking(movedBoard(g,dragPoint.current.x,dragPoint.current.y));}
       });
     }
   }
@@ -415,6 +427,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
     }
   }
   function cancel() {
+    const g=gesture.current;if(g?.type==='move'&&g.moved)previewMove(g,g.x,g.y);
     clearDocumentDrop();externalPhantom.current?.remove();externalPhantom.current=null;gesture.current = null; setDragged([]); setWorking(pendingSave.current);
     if (dragFrame.current !== null) {
       viewport.current!.ownerDocument.defaultView!.cancelAnimationFrame(dragFrame.current); dragFrame.current = null;
@@ -598,19 +611,21 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   // Measure unknown auto-height cards above the viewport before deciding to cull them.
   // ponytail: cold opens measure that column once; persist a size cache if much larger boards need it.
   const simpleDetail=view.zoom<.08;
-  const scene=useMemo(()=>current.cards.map(p=>({id:p.id,simple:simpleDetail&&(p.object?.type==='text'||!!p.folder||!p.object&&lookup.get(p.cardId)?.source?.type!=='pdf'&&!autoHeight(p)),measured:!naturalHeight(p)||!!measuredHeight(p)||!!p.collapsed,x:xOf(p),y:p.y,width:!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf'?measuredHeights[heightKey(p)]?.width??p.width:widthOf(p),height:heightOf(p),placement:p,fill:p.object||p.folder?p.fillColor:cardFill(lookup.get(p.cardId),p),title:p.object?.type==='text'?p.object.text:p.folder?boardLookup.get(p.folder)?.name??p.folder:lookup.get(p.cardId)?.title??lookup.get(p.cardId)?.name??'',revision:theme+':'+JSON.stringify({...p,x:undefined,y:undefined,pdf:p.pdf?.expanded?{...p.pdf,page:undefined}:p.pdf})+':'+(lookup.get(p.cardId)?.revision??'')+':'+(p.folder?boardLookup.get(p.folder)?.revision:'')+':'+widthOf(p)+':'+heightOf(p)} satisfies SceneEntry)),[current,cards,boards,measuredHeights,objectPreview,theme,simpleDetail]);
+  const sceneEntries=useMemo(()=>new WeakMap<Placement,SceneEntry>(),[cards,boards,measuredHeights,objectPreview,theme,simpleDetail]);
+  const scene=useMemo(()=>current.cards.map(p=>{const cached=sceneEntries.get(p);if(cached)return cached;const entry={id:p.id,simple:simpleDetail&&(p.object?.type==='text'||!!p.folder||!p.object&&lookup.get(p.cardId)?.source?.type!=='pdf'&&!autoHeight(p)),measured:!naturalHeight(p)||!!measuredHeight(p)||!!p.collapsed,x:xOf(p),y:p.y,width:!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf'?measuredHeights[heightKey(p)]?.width??p.width:widthOf(p),height:heightOf(p),placement:p,fill:p.object||p.folder?p.fillColor:cardFill(lookup.get(p.cardId),p),title:p.object?.type==='text'?p.object.text:p.folder?boardLookup.get(p.folder)?.name??p.folder:lookup.get(p.cardId)?.title??lookup.get(p.cardId)?.name??'',revision:theme+':'+JSON.stringify({...p,x:undefined,y:undefined,pdf:p.pdf?.expanded?{...p.pdf,page:undefined}:p.pdf})+':'+(lookup.get(p.cardId)?.revision??'')+':'+(p.folder?boardLookup.get(p.folder)?.revision:'')+':'+widthOf(p)+':'+heightOf(p)} satisfies SceneEntry;sceneEntries.set(p,entry);return entry;}),[current,sceneEntries]);
   const sceneIndex=useMemo(()=>new SceneIndex(scene),[scene]);
-  const geometries=useMemo(()=>current.cards.map(geometryCard),[scene]);
+  const geometryCache=useRef(new WeakMap<SceneEntry,Placement>());
+  const geometries=useMemo(()=>scene.map(entry=>{let value=geometryCache.current.get(entry);if(!value){value=geometryCard(entry.placement);geometryCache.current.set(entry,value);}return value;}),[scene]);
   const retainedEdges=useMemo(()=>sceneEdges(current.edges,geometries,geometryHeight,measurementKey),[scene]);
   const connectors=useMemo(()=>connectorScene(geometries,geometryHeight),[geometries,scene]);
   const retainedView=sceneViewport(view,size.width,size.height,160),density=viewportPreviewDensity(view.zoom,window.devicePixelRatio||1,size.width,size.height);
-  const live=useMemo(()=>{if(!surface)return new Set<string>();const wanted=sceneIndex.query(retainedView).filter(p=>view.zoom>=.35||surface.failed.has(p.id)).map(p=>p.id);return overlappingLive(sceneIndex,[...wanted,...selected,...dragged,hovered,editingObject,active?.id??''].filter(Boolean));},[sceneIndex,view,size,selected,dragged,hovered,editingObject,active?.id,surface,previewVersion]);
+  const live=useMemo(()=>{if(!surface)return new Set<string>();const wanted=sceneIndex.query(retainedView).filter(p=>lookup.get(p.placement.cardId)?.source?.type==='pdf'||view.zoom>=.35||surface.failed.has(p.id)).map(p=>p.id);return overlappingLive(sceneIndex,[...wanted,...selected,...dragged,hovered,editingObject,active?.id??''].filter(Boolean));},[sceneIndex,view,size,selected,dragged,hovered,editingObject,active?.id,surface,previewVersion]);
   useEffect(()=>{if(!surface)return;const root=world.current!;const refresh=()=>{const next=new Set<string>(),viewportBox=viewport.current!.getBoundingClientRect();for(const node of root.querySelectorAll<HTMLElement>('[data-placement]:not([data-retained-preparing])')){const entry=scene.find(p=>p.id===node.dataset.placement);if(!entry||node.querySelector('[data-ready="false"]')||[...node.querySelectorAll('img')].some(image=>!image.complete))continue;const pages=[...node.querySelectorAll<HTMLElement>('.pdf-page')].filter(page=>{const r=page.getBoundingClientRect();return r.left<viewportBox.right&&r.right>viewportBox.left&&r.top<viewportBox.bottom&&r.bottom>viewportBox.top;});if(pages.some(page=>!page.querySelector('canvas[data-pdf-painted="true"]')||(navigation.current?.current.zoom??1)>=.4&&!page.querySelector('.textLayer[data-pdf-text-ready="true"]')))continue;next.add(entry.id+':'+entry.revision);}setReadyLive(previous=>previous.size===next.size&&[...next].every(key=>previous.has(key))?previous:next);};const observer=new window.MutationObserver(refresh);observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['data-ready','data-pdf-painted','data-pdf-text-ready']});refresh();return()=>observer.disconnect();},[surface,scene,live]);
   const waiting=surface?scene.filter(p=>live.has(p.id)&&surface.available(p,density)&&!readyLive.has(p.id+':'+p.revision)).map(p=>p.id):[];
   const warming=useMemo(()=>overlappingLive(sceneIndex,waiting),[sceneIndex,waiting.join('|')]);
   const drawnLive=useMemo(()=>new Set([...live].filter(id=>!warming.has(id))),[live,warming]);
   useEffect(()=>{if(!surface)return;const invalidate=(event:Event)=>{const id=(event as CustomEvent<string>).detail;for(const entry of surface.entries)if(entry.placement.cardId===id)surface.retry(entry);surface.schedule();setPreviewVersion(v=>v+1);};window.addEventListener(BOARD_PREVIEW_INVALIDATED,invalidate);return()=>window.removeEventListener(BOARD_PREVIEW_INVALIDATED,invalidate);},[surface]);
-  const liveEdges=useMemo(()=>new Set([...selectedEdges,hoveredEdge].filter(Boolean)),[selectedEdges,hoveredEdge]);
+  const liveEdges=useMemo(()=>new Set([...selectedEdges,hoveredEdge,...current.edges.filter(e=>dragged.includes(e.from)||dragged.includes(e.to)).map(e=>e.id)].filter(Boolean)),[selectedEdges,hoveredEdge,dragged,current.edges]);
   const candidates=surface?sceneIndex.query(retainedView).filter(p=>!live.has(p.id)&&!surface.has(p,density)):[];
   useLayoutEffect(()=>{if(surface)surface.pendingPreviews=candidates.length;},[surface,candidates.length]);
   const nextBatch=(candidates[0]?.simple?candidates.filter(p=>p.simple).slice(0,128):candidates.slice(0,8)).map(p=>p.id),batchKey=nextBatch.join('|');
@@ -620,7 +635,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   const preparingIds=new Set(preparing.map(p=>p.id));
   useLayoutEffect(()=>{surface?.refreshTheme(theme);surface?.setScene(scene,retainedEdges,drawnLive,liveEdges);},[surface,scene,retainedEdges,drawnLive,liveEdges,theme]);
   const preparationKey=preparing.map(p=>p.id+':'+p.revision).join('|');
-  useEffect(()=>{if(!surface||!preparing.length)return;let cancelled=false,timer:ReturnType<typeof setTimeout>;const capture=async()=>{let changed=false,yielded=performance.now();for(const entry of preparing){if(cancelled)break;const node=[...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].find(node=>node.dataset.placement===entry.id);if(node&&await surface.capture(entry,node,density))changed=true;if(performance.now()-yielded>6){await new Promise(requestAnimationFrame);yielded=performance.now();}}if(changed)setPreviewVersion(v=>v+1);else if(!cancelled)timer=setTimeout(()=>{void capture();},150);};timer=setTimeout(()=>{void capture();},30);return()=>{cancelled=true;clearTimeout(timer);};},[surface,preparationKey,density,contentVersion]);
+  useEffect(()=>{if(!surface||!preparing.length)return;let cancelled=false,timer:ReturnType<typeof setTimeout>;const capture=async()=>{let changed=false,yielded=performance.now();for(const entry of preparing){if(cancelled)break;const node=[...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].find(node=>node.dataset.placement===entry.id);if(node&&await surface.capture(entry,node,density))changed=true;if(performance.now()-yielded>6){await new Promise(resolve=>setTimeout(resolve,0));yielded=performance.now();}}if(changed)setPreviewVersion(v=>v+1);else if(!cancelled)timer=setTimeout(()=>{void capture();},150);};timer=setTimeout(()=>{void capture();},30);return()=>{cancelled=true;clearTimeout(timer);};},[surface,preparationKey,density,contentVersion]);
   const visible = surface?current.cards.filter(p=>live.has(p.id)||preparingIds.has(p.id)):current.cards.filter(p => p.id === editingObject || p.id === active?.id || gesture.current?.ids.includes(p.id) || isVisible({...p,x:xOf(p),width:widthOf(p)}, view, size.width, size.height, Math.max(size.width, size.height), naturalHeight(p)&&!p.collapsed&&measuredHeight(p)===undefined?Infinity:heightOf(p)));
   const measuredIds=visible.filter(p=>p.collapsed||naturalHeight(p)).map(p=>heightKey(p)+':'+heightSignature(p)).join(',');
   useLayoutEffect(()=>{
@@ -707,7 +722,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
               }}/>
             </div>}
             {!media&&!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="popup" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf?<BoardPdf preparePreview={preparingIds.has(p.id)} previewDensity={density} active={selected.includes(p.id)} collapsed={p.collapsed} onResize={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}} onLayout={contentReady} onSelect={()=>{if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);onFinish?.();}}} card={card!} width={p.width} settings={p.pdf} zoom={view.zoom} onRevealPage={page=>{const nav=navigation.current!,rect=page.getBoundingClientRect(),viewportRect=viewport.current!.getBoundingClientRect();nav.set({...nav.current,y:nav.current.y+viewportRect.top+48-rect.top});nav.flush();}} onPage={page=>{if(!preparingIds.has(p.id))setPdf(p.id,{page});}} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf?<BoardPdf active={selected.includes(p.id)} collapsed={p.collapsed} onResize={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}} onLayout={contentReady} onSelect={()=>{if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);onFinish?.();}}} card={card!} width={p.width} settings={p.pdf} zoom={view.zoom} onRevealPage={page=>{const nav=navigation.current!,rect=page.getBoundingClientRect(),viewportRect=viewport.current!.getBoundingClientRect();nav.set({...nav.current,y:nav.current.y+viewportRect.top+48-rect.top});nav.flush();}} onPage={page=>{if(!preparingIds.has(p.id))setPdf(p.id,{page});}} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">

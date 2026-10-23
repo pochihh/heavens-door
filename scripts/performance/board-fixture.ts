@@ -1,5 +1,5 @@
 import type {Board,Card,CardInfo,Placement,Edge} from '../../src/shared';
-export function boardFixture(){
+export function boardFixture(pdfs=true){
   const images=new Map<string,string>();
   const cards:CardInfo[]=[],bodies=new Map<string,Card>(),placements:Placement[]=[],edges:Edge[]=[],boards:Board[]=[];
   const colors=['#c9838a','#c2aa6e','#80aaa6','#91aa8b','#a99ac4'];
@@ -14,7 +14,7 @@ export function boardFixture(){
       const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="${colors[i%5]}"/><path d="M0 ${i%120+20} Q150 0 320 160" fill="none" stroke="white" stroke-width="12"/><text x="15" y="180" font-size="26">Figure ${i}</text></svg>`;
       images.set('Bench/Figure '+i+'.svg','data:image/svg+xml,'+encodeURIComponent(svg));
       placements.push({...base,object:{type:'image',html:`<div data-better-edit-image="filled" style="width:320px"><img src="Figure ${i}.svg" alt="Figure ${i}"/><p>Figure ${i}</p></div>`}});
-    }else if(i<5996){const folder='Bench/Board '+i;boards.push({path:folder+'/Board.whiteboard',folder,name:'Board '+i,revision:'v1',cards:[],edges:[]});placements.push({...base,folder});}
+    }else if(i<5996||!pdfs){const folder='Bench/Board '+i;boards.push({path:folder+'/Board.whiteboard',folder,name:'Board '+i,revision:'v1',cards:[],edges:[]});placements.push({...base,folder});}
     else{
       const card:Card={id:'pdf'+i,path:'Bench/PDF '+i+'.md',name:'PDF '+i,title:'PDF '+i,body:'# PDF '+i,revision:'v1',legacy:false,source:{type:'pdf',file:'paper.pdf'}};
       const {body,...info}=card;cards.push(info);bodies.set(card.path,{...info,body});placements.push({...base,x:(i-5996)*700,y:25500,cardId:card.id,width:440,height:11400,pdf:{expanded:true}});

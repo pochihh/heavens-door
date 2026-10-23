@@ -12,7 +12,7 @@ import {readingText} from '../text/reading';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 
-export function BoardPdf({preparePreview=false,previewDensity=1,card,width,settings,zoom,collapsed=false,active=false,onResize,onRevealPage,onPage,onShowNotes,onMore,onCollapse,onOpen,onSelect,onLayout}: {preparePreview?:boolean;previewDensity?:number;card:CardInfo;width:number;settings:Placement['pdf'];zoom:number;collapsed?:boolean;active?:boolean;onResize?:React.PointerEventHandler<HTMLButtonElement>;onRevealPage:(page:HTMLElement)=>void;onPage:(page:number)=>void;onShowNotes:()=>void;onMore:(anchor:HTMLButtonElement)=>void;onCollapse:()=>void;onOpen?:()=>void;onSelect?:()=>void;onLayout?:()=>void}){
+export function BoardPdf({card,width,settings,zoom,collapsed=false,active=false,onResize,onRevealPage,onPage,onShowNotes,onMore,onCollapse,onOpen,onSelect,onLayout}: {card:CardInfo;width:number;settings:Placement['pdf'];zoom:number;collapsed?:boolean;active?:boolean;onResize?:React.PointerEventHandler<HTMLButtonElement>;onRevealPage:(page:HTMLElement)=>void;onPage:(page:number)=>void;onShowNotes:()=>void;onMore:(anchor:HTMLButtonElement)=>void;onCollapse:()=>void;onOpen?:()=>void;onSelect?:()=>void;onLayout?:()=>void}){
  const {context,body,expanded,setExpanded,change,add,error,ready}=useAssetAnnotations(card),[checksum,setChecksum]=useState(''),[pages,setPages]=useState<PdfPageBox[]>([]);
  const notifyLayout=useRef(onLayout);notifyLayout.current=onLayout;useEffect(()=>{if(ready)notifyLayout.current?.();},[ready,card.revision]);
  const parsed=useMemo(()=>annotationView(body),[body]);
@@ -27,7 +27,7 @@ export function BoardPdf({preparePreview=false,previewDensity=1,card,width,setti
    <Tool icon={collapsed?"down":"chevronUp"} label={collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!collapsed} onClick={onCollapse}/>
    <Tool className="board-pdf-more" icon="more" label={readingText.pdfActions} aria-haspopup="menu" onClick={e=>onMore(e.currentTarget)}/>
   </div></header>
-  {!collapsed&&<PdfReader preparePreview={preparePreview} previewDensity={previewDensity} onLayout={pages=>{setPages(pages);onLayout?.();}} path={card.path} source={card.source!} annotations={parsed.annotations} initialPage={page} singlePage={!settings?.expanded} onRevealPage={settings?.expanded?onRevealPage:undefined} renderZoom={zoom} onPage={onPage} onAnnotate={attrs=>{if(settings?.notes===false)onShowNotes();add(attrs);}} onSource={setChecksum} onAnnotation={openAnnotation}/>}
+  {!collapsed&&<PdfReader onLayout={pages=>{setPages(pages);onLayout?.();}} path={card.path} source={card.source!} annotations={parsed.annotations} initialPage={page} singlePage={!settings?.expanded} onRevealPage={settings?.expanded?onRevealPage:undefined} renderZoom={zoom} onPage={onPage} onAnnotate={attrs=>{if(settings?.notes===false)onShowNotes();add(attrs);}} onSource={setChecksum} onAnnotation={openAnnotation}/>}
   {!collapsed&&onResize&&<button className="resize-handle" aria-label={ui.whiteboard.resize(card.name)} onPointerDown={onResize}/>}</div>
   {!collapsed&&error&&<p role="alert">{error}</p>}
   {!collapsed&&settings?.notes!==false&&context&&<AnnotationRail compact previewLimit={5} active={active} pages={pages} sourceHash={checksum} page={settings?.expanded?undefined:page} path={card.path} body={body} cards={context.snapshot.cards} expanded={expanded} onExpanded={setExpanded} onChange={change}/>}

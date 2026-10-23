@@ -130,3 +130,40 @@ The native reader suite now creates two overlapping real PDF placements and chec
 
 
 Test.6 packaging and relaunch: the existing temporary-build workflow produced and signature-verified `0.1.2718-test.6`, preserving Test.5 under `.local/test-app/previous-test.5/`. General settings visibly confirm Test.6. The preserved Review workspace reopened at its saved camera with the experimental renderer enabled, Saved status and clean PDF overlap layering. No personal card content was edited. Stable `0.1.2718` and build number 4 remain unchanged; no release was published. Windows and another 10,000-element performance replay were not run for this CSS-only fix.
+
+
+## Core baseline and independent PDF page surfaces
+
+The Test.6 whole-attachment cache could replace PDFs with generic dark card rectangles when their preview bitmaps disappeared. The replacement used the complete attachment bounds, including the comment area, so it also looked too wide. The native `--stability` regression reuses a compiled pre-change app and deliberately evicts the board preview/tile caches. Its screenshot reproduces the reported dark boxes; the sampled white page falls to channel value 38 at 18% zoom (`pressure-before`). This is a controlled cache-pressure reproduction, not a claim that every graphics failure has the same cause.
+
+PDFs now remain on their original per-page reader surface across zoom and hover. They no longer participate in whole-attachment snapshots. Visible pages use a separate 64 MiB decoded-image cache, keyed by source path, content checksum and page; a cached page is shown before any needed refinement. Offscreen page pixels remain bounded, and the existing reader still provides selectable text, highlighting, comments and high-resolution detail. The six-level pressure replay (7%, 12%, 18%, 30%, 65%, 80%) keeps the sampled page white at 255 with no document reloads during the transitions (`pressure-acceptance`). Changing/relinking source content changes the checksum and cannot reuse another revision's page image. Both native reader modes pass search, annotations, resize, overlap, 300% detail and popup checks, with observed cache reuse and bytes below the limit.
+
+The core renderer skips empty tiles and substitutes small text strokes for unreadable overview glyphs. While zooming in, it reuses the current tile density and refines after motion stops; zooming out still observes viewport tile admission. Card movement now updates the selected DOM elements and connected SVG/mention lines directly per frame, then saves one board mutation on release. Escape restores the preview. Placement signatures and unchanged scene geometry are reused. Native checks verify the actual intermediate card/edge position while the file model remains unchanged, along with cancellation, delayed-save handling, group relationships, file moves, undo and context menus.
+
+Two separate real-file, native Electron fixtures are now retained:
+
+| Fixture | Cards | Text | Images | Boards | PDF attachments | Edges | Total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Core, no PDF | 2,500 | 2,000 | 1,300 | 200 | 0 | 4,000 | 10,000 |
+| Existing mixed fixture | 2,500 | 2,000 | 1,300 | 196 | 4 | 4,000 | 10,000 |
+
+The mixed test asserts all 80 PDF pages exist and render; the core test asserts zero PDF sources and zero page-cache bytes. Both run native editing, save/undo, movement, continuous drag, cancellation, multi-selection and transfer into a child board, on the physical Retina display. Both final unprofiled runs pass their functional assertions (`core-final-unprofiled`, `mixed-final-unprofiled`). CPU sampling is optional; their normal drag reports retain separate whole-operation and pointer-held presentation intervals.
+
+**The 10,000-element performance target is not yet accepted.** The final core run took 36.8 seconds to prepare every demanded image preview; mixed took 38.6 seconds. Pointer-held drag presentation had a 16.7 ms median but 66.7 ms p95 and about 83.3 ms p99 in both final runs. Earlier intermediate runs were better; those are not grounds to claim the remaining spikes are solved. These intervals come from Chromium presentation trace timestamps and do not measure physical input-to-display latency. The new fixtures are regression evidence, not a declaration of smooth 60 fps under all operations. Cold image preparation, gesture boundaries and long-session memory remain work for the core whiteboard. Windows was not tested.
+
+The separate warmed navigation replays (`core-acceptance-navigation`, `review-acceptance-navigation`) report presentation p95 around 17–33 ms. Review had zero PDF document reloads during each hover, pan and zoom phase, and its board tile cache used about 4–9 MiB instead of filling the 64 MiB budget with mostly empty tiles. These short runs do not supersede the less favorable continuous-drag results. The original editing and file behavior remain the reference; PDF performance must be measured independently. All 370 automated tests, lint/type checks and both native reader suites pass.
+
+```sh
+# Original mixed 10,000-element test, including 80 PDF pages.
+npm run test:retained -- mixed-10000 --full --retina
+# Additional mixed core test: still 10,000 elements, with no PDF files.
+npm run test:retained -- core-10000 --no-pdf --retina
+# Same navigation/presentation replay on the core fixture.
+npm run test:retained -- core-navigation --no-pdf --navigation --retina
+# Repeat with a disposable copy of the real Review workspace.
+npm run test:retained -- review-navigation --navigation --retina --review=/absolute/workspace
+# Force board-cache eviction while checking actual PDF screen pixels.
+npm run test:retained -- pdf-pressure --stability --retina --review=/absolute/workspace
+```
+
+`--trace` adds CPU sampling and intermediate diagnostic screenshots; use normal runs for final timing comparisons. These native checks require a physical Retina display. CI's ordinary unit suite verifies fixture composition; it does not substitute for the local native interaction tests. All generated projects/workspaces are under `.local/retained-check/`. Personal workspaces are copied for tests and never mutated by the probes.
