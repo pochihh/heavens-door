@@ -40,3 +40,10 @@ test('the desktop worker accepts automatic whiteboard names and preserves reques
   assert.equal((await call<unknown[]>({kind:'journalEntries',year:2026})).length,1);
   await assert.rejects(call({kind:'openJournal',date:'../escape',period:'daily'}),/Invalid journal date/);
 });
+
+test('a file-watcher startup error rejects opening instead of hanging',{timeout:15000},async t=>{
+ const directory=await fs.mkdtemp(join(tmpdir(),'heavens-door-watch-error-')),root=join(directory,'Workspace'),bundle=join(directory,'worker.cjs');await fs.mkdir(root);
+ await build({entryPoints:['src/workspace-worker.ts'],bundle:true,platform:'node',format:'cjs',outfile:bundle,logLevel:'silent',plugins:[{name:'watch-error',setup(plugin){plugin.onResolve({filter:/^chokidar$/},()=>({path:'watch-error',namespace:'watch-error'}));plugin.onLoad({filter:/.*/,namespace:'watch-error'},()=>({contents:`import {EventEmitter} from 'node:events';export default {watch(){const watcher=new EventEmitter();queueMicrotask(()=>watcher.emit('error',new Error('EMFILE: too many open files')));return watcher;}};`,loader:'js'}));}}]});
+ const worker=new Worker(bundle);t.after(async()=>{await worker.terminate();await fs.rm(directory,{recursive:true,force:true});});
+ await assert.rejects(new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('Opening hung')),3000);worker.on('message',message=>{if(message.id!==1)return;clearTimeout(timeout);if(message.error)reject(new Error(message.error));else resolve(message.result);});worker.once('error',error=>{clearTimeout(timeout);reject(error);});worker.postMessage({id:1,request:{kind:'open',root,cache:join(directory,'cache')}});}),/EMFILE/);
+});

@@ -1,4 +1,4 @@
-import {boardPreviews as previews,latestBoardPreviews,rememberBoardPreview} from './board-preview-store';
+import {boardPreviews as previews,boardThumbnails,latestBoardPreviews,rememberBoardPreview} from './board-preview-store';
 import {setRetainedEnabled} from './retained-setting';
 import {useLayoutEffect,useRef} from 'react';
 import type {Edge} from '../shared';
@@ -8,7 +8,7 @@ import {BOARD_CAMERA_EVENT,type Camera} from './navigation';
 import {strokeDash} from './edge-geometry';
 import {SceneIndex,sceneViewport,viewportPreviewDensity,intersects,type SceneBox,type SceneEntry,type SceneEdge} from './board-scene';
 import {PreviewCache} from './preview-cache';
-import {snapshotPlacement,allowSnapshotAttempt} from './board-snapshot';
+import {snapshotPlacement,allowSnapshotAttempt,boardThumbnailSize} from './board-snapshot';
 
 const TILE=512,PADDING=2;
 export class RetainedSurface {
@@ -17,7 +17,9 @@ export class RetainedSurface {
  private attempts=new Map<string,{key:string;count:number}>();private tiles=new PreviewCache<ImageBitmap>(64*1024*1024);private epoch=0;private tileBounds=new Map<string,SceneBox>();private paths=new WeakMap<SceneEdge,Path2D>();private canvas?:HTMLCanvasElement;private getCamera?:()=>Camera;private pending=0;private timer?:ReturnType<typeof setTimeout>;private disposed=false;private busy=false;private density=0;private settle?:ReturnType<typeof setTimeout>;private theme='';private fontFamily='system-ui';private sizes=new Map<FontSize,number>();private motion=0;private colorProbe?:HTMLElement;private colorCache=new Map<string,string>();private colors={text:'#222',card:'#eee',muted:'#888',canvas:'#fff'};
  constructor(private namespace:string){}
  key(entry:SceneEntry,density=this.density||1){return this.namespace+':'+entry.id+':'+entry.revision+':'+density;}
- has(entry:SceneEntry,density=this.density||1){if(entry.simple&&entry.measured)return true;return !!previews.get(this.key(entry,density));}
+ has(entry:SceneEntry,density=this.density||1){if(entry.simple&&entry.measured)return true;const image=this.source(entry,density);return !!image&&image.width>=Math.ceil(entry.width*density)&&image.height>=Math.ceil(entry.height*density);}
+ thumbnail(entry:SceneEntry){return boardThumbnails.get(this.key(entry,0));}
+ hasThumbnail(entry:SceneEntry){const image=this.thumbnail(entry),size=boardThumbnailSize(entry.width,entry.height);return !!image&&image.width>=size.width&&image.height>=size.height;}
  setScene(entries:SceneEntry[],edges:SceneEdge[],live:Set<string>,edgeLive:Set<string>){
   const old=new Map(this.entries.map(p=>[p.id,p])),oldEdges=new Map(this.edges.map(e=>[e.id,e])),dirty:SceneBox[]=[];
   for(const entry of entries){const previous=old.get(entry.id);if(previous&&previous.revision!==entry.revision){this.failed.delete(entry.id);this.attempts.delete(entry.id);}if(!previous||previous.revision!==entry.revision||previous.simple!==entry.simple||previous.x!==entry.x||previous.y!==entry.y||previous.width!==entry.width||previous.height!==entry.height||live.has(entry.id)!==this.live.has(entry.id)){if(previous)dirty.push(previous);dirty.push(entry);}old.delete(entry.id);}
@@ -31,26 +33,28 @@ export class RetainedSurface {
 
  attach(canvas:HTMLCanvasElement,camera:()=>Camera){this.canvas=canvas;this.getCamera=camera;this.colorProbe=document.createElement('span');Object.assign(this.colorProbe.style,{position:'absolute',visibility:'hidden',pointerEvents:'none'});canvas.parentElement!.appendChild(this.colorProbe);this.refreshTheme('initial');this.schedule();}
  refreshTheme(key:string){if(key===this.theme||!this.colorProbe)return;this.theme=key;this.sizes.clear();this.fontFamily=getComputedStyle(this.colorProbe).fontFamily;this.colorCache.clear();this.colors={text:this.color('var(--text)'),card:this.color('var(--card)'),muted:this.color('var(--muted)'),canvas:this.color('var(--canvas)')};this.tiles.clear();this.tileBounds.clear();this.epoch++;}
- async capture(entry:SceneEntry,node:HTMLElement,density:number){
-  if(entry.simple||this.busy||this.disposed||performance.now()-this.motion<150)return false;
+ async capture(entry:SceneEntry,node:HTMLElement,density:number,thumbnailOnly=false){
+  if(entry.simple&&!thumbnailOnly||this.busy||this.disposed||performance.now()-this.motion<150)return false;
   if(node.querySelector('[data-ready="false"]')||[...node.querySelectorAll('img')].some(i=>!i.complete))return false;
-  const key=this.key(entry,density);if(!allowSnapshotAttempt(this.attempts,entry.id,key)){this.failed.add(entry.id);this.error='Preview cache is full; using the existing live element.';return true;}
-  this.busy=true;const ticket=previews.begin(key,entry.revision);
-  try{const bitmap=await snapshotPlacement(node,density);const value={width:bitmap.width,height:bitmap.height,worldWidth:node.offsetWidth,worldHeight:node.offsetHeight,bitmap,close:()=>bitmap.close()};if(this.disposed||this.entries.find(e=>e.id===entry.id)?.revision!==entry.revision){value.close();previews.cancel(key,ticket.token);return false;}if(!previews.commit(ticket,value))return false;rememberBoardPreview(this.namespace+':'+entry.id,entry.revision,key);this.captures++;this.images+=node.querySelectorAll('img').length;this.epoch++;this.invalidate(entry);this.schedule();return true;}
-  catch(error){previews.cancel(key,ticket.token);if(!this.disposed){this.failed.add(entry.id);this.error=String(error);}return true;}
+  const key=this.key(entry,thumbnailOnly?0:density),cache=thumbnailOnly?boardThumbnails:previews;if(!allowSnapshotAttempt(this.attempts,entry.id,key)){this.failed.add(entry.id);this.error='Preview cache is full; using the existing live element.';return true;}
+  this.busy=true;const ticket=cache.begin(key,entry.revision);
+  try{const bitmap=await snapshotPlacement(node,thumbnailOnly?Math.min(1,64/Math.max(node.offsetWidth,node.offsetHeight)):density);const value={width:bitmap.width,height:bitmap.height,worldWidth:node.offsetWidth,worldHeight:node.offsetHeight,bitmap,close:()=>bitmap.close()};if(this.disposed||this.entries.find(e=>e.id===entry.id)?.revision!==entry.revision){value.close();cache.cancel(key,ticket.token);return false;}
+   if(!thumbnailOnly&&node.querySelector('img')){const size=boardThumbnailSize(bitmap.width,bitmap.height),canvas=new OffscreenCanvas(size.width,size.height);canvas.getContext('2d')!.drawImage(bitmap,0,0,size.width,size.height);const small=canvas.transferToImageBitmap();canvas.width=canvas.height=0;boardThumbnails.commit(boardThumbnails.begin(this.key(entry,0),entry.revision),{...value,width:small.width,height:small.height,bitmap:small,close:()=>small.close()});}
+   if(!cache.commit(ticket,value))return false;if(!thumbnailOnly)rememberBoardPreview(this.namespace+':'+entry.id,entry.revision,key);this.captures++;this.images+=node.querySelectorAll('img').length;this.epoch++;this.invalidate(entry);this.schedule();return true;}
+  catch(error){cache.cancel(key,ticket.token);if(!this.disposed){this.failed.add(entry.id);this.error=String(error);}return true;}
   finally{this.busy=false;}
  }
  private fontSize(size:FontSize){if(typeof size==='number')return size;const cached=this.sizes.get(size);if(cached)return cached;const probe=this.colorProbe;if(!probe)return fontSizePixels(size);probe.style.fontSize=String(fontSizeCSS(size));const value=parseFloat(getComputedStyle(probe).fontSize)||fontSizePixels(size);this.sizes.set(size,value);return value;}
  private color(value:string){const cached=this.colorCache.get(value);if(cached)return cached;const probe=this.colorProbe;if(!probe)return value;probe.style.color=value;const color=getComputedStyle(probe).color;this.colorCache.set(value,color);return color;}
  available(entry:SceneEntry,density:number){return !!this.source(entry,density);}
- private source(entry:SceneEntry,density:number){for(const scale of [density,density/2,density/4,density*2]){const image=previews.get(this.key(entry,scale));if(image)return image;}const last=latestBoardPreviews.get(this.namespace+':'+entry.id);if(last?.revision===entry.revision)return previews.get(last.key);}
+ private source(entry:SceneEntry,density:number){for(const scale of [density,density/2,density/4,density*2]){const image=previews.get(this.key(entry,scale));if(image)return image;}const last=latestBoardPreviews.get(this.namespace+':'+entry.id);if(last?.revision===entry.revision){const image=previews.get(last.key);if(image)return image;}return this.thumbnail(entry);}
  private drawEdge(ctx:CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D,g:SceneEdge){const edge=g.edge,width=edge.strokeWidth??2;ctx.strokeStyle=this.color(tintColor(edge.strokeColor,'stroke')??this.colors.muted);ctx.lineWidth=width;ctx.setLineDash(strokeDash(edge.strokeStyle,width)?.split(/[ ,]+/).map(Number)??[]);ctx.lineCap=edge.strokeStyle==='dotted'?'round':'butt';let path=this.paths.get(g);if(!path){path=new Path2D(g.path);this.paths.set(g,path);}ctx.stroke(path);ctx.setLineDash([]);
   const head=(kind:Edge['toArrowhead'],end:{x:number;y:number},previous:{x:number;y:number})=>{if(!kind||kind==='none')return;ctx.save();ctx.translate(end.x,end.y);ctx.rotate(Math.atan2(end.y-previous.y,end.x-previous.x));ctx.beginPath();ctx.moveTo(-8*width,-4*width);ctx.lineTo(0,0);ctx.lineTo(-8*width,4*width);if(kind!=='arrow'){ctx.closePath();ctx.fillStyle=kind==='triangle'?ctx.strokeStyle:this.colors.canvas;ctx.fill();}ctx.lineWidth=width;ctx.lineJoin='round';ctx.stroke();ctx.restore();};head(edge.fromArrowhead,g.start,g.samples[1]);head(edge.toArrowhead,g.end,g.samples.at(-2)!);
 
  }
  private drawWorld(ctx:CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D,box:SceneBox,density:number){
   for(const edge of this.edgeIndex.query(box))if(!this.edgeLive.has(edge.id))this.drawEdge(ctx,edge);
-  for(const entry of this.index.query(box)){if(this.live.has(entry.id))continue;const image=entry.simple?undefined:this.source(entry,density);if(image){ctx.drawImage(image.bitmap,entry.x,entry.y,entry.width,entry.height);continue;}
+  for(const entry of this.index.query(box)){if(this.live.has(entry.id))continue;const image=this.source(entry,density);if(image){ctx.drawImage(image.bitmap,entry.x,entry.y,entry.width,entry.height);continue;}
    const object=entry.placement.object,text=object?.type==='text',plain=text&&object.shape==='none';ctx.save();ctx.fillStyle=this.color(tintColor(entry.fill)??this.colors.card);ctx.lineWidth=entry.placement.strokeWidth??2;ctx.strokeStyle=entry.placement.strokeColor??this.colors.muted;ctx.setLineDash(strokeDash(entry.placement.strokeStyle,ctx.lineWidth)?.split(/[ ,]+/).map(Number)??[]);ctx.beginPath();
    if(text&&object.shape==='ellipse')ctx.ellipse(entry.x+entry.width/2,entry.y+entry.height/2,Math.max(0,entry.width-ctx.lineWidth)/2,Math.max(0,entry.height-ctx.lineWidth)/2,0,0,Math.PI*2);
    else if(text&&object.shape==='diamond'){ctx.moveTo(entry.x+entry.width/2,entry.y);ctx.lineTo(entry.x+entry.width,entry.y+entry.height/2);ctx.lineTo(entry.x+entry.width/2,entry.y+entry.height);ctx.lineTo(entry.x,entry.y+entry.height/2);ctx.closePath();}
@@ -83,7 +87,7 @@ export class RetainedSurface {
  }
  hit(x:number,y:number){return this.index.query({x,y,width:0,height:0}).at(-1);}
  edgeHit(x:number,y:number,zoom:number){const radius=10/zoom;let found:SceneEdge|undefined,best=radius;for(const g of this.edgeIndex.query({x:x-radius,y:y-radius,width:radius*2,height:radius*2}))for(let i=1;i<g.samples.length;i++){const a=g.samples[i-1],b=g.samples[i],dx=b.x-a.x,dy=b.y-a.y,t=Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/(dx*dx+dy*dy||1))),distance=Math.hypot(x-a.x-t*dx,y-a.y-t*dy);if(distance<best){best=distance;found=g;}}return found;}
- stats(){return {pending:this.pendingPreviews,images:this.images,frames:this.frames,captures:this.captures,compositions:this.compositions,sourceBytes:previews.bytes,tileBytes:this.tiles.bytes,live:this.live.size,failed:[...this.failed],error:this.error};}
+ stats(){return {pending:this.pendingPreviews,images:this.images,frames:this.frames,captures:this.captures,compositions:this.compositions,sourceBytes:previews.bytes,thumbnailBytes:boardThumbnails.bytes,thumbnailLimit:boardThumbnails.limit,tileBytes:this.tiles.bytes,live:this.live.size,failed:[...this.failed],error:this.error};}
  dispose(){this.disposed=true;cancelAnimationFrame(this.pending);clearTimeout(this.timer);clearTimeout(this.settle);this.tiles.clear();this.tileBounds.clear();this.colorProbe?.remove();this.canvas=undefined;}
 }
 export function RetainedCanvas({surface,viewport,camera}:{surface:RetainedSurface;viewport:React.RefObject<HTMLDivElement|null>;camera:()=>Camera}){

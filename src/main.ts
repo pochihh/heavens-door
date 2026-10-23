@@ -23,6 +23,8 @@ import {importImage,resolveImage,MAX_IMAGE_BYTES} from './core/images';
 import {workspacePath} from './core/files';
 import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, GraphicsDiagnostics, UpdateState } from './shared';
 
+// Large workspaces exceed the file-watch limit inherited by macOS app launches.
+if(process.platform!=='win32')process.setFdLimit(16384);
 app.setName(ui.common.appName);
 if(process.platform==='win32')app.setAppUserModelId(APP_ID);
 const appSettingsFile=join(app.getPath('userData'),'app-settings.json');

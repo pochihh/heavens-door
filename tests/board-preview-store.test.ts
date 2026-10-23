@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {boardPreviews,latestBoardPreviews,rememberBoardPreview,invalidateBoardSource,type BoardPreview} from '../src/renderer/board-preview-store';
+import {boardPreviews,boardThumbnails,latestBoardPreviews,rememberBoardPreview,invalidateBoardSource,type BoardPreview} from '../src/renderer/board-preview-store';
 const preview=()=>({width:4,height:4,worldWidth:4,worldHeight:4,bitmap:{} as ImageBitmap,closed:0,close(){this.closed++;}} satisfies BoardPreview&{closed:number});
 test('PDF reload invalidates every reference and pending density while preserving other cards',()=>{
  boardPreviews.clear();latestBoardPreviews.clear();
@@ -11,4 +11,15 @@ test('PDF reload invalidates every reference and pending density while preservin
  const stale=preview();assert.equal(boardPreviews.commit(pending,stale),false);assert.equal(stale.closed,1);
  assert.equal(boardPreviews.get(otherKey),other);assert.deepEqual([...latestBoardPreviews.keys()],['other']);
  boardPreviews.clear();latestBoardPreviews.clear();
+});
+
+test('image thumbnails survive detail eviction, obey revision changes, and invalidate with their source',async()=>{
+ const {RetainedSurface}=await import('../src/renderer/RetainedSurface');
+ boardPreviews.clear();boardThumbnails.clear();latestBoardPreviews.clear();
+ const entry={id:'p',revision:JSON.stringify({cardId:'image-card',revision:1}),simple:false,measured:true,x:0,y:0,width:64,height:64,placement:{id:'p',cardId:'image-card',x:0,y:0,width:64,height:64},title:'Image card'};
+ const surface=new RetainedSurface('image-check'),small=preview(),detail=preview(),key=surface.key(entry,1);
+ boardThumbnails.commit(boardThumbnails.begin(surface.key(entry,0),entry.revision),small);boardPreviews.commit(boardPreviews.begin(key,entry.revision),detail);rememberBoardPreview('image-check:p',entry.revision,key);
+ boardPreviews.clear();assert.equal(detail.closed,1);assert.ok(surface.available(entry,.05));assert.ok(surface.has(entry,.05));assert.equal(surface.has(entry,1),false);assert.equal(small.closed,0);
+ assert.equal(surface.available({...entry,revision:JSON.stringify({cardId:'image-card',revision:2})},.05),false);
+ invalidateBoardSource('image-card');assert.equal(surface.available(entry,.05),false);assert.equal(small.closed,1);assert.equal(boardThumbnails.bytes,0);latestBoardPreviews.clear();
 });

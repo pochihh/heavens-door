@@ -47,7 +47,11 @@ async function dispatch(request: Request) {
       },100);
     });
     watcher.on('error',error => parentPort!.postMessage({event:'error',error:String(error)}));
-    await new Promise<void>(resolve => watcher!.once('ready',resolve));
+    await new Promise<void>((resolve,reject)=>{
+      const ready=()=>{watcher!.off('error',failed);resolve();};
+      const failed=(error:unknown)=>{watcher!.off('ready',ready);reject(error);};
+      watcher!.once('ready',ready).once('error',failed);
+    });
     return workspace.snapshot();
   }
   if (!workspace) throw new Error(ui.errors.openAWorkspaceFirst);

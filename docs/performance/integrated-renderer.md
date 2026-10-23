@@ -170,3 +170,30 @@ npm run test:retained -- pdf-pressure --stability --retina --review=/absolute/wo
 
 
 Test.7 packaging and relaunch: `0.1.2718-test.7` was built and signature-verified by the temporary-build script. Test.6 quit normally with Saved status and its bundle is retained under `.local/test-app/previous-test.6/`. General settings visibly confirm Test.7. The preserved Review workspace reopened at its saved camera (about 23%), with all seven PDF attachments displaying page content, the experimental renderer enabled and Saved status. No personal card content was edited during this verification. Stable `0.1.2718` and build number 4 are unchanged, and nothing was published. This Test build is for reviewing the PDF correction and core interaction changes; it does not mark the 10,000-element performance acceptance complete.
+
+
+## Image continuity at overview zoom
+
+The `--images` native regression adds an image to an ordinary card in the existing fixture, without changing the element count. It first shows that card and a standalone image at readable zoom, then checks their actual screenshot colors at 6%, 2.4% and 0.8% zoom, including a return to 6%. It evicts the detailed preview and composed-tile caches before each sample. The pre-change app loses the card image at 6% and paints the ordinary card fill instead (`images-before`). This exposes a missing check in the earlier count-only overview tests.
+
+Image-bearing placements now retain a separate thumbnail with at most 64 pixels along either dimension, inside a 32 MiB decoded-pixel LRU budget. Normal preview capture also saves a small copy. Live card images acquire that thumbnail after navigation settles; image load events participate in the existing readiness checks. Simplified card rendering uses available image pixels rather than discarding them for a plain outline. Sufficient cached detail is reused when zooming out, and both thumbnail and detail revisions are invalidated on source reload. PDFs keep their independent page cache. Detailed live images still use the original image when reading or editing; this does not replace source files with thumbnails.
+
+Both `images-core-10000` and `images-mixed-10000` pass all eight native color samples, idle rendering (zero additional frames), editing/save/undo, dragging, multi-selection, child-board transfer and context-menu checks on the physical Retina display. The core fixture has zero PDF sources/pages; the mixed fixture renders all 80 PDF pages. Thumbnail bytes during the pressure samples stayed below 2.1 MB. All 372 automated tests and lint/type checks pass, including thumbnail revision invalidation and dimension/byte bounds.
+
+Cold preparation is still substantial: 46.9 seconds for core and 43.0 seconds for mixed in these runs. Warm pan rAF p95 was 17.5/17.2 ms; pointer-held presentation p95 was 83.3/50.0 ms respectively. These are short hardware diagnostics, not proof of a universal frame-rate guarantee or a cold-start improvement. Previously unread card bodies may still use title-only overview rendering. The bounded thumbnail cache is rebuildable and can itself evict older images under sustained pressure.
+
+```sh
+npm run test:retained -- image-smoke --images --retina
+npm run test:retained -- image-core --no-pdf --images --retina
+npm run test:retained -- image-mixed --full --images --retina
+```
+
+
+### Packaged macOS launch check
+
+Opening the persistent no-PDF manual workspace from the packaged Test.8 app exposed a separate startup limit. The process stopped at roughly 4,070 workspace file handles, while the workspace worker waited forever for its watcher to become ready. Command-line fixture runs inherited a higher descriptor limit, so they did not reproduce this launch condition. A worker regression injects `EMFILE` during watcher initialization: before the correction it times out with “Opening hung.”
+
+On macOS/Linux the main process now requests a 16,384-descriptor soft limit through Electron's existing `process.setFdLimit` API, bounded by the OS hard limit. Watcher startup errors also reject the opening request and return the existing recoverable error UI. Windows skips this process API. These are process-local limits; no system-wide settings are changed. The native 10,000-element runs above remain the image/rendering regressions; the packaged launch is checked separately.
+
+
+Packaged verification: the original 65,536 request remained above this Mac's 61,440 kernel cap and did not resolve the inherited limit. The final 16,384 request does: Test.10 (`0.1.2718-test.10`) opened the persistent `10k-core-no-pdf` workspace through its registered-workspace UI, displayed Bench with the experimental renderer enabled, and reached Saved. General settings visibly confirm the running version. Test.7, Test.8 and Test.9 bundles are preserved separately; the existing script verified the final app signature. Stable `0.1.2718`, build number 4 and release publishing are unchanged. All 373 automated tests pass; lint/types pass. The watcher-error test fails before the fix and reports EMFILE correctly afterward. Windows and long-session memory were not rechecked in this pass.
