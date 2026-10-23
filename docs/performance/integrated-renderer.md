@@ -167,3 +167,6 @@ npm run test:retained -- pdf-pressure --stability --retina --review=/absolute/wo
 ```
 
 `--trace` adds CPU sampling and intermediate diagnostic screenshots; use normal runs for final timing comparisons. These native checks require a physical Retina display. CI's ordinary unit suite verifies fixture composition; it does not substitute for the local native interaction tests. All generated projects/workspaces are under `.local/retained-check/`. Personal workspaces are copied for tests and never mutated by the probes.
+
+
+Test.7 packaging and relaunch: `0.1.2718-test.7` was built and signature-verified by the temporary-build script. Test.6 quit normally with Saved status and its bundle is retained under `.local/test-app/previous-test.6/`. General settings visibly confirm Test.7. The preserved Review workspace reopened at its saved camera (about 23%), with all seven PDF attachments displaying page content, the experimental renderer enabled and Saved status. No personal card content was edited during this verification. Stable `0.1.2718` and build number 4 are unchanged, and nothing was published. This Test build is for reviewing the PDF correction and core interaction changes; it does not mark the 10,000-element performance acceptance complete.
