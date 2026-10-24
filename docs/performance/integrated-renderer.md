@@ -212,4 +212,4 @@ npm run test:retained -- feedback-core-10000 --no-pdf --retina --images
 npm run test:retained -- feedback-mixed-10000 --full --retina --images
 ```
 
-Test.11 (`0.1.2718-test.11`) is packaged and signature-verified. Test.10 is preserved under `.local/test-app/previous-test.10/`. Stable `0.1.2718`, build number 4, and release publishing remain unchanged. The Mac locked before the final packaged relaunch, which remains pending an unlock.
+Test.11 (`0.1.2718-test.11`) is packaged and signature-verified. Test.10 is preserved under `.local/test-app/previous-test.10/`. Stable `0.1.2718`, build number 4, and release publishing remain unchanged. After the Mac was unlocked, the packaged app showed workspace management directly with no remembered root. First Door opened successfully; General settings confirmed version 0.1.2718-test.11. After a normal Quit and a fresh launch without workspace arguments, First Door reopened automatically on the saved Heaven's Door board, with the experimental renderer enabled and Saved status. Only the Test app remained running. No personal note content was edited during this check.
