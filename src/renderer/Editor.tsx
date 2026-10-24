@@ -12,7 +12,7 @@ import {createPortal} from 'react-dom';
 import {TitleContent,titleSlot} from './TitleContent';
 import { EditorContent, useEditor, ReactNodeViewRenderer } from '@tiptap/react';
 import type { CardInfo } from '../shared';
-import { unsupported, preview } from './markdown';
+import { unsupported, preview, markdownSource } from './markdown';
 import { withCardTitle } from '../card-title';
 import {EditorControls} from './EditorControls';
 import {NodeSelection,Plugin,PluginKey} from '@tiptap/pm/state';
@@ -32,7 +32,7 @@ function EditableCard({noteOnly=false,onAnnotation,onTitleDone,afterTitle,path,b
   const context=useContext(ViewBlockContext),settings=context?.snapshot.preferences?.editor??DEFAULT_EDITOR_SETTINGS;
   const links=useDocumentLinks(path),bindings=useRef(context?.snapshot.preferences?.keybindings);bindings.current=context?.snapshot.preferences?.keybindings;
   const parsed=annotationView(body),footer=useRef(parsed.footer);footer.current=parsed.footer;
-  const content=parsed.content,blocked=!!parsed.error||unsupported(content);const initial=(text:string)=>noteOnly?text:withCardTitle(text);
+  const content=parsed.content,blocked=!!parsed.error||unsupported(content);const initial=(text:string)=>markdownSource(noteOnly?text:withCardTitle(text));
   const [initialContent]=useState(()=>initial(content));
   const [imageError,setImageError]=useState(''),imageInput=useRef<HTMLInputElement>(null),actionLabel=useRef<string|undefined>(undefined),imageHandler=useRef<(files:File[],position?:number)=>void>(()=>{});
   const [slot]=useState(titleSlot),hasMetadata=!!afterTitle,metadataVisible=useRef(hasMetadata);metadataVisible.current=hasMetadata;
@@ -87,7 +87,7 @@ function EditableCard({noteOnly=false,onAnnotation,onTitleDone,afterTitle,path,b
   },[editor,autofocus,blocked,focusPoint]);
   if(parsed.error)return <div className="editor-body"><p className="reader-message">{parsed.error} {readingText.repairAnnotationFooter}</p><pre>{body}</pre></div>;
   if (blocked) return <div className="editor-body"><p className="notice">{ui.editor.unsupportedMarkdown}</p><TitleContent path={path} className="prose" html={preview(body,path)} afterTitle={afterTitle}/></div>;
-  if (!editor) return null;
+  if (!editor) return <TitleContent path={path} className="prose editor-body" html={preview(body,path,!noteOnly)}/>;
   return <>
     <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml" multiple hidden onChange={e=>{const files=[...e.target.files??[]];e.target.value='';void insertImages(files);}}/>
     {imageError&&<p className="editor-image-error" role="alert">{imageError}</p>}

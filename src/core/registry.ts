@@ -50,6 +50,13 @@ export class WorkspaceRegistry {
       return [...new Map(entries.map(entry=>[entry.root,entry])).values()];
     }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;}
   }
+  async last(){
+    try{const root=(await fs.readFile(this.file+'.last','utf8')).trim();return (await this.list()).find(w=>w.root===root&&w.status==='available')?.root;}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
+  }
+  async remember(root:string){
+    const temporary=this.file+'.last.'+randomUUID()+'.tmp';await fs.mkdir(dirname(this.file),{recursive:true});
+    try{await fs.writeFile(temporary,root+'\n',{flag:'wx',mode:0o600});await fs.rename(temporary,this.file+'.last');}finally{await fs.unlink(temporary).catch(()=>undefined);}
+  }
   register(root:string) {return this.update(async entries=>{const actual=await fs.realpath(root);return entries.some(entry=>entry.root===actual)?entries:[...entries,{root:actual,lastUpdated:null}];});}
   async rename(root:string,name:string){await this.update(async entries=>{if(!entries.some(e=>e.root===root)||!name.trim()||name.trim().length>120)throw new Error(ui.errors.invalidWorkspaceRegistry);return entries.map(e=>e.root===root?{...e,name:name.trim()}:e);});return this.list();}
   async reorder(roots:string[]){

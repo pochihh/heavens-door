@@ -44,23 +44,24 @@ export function isVisible(p: Placement, camera: Camera, width: number, height: n
   return (p.x + p.width) * camera.zoom + camera.x > -margin && p.x * camera.zoom + camera.x < width + margin &&
     (p.y + footprint) * camera.zoom + camera.y > -margin && p.y * camera.zoom + camera.y < height + margin;
 }
+type CardPreview = {revision:string;html:string};
 const Preview = memo(function Preview({ card, onOpen, cache, onReady, collapsed=false }: {
-  card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, string>; onReady:()=>void;
+  card: CardInfo; collapsed?:boolean; onOpen: (id: string) => void; cache: Map<string, CardPreview>; onReady:()=>void;
 }) {
   const key = `${card.path}:${card.revision}`;
-  const [content,setContent]=useState({key,html:cache.get(key)??''});
+  const [content,setContent]=useState(()=>{const cached=cache.get(card.path);return {key:cached?.revision===card.revision?key:'',html:cached?.html??''};});
   const {html}=content,ready=content.key===key&&!!html;
   useEffect(() => {
     if(collapsed)return;
     let live = true;
-    const cached = cache.get(key);
-    if (cached !== undefined) { setContent({key,html:cached}); return; }
+    const cached = cache.get(card.path);
+    if (cached?.revision === card.revision) { setContent({key,html:cached.html}); return; }
     void window.door.request<Card>({ kind: 'card', path: card.path }).then(c => {
       const rendered = preview(c.body, c.path);
       // Bound previews to 256 entries of at most 32k characters each (same memory ceiling).
       if (rendered.length <= 32000 && c.revision === card.revision) {
         if (cache.size >= 256) cache.delete(cache.keys().next().value!);
-        cache.set(key, rendered);
+        cache.set(card.path, {revision:card.revision,html:rendered});
       }
       if (live) setContent({key,html:rendered});
     }).catch(() => { if (live) setContent({key,html:'<p>'+ui.whiteboard.cardUnavailable+'</p>'}); });
@@ -98,7 +99,7 @@ interface Props {
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
   board: Board; camera: Camera; rect: DOMRect; button:number; additive: boolean; initialSelection: string[]; initialEdges:string[];
-  moved: boolean; placements?:Map<string,Placement>; movingEdges?:Edge[]; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
+  moved: boolean; manualHeight?:boolean; placements?:Map<string,Placement>; movingEdges?:Edge[]; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
 
@@ -131,7 +132,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   const deleting=useRef(false);
   const dragFrame = useRef<number | null>(null);
   const dragPoint = useRef({ x: 0, y: 0 });
-  const cache = useRef(new Map<string, string>());
+  const cache = useRef(new Map<string, CardPreview>());
   const [size, setSize] = useState({ width: 1000, height: 800 });
   const [view, setView] = useState<Camera>(()=>initialCamera??{ x: 20, y: 20, zoom: 0.85 });
   const [objectPreview,setObjectPreview]=useState<{id:string;width:number;x?:number}>();
@@ -162,6 +163,14 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   const textOrigin=useRef<{id:string;x:number;width:number;left:boolean}|undefined>(undefined),[textReplacement,setTextReplacement]=useState<string>();
   const current = working ?? board;
   const draftTitle=useMemo(()=>draft?leadingTitle(draft.body)?.text??'':undefined,[draft?.body]);
+  // Keep edited content visible through saving and preview loading; retain at most one oversized draft.
+  useLayoutEffect(()=>{
+    if(!draft)return;
+    const html=preview(draft.body,draft.card.path);
+    for(const [path,value] of cache.current)if(path!==draft.card.path&&value.html.length>32000)cache.current.delete(path);
+    if(cache.current.size>=256&&!cache.current.has(draft.card.path))cache.current.delete(cache.current.keys().next().value!);
+    cache.current.set(draft.card.path,{revision:draft.card.revision,html});
+  },[draft?.card.path,draft?.card.revision,draft?.body]);
   const active = current.cards.find(p => !p.collapsed && p.id === editingPlacement && p.cardId === draft?.card.id) ?? current.cards.find(p => !p.collapsed && p.cardId === draft?.card.id);
   const boardLookup = useMemo(() => new Map(boards.map(b => [b.folder, b])), [boards]);
   const branchEnds=useMemo(()=>new Map(current.edges.filter(e=>e.kind==='branch').map(e=>[e.to,e.toSide??opposite[e.fromSide??'right']])),[current.edges]);
@@ -270,7 +279,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   }
   function promoteAt(x:number,y:number,immediate=false){
     if(!surface||!viewport.current||!navigation.current)return;const rect=viewport.current.getBoundingClientRect();if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return;const camera=navigation.current.current,point={x:(x-rect.left-camera.x)/camera.zoom,y:(y-rect.top-camera.y)/camera.zoom,width:0,height:0};
-    const hit=surface.index.query(point).filter(p=>!gesture.current?.ids.includes(p.id)).at(-1),edge=hit?undefined:surface.edgeHit(point.x,point.y,camera.zoom),id=hit&&surface.live.has(hit.id)?hovered:hit?.id??'',edgeId=edge?.id??'';
+    const hit=surface.index.query(point).filter(p=>!gesture.current?.ids.includes(p.id)&&(!surface.live.has(p.id)||lookup.get(p.placement.cardId)?.source?.type!=='pdf')).at(-1),edge=hit?undefined:surface.edgeHit(point.x,point.y,camera.zoom),id=hit&&surface.live.has(hit.id)?hovered:hit?.id??'',edgeId=edge?.id??'';
     const apply=()=>{hoverPending.current=undefined;if(id!==hovered||edgeId!==hoveredEdge)flushSync(()=>{setHovered(id);setHoveredEdge(edgeId);});};
     if(immediate||gesture.current){clearTimeout(hoverPending.current?.timer);apply();}
     else if(viewport.current.dataset.navigating){clearTimeout(hoverPending.current?.timer);hoverPending.current=undefined;}
@@ -375,8 +384,9 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
   }
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
+    g.manualHeight ||= Math.abs(y-g.y)>10;
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
-      { ...p, x: p.x + dx, y: p.y + dy } : { ...p, ...(!p.folder?{autoHeight:false}:{}), width: Math.max(p.object?.type==='image'?40:lookup.get(p.cardId)?.source?.type==='pdf'?120:200, p.width + dx), height: Math.max(120, g.resizeHeight! + dy) }) };
+      { ...p, x: p.x + dx, y: p.y + dy } : { ...p, ...(!p.folder?{autoHeight:autoHeight(p)&&!g.manualHeight}:{}), width: Math.max(p.object?.type==='image'?40:lookup.get(p.cardId)?.source?.type==='pdf'?120:200, p.width + dx), height: Math.max(120, g.resizeHeight! + dy) }) };
   }
   function move(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
     const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;

@@ -30,7 +30,7 @@ export function BoardPdf({card,width,settings,zoom,collapsed=false,active=false,
   {!collapsed&&<PdfReader onLayout={pages=>{setPages(pages);onLayout?.();}} path={card.path} source={card.source!} annotations={parsed.annotations} initialPage={page} singlePage={!settings?.expanded} onRevealPage={settings?.expanded?onRevealPage:undefined} renderZoom={zoom} onPage={onPage} onAnnotate={attrs=>{if(settings?.notes===false)onShowNotes();add(attrs);}} onSource={setChecksum} onAnnotation={openAnnotation}/>}
   {!collapsed&&onResize&&<button className="resize-handle" aria-label={ui.whiteboard.resize(card.name)} onPointerDown={onResize}/>}</div>
   {!collapsed&&error&&<p role="alert">{error}</p>}
-  {!collapsed&&settings?.notes!==false&&context&&<AnnotationRail compact previewLimit={5} active={active} pages={pages} sourceHash={checksum} page={settings?.expanded?undefined:page} path={card.path} body={body} cards={context.snapshot.cards} expanded={expanded} onExpanded={setExpanded} onChange={change}/>}
+  {!collapsed&&settings?.notes!==false&&context&&<AnnotationRail compact previewLimit={settings?.expanded?5:undefined} flow={!settings?.expanded} active={active} pages={pages} sourceHash={checksum} onJump={id=>{const note=parsed.annotations.find(a=>a.id===id);if(!settings?.expanded)onPage(note?.page??note?.anchors?.[0]?.page??1);}} path={card.path} body={body} cards={context.snapshot.cards} expanded={expanded} onExpanded={setExpanded} onChange={change}/>}
   {!collapsed&&settings?.notes!==false&&<PdfNoteLink id={expanded} color={parsed.annotations.find(a=>a.id===expanded)?.color} pages={pages}/>}
  </div>;
 }

@@ -14,3 +14,9 @@ test('blank pages can hold overflow; a tall comment never overlaps later comment
 test('single-column PDF comments overflow continuously without making another column',()=>{
  const positions=annotationPositions([{id:'a',page:1,height:800},{id:'b',page:1,height:200},{id:'c',page:2,height:80}],pages,8,{singleColumn:true,start:120});assert.deepEqual([...positions.values()],[{top:120,column:0},{top:928,column:0},{top:1136,column:0}]);
 });
+
+
+test('single-page preview flows every page comment in one ordered column',()=>{
+ const positions=annotationPositions([{id:'a',page:1,height:42},{id:'b',page:3,height:100},{id:'c',page:20,height:42}],[{page:3,top:72,height:600}],8,{flow:true});
+ assert.deepEqual([...positions.values()],[{top:72,column:0},{top:122,column:0},{top:230,column:0}]);
+});

@@ -231,7 +231,7 @@ test('floating block grips and row tools remain interactive inside a whiteboard'
   document.elementFromPoint=()=>null;
   dom.window.Range.prototype.getClientRects=()=>[] as unknown as DOMRectList;dom.window.Range.prototype.getBoundingClientRect=()=>new DOMRect(0,0,0,0);
   const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react'),{imageHtml,row,imageLayout}=await import('../src/renderer/image-layout');
-  const card={id:'image-card',path:'images.md',name:'Images',revision:'r',legacy:false,body:'# Images\n\nAlpha\n\nBeta\n\n'+imageHtml(row([{kind:'single',src:'a.png',width:'180px',alignment:'left',caption:'A long caption that wraps across several lines.'}]))};
+  const card={id:'image-card',path:'images.md',name:'Images',revision:'r',legacy:false,body:'# Images\n\nAlpha\n\nBeta\n\n'+imageHtml(row([{kind:'single',src:'a.png',width:'180px',alignment:'left',caption:'A long caption that wraps across several lines.'},{kind:'placeholder'}]))};
   window.door={assetUrl:(path:string)=>`heavens-asset://vault/${path}`,request:async()=>card} as unknown as typeof window.door;
   const board={path:'board.whiteboard',folder:'',name:'Board',revision:'r',cards:[{id:'p',cardId:card.id,x:0,y:0,width:500,height:600}],edges:[]};let finishes=0,saves=0;
   function Fixture(){const [draft,setDraft]=useState<{card:typeof card;body:string}|null>(null);return <Whiteboard board={board} cards={[card]} draft={draft} initialCamera={{x:0,y:0,zoom:1}} onOpen={()=>setDraft({card,body:card.body})} onEdit={body=>setDraft(d=>d&&{...d,body})} onFinish={()=>{finishes++;setDraft(null);}} onSave={()=>{saves++;}} onCreate={()=>assert.fail('no new cards')}/>;}
@@ -318,4 +318,42 @@ test('renaming the same card does not remount its editor or reset its title sele
   try{await act(async()=>root.render(<CardEditor id="stable" path="Slipbox/untitled.md" body="# Finished title" cards={[]} onEdit={body=>edits.push(body)}/>));const el=document.querySelector('.tiptap') as HTMLElement&{editor:import('@tiptap/core').Editor};el.editor.commands.setTextSelection(8);const before=el.editor.state.selection.from;
     await act(async()=>root.render(<CardEditor id="stable" path="Slipbox/Finished title.md" body="# Finished title" cards={[]} onEdit={body=>edits.push(body)}/>));assert.equal(document.querySelector('.tiptap'),el);assert.equal(el.editor.state.selection.from,before);assert.deepEqual(edits,[]);
   }finally{await act(async()=>root.unmount());}
+});
+
+
+test('leaving an edited card keeps its latest text visible while the saved preview request is delayed',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});document.elementFromPoint=()=>null;dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+ const {Whiteboard}=await import('../src/renderer/Board');
+ const card={id:'c',path:'note.md',name:'Note',revision:'old',legacy:false,body:'# Title\n\nOriginal'};let delayed:((value:typeof card)=>void)|undefined;
+ window.door={assetUrl:(p:string)=>p,request:async()=>new Promise<typeof card>(resolve=>{delayed=resolve;})} as unknown as typeof window.door;
+ const board={path:'board.whiteboard',folder:'',name:'Board',revision:'r',cards:[{id:'p',cardId:'c',x:0,y:0,width:340,height:280}],edges:[]};
+ const root=createRoot(document.getElementById('root')!);const props={board,onSave:()=>{},onOpen:()=>{},onCreate:()=>{}};
+ try{
+  await act(async()=>root.render(<Whiteboard {...props} cards={[card]} draft={{card,body:'# Title\n\nLatest edit'}} onEdit={()=>{}}/>));
+  assert.match(document.querySelector('.tiptap')!.textContent!,/Latest edit/);
+  await act(async()=>root.render(<Whiteboard {...props} cards={[{...card,revision:'saved'}]} draft={null}/>));
+  assert.match(document.querySelector('.card-preview')!.textContent!,/Latest edit/,'never replace edited content with an empty placeholder');
+  assert.equal(document.querySelector('.card-preview')!.getAttribute('data-ready'),'false');
+  await act(async()=>{delayed!({...card,revision:'saved',body:'# Title\n\nLatest edit'});});
+  assert.match(document.querySelector('.card-preview')!.textContent!,/Latest edit/);assert.equal(document.querySelector('.card-preview')!.getAttribute('data-ready'),'true');
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('width resizing preserves automatic card height until vertical travel is deliberate at any zoom',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});document.elementFromPoint=()=>null;dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+ const {Whiteboard}=await import('../src/renderer/Board');const card={id:'c',path:'note.md',name:'Note',revision:'r',legacy:false,body:'# Title\n\nText'};
+ window.door={assetUrl:(p:string)=>p,request:async()=>card} as unknown as typeof window.door;
+ const board={path:'board.whiteboard',folder:'',name:'Board',revision:'r',cards:[{id:'p',cardId:'c',x:0,y:0,width:340,height:280}],edges:[]};let saved=board;
+ const root=createRoot(document.getElementById('root')!),pointer=(target:EventTarget,type:string,x:number,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));
+ try{
+  await act(async()=>root.render(<Whiteboard board={board} cards={[card]} initialCamera={{x:0,y:0,zoom:.25}} onSave={next=>{saved=next as typeof board;}} onOpen={()=>{}} onCreate={()=>{}}/>));
+  await act(async()=>{pointer(document.querySelector('.resize-handle')!,'pointerdown',100,100);pointer(document,'pointermove',125,105);pointer(document,'pointerup',125,105);});
+  assert.equal((saved.cards[0] as import('../src/shared').Placement).autoHeight,true);assert.equal(saved.cards[0].width,440);
+  await act(async()=>{pointer(document.querySelector('.resize-handle')!,'pointerdown',100,100);pointer(document,'pointermove',125,120);pointer(document,'pointerup',125,120);});
+  assert.equal((saved.cards[0] as import('../src/shared').Placement).autoHeight,false);
+ }finally{await act(async()=>root.unmount());}
 });

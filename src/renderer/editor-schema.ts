@@ -14,13 +14,23 @@ const CardKit=StarterKit.extend({addExtensions(){return (this.parent?.()??[]).ma
   const target=decodeURIComponent(href.slice(5)),text=helpers.renderChildren(node);return '[['+target+(text===target?'':'|'+text)+']]';
 }}):extension);}});
 
-import { Markdown } from '@tiptap/markdown';
+import { Markdown,MarkdownManager } from '@tiptap/markdown';
 import Image from '@tiptap/extension-image';
 import {AnnotationMark,TextColors,htmlAttribute,inlineHtmlToken,supportedHtml} from './editor-html';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
 import { assetPath } from './markdown';
+
+// Match the editor's installed Marked version; preserve empty tasks in mixed lists.
+const editorMarkdown=new MarkdownManager().instance;
+class CardTokenizer extends editorMarkdown.Tokenizer{
+  list(source:string){
+    const token=super.list(source);
+    if(token)editorMarkdown.walkTokens([token],item=>{if(item.type==='list_item'&&/^[-+*][ \t]+\[[ xX]\]$/.test(item.raw.trim()))item.raw+=' ';});
+    return token;
+  }
+}
 
 // The reserved first heading is editable content; its empty prompt is only CSS.
 const CardTitle=Extension.create({
@@ -49,7 +59,7 @@ export function cardMarkdown(editor:Editor,doc:JSONContent=editor.getJSON()){
 export function titleMetadata(slot:HTMLElement,visible:()=>boolean=()=>true){return Extension.create({name:'titleMetadata',addProseMirrorPlugins(){return [new Plugin({props:{decorations(state){const first=state.doc.firstChild;return first&&visible()?DecorationSet.create(state.doc,[Decoration.widget(first.nodeSize,slot,{side:-1,stopEvent:()=>true,ignoreSelection:true})]):null;}}})];}});}
 export function extensions(path: string,codeView?:NodeViewRenderer,htmlView?:NodeViewRenderer,imageView?:NodeViewRenderer,mathView?:NodeViewRenderer,getBindings?:()=>Keybindings|undefined) {
   // withCardTitle supplies a new card’s body line; trailingNode would recreate deleted lines.
-  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({codeBlock:false,undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),CodeBlock.extend({addInputRules(){return [/^```([\w#+.-]*)[ \t\n]$/,/^~~~([\w#+.-]*)[ \t\n]$/].map(find=>textblockTypeInputRule({find,type:this.type,getAttributes:match=>({language:match[1]||null})}));},...(codeView?{addNodeView:()=>codeView}:{})}).configure({lowlight:{...codeHighlight,highlightAuto:(text:string)=>codeHighlight.highlight('plaintext',text)}}),Markdown,TextColors,AnnotationMark,
+  return [cardKeyboard(getBindings),CardTitle,CardKit.configure({codeBlock:false,undoRedo:false,trailingNode:false,link:{openOnClick:false,protocols:['card','wiki']}}),CodeBlock.extend({addInputRules(){return [/^```([\w#+.-]*)[ \t\n]$/,/^~~~([\w#+.-]*)[ \t\n]$/].map(find=>textblockTypeInputRule({find,type:this.type,getAttributes:match=>({language:match[1]||null})}));},...(codeView?{addNodeView:()=>codeView}:{})}).configure({lowlight:{...codeHighlight,highlightAuto:(text:string)=>codeHighlight.highlight('plaintext',text)}}),Markdown.configure({markedOptions:{tokenizer:new CardTokenizer()}}),TextColors,AnnotationMark,
     ...(['mathInline','mathBlock'] as const).map(name=>TiptapNode.create({name,group:name==='mathBlock'?'block':'inline',inline:name==='mathInline',atom:true,
       addInputRules(){return name==='mathInline'?[nodeInputRule({find:/\$(?!\$)([^\n$]+)\$$/,type:this.type,getAttributes:match=>{const token=mathToken(match[0]);return token?{latex:token.text}:false;}})]:[new InputRule({find:/^\$\$ $/,handler:({state})=>{const {$from}=state.selection;if($from.parent.type.name!=='paragraph'||$from.parentOffset!==$from.parent.content.size||!$from.node(-1).canReplaceWith($from.index(-1),$from.indexAfter(-1),this.type))return null;const from=$from.before(),tr=state.tr;tr.replaceWith(from,$from.after(),[this.type.create(),state.schema.nodes.paragraph.create()]);tr.setSelection(NodeSelection.create(tr.doc,from));}})];},
       addAttributes(){return {latex:{default:''}};},parseHTML(){return [{tag:(name==='mathBlock'?'div':'span')+'[data-latex]',getAttrs:element=>({latex:(element as HTMLElement).dataset.latex})}];},renderHTML({node}){return [name==='mathBlock'?'div':'span',{'data-latex':node.attrs.latex}];},

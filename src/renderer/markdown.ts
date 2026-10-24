@@ -26,10 +26,14 @@ export function unsupported(body: string) {
   const parts=annotationView(body);if(parts.error)return true;let text=annotationReferences(parts.content);marked.walkTokens(marked.lexer(body),token=>{if(['html','code','codespan'].includes(token.type))text=text.replace(token.raw,'');});
   return /!\[\[|\[\^/m.test(text);
 }
+export function markdownSource(body:string){
+  if(!/(?:<\/div>|<div\b[^>\n]*\/>)[ \t]*\r?\n(?=[ \t]{0,3}(?:[-+*]|\d+[.)])[ \t])/.test(body))return body;
+  return marked.lexer(body).map(token=>token.type==='html'?token.raw.replace(/((?:<\/div>|<div\b[^>\n]*\/>)[ \t]*\r?\n)(?=[ \t]{0,3}(?:[-+*]|\d+[.)])[ \t])/g,'$1\n'):token.raw).join('');
+}
 export function preview(body: string,path: string,reservedTitle=true) {
   // Match the editor's Markdown whitespace without mounting an editor for each preview.
   body=annotationReferences(annotationView(body).content);
-  const source=marked.lexer(reservedTitle?withCardTitle(body):body);
+  const source=marked.lexer(markdownSource(reservedTitle?withCardTitle(body):body));
   // GFM requires text after the checkbox; an editor's empty task is still a task.
   marked.walkTokens(source,token=>{if(token.type==='list_item'&&!token.task&&/^\[[ xX]\][ \t]*(?:\n|$)/.test(token.text)){token.task=true;token.checked=/^\[[xX]\]/.test(token.text);token.text=token.text.replace(/^\[[ xX]\][ \t]*/,'');const checkbox={type:'checkbox' as const,raw:token.checked?'[x] ':'[ ] ',checked:token.checked};(token.tokens??=[]).splice(0,1,token.loose?{type:'paragraph',raw:'',text:'',tokens:[checkbox]}:checkbox);}});
   const tokens=extractAbsorbedBlankLines(source) as Token[];

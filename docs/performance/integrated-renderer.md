@@ -197,3 +197,19 @@ On macOS/Linux the main process now requests a 16,384-descriptor soft limit thro
 
 
 Packaged verification: the original 65,536 request remained above this Mac's 61,440 kernel cap and did not resolve the inherited limit. The final 16,384 request does: Test.10 (`0.1.2718-test.10`) opened the persistent `10k-core-no-pdf` workspace through its registered-workspace UI, displayed Bench with the experimental renderer enabled, and reached Saved. General settings visibly confirm the running version. Test.7, Test.8 and Test.9 bundles are preserved separately; the existing script verified the final app signature. Stable `0.1.2718`, build number 4 and release publishing are unchanged. All 373 automated tests pass; lint/types pass. The watcher-error test fails before the fix and reports EMFILE correctly afterward. Windows and long-session memory were not rechecked in this pass.
+
+
+## October 24 card and PDF interaction regressions
+
+The card preview cache retains the edited HTML through the save/read-only handoff, with an editor-initialization fallback. Reading and editing share their content lane and checkbox CSS. The native reader check compares actual content widths, block positions/heights and checkbox colors. It also types inline math and watches five edit/save handoffs for invisible frames. Both DOM and experimental modes pass on the DPR 2 display, with zero blank samples. A separate delayed-request regression verifies edited text remains visible before the saved preview arrives. The suite additionally checks all-page comment ordering in single-page PDF mode, stable camera navigation, notes above an overlapping selected PDF, and canvas hits through empty comment-column space.
+
+Both 10,000-element fixture runs pass editing, save/undo, drag/cancel, multi-selection, child-board transfer, context menus and eight image continuity samples down to 0.8% zoom. `feedback-core-10000` has no PDFs; `feedback-mixed-10000` renders 80 pages. Both idle checks report zero additional frames. The core run prepared demanded previews in 39.9 seconds, with warm pan rAF p95 16.8 ms and pointer-held presentation p95 50.0 ms. Mixed took 43.9 seconds, with 17.4/50.0 ms respectively. These short runs do not settle cold-start, long-session memory or universal frame-rate guarantees. All 380 automated tests and lint/type checks pass. Windows was not retested.
+
+```sh
+npm run test:reader -- --retina
+npm run test:reader -- --retina --retained
+npm run test:retained -- feedback-core-10000 --no-pdf --retina --images
+npm run test:retained -- feedback-mixed-10000 --full --retina --images
+```
+
+Test.11 (`0.1.2718-test.11`) is packaged and signature-verified. Test.10 is preserved under `.local/test-app/previous-test.10/`. Stable `0.1.2718`, build number 4, and release publishing remain unchanged. The Mac locked before the final packaged relaunch, which remains pending an unlock.

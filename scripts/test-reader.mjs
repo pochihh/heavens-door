@@ -86,6 +86,8 @@ readerApp.whenReady().then(async()=>{
   if(Math.abs(result.cardQuality.scale-3)>.01||result.cardQuality.canvases||!result.cardQuality.liveCode.includes('int answer = 42;'))throw Error('Card zoom lost live text '+JSON.stringify(result.cardQuality));
   await readerFS.promises.writeFile(${JSON.stringify(join(folder,'card-quality.png'))},(await win.capturePage()).toPNG());
   await js('(()=>{const n=window.__readerTestNavigation;n.set('+JSON.stringify(qualityBefore.camera)+');n.flush();})()');await readerPause(250);
+  phase('card focus, wrapping and block geometry');
+  result.cardFeedback=await require(${JSON.stringify(join(root,'scripts/performance/card-feedback.cjs'))})({win,js,wait,pause:readerPause,folder:${JSON.stringify(folder)}});
   phase('editor geometry');
   result.codePreview=await js('(()=>{const b=document.querySelector("[data-placement=editor] .editor-code-block"),p=b.querySelector("pre");return {height:b.offsetHeight,code:p.textContent,checkboxes:document.querySelectorAll("[data-placement=editor] input[type=checkbox]").length}})()');
   const code=await js('(()=>{const r=document.querySelector("[data-placement=editor] pre").getBoundingClientRect();return {x:Math.round(r.left+35),y:Math.round(r.top+12)}})()');
@@ -142,6 +144,8 @@ readerApp.whenReady().then(async()=>{
   readerFS.writeFileSync(${JSON.stringify(join(folder,'overlap.png'))},(await win.capturePage()).toPNG());
   await js('(async()=>{const s=window.__readerTestSession;await s.board('+JSON.stringify(beforeOverlap)+',"Restore reader fixture");const p='+JSON.stringify(beforeOverlap)+'.cards.find(p=>p.id==="pdf");window.__readerTestNavigation.set({x:20-p.x,y:40-p.y,zoom:1});window.__readerTestNavigation.flush();})()');
   await wait('!document.querySelector("[data-placement=pdf-front]")&&document.querySelectorAll(".board-pdf .pdf-page").length===20','restored reader fixture');
+  phase('PDF note hit areas and single-page comments');
+  result.noteHits=await require(${JSON.stringify(join(root,'scripts/performance/pdf-note-hits.cjs'))})({win,js,wait,pause:readerPause,folder:${JSON.stringify(folder)}});
   phase('popup');
   await js('document.querySelector(".board-pdf-actions button").click()');await wait('document.querySelectorAll(".pdf-reading-layout .pdf-page").length===20','PDF popup');await readerPause(700);
   result.pageCache=await js('({hits:window.__readerPdfCacheHits,bytes:window.__readerPdfCache.bytes,limit:window.__readerPdfCache.limit})');if(!result.pageCache.hits||result.pageCache.bytes>result.pageCache.limit)throw Error('PDF page images were not reused within their budget');

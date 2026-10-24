@@ -131,3 +131,11 @@ test('bookmark drags use one axis-locked phantom and placeholder, reorder, unsta
   await registry.relink(two,moved);assert.deepEqual((await registry.list()).map(w=>w.root),[moved,one]);
   await assert.rejects(()=>registry.relink(moved,one));
 });
+
+
+test('startup restores only the last successful registered workspace, independently of registry order',async t=>{
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-last-')),one=join(dir,'One'),two=join(dir,'Two');t.after(()=>fs.rm(dir,{recursive:true,force:true}));await fs.mkdir(one);await fs.mkdir(two);
+ const file=join(dir,'profile/workspaces.json'),registry=new WorkspaceRegistry(file);assert.equal(await registry.last(),undefined);
+ await registry.register(one);await registry.register(two);const actualOne=await fs.realpath(one),actualTwo=await fs.realpath(two);await registry.remember(actualOne);await registry.reorder([actualTwo,actualOne]);assert.equal(await new WorkspaceRegistry(file).last(),actualOne);
+ await fs.rename(one,one+' moved');assert.equal(await registry.last(),undefined);await registry.remember(actualTwo);await registry.unregister(actualTwo);assert.equal(await registry.last(),undefined);
+});

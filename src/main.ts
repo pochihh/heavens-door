@@ -95,7 +95,7 @@ async function snapshot(d:Desktop) {
   if(!d.host)return null;
   return {...await d.host.call<Snapshot>({kind:'snapshot'}),assetKey:d.host.key};
 }
-async function open(d:Desktop,folder:string){const host=await getHost(folder);await registry.register(host.root);const value=await host.call<Snapshot>({kind:'snapshot'});d.host=host;return {...value,assetKey:host.key};}
+async function open(d:Desktop,folder:string){const host=await getHost(folder);await registry.register(host.root);const value=await host.call<Snapshot>({kind:'snapshot'});await registry.remember(host.root);d.host=host;return {...value,assetKey:host.key};}
 function trusted(event:Electron.IpcMainInvokeEvent|Electron.IpcMainEvent) {
   const d=[...desktops.values()].find(d=>d.window.webContents===event.sender);
   if(!d||event.senderFrame!==d.window.webContents.mainFrame)throw new Error(ui.errors.untrustedSender);return d;
@@ -332,7 +332,8 @@ void app.whenReady().then(async()=>{
   if(!captureError){const receiver=captureServer(captureToken,async value=>{const host=assets.get(value.workspace);if(!host)throw new Error('Open the paired workspace in Heaven\'s Door.');await captureArticle(host,value.url,value.html,value.name,undefined,value.id);});receiver.on('error',e=>{captureError=String(e);});receiver.listen(capturePort,'127.0.0.1');app.on('will-quit',()=>receiver.close());}
   const feedsTimer=setInterval(()=>{for(const host of assets.values())void (async()=>{const snapshot=await host.call<Snapshot>({kind:'snapshot'});if(!featureEnabled(snapshot.preferences,'reading'))return;const {source}=await host.call<{source:string}>({kind:'readingFeeds'});if(source)for(const feed of readFeeds(source))await refreshFeed(host,feed.url,20);})().catch(console.error);},15*60*1000);feedsTimer.unref();app.on('will-quit',()=>clearInterval(feedsTimer));
   const testFolder=TEST_BUILD?process.argv[process.argv.indexOf('--test-workspace')+1]:undefined;
-  await createWindow(TEST_BUILD&&process.argv.includes('--test-workspace')?testFolder:process.env.HEAVENS_DOOR_WORKSPACE);
+  const startupFolder=TEST_BUILD&&process.argv.includes('--test-workspace')?testFolder:process.env.HEAVENS_DOOR_WORKSPACE??await registry.last().catch(()=>undefined);
+  await createWindow(startupFolder);
   if(app.isPackaged&&!TEST_BUILD)setTimeout(()=>{void updates.check().then(state=>promptUpdate(state)).catch(console.error);},15000).unref();
   app.on('activate',()=>{if(!desktops.size)void createWindow();});
 });

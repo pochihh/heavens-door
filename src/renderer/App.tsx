@@ -47,7 +47,6 @@ const defaults:Preferences={theme:'system',stem:'untitled',starred:[],recent:[],
 export function App() {return <ConfirmationProvider><Application/></ConfirmationProvider>;}
 function Application() {
   const state=useSyncExternalStore(session.subscribe,session.getState);
-  const [manage,setManage]=useState(false);
   const opening=state.status===ui.status.openingWorkspace;
   useEffect(()=>{
     const remove=window.door.onChange(()=>{if(session.state.snapshot)attempt(session.refresh());});
@@ -61,10 +60,7 @@ function Application() {
   },[]);
   return <><TooltipHost/>{state.snapshot?<WorkspaceShell key={state.snapshot.root} snapshot={state.snapshot}/>:
     <div className={'app welcome-shell platform-'+window.door.platform} inert={opening}><div className="welcome-drag"/><div className="welcome">
-      <button className="primary" data-tooltip={tooltips.workspace.open} onClick={()=>attempt(session.open(false))}>{ui.workspace.open}</button>
-      <button data-tooltip={tooltips.workspace.sampleWorkspace} onClick={()=>attempt(session.open(true))}>{ui.workspace.trySample}</button>
-      <button data-tooltip={tooltips.workspace.manage} aria-expanded={manage} onClick={()=>setManage(value=>!value)}>{ui.workspace.manage}</button>
-      {manage&&<section className="workspace-start-manager" aria-label={ui.workspace.manage}><WorkspaceManager snapshot={null} session={session}/></section>}
+      <section className="workspace-start-manager" aria-label={ui.workspace.manage}><h1>{ui.workspace.manage}</h1><WorkspaceManager snapshot={null} session={session}/></section>
       {state.error&&<p role="alert">{state.error}</p>}
     </div></div>}{opening&&<div className="workspace-loading" role="status" aria-live="polite" aria-busy="true"><div className="welcome-drag"/><div className="loading-message"><span className="loading-spinner" aria-hidden="true"/><strong>{ui.status.openingWorkspace}</strong><span>{ui.search.preparing}</span></div></div>}</>;
 }

@@ -73,3 +73,16 @@ New card content still autosaves, but automatic filename generation waits for ti
 On a fresh body paragraph, type three backticks and Space to start editing a code block immediately. A language can follow the fence, for example `c++`, `c#`, `python` or `typescript`, before Space. The compact picker at the upper right changes the language and its syntax highlighting. Plain text disables coloring. Existing and unknown language labels remain in Markdown; merely opening a block does not rewrite it. Previews and the editor share theme-aware token colors. View blocks retain their separate UI.
 
 Type `$$` and Space to create a block equation and open its LaTeX editor with a live preview. Empty equations also round-trip as ordinary fenced math. Inline math keeps its existing `$…$` shortcut. No source-mode or file-format migration is required. Text placements remain transparent; stored fill data is retained for future plugins.
+
+
+## Focus, image rows and automatic height
+
+Reading and editing use the same text lane and block spacing. Card previews retain the last edited content while the saved revision is loading; editor initialization also has a content fallback. The preview cache keeps 256 paths, with a 32k HTML ceiling for fetched entries and at most one larger edited draft. Checkbox geometry and checked colors use shared CSS, including empty final tasks in mixed lists. Inline code has a visible background; type `$x^2$` for editable inline math, and click the rendered formula to edit it.
+
+A single remaining image is shown with ordinary image controls. Removing or extracting the other images saves a single-image layout rather than a one-item row. Existing imported one-item rows display as single images without rewriting their source merely on opening. Multi-image rows retain wrapping, horizontal/vertical alignment and gap controls, with readable option labels.
+
+Complete HTML divs followed immediately by Markdown lists are separated for parsing. Editing can save the separating blank line; fenced HTML examples are preserved. Unknown HTML remains source-preserving.
+
+Dragging the card resize corner horizontally keeps Auto height enabled. Vertical travel above 10 screen pixels deliberately switches to fixed height; this threshold does not shrink or expand with board zoom. Existing fixed-height cards remain fixed.
+
+Native regressions live in `scripts/performance/card-feedback.cjs` and run through `npm run test:reader -- --retina` (add `--retained` for the experimental renderer). They compare text width, each block's position and height, checkbox colors and geometry, inline math typing, and visible-frame samples across five edit/save handoffs. Tests use disposable files, never personal workspaces.

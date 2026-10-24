@@ -272,7 +272,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelector('.card-popup'),null);assert.equal(document.querySelectorAll('.active-pane [role=tab]').length,beforeTabs+1);
     assert.equal(document.querySelector<HTMLButtonElement>('.active-pane [aria-label="Go back"]')?.disabled,true,'a new tab starts its own history');
     await act(async()=>{await session.flushPreferences();session.update({snapshot:null,draft:null});});
-    await click('.welcome [aria-expanded]');
+    assert.equal(document.querySelector('.welcome [aria-expanded]'),null,'startup shows management directly');
     assert.ok(document.querySelector('.workspace-start-manager .workspace-availability'),'workspace status is accessible without any open workspace');
 
 

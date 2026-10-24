@@ -43,3 +43,8 @@ General files and whole folders use the configured app Trash. `<trash folder>/<u
 Settings → Journal and Calendar → Reuse a journal split is optional and off by default. When enabled, ordinary journal opens from Calendar, Search, Recent or Explorer use one dedicated Main Dock split. The first open creates it using the configured split direction; later daily and weekly notes replace its journal tab and retain Back/Forward history. The split and tab identity are stored with the workspace layout, survive reopening, and follow tab moves. Closing the journal tab leaves a reusable slot when its split still contains other tabs. Closing the last tab removes that split; the next journal open creates a new dedicated split. Explicit Open in new tab or another Tab Group still follows that command. The feature guide is not treated as a journal note.
 
 A journal note’s breadcrumb links its configured Journal folder to the Journal page, including custom nested folders. Disabling Journal restores ordinary folder navigation.
+
+
+## App startup
+
+A successful workspace open atomically remembers its registered root in the app profile, independently of the workspace registry's display order. Normal app launch reopens that workspace when it remains registered and accessible. Missing, unregistered or failed workspaces fall back to the workspace-management page, which is shown directly rather than behind a welcome button. A new empty window uses the same management page. Explicit development/Test workspace arguments take precedence. New-workspace presets remain a later design task.

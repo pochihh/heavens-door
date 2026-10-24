@@ -24,6 +24,7 @@ export function parseImageLayout(source:string):ImageLayout|null{
   };
   if(element.hasAttribute('data-better-edit-image-row')){
     const images=[...element.children].map(e=>parse(e as HTMLElement));if(images.some(i=>!i))return null;
+    if(images.length===1)return images[0];
     return {kind:'row',images:images as ImageItem[],gap:Math.max(0,parseFloat(element.style.gap)||0),justify:element.style.justifyContent||'flex-start',wrap:element.style.flexWrap||'wrap',alignItems:element.style.alignItems||'flex-start'};
   }
   return parse(element);
@@ -34,6 +35,7 @@ export function imageLayout(node:PMNode):ImageLayout|null{
   return {kind:'single',src:String(node.attrs.src),alt:node.attrs.alt??'',width:node.attrs.width?`${parseFloat(node.attrs.width)}px`:'100%',alignment:'left'};
 }
 export function imageHtml(layout:ImageLayout,inRow=false):string{
+  if(layout.kind==='row'&&layout.images.length===1)return imageHtml(layout.images[0]);
   if(layout.kind==='row')return `<div data-better-edit-image-row style="display: flex; gap: ${layout.gap}px; flex-wrap: ${escape(layout.wrap)}; align-items: ${escape(layout.alignItems)}; justify-content: ${escape(layout.justify)};">\n${layout.images.map(i=>imageHtml(i,true)).join('\n')}\n</div>`;
   if(layout.kind==='placeholder')return '<div data-better-edit-image="placeholder" style="min-width: 160px; min-height: 80px; border: 1px dashed #888; text-align: center;">Add an image</div>';
   const {src,alt,width,alignment,caption,captionHidden,crop}=layout;

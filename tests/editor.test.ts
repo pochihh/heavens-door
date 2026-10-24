@@ -277,3 +277,32 @@ test('empty checkboxes and code text have identical preview content before and a
  const editor=new Editor({extensions:extensions('Check.md'),content:'# Check\n\n- [ ] \n- [x] \n\n```js\nconst x = 1;\n```',contentType:'markdown'});
  try{const view=document.createElement('div');view.innerHTML=preview(cardMarkdown(editor),'Check.md');assert.deepEqual([...view.querySelectorAll('input[type=checkbox]')].map(input=>(input as HTMLInputElement).checked),[false,true]);assert.equal(view.querySelector('pre code')!.textContent,editor.state.doc.lastChild!.textContent);assert.doesNotMatch(view.textContent??'',/\[ \]|\[x\]/);}finally{editor.destroy();}
 });
+
+
+test('lists after complete HTML blocks are editable Markdown without changing fenced HTML examples',async()=>{
+ const dom=new JSDOM('<body></body>');windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ const {markdownSource,preview}=await import('../src/renderer/markdown'),{extensions,cardMarkdown}=await import('../src/renderer/editor-schema');
+ for(const html of ['<div/>','<div>HTML block</div>','<div data-better-edit-image="placeholder">Add an image</div>']){
+  const body='# Test\n\n'+html+'\n- First\n- Second';const normalized=markdownSource(body);assert.ok(normalized.includes(html+'\n\n- First'));
+  const editor=new Editor({extensions:extensions('list.md'),content:normalized,contentType:'markdown'});
+  try{assert.equal(editor.state.doc.lastChild?.type.name,'bulletList');assert.equal(editor.state.doc.lastChild?.childCount,2);assert.match(preview(body,'list.md'),/<li>First<\/li>/);assert.ok(cardMarkdown(editor).includes('First'));}finally{editor.destroy();}
+ }
+ const example='# Code\n\n```html\n<div/>\n- literal text\n```';assert.equal(markdownSource(example),example);
+});
+
+test('single-image rows render as an ordinary image and lose row HTML when saved',async()=>{
+ const dom=new JSDOM('<body></body>');windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement});window.door={assetUrl:p=>p} as typeof window.door;
+ const {imageHtml,parseImageLayout,row}=await import('../src/renderer/image-layout'),{previewHtml}=await import('../src/renderer/markdown');
+ const item={kind:'single' as const,src:'photo.png',width:'180px',alignment:'left' as const,caption:'Caption'};const html=imageHtml(row([item]));assert.doesNotMatch(html,/data-better-edit-image-row/);assert.deepEqual(parseImageLayout(html),{...item,alt:'',captionHidden:false});
+ const imported='<div data-better-edit-image-row>'+html+'</div>';assert.equal(parseImageLayout(imported)?.kind,'single');assert.match(previewHtml(imported,'note.md'),/is-single/);assert.doesNotMatch(previewHtml(imported,'note.md'),/is-row/);
+});
+
+
+test('an empty final task stays a checkbox in a mixed list before another block',async()=>{
+ const dom=new JSDOM('<body></body>');windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema');
+ for(const task of ['- [ ]','- [ ] ','- [x]']){
+  const body='# Tasks\n\n- Bullet\n- [x] Done\n'+task+'\n\n```js\nconst x=1;\n```';const editor=new Editor({extensions:extensions('tasks.md'),content:body,contentType:'markdown'});
+  try{assert.equal(editor.view.dom.querySelectorAll('input[type=checkbox]').length,2);assert.deepEqual([...editor.view.dom.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].map(i=>i.checked),[true,task.includes('x')]);const saved=cardMarkdown(editor),reopened=new Editor({extensions:extensions('tasks.md'),content:saved,contentType:'markdown'});try{assert.equal(reopened.view.dom.querySelectorAll('input[type=checkbox]').length,2);}finally{reopened.destroy();}}finally{editor.destroy();}
+ }
+});
