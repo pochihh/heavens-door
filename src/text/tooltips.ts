@@ -24,7 +24,6 @@ export const tooltips = {
       mouse: 'Navigation device: Mouse',
       trackpad: 'Navigation device: Trackpad',
     },
-    rootWhiteboardsOnly: "The mother whiteboard contains whiteboards only",
     dragCard: "Drag card",
     whiteboardActions: "Whiteboard actions",
     cardActions: "Card actions",

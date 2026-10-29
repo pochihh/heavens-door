@@ -68,3 +68,16 @@ test('block extraction retains nested items, leaves one reference in place, and 
  assert.equal(all.content.content![0].content!.length,2);assert.equal(all.content.content![1].content![0].text,'End');
  assert.equal(JSON.stringify(all.document).match(/card:new/g)?.length,1);assert.equal(extractEditorBlocks(doc,[[0]],'card:new','Title'),null);assert.equal(doc.content![1].content!.length,3);
 });
+
+test('Turn into converts the whole selection atomically, including nested lists and mixed blocks',async()=>{
+  const {changeEditorBlocks}=await import('../src/renderer/editor-blocks');
+  const changed=changeEditorBlocks(doc,[[1,0],[1,0,1,0],[1,1],[2]],'taskList')!;
+  assert.deepEqual(changed.content!.map(n=>n.type),['heading','taskList','bulletList','taskList']);
+  assert.deepEqual(changed.content![1].content!.map(n=>n.content![0].content![0].text),['Parent','Sibling']);
+  assert.equal(changed.content![1].content![0].content![1].type,'taskList','a selected parent carries its child once');
+  assert.equal(changed.content![2].content![0].content![0].content![0].text,'Last');
+  const all=changeEditorBlocks(doc,[[1,0],[1,1],[1,2],[2]],'heading2')!;
+  assert.deepEqual(all.content!.map(n=>n.type),['heading','heading','bulletList','heading','heading','heading']);
+  assert.equal(changeEditorBlocks(doc,[[0],[2]],'taskList'),null,'title conversion rejects the whole operation');
+  assert.deepEqual(doc.content![1].content!.map(n=>n.content![0].content![0].text),['Parent','Sibling','Last'],'source is not mutated');
+});

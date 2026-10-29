@@ -68,3 +68,19 @@ test('graph background orbit follows horizontal and vertical drags while panning
     }finally{view.dispose();dom.window.close();}
   }
 });
+
+test('graph fits after hidden initialization and scales its framing when moving between side and main docks',()=>{
+  const dom=new JSDOM('<!doctype html><canvas></canvas>'),canvas=dom.window.document.querySelector('canvas')!,points:{x:number;y:number}[]=[],noop=()=>{};
+  const context={clearRect:()=>{points.length=0;},setTransform:noop,beginPath:noop,arc:(x:number,y:number)=>points.push({x,y}),fill:noop,stroke:noop,setLineDash:noop,moveTo:noop,lineTo:noop,strokeText:noop,fillText:noop,measureText:()=>({width:20})} as unknown as CanvasRenderingContext2D;
+  canvas.getContext=(()=>context) as unknown as typeof canvas.getContext;
+  let width=0,height=0,resize=()=>{};canvas.getBoundingClientRect=()=>({x:0,y:0,left:0,top:0,right:width,bottom:height,width,height,toJSON(){}});
+  Object.assign(globalThis,{document:dom.window.document,devicePixelRatio:2,matchMedia:()=>({matches:true}),getComputedStyle:dom.window.getComputedStyle,ResizeObserver:class{constructor(callback:()=>void){resize=callback;}observe(){}disconnect(){}},MutationObserver:dom.window.MutationObserver,requestAnimationFrame:()=>1,cancelAnimationFrame:noop});
+  const graph:WorkspaceGraph={nodes:['a','b','c','d'].map(key=>({key:'card:'+key,kind:'card',path:key+'.md',name:key})),links:[]},view=new GraphCanvas(canvas,'2d',noop,noop);
+  const spread=()=>Math.max(...points.map(p=>p.x))-Math.min(...points.map(p=>p.x));
+  try{
+    view.setData(graph);width=260;height=500;resize();const side=spread();assert.ok(side>80,'initial hidden graph must be fitted when it becomes visible');
+    width=1100;height=800;resize();assert.ok(spread()>side*2.9,'main dock uses the available canvas');assert.equal(canvas.width,2200);assert.equal(canvas.height,1600);
+    const main=spread();width=0;height=0;resize();width=1100;height=800;resize();assert.equal(spread(),main,'temporarily hidden docks do not shrink the graph');
+    width=260;height=500;resize();assert.ok(Math.abs(spread()-side)<.01,'returning to a side dock retains framing');
+  }finally{view.dispose();dom.window.close();}
+});

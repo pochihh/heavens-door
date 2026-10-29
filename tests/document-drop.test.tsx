@@ -50,13 +50,13 @@ test('moving a board moves its tree and assets, retains one real parent, and res
   await w.fileOperation(moved.inverse);assert.deepEqual(w.snapshot().boards.find(b=>b.folder==='From')!.cards,before.cards);assert.equal(w.snapshot().boards.find(b=>b.folder==='To')!.cards.some(p=>p.folder?.includes('Child')),false);
 });
 
-test('document targets distinguish row nesting, gaps, root-board restrictions and cycles; table and Kanban drags export without a sort write',async()=>{
+test('document targets distinguish row nesting, gaps, Home and cycles; table and Kanban drags export without a sort write',async()=>{
   const dom=new JSDOM('<div id="root"></div><div id="destination" class="tree-row" data-drop-kind="board" data-drop-folder="Target"></div><div id="mother" data-drop-kind="board" data-drop-folder=""></div>',{pretendToBeVisual:true});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,CustomEvent:dom.window.CustomEvent,Node:dom.window.Node,Element:dom.window.Element,HTMLElement:dom.window.HTMLElement,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),matchMedia:()=>({matches:false}),IS_REACT_ACT_ENVIRONMENT:true});
   const rect=(left:number,top:number,width:number,height:number)=>({left,top,width,height,right:left+width,bottom:top+height,x:left,y:top,toJSON(){}} as DOMRect),destination=document.getElementById('destination')!,mother=document.getElementById('mother')!;destination.getBoundingClientRect=()=>rect(500,100,200,40);let hit:HTMLElement[]= [destination];document.elementsFromPoint=()=>hit;
   const drops:DocumentDrop[]=[];window.addEventListener('door:document-drop',e=>drops.push((e as CustomEvent<DocumentDrop>).detail));
   assert.equal(documentDropTarget({key:'card:c'},550,105),null);assert.equal(previewDocumentDrop({key:'card:c'},550,120),true);assert.ok(destination.classList.contains('document-drop-target'));clearDocumentDrop();assert.equal(documentDropTarget({key:'board:Target'},550,120),null);
-  hit=[mother];assert.equal(dropDocumentAt({key:'card:c'},500,120),false);assert.equal(dropDocumentAt({key:'board:Child'},500,120),true);drops.length=0;
+  hit=[mother];assert.equal(dropDocumentAt({key:'card:c'},500,120),true);assert.equal(dropDocumentAt({key:'board:Child'},500,120),true);drops.length=0;
   let writes=0;
   function Harness(){const ref=useRef<HTMLTableSectionElement>(null),drag=useBookmarkDrag(ref,()=>{writes++;},'vertical',true);return <table><tbody ref={ref}><tr data-file-key="c" data-drag-key="card:c" data-drag-path="Slipbox/Note.md"><td><button onPointerDown={e=>drag(e,'c',true)}>Grip</button></td></tr></tbody></table>;}
   const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);

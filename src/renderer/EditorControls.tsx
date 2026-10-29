@@ -1,3 +1,4 @@
+import {updateEditorContent} from './editor-content';
 import {cardMarkdown} from './editor-schema';
 import {clearDocumentDrop,clearDocumentNavigation,previewDocumentDrop,dropDocumentAt,type DocumentDrag} from './card-drop';
 import {readingText} from '../text/reading';
@@ -20,7 +21,7 @@ import {PropertyPopover} from './PropertyValue';
 import {Color} from './StyleView';
 import {ViewBlockContext,defaultViewSource} from './ViewBlock';
 import {createDragPhantom} from './sortable';
-import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlock,extractEditorBlocks,type EditorBlock} from './editor-blocks';
+import {editorDropBoundaries,editorBlocks,selectedEditorBlocks,moveEditorBlock,moveEditorBlocks,changeEditorBlocks,extractEditorBlocks,type EditorBlock} from './editor-blocks';
 
 type Action=(label:string,apply:()=>void)=>void;
 export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onImage,action,zoom=1,canvas=false}:{sourceBody?:string;footer?:string;onAnnotate?:()=>void;editor:Editor;path:string;onImage:()=>void;action:Action;zoom?:number;canvas?:boolean}){
@@ -69,7 +70,7 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
       el.style.left=Math.max(8,Math.min(innerWidth-size.width-8,rect.left+(rect.width-size.width)/2))+'px';el.style.top=Math.max(8,rect.top-size.height-8)+'px';
     });
   },[block,revision,zoom,canvas]);
-  const apply=(next:JSONContent|null)=>{if(!next)return;try{editor.schema.nodeFromJSON(next).check();}catch{return;}action(ui.editor.moveBlock,()=>editor.commands.setContent(next));};
+  const apply=(next:JSONContent|null)=>{if(!next)return;try{editor.schema.nodeFromJSON(next).check();}catch{return;}action(ui.editor.moveBlock,()=>{updateEditorContent(editor,next);});};
   function move(key:'up'|'down'|'indent'|'outdent'){
     if(!block)return;const blocks=editorBlocks(editor.state.doc),siblings=blocks.filter(b=>b.path.length===block.path.length&&b.path.slice(0,-1).every((v,i)=>v===block.path[i])),index=siblings.findIndex(b=>b.from===block.from);
     const target=key==='outdent'?blocks.find(b=>b.path.length===block.path.length-2&&b.path.every((v,i)=>v===block.path[i])):siblings[index+(key==='down'?1:-1)];
@@ -77,7 +78,8 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
   }
   function openBlockMenu(anchor:HTMLElement){
     if(!block)return;if(menu){setMenu(null);return;}const r=anchor.getBoundingClientRect();
-    const change=(kind:string)=>{const next=changeEditorBlock(editor.getJSON(),block.path,kind);if(next){try{editor.schema.nodeFromJSON(next).check();action(kind==='delete'?'Delete block':kind==='duplicate'?'Duplicate block':'Turn into',()=>editor.commands.setContent(next));}catch{/* Complex structures keep their source. */}}};
+    const before=editor.state.doc,paths=selectedEditorBlocks(before,editor.state.selection,block).map(b=>b.path);
+    const change=(kind:string)=>{if(!editor.state.doc.eq(before))return;const next=changeEditorBlocks(editor.getJSON(),paths,kind);if(next){try{editor.schema.nodeFromJSON(next).check();action(kind==='delete'?'Delete block':kind==='duplicate'?'Duplicate block':'Turn into',()=>{updateEditorContent(editor,next);});}catch{/* Complex structures keep their source. */}}};
     const node=editor.state.doc.nodeAt(block.from),convertible=node&&(['paragraph','heading'].includes(node.type.name)||block.item);
     setMenu({anchor,x:r.left,y:r.bottom,label:ui.editorTools.blockOptions,actions:[{label:ui.editorTools.duplicateBlock,icon:'copy',run:()=>change('duplicate')},{label:ui.editorTools.deleteBlock,icon:'trash',danger:true,run:()=>change('delete')},...(convertible?[{label:ui.editorTools.turnInto,icon:'format' as const,submenu:[['paragraph','Text'],['heading1','Heading 1'],['heading2','Heading 2'],['heading3','Heading 3'],['bulletList','Bullet list'],['orderedList','Numbered list'],['taskList','Checklist'],['codeBlock','Code block']].map(([kind,label])=>({label,run:()=>change(kind)}))}]:[]),{label:ui.editor.moveUp,icon:'up',separatorBefore:true,run:()=>move('up')},{label:ui.editor.moveDown,icon:'arrowDown',run:()=>move('down')},...block.item?[{label:ui.editor.indent,icon:'forward' as const,run:()=>move('indent')},{label:ui.editor.outdent,icon:'back' as const,run:()=>move('outdent')}]:[],{label:ui.editorTools.symbolsAndEmoji,icon:'text',run:()=>setPopup({kind:'symbols',anchor})}]});
   }

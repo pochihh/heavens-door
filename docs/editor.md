@@ -86,3 +86,9 @@ Complete HTML divs followed immediately by Markdown lists are separated for pars
 Dragging the card resize corner horizontally keeps Auto height enabled. Vertical travel above 10 screen pixels deliberately switches to fixed height; this threshold does not shrink or expand with board zoom. Existing fixed-height cards remain fixed.
 
 Native regressions live in `scripts/performance/card-feedback.cjs` and run through `npm run test:reader -- --retina` (add `--retained` for the experimental renderer). They compare text width, each block's position and height, checkbox colors and geometry, inline math typing, and visible-frame samples across five edit/save handoffs. Tests use disposable files, never personal workspaces.
+
+## Selection and focus stability
+
+The block menu applies **Turn into** to all selected blocks, including list items. Selected parents carry their descendants once; neighboring converted lists merge when their attributes agree. Conversion is one document update and one undo action. A stale menu never applies to a changed document, and schema validation rejects conversions that would lose unsupported structures.
+
+Content refreshes compare parsed documents and replace only the changed range. Equivalent Markdown never resets selection. Card preview and editor occupy the same width, with the compact preview wrapping rule retained for automatic and fixed heights. Native checks compare content widths, block positions/heights and checkbox styles through focus, including classic scrollbar widths. These checks reduce selection-reset risk; the reported intermittent full-content Backspace deletion has not been independently reproduced.

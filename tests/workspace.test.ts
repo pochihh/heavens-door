@@ -250,3 +250,21 @@ test('whiteboard rename moves assets intact, remaps references and preferences, 
   assert.equal(await w.read(path),before,'startup also recovers interruption between metadata link and unlink');
   await assert.rejects(()=>fs.stat(join(f.root,'Research/Interrupted.whiteboard')),/ENOENT/);
 });
+
+test('the root board persists cards, Text, images, PDF attachments and references as a regular board',async t=>{
+  const f=await fixture();let w=await Workspace.open(f.root,f.cache);t.after(async()=>{w.close();await fs.rm(f.folder,{recursive:true,force:true});});
+  const root=()=>w.snapshot().boards.find(b=>b.folder==='')!;
+  await w.create('','Home card',70,80);const card=await w.card('Home card.md');assert.ok(root().cards.some(p=>p.cardId===card.id&&p.x===70));
+  await w.create('','Imported',0,0,false);const imported=await w.card('Imported.md');assert.ok(root().cards.some(p=>p.cardId===imported.id&&p.collapsed));
+  const b=root();await w.saveBoard({...b,cards:[...b.cards,{id:'text',cardId:'',x:1,y:2,width:240,height:80,object:{type:'text',text:'Text on Home',shape:'none'}},{id:'image',cardId:'',x:200,y:20,width:180,height:180,object:{type:'image',html:'<div data-better-edit-image="filled"><img src="_assets/figure.png"></div>'}}],edges:[{id:'line',from:b.cards[0].id,to:'text'}]},b.revision);
+  const pdf=await w.importReading({folder:'',name:'Paper',type:'pdf',data:new TextEncoder().encode('%PDF-1.7\nsource'),placement:{expected:root().revision,x:500,y:500}});const paper=await w.card(pdf.path);
+  assert.equal(paper.source?.type,'pdf');assert.match(paper.source!.file!,/^_assets\//);assert.ok(root().cards.some(p=>p.cardId===paper.id));
+  await w.create('Slipbox','Loose',0,0,false);const loose=await w.card('Slipbox/Loose.md');await w.placeCard(loose.id,loose.revision,'',root().revision,600,700,'reference');
+  await w.createFolder('','Child');const child=()=>w.snapshot().boards.find(b=>b.folder==='Child')!;
+  await w.placeCard(loose.id,loose.revision,'Child',child().revision,50,60,'move-reference','');assert.equal((await w.card(loose.path)).id,loose.id);assert.equal(root().cards.some(p=>p.cardId===loose.id),false);
+  await w.convertTopic(root().path,root().revision,'text');assert.equal(root().cards.find(p=>p.id==='text')?.object,undefined);assert.ok(w.snapshot().cards.some(c=>c.path==='Text on Home.md'));
+  const before=structuredClone(root());w.close();w=await Workspace.open(f.root,f.cache);assert.deepEqual(root().cards,before.cards);assert.deepEqual(root().edges,before.edges);
+  const {cardPlacement}=await import('../src/renderer/documents');assert.equal(cardPlacement(w.snapshot(),card.id)?.board.folder,'');
+  await assert.rejects(()=>w.renameBoard('','Other',root().revision),/root|workspace/i);await assert.rejects(()=>w.prepareBoardTrash(''));
+  await w.migrateRoot();const organized=w.snapshot().boards.find(b=>b.folder==='Notes')!;const image=organized.cards.find(p=>p.id==='image')!.object;assert.ok(image?.type==='image');assert.match(image.html,/\.\.\/_assets\/figure\.png/);assert.match((await w.card('Notes/Paper.md')).source!.file!,/^\.\.\/_assets\//);assert.ok(organized.edges.some(e=>e.id==='line'));
+});

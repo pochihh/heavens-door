@@ -97,3 +97,17 @@ export function extractEditorBlocks(document:JSONContent,sources:number[][],href
   if(content[0]?.type==='paragraph')content[0]={...content[0],type:'heading',attrs:{level:1}};
   return {document:doc,content:{type:'doc',content}};
 }
+
+export function changeEditorBlocks(document:JSONContent,sources:number[][],kind:string):JSONContent|null {
+  const paths=sources.filter((path,i)=>!sources.some((parent,j)=>j!==i&&prefix(parent,path)&&(parent.length<path.length||j<i)))
+    .sort((a,b)=>{for(let i=0;i<Math.min(a.length,b.length);i++)if(a[i]!==b[i])return b[i]-a[i];return b.length-a.length;});
+  if(!paths.length||paths.some(path=>!path[0]))return null;
+  let next=document;
+  for(const path of paths){const changed=changeEditorBlock(next,path,kind);if(!changed)return null;next=changed;}
+  if(['bulletList','orderedList','taskList'].includes(kind)){
+    const merge=(node:JSONContent)=>{node.content?.forEach(merge);const children=node.content??[];
+      for(let i=children.length-1;i>0;i--){const a=children[i-1],b=children[i];if(isList(a)&&a.type===b.type&&JSON.stringify(a.attrs??{})===JSON.stringify(b.attrs??{})){a.content!.push(...b.content!);children.splice(i,1);}}
+    };merge(next);
+  }
+  return next;
+}

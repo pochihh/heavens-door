@@ -36,7 +36,7 @@ export function validatePreferences(value: unknown): Preferences {
   if(p.features!==undefined&&(!p.features||typeof p.features!=='object'||Array.isArray(p.features)||Object.entries(p.features).some(([id,on])=>!CORE_FEATURES.some(f=>f.id===id)||typeof on!=='boolean')))throw new Error('Invalid core feature settings');
   if(p.boardNavigation!==undefined){
     const n=p.boardNavigation;
-    if(!n||typeof n!=='object'||!n.order||typeof n.order!=='object'||Array.isArray(n.order)||Object.keys(n.order).length>10000||Object.entries(n.order).some(([key,items])=>key.length>2048||!Array.isArray(items)||items.length>10000||new Set(items).size!==items.length||items.some(item=>typeof item!=='string'||item.length>2048))||n.systemCollapsed!==undefined&&typeof n.systemCollapsed!=='boolean')throw new Error('Invalid board navigation');
+    if(!n||typeof n!=='object'||!n.order||typeof n.order!=='object'||Array.isArray(n.order)||Object.keys(n.order).length>10000||Object.entries(n.order).some(([key,items])=>key.length>2048||!Array.isArray(items)||items.length>10000||new Set(items).size!==items.length||items.some(item=>typeof item!=='string'||item.length>2048))||n.systemCollapsed!==undefined&&typeof n.systemCollapsed!=='boolean'||n.showCards!==undefined&&(!n.showCards||typeof n.showCards!=='object'||Array.isArray(n.showCards)||Object.keys(n.showCards).length>10000||Object.entries(n.showCards).some(([path,on])=>path!==''&&!validNotePath(path)||typeof on!=='boolean')))throw new Error('Invalid board navigation');
   }
   if(p.reading!==undefined&&(!p.reading||!validNotePath(p.reading.folder)))throw new Error('Invalid Inbox folder.');
   if(p.editor!==undefined)validateEditorSettings(p.editor);

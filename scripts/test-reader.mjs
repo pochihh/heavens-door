@@ -9,7 +9,7 @@ import {build} from 'vite';
 import {buildEngine} from './build.mjs';
 process.env.HEAVENS_DOOR_TEST_BUILD='1';
 await buildEngine();
-const retina=process.argv.includes('--retina'),retained=process.argv.includes('--retained'),root=process.cwd(),folder=join(root,retained?'.local/reader-retained-check':'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
+const navigationOnly=process.argv.includes('--navigation-only'),retina=process.argv.includes('--retina'),retained=process.argv.includes('--retained'),root=process.cwd(),folder=join(root,retained?'.local/reader-retained-check':'.local/reader-check'),project=join(folder,'project'),workspace=join(folder,'workspace'),report=join(folder,'report.json');
 await fs.rm(workspace,{recursive:true,force:true});await fs.rm(join(folder,'profile'),{recursive:true,force:true});
 await fs.mkdir(join(project,'dist'),{recursive:true});await fs.mkdir(join(workspace,'Review'),{recursive:true});await fs.mkdir(join(workspace,'Other'),{recursive:true});await fs.mkdir(join(workspace,'.heavens-door'),{recursive:true});await fs.rm(report,{force:true});
 // Each page has text plus vector work, so the test exercises raster and text-layer costs.
@@ -36,6 +36,7 @@ readerApp.whenReady().then(async()=>{
   const desktop=await readerWait(()=>[...desktops.values()][0],'window'),win=desktop.window,js=async code=>{const value=await Promise.race([win.webContents.executeJavaScript('(async()=>{try{return {ok:true,value:await ('+code+')}}catch(error){return {ok:false,error:error.stack}}})()',true),readerPause(12000).then(()=>{throw Error('Renderer timed out: '+code.slice(0,120));})]);if(!value.ok)throw Error(value.error);return value.value;};
   win.webContents.setBackgroundThrottling(false);if(${retina}){const display=require('electron').screen.getAllDisplays().find(d=>d.scaleFactor===2);if(!display)throw Error('No Retina reference display');win.setPosition(display.workArea.x+10,display.workArea.y+10);win.setContentSize(1710,1073);}result.display=await js('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio})');
   const wait=(code,label)=>readerWait(()=>js(code),label);
+  if(!${navigationOnly}){
   phase('loading');
   await wait('document.querySelectorAll(".board-pdf .pdf-page").length===20 && [...document.querySelectorAll(".pdf-page canvas")].some(c=>c.width>0)','20-page reader');await readerPause(700);
   result.initial=await js('({pages:document.querySelectorAll(".pdf-page").length,canvases:document.querySelectorAll(".pdf-page canvas").length,pixels:[...document.querySelectorAll(".pdf-page canvas")].reduce((sum,c)=>sum+c.width*c.height,0)})');
@@ -150,6 +151,9 @@ readerApp.whenReady().then(async()=>{
   await js('document.querySelector(".board-pdf-actions button").click()');await wait('document.querySelectorAll(".pdf-reading-layout .pdf-page").length===20','PDF popup');await readerPause(700);
   result.pageCache=await js('({hits:window.__readerPdfCacheHits,bytes:window.__readerPdfCache.bytes,limit:window.__readerPdfCache.limit})');if(!result.pageCache.hits||result.pageCache.bytes>result.pageCache.limit)throw Error('PDF page images were not reused within their budget');
   result.popup=await js('({canvases:document.querySelectorAll(".pdf-reading-layout .pdf-page canvas").length,pages:document.querySelectorAll(".pdf-reading-layout .pdf-page").length})');if(result.popup.canvases>4)throw Error('Popup rendered offscreen pages '+JSON.stringify(result.popup));
+  }
+  phase('root board, icons, explorer and graph docks');
+  result.navigation=await require(${JSON.stringify(join(root,'scripts/performance/navigation-feedback.cjs'))})({win,js,wait,pause:readerPause,folder:${JSON.stringify(folder)}});
   result.passed=true;
  }catch(error){result.error=String(error);console.error(error);const desktop=[...desktops.values()][0];if(desktop){await desktop.window.capturePage().then(image=>readerFS.writeFileSync(${JSON.stringify(join(folder,'failure.png'))},image.toPNG())).catch(()=>{});}}
  readerFS.writeFileSync(${JSON.stringify(report)},JSON.stringify(result,null,2));for(const d of desktops.values())d.closing=true;readerApp.exit(result.passed?0:1);

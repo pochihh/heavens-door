@@ -213,3 +213,20 @@ npm run test:retained -- feedback-mixed-10000 --full --retina --images
 ```
 
 Test.11 (`0.1.2718-test.11`) is packaged and signature-verified. Test.10 is preserved under `.local/test-app/previous-test.10/`. Stable `0.1.2718`, build number 4, and release publishing remain unchanged. After the Mac was unlocked, the packaged app showed workspace management directly with no remembered root. First Door opened successfully; General settings confirmed version 0.1.2718-test.11. After a normal Quit and a fresh launch without workspace arguments, First Door reopened automatically on the saved Heaven's Door board, with the experimental renderer enabled and Saved status. Only the Test app remained running. No personal note content was edited during this check.
+
+## October 29 navigation and editor pass
+
+Home now accepts the same content and mixed-selection transfers as other boards. Passive mention links occupy their own layer below both cached and live cards. Board tiles use the shared document icon and inline name controls. System breadcrumbs use a registration API, and Show cards inherits through explorer hierarchy without listing reference placements twice.
+
+Native editor checks now compare automatic/fixed-height content lanes with 0px and 14px scrollbars. They also exercise multi-block conversion and one-step undo, a real Backspace after undo, Home creation, explorer icons, the workspace-rename warning, board-tile rename/undo, passive mention pixels at 25%, and Graph side-to-main sizing. `npm run test:reader -- --retina --retained --navigation-only` runs the navigation checks independently; omit `--navigation-only` for the full reader pass.
+
+Both native scale fixtures retain 6,000 placements plus 4,000 edges. The mixed fixture includes four PDFs / 80 pages; the other has no PDFs. Reports and presentation traces are in `.local/retained-check/oct29-core` and `oct29-mixed`. Pan results on the Retina reference display:
+
+| Fixture | Overview rAF p95 | Overview presentation p95 | Reading rAF p95 | Reading presentation p95 |
+| --- | ---: | ---: | ---: | ---: |
+| No PDF | 17.2 ms | 17.0 ms | 17.3 ms | 17.2 ms |
+| Mixed PDF | 17.4 ms | 33.1 ms | 16.9 ms | 17.1 ms |
+
+These are callback and Chromium presentation intervals, not physical input latency. Passing the functional checks does not imply every frame is smooth; full reports include hover/zoom/drag outliers and cold loading.
+
+Final local package: `0.1.2718-test.13`, signature-verified; stable remains `0.1.2718` / build 4. Test.11 and Test.12 bundles are preserved under `.local/test-app/previous-test.11` and `previous-test.12`. The full check passed 388 tests plus lint/types/build. Both original and cached native reader passes passed, with 0 blank frames across 43 and 46 sampled edit/preview handoff frames. Graph painted bounds increased from 234.5px in a 269px side canvas to 744.5px in a 1141px main canvas. The intermittent full-content Backspace deletion remains unreproduced; range-preserving refresh and a native Backspace after conversion/undo are covered. Show cards also checks Windows separators and JavaScript-property-like folder names.

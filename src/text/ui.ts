@@ -187,7 +187,7 @@ export const ui = {
     loading: "Loading icons…",
   },
   workspace: {
-    name:"Workspace name",rename:"Rename workspace",relink:"Relink to folder",relinkTitle:"Relink workspace folder",
+    name:"Workspace name",rename:"Rename workspace",renameHome:(before:string,after:string)=>`Home uses the workspace name. This changes “${before}” to “${after}” throughout the app. The folder on disk keeps its current name.`,relink:"Relink to folder",relinkTitle:"Relink workspace folder",
     switchWorkspace: (name: string) => `Switch workspace · ${name}`,
     workspaceMenu: "Workspace menu",
     status:{available:'Available',missing:'Folder not found',unavailable:'Cannot access','not-folder':'Not a folder'},
@@ -333,7 +333,6 @@ export const ui = {
     unsupportedRequest: "Unsupported request",
     migrationOtherWindows: "Close the other windows for this workspace before moving its root cards.",
     invalidWindowRequest: "Invalid window request",
-    migrateRootFirst: "Move root cards before changing the mother whiteboard.",
     whiteboardRenameUndoIsUnavailable: "Whiteboard rename undo is unavailable",
     whiteboardMissing: "This whiteboard is no longer in the workspace",
     cardMissing: "This card is no longer in the workspace",
@@ -397,6 +396,7 @@ export const ui = {
     cardTitle: "Card title",
   },
   explorer: {
+    showCards:"Show cards",
     open: "Open",
     removeFromStarred: "Remove from Starred",
     addToStarred: "Add to Starred",

@@ -280,7 +280,7 @@ export class Workspace {
     }
     return boards.map(board => {
       const children=childrenByFolder.get(board.folder)??[];
-      const cards=(board.folder?[...board.cards]:board.cards.filter(p=>p.folder)).filter(p=>!p.folder||children.includes(p.folder));
+      const cards=[...board.cards].filter(p=>!p.folder||children.includes(p.folder));
       for (const folder of children) if (!cards.some(p => p.folder === folder)) {
         const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
         cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
@@ -295,13 +295,13 @@ export class Workspace {
     const affected=folders??new Set(changes.length?changes.map(c=>dirname(c.path)==='.'?'':dirname(c.path)):[...this.boards.values()].map(b=>b.folder));
     let displayed:Map<string,Board>|undefined;
     for(const folder of affected){
-      if(!folder||systemFolder(folder,this.preferences))continue; // Special folders do not intake cards onto a board.
+      if(systemFolder(folder,this.preferences))continue; // Special folders do not intake cards onto a board.
       const path=this.boardPath(folder),explicit=result.find(c=>c.path===path);
       if(explicit?.content===null)continue;
       const board=explicit?readBoard(path,explicit.content!):this.boards.get(path);
       if(!board)continue;
       const local=new Map((this.db.prepare('SELECT path,id FROM cards WHERE folder=? ORDER BY path').all(folder) as {path:string;id:string}[]).map(c=>[c.path,c]));
-      for(const change of changes)if(change.path.endsWith('.md')&&dirname(change.path)===folder){
+      for(const change of changes)if(change.path.endsWith('.md')&&(dirname(change.path)==='.'?'':dirname(change.path))===folder){
         if(change.content===null)local.delete(change.path);else{const card=readCard(change.path,change.content);local.set(change.path,card);}
       }
       const placed=new Set(board.cards.map(p=>p.cardId)),missing=[...local.values()].filter(c=>!placed.has(c.id));
@@ -532,7 +532,7 @@ export class Workspace {
       const movedRaw=editCard(raw,card,body),parsed=splitNote(movedRaw),file=parsed.front.getIn(['source','file']);if(typeof file==='string')parsed.front.setIn(['source','file'],rewrite(file));
       changes.push({path:join(folder,info.path),content:typeof file==='string'?`---\n${parsed.front.toString()}---\n${parsed.body}`:movedRaw,expected:null},{path:info.path,content:null,expected:info.revision});
     }
-    const path=join(folder,folder+'.whiteboard'),board=source?{...source,path,folder,name:folder,cards:source.cards.filter(p=>!p.folder)}:emptyBoard(path);
+    const path=join(folder,folder+'.whiteboard'),board=source?{...source,path,folder,name:folder,cards:source.cards.filter(p=>!p.folder).map(p=>p.object?.type==='image'?{...p,object:{...p.object,html:moveCardLinks(p.object.html,source.path,path,target=>moving.has(target)?join(folder,target):target)}}:p)}:emptyBoard(path);
     const placements=new Set(board.cards.map(p=>p.id));
     board.edges=board.edges.filter(e=>placements.has(e.from)&&placements.has(e.to));
     changes.push({path,content:writeBoard(board),expected:null});
@@ -620,7 +620,7 @@ export class Workspace {
     return '---\n'+parts.front.toString()+'---\n'+parts.body;
   }
   async createFromTemplate(template:string,folder:string,stem:string,inputs:TemplateValues={}){
-    if(!validNotePath(template)||!template.endsWith('.md')||!validNotePath(folder))throw new Error(ui.errors.invalidWorkspacePath);
+    if(!validNotePath(template)||!template.endsWith('.md')||folder!==''&&!validNotePath(folder))throw new Error(ui.errors.invalidWorkspacePath);
     const path=await this.newCardPath(folder,stem),raw=await this.templateContent(template,path,basename(path,'.md'),journalToday(this.preferences.dateDisplay),undefined,inputs);
     return this.write([{path,content:raw,expected:null}]);
   }
@@ -722,13 +722,13 @@ export class Workspace {
     const movingCard=this.snapshot().cards.find(c=>c.path===from),home=dirname(from)==='.'?'':dirname(from),cardFolder=dirname(to)==='.'?'':dirname(to),owned=displayed.find(b=>b.folder===home)?.cards.find(p=>p.cardId===movingCard?.id);
     for(const b of this.boards.values()){
       const before=await this.read(b.path);if(revision(before)!==b.revision)throw new Error(ui.errors.renameRefresh(b.path));
-      const cards=b.cards.filter(p=>!(movingBoard&&p.folder===from&&b.folder!==destination)&&!(movingCard&&b.folder===home&&home!==dirname(to)&&p.cardId===movingCard.id)).map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p.object?.type==='image'?{...p,object:{...p.object,html:moveCardLinks(p.object.html,b.path,remapFilePath(b.path,from,to),target=>remapPath(target,from,to))}}:p);
+      const cards=b.cards.filter(p=>!(movingBoard&&p.folder===from&&b.folder!==destination)&&!(movingCard&&b.folder===home&&home!==cardFolder&&p.cardId===movingCard.id)).map(p=>p.folder?{...p,folder:remapPath(p.folder,from,to)}:p.object?.type==='image'?{...p,object:{...p.object,html:moveCardLinks(p.object.html,b.path,remapFilePath(b.path,from,to),target=>remapPath(target,from,to))}}:p);
       if(movingBoard&&b.folder===destination){
         const existing=cards.find(p=>p.folder===to);
         if(existing){if(position){existing.x=position.x;existing.y=position.y;}}
         else {const point=position??(dirname(from)===dirname(to)&&tile?tile:boardDropPosition(displayed.find(board=>board.folder===destination),this.snapshot().cards)),id=tile?.id&&!cards.some(p=>p.id===tile.id)?tile.id:randomUUID();cards.push({...tile,id,cardId:'',folder:to,x:point.x,y:point.y,width:tile?.width??320,height:tile?.height??160});}
       }
-      if(movingCard&&b.folder===cardFolder&&cardFolder&&cardFolder!==home&&!cards.some(p=>p.cardId===movingCard.id))cards.push({...owned,id:owned?.id??randomUUID(),cardId:movingCard.id,x:position?.x??owned?.x??80,y:position?.y??owned?.y??80,width:owned?.width??340,height:owned?.height??280});
+      if(movingCard&&b.folder===cardFolder&&cardFolder!==home&&!cards.some(p=>p.cardId===movingCard.id))cards.push({...owned,id:owned?.id??randomUUID(),cardId:movingCard.id,x:position?.x??owned?.x??80,y:position?.y??owned?.y??80,width:owned?.width??340,height:owned?.height??280});
       const ids=new Set(cards.map(p=>p.id)),edges=b.edges.filter(e=>ids.has(e.from)&&ids.has(e.to));
       if(b.path===boardPath||JSON.stringify(cards)!==JSON.stringify(b.cards))edits.push({path:b.path,before,after:writeBoard({...b,name:b.path===boardPath?name:b.name,cards,edges})});
     }
@@ -829,11 +829,11 @@ export class Workspace {
     if(!origin||!target)throw new Error(ui.errors.whiteboardMissing);
     if(origin.revision!==expected||target.revision!==destinationExpected)throw new Error(ui.errors.externalEdit(origin.path));
     const selected=new Set(ids),items=origin.cards.filter(p=>selected.has(p.id));
-    if(items.length!==ids.length||!destination&&items.some(p=>!p.folder)||items.some(p=>p.folder&&(destination===p.folder||destination.startsWith(p.folder+'/'))))throw new Error(ui.errors.invalidWorkspacePath);
+    if(items.length!==ids.length||items.some(p=>p.folder&&(destination===p.folder||destination.startsWith(p.folder+'/'))))throw new Error(ui.errors.invalidWorkspacePath);
     const snapshot=this.snapshot(),paths=new Set<string>();
     for(const p of items){
       if(p.folder){if(!snapshot.boards.some(b=>b.folder===p.folder))throw new Error(ui.errors.whiteboardMissing);paths.add(p.folder);}
-      else if(!p.object){const card=snapshot.cards.find(c=>c.id===p.cardId);if(!card)throw new Error(ui.errors.cardMissing);if(dirname(card.path)===source)paths.add(card.path);}
+      else if(!p.object){const card=snapshot.cards.find(c=>c.id===p.cardId);if(!card)throw new Error(ui.errors.cardMissing);if((dirname(card.path)==='.'?'':dirname(card.path))===source)paths.add(card.path);}
     }
     const moves:import('../shared').BoardTransfer['moves']=[];
     for(const from of paths){
@@ -907,21 +907,21 @@ export class Workspace {
     }catch(e){await this.recoverTransfer().catch(()=>undefined);throw e;}
   }
   async placeCard(id:string,expected:string,folder:string,boardExpected:string,x:number,y:number,mode:'move'|'reference'|'move-reference',source?:string,placement?:string){
-    if(!['move','reference','move-reference'].includes(mode)||!Number.isFinite(x)||!Number.isFinite(y)||!folder||source!==undefined&&typeof source!=='string')throw new Error(ui.errors.invalidQuery);
+    if(!['move','reference','move-reference'].includes(mode)||!Number.isFinite(x)||!Number.isFinite(y)||typeof folder!=='string'||source!==undefined&&typeof source!=='string')throw new Error(ui.errors.invalidQuery);
     const info=this.snapshot().cards.find(c=>c.id===id),board=this.boards.get(this.boardPath(folder));
     if(!info||!board)throw new Error(ui.errors.fileMissing);
     if(info.revision!==expected||board.revision!==boardExpected)throw new Error(ui.errors.externalEdit(info.path));
-    const before=await this.read(info.path),card=readCard(info.path,before),moving=mode==='move'&&dirname(card.path)!==folder;
+    const before=await this.read(info.path),card=readCard(info.path,before),home=dirname(card.path)==='.'?'':dirname(card.path),moving=mode==='move'&&home!==folder;
     if(card.revision!==expected)throw new Error(ui.errors.externalEdit(card.path));
     if(mode==='move-reference'&&!this.boards.get(this.boardPath(source??''))?.cards.some(p=>p.cardId===id&&(!placement||p.id===placement)))throw new Error(ui.errors.fileMissing);
     const path=moving?await this.newCardPath(folder,basename(card.path,'.md')):card.path,changes:Write[]=[],boards=new Map<string,Board>();
     const destination=structuredClone(board),existing=destination.cards.find(p=>p.cardId===id);
     if(existing){existing.x=x;existing.y=y;destination.cards=destination.cards.filter(p=>p!==existing).concat(existing);}
-    else {const original=this.boards.get(this.boardPath(source??dirname(card.path)))?.cards.find(p=>p.cardId===id);destination.cards.push({...original,id:randomUUID(),cardId:id,x,y,width:original?.width??340,height:original?.height??280});}
+    else {const original=this.boards.get(this.boardPath(source??home))?.cards.find(p=>p.cardId===id);destination.cards.push({...original,id:randomUUID(),cardId:id,x,y,width:original?.width??340,height:original?.height??280});}
     boards.set(destination.path,destination);
     if(mode!=='reference'){
-      const home=dirname(card.path);if(mode==='move-reference'&&(!source||source===home))throw new Error(ui.errors.invalidQuery);
-      const origins=new Set(mode==='move-reference'?[source!]:[home,...(source?[source]:[])]);
+      if(mode==='move-reference'&&(source===undefined||source===home))throw new Error(ui.errors.invalidQuery);
+      const origins=new Set(mode==='move-reference'?[source!]:[home,...(source!==undefined?[source]:[])]);
       for(const origin of origins){const original=this.boards.get(this.boardPath(origin));if(!original||original.path===board.path)continue;
         const ids=new Set(original.cards.filter(p=>p.cardId===id&&(mode!=='move-reference'||!placement||p.id===placement)).map(p=>p.id));if(!ids.size)continue;
         boards.set(original.path,{...original,cards:original.cards.filter(p=>!ids.has(p.id)),edges:original.edges.filter(e=>!ids.has(e.from)&&!ids.has(e.to))});
@@ -968,7 +968,7 @@ export class Workspace {
     if(changes.length){if(this.history.available)await this.history.checkpoint('Before attachment status migration');else await fs.writeFile(join(this.cache,'reading-status-backup-'+randomUUID()+'.json'),JSON.stringify(await Promise.all(changes.map(async change=>({...change,before:await this.raw(change.path)})))),{flag:'wx'});await this.write(changes);}
   }
   async importReading(value:import('../shared').ReadingImport){
-    validateImport(value);if(value.readLater&&!featureEnabled(this.preferences,'reading'))throw new Error('Enable Read later for this workspace.');const folder=value.folder??systemPath(value.readLater?'reading':'slipbox',this.preferences);if(!validNotePath(folder))throw new Error('Invalid import folder.');await this.ensureFolder(folder);
+    validateImport(value);if(value.readLater&&!featureEnabled(this.preferences,'reading'))throw new Error('Enable Read later for this workspace.');const folder=value.folder??systemPath(value.readLater?'reading':'slipbox',this.preferences);if(typeof folder!=='string'||folder!==''&&!validNotePath(folder))throw new Error('Invalid import folder.');if(folder)await this.ensureFolder(folder);
     if(value.entry){const existing=this.db.prepare("SELECT path FROM cards WHERE coalesce(json_extract(frontmatter,'$.source.feed'),'')=? AND json_extract(frontmatter,'$.source.entry')=?").get(value.feed??'',value.entry);if(existing)return {snapshot:this.snapshot(),edits:[],path:String(existing.path)};}
     const board=value.placement?this.boards.get(this.boardPath(folder)):undefined;
     if(value.placement&&(!board||typeof value.placement.expected!=='string'||board.revision!==value.placement.expected||![value.placement.x,value.placement.y].every(Number.isFinite)))throw new Error(ui.errors.whiteboardChanged(this.boardPath(folder)));
@@ -1038,10 +1038,10 @@ export class Workspace {
   async convertTopic(path:string,expected:string,placement:string|string[]){
     const ids=typeof placement==='string'?[placement]:placement;
     if(typeof path!=='string'||typeof expected!=='string'||!Array.isArray(ids)||!ids.length||ids.length>10000||ids.some(id=>typeof id!=='string')||new Set(ids).size!==ids.length)throw new Error(ui.errors.invalidRequestValue);
-    const board=this.boards.get(path);if(!board||!board.folder)throw new Error(ui.errors.whiteboardMissing);
+    const board=this.boards.get(path);if(!board)throw new Error(ui.errors.whiteboardMissing);
     if(board.revision!==expected)throw new Error(ui.errors.whiteboardChanged(path));
     const byId=new Map(board.cards.map(p=>[p.id,p])),topics=ids.map(id=>byId.get(id));if(topics.some(p=>p?.object?.type!=='text'))throw new Error('Choose whiteboard text to convert.');
-    const names=new Set((await fs.readdir(await this.path(board.folder))).map(n=>n.toLocaleLowerCase())),changes:Write[]=[],converted=new Map<string,string>();
+    const names=new Set((await fs.readdir(board.folder?await this.path(board.folder):this.root)).map(n=>n.toLocaleLowerCase())),changes:Write[]=[],converted=new Map<string,string>();
     for(const topic of topics){
       if(topic?.object?.type!=='text')throw new Error('Choose whiteboard text to convert.');
       const lines=topic.object.text.replace(/\r\n?/g,'\n').split('\n'),title=lines[0].trim()||'Text';
@@ -1116,7 +1116,7 @@ export class Workspace {
     return paths.flatMap<import('../shared').ReferenceTarget>(path=>{const b=boards.get(path);if(b)return [{kind:'board' as const,key:'board:'+b.folder,path,name:b.name}];const c=cardAt.get(path);return c?[{kind:'card' as const,key:'card:'+c.id,path,name:String(c.title||c.name)}]:[];});
   }
   async extractCardBlocks(path:string,expected:string,value:import('../shared').ExtractedBlocks,folder:string,boardExpected:string,x:number,y:number){
-    if(typeof path!=='string'||!path.endsWith('.md')||typeof expected!=='string'||!value||typeof value.id!=='string'||!/^[-\w]{1,128}$/.test(value.id)||typeof value.title!=='string'||!value.title.trim()||value.title.length>80||[value.before,value.body,value.content].some(text=>typeof text!=='string'||text.length>1024*1024)||!value.content.trim()||!value.body.includes('](card:'+value.id+')')||typeof folder!=='string'||!folder||typeof boardExpected!=='string'||![x,y].every(Number.isFinite))throw new Error(ui.errors.invalidQuery);
+    if(typeof path!=='string'||!path.endsWith('.md')||typeof expected!=='string'||!value||typeof value.id!=='string'||!/^[-\w]{1,128}$/.test(value.id)||typeof value.title!=='string'||!value.title.trim()||value.title.length>80||[value.before,value.body,value.content].some(text=>typeof text!=='string'||text.length>1024*1024)||!value.content.trim()||!value.body.includes('](card:'+value.id+')')||typeof folder!=='string'||typeof boardExpected!=='string'||![x,y].every(Number.isFinite))throw new Error(ui.errors.invalidQuery);
     const raw=await this.read(path),source=readCard(path,raw),board=this.boards.get(this.boardPath(folder));
     if(source.revision!==expected||source.body!==value.before)throw new Error(ui.errors.draftConflict(path));
     if(source.source)throw new Error('Extract blocks from an ordinary card.');
@@ -1129,7 +1129,7 @@ export class Workspace {
     return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,source,body),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:value.id,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async extractAssetNote(path:string,expected:string,note:string,folder:string,boardExpected:string,x:number,y:number){
-    if(typeof path!=='string'||typeof expected!=='string'||typeof note!=='string'||typeof folder!=='string'||!folder||typeof boardExpected!=='string'||!Number.isFinite(x)||!Number.isFinite(y))throw new Error(ui.errors.invalidQuery);
+    if(typeof path!=='string'||typeof expected!=='string'||typeof note!=='string'||typeof folder!=='string'||typeof boardExpected!=='string'||!Number.isFinite(x)||!Number.isFinite(y))throw new Error(ui.errors.invalidQuery);
     const raw=await this.read(path),asset=readCard(path,raw),board=this.boards.get(this.boardPath(folder));
     if(asset.revision!==expected)throw new Error(ui.errors.draftConflict(path));
     if(!asset.source)throw new Error('Only imported assets have extractable notes.');

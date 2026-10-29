@@ -48,3 +48,11 @@ A journal note’s breadcrumb links its configured Journal folder to the Journal
 ## App startup
 
 A successful workspace open atomically remembers its registered root in the app profile, independently of the workspace registry's display order. Normal app launch reopens that workspace when it remains registered and accessible. Missing, unregistered or failed workspaces fall back to the workspace-management page, which is shown directly rather than behind a welcome button. A new empty window uses the same management page. Explicit development/Test workspace arguments take precedence. New-workspace presets remain a later design task.
+
+## Home and card navigation
+
+Home refers to the root whiteboard. Display its workspace name, including in explorer, tabs and breadcrumbs. Renaming Home warns that it renames the workspace throughout the app and uses the same workspace display-name operation as the manager. It does not rename or move the folder on disk.
+
+A board’s **Show cards** checkbox lists directly owned Markdown cards with their selected icons. The choice inherits down the board hierarchy. Changing a parent removes descendant overrides; a later child toggle can override it again. Card shortcuts can be reordered among siblings with the existing drag/keyboard controls. Reference placements are omitted from this ownership list. Board and card icons, including emoji, also appear in ancestor breadcrumbs and board tiles.
+
+`src/renderer/folder-navigation.ts` registers folder-to-document routes. All enabled built-in system folders use this resolver, so Slipbox, Templates, Journal and other system breadcrumbs open their corresponding pages. A disabled feature contributes no special route. `registerFolderNavigation({key,folder,enabled})` returns a disposer; folder resolvers read current workspace preferences instead of retaining old paths. Future plugins can register this mapping during activation and dispose it during deactivation. This is an internal navigation extension point; loading third-party plugins and rendering their custom route pages are separate future work.

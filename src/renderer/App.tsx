@@ -120,10 +120,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         const special=['slipbox','templates','journal'].some(id=>systemPath(id as 'slipbox'|'templates'|'journal',current.preferences)===d.folder);
         attempt(special&&!current.folders?.includes(d.folder)?session.bridge.request({kind:'ensureFolder',path:d.folder}).then(run):run());return;
       }
-      if(!d.folder||!current.boards.some(b=>b.folder===d.folder))return;
+      if(!current.boards.some(b=>b.folder===d.folder))return;
       const run=(mode:'move'|'reference'|'move-reference')=>attempt(session.placeCard(card.id,d.folder,point.x,point.y,mode,d.source,d.placement));
-      const owned=current.boards.some(b=>b.folder&&b.folder===parent(card.path));
-      if(d.source&&d.source!==parent(card.path))run('move-reference');
+      const owned=current.boards.some(b=>b.folder===parent(card.path));
+      if(d.source!==undefined&&d.source!==parent(card.path))run('move-reference');
       else if(d.intoBoard||!owned||parent(card.path)===d.folder)run('move');
       else setTabMenu({x:d.screenX,y:d.screenY,actions:[{label:ui.views.moveCard,icon:'folder',run:()=>run('move')},{label:ui.views.addReference,icon:'link',run:()=>run('reference')}]});
     };
@@ -247,15 +247,15 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       if(!placement){const created=result.snapshot.boards.find(b=>result.edits.some(e=>e.path===b.path&&e.before===null));if(created)open('board:'+created.folder,paneId);}
     }));
   }
-  function createCard(folder:string,x?:number,y?:number,paneId=activeId){
-    attempt((async()=>{await session.create(folder||prefs.cardFolder||DEFAULT_CARD_FOLDER,prefs.stem,x??80,y??80,!!folder&&x!==undefined&&y!==undefined);const card=session.state.draft?.card;
+  function createCard(folder?:string,x?:number,y?:number,paneId=activeId){
+    attempt((async()=>{await session.create(folder??prefs.cardFolder??DEFAULT_CARD_FOLDER,prefs.stem,x??80,y??80,folder!==undefined&&x!==undefined&&y!==undefined);const card=session.state.draft?.card;
       if(card){const p=panes(layout).find(p=>p.id===paneId);if(x===undefined||y===undefined||(!p||tabDocument(p)!=='board:'+folder))open('card:'+card.id,paneId);}
     })());
   }
   function runHubCommand(command:HubCommand){
     const module=hubModule(command);
     if(module){const graph=module==='graph'&&panes(layout).find(p=>p.tabs.some(key=>tabDocument(p,key)==='graph:'));if(graph)selectTab(graph,graph.tabs.find(key=>tabDocument(graph,key)==='graph:')!);else changeDocks(revealModule(docks,module));return;}
-    if(command==='newCard')createCard('');
+    if(command==='newCard')createCard();
     else if(command==='newBoard'){const info=documentInfo(tabDocument(active),snapshot);createFolder(info.kind==='board'?info.id:'');}
     else if(command==='searchWorkspace')setSearchOpen(true);
     else if(command==='templates'){setTemplatePath(undefined);setTemplateOpen(true);}
@@ -336,10 +336,10 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         </div></details>
       </MainTabs>
       {info&&<div className="document-toolbar">
-        <Breadcrumbs key={documentKey} documentKey={documentKey} snapshot={snapshot} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onIcon={()=>editIcon(documentKey)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else await session.renameBoard(info.id,name);}}/>
+        <Breadcrumbs key={documentKey} documentKey={documentKey} snapshot={snapshot} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onIcon={()=>editIcon(documentKey)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else if(info.id)await session.renameBoard(info.id,name);else if(await confirm({title:ui.workspace.rename,message:ui.workspace.renameHome(session.state.snapshot!.name,name),accept:ui.workspace.rename})){await session.run(async()=>{await session.flush();await window.door.renameWorkspace(session.state.snapshot!.root,name);});await session.refresh();}}}/>
         <div className="tab-navigation"><Tool icon="back" label={tooltips.navigation.back} disabled={history.index===0} onClick={()=>travel(p,-1)}/><Tool icon="forward" label={tooltips.navigation.forward} disabled={history.index>=history.entries.length-1} onClick={()=>travel(p,1)}/></div>
         <div className="toolbar-spacer"/>
-        {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id,undefined,p.id)}/>{!!info.id&&<Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/>}</>}
+        {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id,undefined,p.id)}/><Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/></>}
         {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.editorTools.sourceMode,icon:'source',checked:!!memory.source,checkType:'checkbox',run:()=>{attempt(session.run(async()=>{await session.flush();memory.source=!memory.source;rememberViews();setLayout(current=>({...current}));setTabMenu(null);if(!focused)focusPane(p);}));}},{label:ui.common.openInPopup,icon:'popup',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
         <Tool icon="star" className={prefs.starred.includes(documentKey)?'is-starred':''} label={prefs.starred.includes(documentKey)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(documentKey)}/>
 
@@ -348,7 +348,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
           !info.exists?<p className="notice">{info.kind==='system'||info.kind==='graph'?ui.system.disabled:ui.errors.fileMissing}</p>:
           info.kind==='graph'?<GraphView key={documentKey} snapshot={snapshot} onOpen={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onMode={graphMode=>changePrefs(()=>({graphMode}))}/>:info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id,'new')} onJournalOpen={key=>open(key,p.id,true)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
-          board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>info.id?createCard(info.id,x,y,p.id):createFolder('',{x,y},p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onMigrate={()=>setModal('migration')} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
+          board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag&&!featureEnabled(prefs,'tags')?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView revealAnnotation={annotationReveal?.pane===p.id&&annotationReveal.key===documentKey?annotationReveal:undefined} suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
       </ViewBlockProvider></div>

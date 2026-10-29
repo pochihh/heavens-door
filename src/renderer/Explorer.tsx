@@ -1,5 +1,5 @@
 import {useConfirmation} from './Confirmation';
-import {systemEntries,systemPath,navigationOrder} from '../features';
+import {systemEntries,systemPath,navigationOrder,boardShowsCards,setBoardCards} from '../features';
 import {CreateFileDialog} from './CreateFileDialog';
 import {NewTag} from './TagView';
 import { ui } from '../text/ui';
@@ -52,8 +52,9 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     for(const group of groups.values())group.folders.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     return groups;
   },[snapshot.boards]);
+  const ownedCards=useMemo(()=>{const groups=new Map<string,string[]>();for(const card of snapshot.cards){const folder=parent(card.path),keys=groups.get(folder)??[];keys.push('card:'+card.id);groups.set(folder,keys);}return groups;},[snapshot.cards]);
   const systems=systemEntries(prefs).map(f=>'system:'+f.id),rootGroup='boards:',savedOrder=prefs.boardNavigation?.order??{};
-  const boardGroups=new Map([...tree].map(([folder,group])=>['boards:'+folder,group.folders.map(path=>'board:'+portable(path))]));
+  const boardGroups=new Map([...tree].map(([folder,group])=>['boards:'+folder,[...group.folders.map(path=>'board:'+portable(path)),...(boardShowsCards(folder,prefs.boardNavigation)?ownedCards.get(folder)??[]:[])]]));
   const pinned=(savedOrder[rootGroup]??[]).filter(key=>systems.includes(key));
   boardGroups.set(rootGroup,[...(boardGroups.get(rootGroup)??[]),...pinned]);boardGroups.set('system',systems.filter(key=>!pinned.includes(key)));
   const groupKeys=(group:string)=>navigationOrder(boardGroups.get(group)??[],savedOrder[group]);
@@ -99,6 +100,7 @@ export function Explorer({snapshot,prefs,activeKey,module,starredTarget,session,
     ];
     return [
       ...(entry.folder!==undefined?creations(entry.folder):[]),
+      ...(module==='whiteboards'&&entry.folder!==undefined?[{label:ui.explorer.showCards,checked:boardShowsCards(entry.folder,prefs.boardNavigation),checkType:'checkbox' as const,run:()=>onPrefs(p=>({boardNavigation:setBoardCards(p.boardNavigation,entry.folder!,!boardShowsCards(entry.folder!,p.boardNavigation))}))}]:[]),
       ...(key&&!entry.symlink?[
         {label:ui.explorer.open,icon:'file' as const,run:()=>onOpen(key)},
         {label:ui.common.openInNewTab,icon:'external' as const,run:()=>onOpen(key)},

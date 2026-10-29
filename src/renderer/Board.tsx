@@ -19,7 +19,7 @@ import {createDragPhantom} from './sortable';
 import { cardFill, tintColor } from '../colors';
 import { ui } from '../text/ui';
 import { tooltips } from '../text/tooltips';
-import { Edges } from './Edges';
+import { Edges, MentionLinks } from './Edges';
 import { edgeGeometry, opposite } from './edge-geometry';
 import type { BoardSelection } from './StyleView';
 import type {AnchorSide,Edge} from '../shared';
@@ -31,7 +31,7 @@ import { leadingTitle } from '../card-title';
 import { parent, portable } from './documents';
 import { preview, previewHtml, titlePreview } from './markdown';
 import { BoardNavigation, MIN_ZOOM, type Camera } from './navigation';
-import { Icon, Tool } from './Icons';
+import { DocumentIcon, Icon, Tool } from './Icons';
 import { InlineName } from './InlineName';
 import {ReferencePicker} from './ReferencePicker';
 import {PropertyPopover} from './PropertyValue';
@@ -80,7 +80,7 @@ const OverviewImage=memo(function OverviewImage({html,path}:{html:string;path:st
   return <div className="board-overview-image" dangerouslySetInnerHTML={{__html:content}}/>;
 });
 interface Props {
-  adaptiveDetail?:boolean;
+  adaptiveDetail?:boolean;icons?:Preferences['icons'];onRenameBoard?:(folder:string,name:string)=>Promise<void>;
   onAttachPdf?:(files:(File|string)[]|undefined,x:number,y:number)=>Promise<void>;
   keybindings?:Preferences['keybindings'];hasCopiedStyle?:boolean;onCopyStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;onPasteStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;
   onConvertTopics?:(base:Board,ids:string[])=>Promise<CardInfo[]>;
@@ -107,7 +107,7 @@ const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const boardTheme=()=>typeof getComputedStyle==='function'?(()=>{const style=getComputedStyle(document.documentElement);return [style.fontFamily,style.fontSize,...['--text','--canvas','--card','--muted','--card-radius','--editor-font-size','--editor-line-height','--whiteboard-font-size-s','--whiteboard-font-size-m','--whiteboard-font-size-l','--whiteboard-font-size-xl'].map(name=>style.getPropertyValue(name))].join(':');})():'';
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
+export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiveDetail=false,onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
   const imageImportLive=useRef(true);
   const [objectError,setObjectError]=useState(''),[imageDrop,setImageDrop]=useState(false);
   useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
@@ -522,23 +522,23 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
     const rect=element.getBoundingClientRect(),x=(clientX-rect.left-nav.current.x)/nav.current.zoom,y=(clientY-rect.top-nav.current.y)/nav.current.zoom;
     onFinish?.();
     setMenu({label:ui.whiteboard.canvasActions,x:clientX,y:clientY,actions:[
-      {label:ui.common.newCard,icon:'note',disabled:!board.folder,hint:!board.folder?tooltips.whiteboard.rootWhiteboardsOnly:undefined,run:()=>onCreate(x,y)},
+      {label:ui.common.newCard,icon:'note',run:()=>onCreate(x,y)},
       {label:ui.common.newWhiteboard,icon:'map',run:()=>onCreateBoard?.(x,y)},
-      {label:topicText.new,icon:'text',disabled:!board.folder,run:()=>addTopic(x,y)},
-      ...(onAttachPdf?[{label:readingText.attachPdf,icon:'file' as const,disabled:!board.folder,run:()=>{void onAttachPdf(undefined,x,y).catch(error=>setObjectError(String(error)));}}]:[]),
-      {label:readingText.imageOrFigure,icon:'image',disabled:!board.folder,run:()=>addImagePlaceholder(x,y)},
-      ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,disabled:!board.folder,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
+      {label:topicText.new,icon:'text',run:()=>addTopic(x,y)},
+      ...(onAttachPdf?[{label:readingText.attachPdf,icon:'file' as const,run:()=>{void onAttachPdf(undefined,x,y).catch(error=>setObjectError(String(error)));}}]:[]),
+      {label:readingText.imageOrFigure,icon:'image',run:()=>addImagePlaceholder(x,y)},
+      ...(onPlaceReference?[{label:ui.references.add,icon:'link' as const,run:()=>{setReferenceError('');setReference({x,y,screenX:clientX,screenY:clientY});}}]:[]),
     ]});
   }
   function addTopic(x:number,y:number,from?:string,side:AnchorSide='right',edited?:Placement,rightAnchor?:number) {
-    const base=pendingSave.current??latest.current.board;if(!base.folder)return;
+    const base=pendingSave.current??latest.current.board;
     const id=crypto.randomUUID(),topic:Placement={id,cardId:'',x:from&&side==='left'?(rightAnchor??x)-240:x,y,width:240,height:80,autoHeight:false,object:{type:'text',text:'',shape:'none',...textDefaults}};
     const edge:Edge|undefined=from?{id:crypto.randomUUID(),kind:'branch',from,to:id,fromSide:side,toSide:side==='right'?'left':side==='left'?'right':side==='top'?'bottom':'top',fromArrowhead:'none',toArrowhead:'arrow',...edgeDefaults}:undefined;
     textOrigin.current={id,x:topic.x,width:topic.width,left:!!from&&side==='left'};setTextReplacement(undefined);
     onFinish?.();save({...base,cards:[...base.cards.map(p=>p.id===edited?.id?edited:p),topic],edges:edge?[...base.edges,edge]:base.edges},'Create text',base);setSelected([id]);setSelectedEdges([]);setEditingObject(id);
   }
   function addRelatedTopic(id:string,mode:'child'|'sibling',object?:Placement['object']) {
-    const base=pendingSave.current??latest.current.board,original=base.cards.find(p=>p.id===id);if(!original||!base.folder)return;
+    const base=pendingSave.current??latest.current.board,original=base.cards.find(p=>p.id===id);if(!original)return;
     const selected=object?editedText(original,object):original;
     const incoming=base.edges.find(e=>e.kind==='branch'&&e.to===id),parent=mode==='sibling'?incoming:undefined,source=parent?base.cards.find(p=>p.id===parent.from)!:selected;
     const from=mode==='child'?source.id:parent?.from,side=parent?.fromSide??(incoming?.toSide?opposite[incoming.toSide]:incoming?.fromSide)??'right',vertical=side==='top'||side==='bottom';
@@ -605,7 +605,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
     if(additions.length&&imageImportLive.current){const base=pendingSave.current??latest.current.board;save({...base,cards:[...base.cards,...additions]},'Add image object',base);setSelected(additions.map(p=>p.id));setSelectedEdges([]);viewport.current?.focus({preventScroll:true});}
   }
   function acceptsImage(target:EventTarget|null) {
-    return enabled&&!!board.folder&&target instanceof Node&&!!viewport.current?.contains(target)&&!editable(target)&&!(target as HTMLElement).closest('.card-editor,[role="dialog"]');
+    return enabled&&target instanceof Node&&!!viewport.current?.contains(target)&&!editable(target)&&!(target as HTMLElement).closest('.card-editor,[role="dialog"]');
   }
   function fit() {
     const nav = navigation.current, element = viewport.current;
@@ -689,7 +689,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
         // Mouse contextmenu fires on press on macOS and on release elsewhere. A quiet right release opens it once; a right drag only pans.
         if(!rightPress.current&&!(e.target as HTMLElement).closest('[data-placement],.edge-layer,.edge-handles,button,input'))openCanvasMenu(e.clientX,e.clientY);
       }} onKeyDown={e=>{
-        if(!e.defaultPrevented&&enabled&&board.folder&&!editable(e.target)&&!(e.target as HTMLElement).closest('button,a,select')&&selected.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+        if(!e.defaultPrevented&&enabled&&!editable(e.target)&&!(e.target as HTMLElement).closest('button,a,select')&&selected.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
           const p=current.cards.find(p=>p.id===selected[0]);if(p){
             const composing=e.nativeEvent.isComposing||e.keyCode===229||e.key==='Process'||e.key==='Dead';
             if(p.object?.type==='text'&&(e.key==='F2'||e.key===' '||[...e.key].length===1||composing)){
@@ -710,9 +710,10 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
         }
       }}>
       <div className="canvas-grid" ref={grid}/>
+      <MentionLinks board={{...current,cards:geometries}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view}/>
       {surface&&<RetainedCanvas surface={surface} viewport={viewport} camera={()=>navigation.current?.current??view}/> }
         {/* Measured text widths are for edge geometry; keep stored placement sizes on save. */}
-        <Edges geometry={retainedEdges} connectors={connectors} onCreateTopic={board.folder?addTopic:undefined} edgeDefaults={edgeDefaults} drawn={surface?liveEdges:undefined} board={{...current,cards:geometries}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
+        <Edges geometry={retainedEdges} connectors={connectors} onCreateTopic={addTopic} edgeDefaults={edgeDefaults} drawn={surface?liveEdges:undefined} board={{...current,cards:geometries}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
           selectedCards={[...new Set([...selected,...(active?[active.id]:[])])]} selectedEdges={selectedEdges} onSelect={selectEdges} onSave={(next,label)=>save({...next,cards:current.cards},label)} styleActions={id=>styleActions([], [id])} onFinish={()=>onFinish?.()} onStyle={()=>onStyle?.()}/>
       <div className="board-world" ref={world}>
         {visible.map(p => {
@@ -748,11 +749,11 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
-                  <div className="board-tile-title"><Icon name="map" size={18}/><strong>{p.folder.split(/[\\/]/).at(-1)}</strong></div>
+                  <div className="board-tile-title"><DocumentIcon value={icons?.['board:'+portable(p.folder)]} fallback="map" size={18}/><InlineName name={p.folder.split(/[\\/]/).at(-1)!} tooltip={p.folder} onStart={onFinish} onRename={onRenameBoard?name=>onRenameBoard(p.folder!,name):undefined}/></div>
                   <small>{childBoard ? ui.whiteboard.contentsCount(cardCount,nestedCount) : ui.whiteboard.missingWhiteboard}</small>
                 </div>
                 <div className="board-tile-contents" aria-label={ui.whiteboard.whiteboardContentsPreview}>
-                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id} style={{background:tintColor(child.folder?child.fillColor:cardFill(lookup.get(child.cardId),child))}}>{child.folder&&<Icon name="map" size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
+                  {childBoard?.cards.slice(0,previewCount).map(child => <span className="board-tile-item" key={child.id} style={{background:tintColor(child.folder?child.fillColor:cardFill(lookup.get(child.cardId),child))}}>{(child.folder||icons?.['card:'+child.cardId])&&<DocumentIcon value={icons?.[child.folder?'board:'+portable(child.folder):'card:'+child.cardId]} fallback={child.folder?'map':'note'} size={12}/>}<span>{child.folder?.split(/[\\/]/).at(-1)||lookup.get(child.cardId)?.title||lookup.get(child.cardId)?.name||ui.whiteboard.missingCard}</span></span>)}
                 </div>
               </div> : active?.id === p.id && draft ? <div className="card-editor">
                 <CardEditor id={draft.card.id} onTitleDone={onTitleDone} canvas zoom={view.zoom} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
@@ -766,7 +767,7 @@ export const Whiteboard = memo(function Whiteboard({ adaptiveDetail=false,onAtta
         })}
       </div>
       <div className="selection-box" ref={selectionBox}/>
-      {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={board.folder ? tooltips.common.newCard : tooltips.common.newWhiteboard} onClick={e=>{const button=e.currentTarget.getBoundingClientRect(),r=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current;onCreate((button.left+button.width/2-r.left-camera.x)/camera.zoom-(board.folder?170:160),(button.top+button.height/2-r.top-camera.y)/camera.zoom-(board.folder?60:80));}}>{board.folder ? ui.whiteboard.addCard : ui.whiteboard.addWhiteboard}</button></div>}
+      {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={tooltips.common.newCard} onClick={e=>{const button=e.currentTarget.getBoundingClientRect(),r=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current;onCreate((button.left+button.width/2-r.left-camera.x)/camera.zoom-170,(button.top+button.height/2-r.top-camera.y)/camera.zoom-60);}}>{ui.whiteboard.addCard}</button></div>}
       {surface&&<span className="retained-status" role="status">{ui.developer.retainedStatus}{candidates.length?ui.developer.preparingPreviews:''}</span>}
       <div className="canvas-controls">
         <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>

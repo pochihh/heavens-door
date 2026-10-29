@@ -113,7 +113,7 @@ test('inactive board tabs accept documents without activating the tab or becomin
     assert.equal(documentDropTarget({key:'card:c',path:'Slipbox/C.md'},100,20),board);
     assert.equal(dropDocumentAt({key:'card:c',path:'Slipbox/C.md'},100,20),true);assert.equal(drops[0].folder,'Boards/Destination');assert.equal(drops[0].atPointer,false);assert.equal(selected,0);assert.equal(board.querySelector('[role=tab]')!.getAttribute('aria-selected'),'false');
     assert.equal(documentDropTarget({key:'board:Boards/Destination'},100,20),null);assert.equal(documentDropTarget({key:'board:Boards'},100,20),null);
-    hit=home;assert.equal(documentDropTarget({key:'card:c'},100,20),null);assert.equal(documentDropTarget({key:'board:Other'},100,20),home);
+    hit=home;assert.equal(documentDropTarget({key:'card:c'},100,20),home);assert.equal(documentDropTarget({key:'board:Other'},100,20),home);
     hit=note;assert.equal(documentDropTarget({key:'card:c'},100,20),null);
   }finally{await act(async()=>root.unmount());dom.window.close();}
 });

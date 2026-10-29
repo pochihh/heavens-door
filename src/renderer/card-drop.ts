@@ -32,9 +32,9 @@ export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:
   targets.sort((a,b)=>Number(a.classList.contains('canvas'))-Number(b.classList.contains('canvas')));
   for(const target of targets){
     const folder=target.dataset.dropFolder!,kind=dropKind(target,drag);
-    if((drag.note||drag.blocks)&&(kind!=='board'||!folder))continue;
-    if(kind!=='board'&&kind!=='folder'||folder===drag.source&&kind==='board'&&(!!drag.placement||!board||!target.classList.contains('canvas'))||kind==='board'&&!folder&&!board)continue;
-    if(drag.selection&&(kind!=='board'&&drag.selection.ids.length>1||folder===drag.source||!folder&&drag.selection.ids.length!==drag.selection.folders.length||drag.selection.folders.some(p=>folder===p||folder.startsWith(p+'/'))))continue;
+    if((drag.note||drag.blocks)&&kind!=='board')continue;
+    if(kind!=='board'&&kind!=='folder'||folder===drag.source&&kind==='board'&&(!!drag.placement||!board||!target.classList.contains('canvas')))continue;
+    if(drag.selection&&(kind!=='board'&&drag.selection.ids.length>1||folder===drag.source||drag.selection.folders.some(p=>folder===p||folder.startsWith(p+'/'))))continue;
     if(path&&(folder===path||folder.startsWith(path+'/')||kind==='folder'&&folder===path.split('/').slice(0,-1).join('/')))continue;
     if(folder.split('/').some(part=>part.startsWith('.')||part==='node_modules'))continue;
     // Row middles mean “put inside”; the gaps keep their reorder behavior.

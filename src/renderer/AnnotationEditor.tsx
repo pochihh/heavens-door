@@ -1,3 +1,4 @@
+import {updateEditorContent} from './editor-content';
 import {useEffect,useMemo} from 'react';
 import {EditorContent,useEditor} from '@tiptap/react';
 import {extensions} from './editor-schema';
@@ -6,6 +7,6 @@ export function AnnotationEditor({path,text,onChange}:{path:string;text:string;o
  const schema=useMemo(()=>extensions(path).filter(e=>!['cardTitle','cardKeyboard'].includes(e.name)),[path]);
  const editor=useEditor({extensions:schema,content:text,contentType:'markdown',editorProps:{attributes:{'aria-label':readingText.comment,spellcheck:'true'},handleDrop:()=>true,handleScrollToSelection:view=>!!view.dom.closest('.board-pdf')},onUpdate:({editor})=>onChange(editor.markdown!.serialize(editor.getJSON()))});
  useEffect(()=>{if(editor)editor.commands.focus('start',{scrollIntoView:false});},[editor]);
- useEffect(()=>{if(editor&&!editor.isDestroyed&&editor.markdown!.serialize(editor.getJSON())!==text)editor.commands.setContent(text,{contentType:'markdown',emitUpdate:false});},[editor,text]);
+ useEffect(()=>{if(editor&&!editor.isDestroyed&&editor.markdown!.serialize(editor.getJSON())!==text)updateEditorContent(editor,text,false);},[editor,text]);
  return <EditorContent editor={editor} className="annotation-editor prose"/>;
 }

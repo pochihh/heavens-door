@@ -1,3 +1,4 @@
+import {updateEditorContent} from './editor-content';
 import {readingText} from '../text/reading';
 import {DEFAULT_ANNOTATION_COLOR,annotationView,splitAnnotations,withAnnotations,type Annotation} from '../reading';
 import {EditorMath} from './EditorMath';
@@ -70,7 +71,7 @@ function EditableCard({noteOnly=false,onAnnotation,onTitleDone,afterTitle,path,b
   imageHandler.current=(files,position)=>{void insertImages(files,position);};
   useLayoutEffect(()=>{if(editor&&!editor.isDestroyed)editor.view.updateState(editor.state);},[editor,hasMetadata]);
   useEffect(() => {
-    if (editor && !editor.isDestroyed && cardMarkdown(editor) !== content) editor.commands.setContent(initial(content),{contentType:'markdown',emitUpdate:false});
+    if (editor && !editor.isDestroyed && cardMarkdown(editor) !== content) updateEditorContent(editor,initial(content),false);
   },[editor,content]);
   useEffect(() => { if (editor && !editor.isDestroyed) editor.setEditable(!blocked,false); },[editor,blocked]);
   useEffect(() => {

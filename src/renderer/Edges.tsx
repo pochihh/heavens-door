@@ -24,7 +24,7 @@ interface Props {
 }
 interface Pending {from:string;side:AnchorSide;pointerId?:number;x:number;y:number;moved:boolean;edge?:Edge;endpoint?:'from'|'to';keyboard?:boolean}
 export function Edges(props:Props) {
-  const {board,mentions,heightOf,selectedCards,selectedEdges,viewport,onSelect,onSave,onFinish,onStyle}=props;
+  const {board,heightOf,selectedCards,selectedEdges,viewport,onSelect,onSave,onFinish,onStyle}=props;
   const markerId=useId().replaceAll(':',''),latest=useRef(props);latest.current=props;
   const preview=useRef<SVGPathElement>(null),pending=useRef<Pending|null>(null),frame=useRef<number|null>(null),point=useRef({x:0,y:0});
   const [connecting,setConnecting]=useState(false),[menu,setMenu]=useState<MenuState|null>(null),[label,setLabel]=useState<{id:string;text:string}|null>(null);
@@ -104,13 +104,11 @@ export function Edges(props:Props) {
   const select=(event:React.MouseEvent|React.PointerEvent,edge:Edge)=>{event.preventDefault();event.stopPropagation();onFinish();onSelect([edge.id],event.shiftKey||event.metaKey||event.ctrlKey,event.metaKey||event.ctrlKey);};
   const editLabel=(edge:Edge)=>{onSelect([edge.id],false);setLabel({id:edge.id,text:edge.label??''});};
   const saveLabel=()=>{if(label){if(board.edges.some(e=>e.id===label.id&&(e.label??'')!==label.text))onSave({...board,edges:board.edges.map(e=>e.id===label.id?{...e,label:label.text}:e)},ui.history.editEdgeLabel);setLabel(null);}};
-  const byCard=new Map<string,Placement[]>();for(const p of board.cards){const list=byCard.get(p.cardId)??[];list.push(p);byCard.set(p.cardId,list);}
   const marker=(arrow:Arrowhead|undefined)=>!arrow||arrow==='none'?undefined:`url(#${markerId}-${arrow})`;
   const camera=props.camera(),transform=`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`;
   return <>
     <svg className="edge-layer" aria-label={ui.edges.edge}><g className="edge-camera" transform={transform} style={{'--edge-zoom':camera.zoom} as React.CSSProperties}>
       <defs>{(['arrow','triangle','triangle-outline'] as const).map(type=><marker key={type} id={`${markerId}-${type}`} markerWidth="10" markerHeight="10" viewBox="0 0 10 10" refX="9" refY="5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M 1 1 L 9 5 L 1 9" fill={type==='triangle'?'context-stroke':type==='triangle-outline'?'var(--canvas)':'none'} stroke="context-stroke" strokeWidth="1" strokeLinejoin="round" {...(type!=='arrow'?{d:'M 1 1 L 9 5 L 1 9 Z'}:{})}/></marker>)}</defs>
-      {board.showMentions!==false&&mentions.flatMap(m=>(byCard.get(m.from)??[]).flatMap(a=>(byCard.get(m.to)??[]).map(b=><line className="mention-link" data-mention-from={a.id} data-mention-to={b.id} key={`${a.id}:${b.id}`} x1={a.x+a.width/2} y1={a.y+heightOf(a)/2} x2={b.x+b.width/2} y2={b.y+heightOf(b)/2} strokeLinecap="round"/>)))}
       {geometries.filter(g=>!props.drawn||props.drawn.has(g.edge.id)||!!g.edge.label).map(({edge,path,midpoint})=>{const cached=!!props.drawn&&!props.drawn.has(edge.id),selected=selectedEdges.includes(edge.id),color=tintColor(edge.strokeColor,'stroke')??'var(--muted)',width=edge.strokeWidth??2;return <g key={edge.id} className={'board-edge '+(selected?'selected':'')} data-edge={edge.id}>
         {!cached&&<><path className="edge-hit" d={path} tabIndex={0} role="button" aria-label={edge.label||ui.edges.edge} data-tooltip={tooltips.edges.select} onPointerDown={e=>select(e,edge)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onFinish();onSelect([edge.id],e.shiftKey||e.metaKey||e.ctrlKey,e.metaKey||e.ctrlKey);}}} onDoubleClick={()=>editLabel(edge)} onContextMenu={e=>{e.preventDefault();e.stopPropagation();onSelect([edge.id],false);setMenu({label:ui.edges.actions,x:e.clientX,y:e.clientY,actions:[...(latest.current.styleActions?.(edge.id)??[]),{label:ui.edges.editLabel,icon:'edit',run:()=>editLabel(edge)},{label:ui.edges.showStyle,icon:'art',run:onStyle},{label:ui.edges.delete,icon:'close',danger:true,run:()=>{onSave({...board,edges:board.edges.filter(item=>item.id!==edge.id)},ui.history.deleteEdges);onSelect([],false);}}]});}}/>
         {selected&&<path className="edge-selection" d={path} strokeWidth={width+5}/>}
@@ -128,4 +126,12 @@ export function Edges(props:Props) {
     {connecting&&!pending.current?.edge&&props.onCreateTopic&&<div className="canvas-connector-hint" role="status">{topicText.finish}</div>}
     {menu&&<ActionMenu menu={menu} onClose={()=>setMenu(null)}/>}
   </>;
+}
+
+export function MentionLinks({board,mentions,heightOf,camera}:Pick<Props,'board'|'mentions'|'heightOf'|'camera'>){
+  const byCard=new Map<string,Placement[]>();for(const p of board.cards){const list=byCard.get(p.cardId)??[];list.push(p);byCard.set(p.cardId,list);}
+  const view=camera();
+  return <svg className="mention-layer" aria-hidden="true"><g className="edge-camera" transform={`translate(${view.x} ${view.y}) scale(${view.zoom})`}>
+      {board.showMentions!==false&&mentions.flatMap(m=>(byCard.get(m.from)??[]).flatMap(a=>(byCard.get(m.to)??[]).map(b=><line className="mention-link" data-mention-from={a.id} data-mention-to={b.id} key={`${a.id}:${b.id}`} x1={a.x+a.width/2} y1={a.y+heightOf(a)/2} x2={b.x+b.width/2} y2={b.y+heightOf(b)/2} strokeLinecap="round"/>)))}
+  </g></svg>;
 }

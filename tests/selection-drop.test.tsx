@@ -42,7 +42,7 @@ test('a selection keeps relative geometry, styles, board trees, references and i
 
 test('invalid, cyclic, conflicting and stale selection drops write nothing',async t=>{
   const {w,root,board,ids}=await fixture(t),source=board('From'),target=board('To'),before=await w.read(source.path);
-  for(const [selection,folder,x] of [[ids,'From/Child',1], [ids,'',1], [['missing'],'To',1], [[ids[0],ids[0]],'To',1], [ids,'To',NaN]] as [string[],string,number][]){await assert.rejects(()=>w.moveSelection('From',source.revision,selection,folder,board(folder).revision,x,1));assert.equal(await w.read(source.path),before);}
+  for(const [selection,folder,x] of [[ids,'From/Child',1],  [['missing'],'To',1], [[ids[0],ids[0]],'To',1], [ids,'To',NaN]] as [string[],string,number][]){await assert.rejects(()=>w.moveSelection('From',source.revision,selection,folder,board(folder).revision,x,1));assert.equal(await w.read(source.path),before);}
   await assert.rejects(()=>w.moveSelection('From','stale',ids,'To',target.revision,0,0));
   await fs.mkdir(join(root,'To/Child'));await assert.rejects(()=>w.moveSelection('From',source.revision,ids,'To',target.revision,0,0),/exists|same name|conflict/i);assert.equal(await w.read(source.path),before);assert.ok(await fs.stat(join(root,'From/A.md')));
 });
@@ -81,4 +81,15 @@ test('a pending geometry save can finish before the group drop without causing a
   let start!:()=>void,release!:()=>void;const started=new Promise<void>(r=>start=r),gate=new Promise<void>(r=>release=r);
   const session=new Session({request:async r=>{switch(r.kind){case 'saveBoard':start();await gate;return w.saveBoard(r.board,r.expected);case 'moveSelection':return w.moveSelection(r.source,r.expected,r.ids,r.destination,r.destinationExpected,r.x,r.y);default:throw new Error(r.kind);}}} as Bridge);t.after(async()=>session.dispose());session.update({snapshot:w.snapshot()});
   const save=session.board(next,'Move',base);await started;const drop=session.moveSelection('From',ids,'To',0,0,next);release();await save;await drop;assert.equal(board('To').cards.length,3);assert.equal(board('To').edges.length,2);assert.equal(session.undoHistory.past.length,2);
+});
+
+test('root accepts a complete mixed selection and can move it out again without losing geometry or edges',async t=>{
+  const {w,board,ids,a,ref}=await fixture(t),source=structuredClone(board('From'));
+  const result=await w.moveSelection('From',source.revision,ids,'',board('').revision,2000,2000);
+  const root=board('');assert.equal(root.cards.filter(p=>ids.includes(p.id)).length,3);assert.equal(root.edges.filter(e=>ids.includes(e.from)&&ids.includes(e.to)).length,2);
+  assert.equal(w.snapshot().cards.find(c=>c.id===a.id)?.path,'A.md');assert.equal(w.snapshot().cards.find(c=>c.id===ref.id)?.path,'Owner/Reference.md');
+  assert.ok(w.snapshot().boards.some(b=>b.folder==='Child/Nested'));
+  const moved=await w.moveSelection('',root.revision,ids,'To',board('To').revision,500,600);assert.equal(board('').cards.filter(p=>ids.includes(p.id)).length,0);
+  assert.equal(board('To').edges.length,2);assert.equal(w.snapshot().cards.find(c=>c.id===a.id)?.path,'To/A.md');
+  await w.transfer(moved.inverse);await w.transfer(result.inverse);assert.deepEqual(board('From').cards,source.cards);assert.deepEqual(board('From').edges,source.edges);
 });

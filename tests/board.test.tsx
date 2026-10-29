@@ -329,7 +329,7 @@ test('a tall auto-height card is measured before culling when the camera starts 
 });
 
 
-test('canvas menu captures board coordinates, preserves right-drag panning and restricts root creation',async()=>{
+test('canvas menu captures board coordinates, preserves right-drag panning and supports Home creation',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
   dom.window.HTMLElement.prototype.setPointerCapture=()=>undefined;dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
@@ -359,9 +359,9 @@ test('canvas menu captures board coordinates, preserves right-drag panning and r
     await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null);
     await act(async()=>render({...board,folder:'',path:'Workspace.whiteboard'}));
     await act(async()=>empty.click());
-    assert.deepEqual(created.pop(),['card',920,300],'root board tile is centered using the camera after panning');
+    assert.deepEqual(created.pop(),['card',910,320],'root card is centered using the camera after panning');
 
-    await act(async()=>{pointer('pointerdown');pointer('pointerup');});assert.equal(document.querySelector<HTMLButtonElement>('[role=menuitem]')!.disabled,true,'mother whiteboard cannot contain cards');
+    await act(async()=>{pointer('pointerdown');pointer('pointerup');});assert.equal(document.querySelector<HTMLButtonElement>('[role=menuitem]')!.disabled,false,'Home accepts cards like every other board');
     await act(async()=>document.body.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true})));assert.equal(document.querySelector('[role=menu]'),null,'outside click dismisses canvas menu');
   }finally{await act(async()=>root.unmount());}
 });

@@ -1,0 +1,69 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Native navigation regression in a disposable workspace. */
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+module.exports=async({win,js,pause,folder})=>{
+ const result={},run=(fn,...args)=>js('('+fn.toString()+')('+args.map(value=>JSON.stringify(value)).join(',')+')');
+ const wait=async(code,label)=>{fs.writeFileSync(path.join(folder,'navigation-step.json'),JSON.stringify({step:label}));const end=Date.now()+12000;while(Date.now()<end){if(await js(code))return;await pause(60);}throw Error('Timed out: '+label);};
+ const click=selector=>run(selector=>document.querySelector(selector).click(),selector);
+ await run(()=>document.querySelector('.card-popup [aria-label="Close dialog"]')?.click());await wait('!document.querySelector(".card-popup")','close reader popup');
+ await wait("!!document.querySelector(\".board-sections .file-button\")",'workspace navigation ready');
+ await click('[data-module=whiteboards] [data-file-key="board:"]>.tree-row .file-button');await wait('document.querySelector(".canvas")?.dataset.dropFolder===""','root board');
+ // Create through the real canvas menu, not the backend shortcut.
+ await run(()=>{const c=document.querySelector('.canvas'),r=c.getBoundingClientRect();c.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-100,clientY:r.bottom-100}));});
+ await wait('!!document.querySelector(".context-menu")','root canvas menu');
+ assert.equal(await run(()=>[...document.querySelectorAll('.context-menu button')].find(b=>b.textContent.trim()==='New card').disabled),false);
+ await run(()=>[...document.querySelectorAll('.context-menu button')].find(b=>b.textContent.trim()==='New card').click());
+ await wait('!!window.__readerTestSession.state.draft?.card.path&&!window.__readerTestSession.state.draft.card.path.includes("/")','root card created from canvas');
+ const id=await run(()=>window.__readerTestSession.state.draft.card.id);
+ await run(async id=>{const s=window.__readerTestSession;s.edit('# Home card\n\nFirst paragraph.\n\nSecond paragraph.');await s.select(null);const snapshot=await s.bridge.request({kind:'preferences',patch:{icons:{...s.state.snapshot.preferences.icons,'board:Review':'🔬',['card:'+id]:'🧩'}}});s.update({snapshot});},id);
+ await wait('document.querySelector(".board-tile-title .document-icon")?.textContent==="🔬"','board tile emoji');result.boardIcon=true;
+ await click('[data-module=whiteboards] [data-file-key="board:"]>.tree-row .row-actions button[aria-label^="More actions"]');
+ await wait('!![...document.querySelectorAll("[role=menuitemcheckbox]")].find(b=>b.textContent.trim()==="Show cards")','Show cards option');
+ await run(()=>[...document.querySelectorAll('[role=menuitemcheckbox]')].find(b=>b.textContent.trim()==='Show cards').click());
+ await wait('!!document.querySelector(\'[data-module=whiteboards] [data-file-key="card:'+id+'"] .document-icon\')','card in explorer');
+ assert.equal(await run(id=>document.querySelector('[data-module=whiteboards] [data-file-key="card:'+id+'"] .document-icon').textContent,id),'🧩');result.explorerCards=true;
+
+
+ await run(async id=>{const s=window.__readerTestSession;await s.select(s.state.snapshot.cards.find(c=>c.id===id).path);},id);await wait('!!document.querySelector(".tiptap")','root card editor');
+ await run(()=>{const e=document.querySelector('.tiptap').editor,blocks=[];e.state.doc.forEach((node,pos,index)=>{if(index)blocks.push({from:pos+1,to:pos+node.nodeSize-1});});e.commands.setTextSelection({from:blocks[0].from,to:blocks.at(-1).to});});
+ await click('.editor-block-grip');await wait('!!document.querySelector(".context-menu")','block menu');
+ await run(()=>[...document.querySelectorAll('.context-menu button')].find(b=>b.textContent.trim().startsWith('Turn into')).click());
+ await wait('[...document.querySelectorAll(".context-menu button")].some(b=>b.textContent.trim()==="Heading 2")','conversion submenu');
+ await run(()=>[...document.querySelectorAll('.context-menu button')].find(b=>b.textContent.trim()==='Heading 2').click());
+ await wait('document.querySelectorAll(".tiptap h2").length===2','multi-block Turn into');result.multiBlockConversion=true;
+ await run(()=>window.__readerTestSession.undo());await wait('document.querySelectorAll(".tiptap p").length===2','single conversion undo');
+ const beforeDelete=await run(()=>{const e=document.querySelector('.tiptap').editor;e.commands.focus('end',{scrollIntoView:false});return e.state.doc.textContent;});
+ win.focus();win.webContents.focus();await wait('!!document.activeElement?.closest(".tiptap")','Backspace editor focus');
+ win.webContents.sendInputEvent({type:'keyDown',keyCode:'Backspace'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Backspace'});
+ await wait('document.querySelector(".tiptap").editor.state.doc.textContent.length==='+String(beforeDelete.length-1),'Backspace removes one character');
+ assert.match(await run(()=>document.querySelector('.tiptap').editor.state.doc.textContent),/First paragraph/);result.backspace=true;
+ await run(()=>window.__readerTestSession.undo());await run(()=>window.__readerTestSession.select(null));
+ assert.equal(await run(()=>window.__readerTestSession.state.snapshot.preferences.boardNavigation.showCards['']),true,'Show cards must survive editing');
+ const workspaceName=await run(()=>window.__readerTestSession.state.snapshot.name);
+ await pause(80);await click('.breadcrumb-current .card-filename>button');await wait('!!document.querySelector(".breadcrumb-current input")','Home rename input');
+ await run(()=>{const input=document.querySelector('.breadcrumb-current input');input.focus();input.select();});await win.webContents.insertText('Renamed workspace');await wait('document.querySelector(".breadcrumb-current input")?.value==="Renamed workspace"','Home rename text');await run(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+ await wait('!!document.querySelector(\'dialog.confirmation-dialog[open]\')','Home workspace warning');
+ assert.match(await run(()=>document.querySelector('dialog.confirmation-dialog[open]').textContent),/throughout the app/);
+ await run(()=>[...document.querySelectorAll('dialog.confirmation-dialog[open] button')].find(b=>b.textContent.trim()==='Cancel').click());
+ await wait('!document.querySelector(\'dialog.confirmation-dialog[open]\')','cancel Home rename');assert.equal(await run(()=>window.__readerTestSession.state.snapshot.name),workspaceName);result.homeRenameWarning=true;
+
+ await click('.board-tile-title [aria-label="Rename Other"]');await wait('!!document.querySelector(".board-tile-title input")','inline board rename');
+ await run(()=>{const input=document.querySelector('.board-tile-title input');input.focus();input.select();});await win.webContents.insertText('Renamed');await wait('document.querySelector(".board-tile-title input")?.value==="Renamed"','board rename text');await run(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+ await wait('window.__readerTestSession.state.snapshot.boards.some(b=>b.folder==="Renamed")','renamed board');await run(()=>window.__readerTestSession.undo());await wait('!!document.querySelector(\'.board-tile-title [aria-label="Rename Other"]\')','undo inline board rename');result.renameBoard=true;fs.writeFileSync(path.join(folder,'feedback-home.png'),(await win.capturePage()).toPNG());
+ // Compare actual captured pixels on a cached card below 30% zoom.
+ await run(async id=>{const s=window.__readerTestSession;await s.create('','Mention target',0,0,true);const target=s.state.draft.card.id;await s.select(null);await s.select(s.state.snapshot.cards.find(c=>c.id===id).path);s.edit('# Home card\n\n[Target](card:'+target+')');await s.select(null);const b=s.state.snapshot.boards.find(b=>b.folder==='');await s.board({...b,mentionStyle:{strokeColor:'#ff0000',strokeWidth:8},cards:b.cards.map(p=>p.cardId===id?{...p,x:20,y:500,width:340,collapsed:true,fillColor:'#335533'}:p.cardId===target?{...p,x:800,y:500,width:340,collapsed:true,fillColor:'#335533'}:p)},'Mention layer fixture');window.__readerTestNavigation.set({x:30,y:30,zoom:1});window.__readerTestNavigation.flush();},id);
+ await wait('!!document.querySelector(".mention-link")','mention line');await run(()=>{document.querySelector('.mention-layer').style.cssText='--mention-width:8;--mention-color:red;--mention-opacity:1';});await pause(250);
+ await run(()=>{const n=window.__readerTestNavigation;n.set({x:100,y:100,zoom:.25});n.flush();});await pause(350);
+ const points=await run(()=>{const line=document.querySelector('.mention-link'),r=document.querySelector('.canvas').getBoundingClientRect(),n=window.__readerTestNavigation.current,x1=+line.getAttribute('x1'),y1=+line.getAttribute('y1'),x2=+line.getAttribute('x2'),y2=+line.getAttribute('y2'),at=x=>({x:Math.floor(r.left+n.x+x*n.zoom)-1,y:Math.floor(r.top+n.y+(y1+(y2-y1)*(x-x1)/(x2-x1))*n.zoom)-1,width:3,height:3});return {inside:at(20+340*.8),between:at(600)};});
+ const {inside:sample,between}=points,visibleLine=(await win.capturePage(between)).getBitmap();
+ const shown=(await win.capturePage(sample)).getBitmap();
+ await run(async()=>{const s=window.__readerTestSession,b=s.state.snapshot.boards.find(b=>b.folder==='');await s.board({...b,showMentions:false},'Hide mentions');});await pause(200);
+ const hidden=(await win.capturePage(sample)).getBitmap();assert.notDeepEqual(visibleLine,(await win.capturePage(between)).getBitmap(),'mention line was not visible in the comparison');assert.deepEqual(shown,hidden,'a mention line painted over a cached card');result.mentionUnderCards=true;
+ // Move the Graph through the side/main path used by the product.
+ await click('.activity-items [aria-label="Views"]');await wait('!!document.querySelector(".view-menu-list")','view picker');
+ await run(()=>[...document.querySelectorAll('.view-menu-list button')].find(b=>b.textContent.trim()==='Graph').click());await wait('!!document.querySelector(".graph-canvas")','side graph');await pause(350);
+ await click('.graph-toolbar [aria-label="Fit graph"]');
+ const bounds=()=>{const c=document.querySelector('.graph-canvas'),r=c.getBoundingClientRect(),data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let left=c.width,right=0;for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++)if(data[(y*c.width+x)*4+3]){left=Math.min(left,x);right=Math.max(right,x);}return {width:r.width,height:r.height,spread:(right-left)/(c.width/r.width)};};
+ const side=await run(bounds);await click('.graph-toolbar [aria-label="Open in main dock"]');await wait('!!document.querySelector(".document-content .graph-canvas")','main graph');await pause(350);const main=await run(bounds);
+ assert.ok(main.width>side.width*2,'graph canvas did not expand into the main dock');assert.ok(main.spread>side.spread*1.5,'graph content stayed small in the main dock');result.graph={side,main};
+ fs.writeFileSync(path.join(folder,'feedback-graph-main.png'),(await win.capturePage()).toPNG());return result;
+};

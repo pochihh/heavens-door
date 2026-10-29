@@ -306,3 +306,21 @@ test('an empty final task stays a checkbox in a mixed list before another block'
   try{assert.equal(editor.view.dom.querySelectorAll('input[type=checkbox]').length,2);assert.deepEqual([...editor.view.dom.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].map(i=>i.checked),[true,task.includes('x')]);const saved=cardMarkdown(editor),reopened=new Editor({extensions:extensions('tasks.md'),content:saved,contentType:'markdown'});try{assert.equal(reopened.view.dom.querySelectorAll('input[type=checkbox]').length,2);}finally{reopened.destroy();}}finally{editor.destroy();}
  }
 });
+
+test('equivalent refreshes keep the selection, small updates preserve caret and Backspace deletes only a character',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});
+  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});window.door={assetUrl:path=>path} as typeof window.door;
+  const {extensions}=await import('../src/renderer/editor-schema'),{updateEditorContent}=await import('../src/renderer/editor-content');
+  const editor=new Editor({extensions:extensions('note.md'),content:'# Title\n\nOriginal text.\n\nLast paragraph.',contentType:'markdown'});
+  try{
+    editor.commands.setTextSelection(17);const position=editor.state.selection.toJSON();let updates=0;editor.on('update',()=>updates++);
+    assert.equal(updateEditorContent(editor,'# Title\n\nOriginal text.\n\nLast paragraph.\n',false),false);assert.deepEqual(editor.state.selection.toJSON(),position);
+    updateEditorContent(editor,'# Title\n\nOriginal text.\n\nLast paragraph changed.',false);assert.deepEqual(editor.state.selection.toJSON(),position);assert.equal(updates,0);
+    const before=editor.state.doc.textContent;editor.commands.deleteRange({from:editor.state.selection.from-1,to:editor.state.selection.from});
+    assert.equal(editor.state.doc.textContent.length,before.length-1);assert.ok(editor.state.doc.textContent.includes('Last paragraph changed.'));
+    editor.commands.selectAll();editor.commands.deleteSelection();assert.equal(editor.state.doc.textContent,'','intentional select-all/delete still works');
+    const comment=new Editor({extensions:extensions('note.md').filter(e=>!['cardTitle','cardKeyboard'].includes(e.name)),content:'Comment',contentType:'markdown'});
+    try{assert.equal(updateEditorContent(comment,'',false),true);comment.state.doc.check();assert.equal(comment.state.doc.textContent,'');assert.equal(updateEditorContent(comment,'',false),false);}finally{comment.destroy();}
+  }finally{editor.destroy();}
+});
