@@ -7,3 +7,7 @@ Before changing UI or interactions, read `docs/design-system.md` and the applica
 Keep the approved design as the visual baseline. If a requested change requires deviating from a UI guideline or the approved design, discuss the specific deviation and tradeoff with the user before implementing it. Routine changes that follow the guidelines do not need another approval.
 
 Update the relevant documentation and a meaningful regression check when changing shared interaction behavior. Verify geometry and motion in the real Electron renderer; DOM-only tests cannot establish their visual correctness.
+
+# Releases
+
+Read `docs/releases.md` before versioning or releasing. Advance once from the last published version, then keep that candidate version fixed through fixes, checks and rebuilds until publication. Never consume another version for an internal attempt. Use the documented prepare/stage/publish workflow; do not bypass its checkpoints.

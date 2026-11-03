@@ -52,16 +52,35 @@ export class Release {
   }
   async save(state){await atomicJSON(this.statePath(state.version),state);}
   async clean(){assert.equal(await this.git('status','--porcelain','--untracked-files=all'),'','Commit or stash source changes before releasing');}
-  async pinned(state){await this.clean();assert.equal(await this.git('rev-parse','HEAD'),state.commit,'Source changed after prepare. Finish the changes, then prepare --next for a new candidate.');}
+  async pinned(state){await this.clean();assert.equal(await this.git('rev-parse','HEAD'),state.commit,'Source changed after prepare. Commit the fixes, then repeat prepare to refresh the unpublished candidate without another version bump.');}
   async plan(kind='patch'){
-    const current=await this.info(),next=bumpVersion(this.root,kind,true);this.say(JSON.stringify({current:current.version,next,...{repo:current.repo},commands:['prepare --notes <file>','stage','publish']},null,2));return next;
+    const current=await this.info(),state=await exists(this.statePath(current.version))?await this.load():null,prepared=state&&!state.steps.published;
+    const next=prepared?{version:state.version,buildNumber:state.buildNumber}:bumpVersion(this.root,kind,true);
+    this.say(JSON.stringify({current:current.version,...prepared?{candidate:next}:{next},repo:current.repo,commands:['prepare --notes <file>','stage','publish']},null,2));return next;
   }
-  async prepare({notes,kind='patch',next=false}={}){
+  async prepare({notes,kind='patch'}={}){
     const pendingPath=join(this.root,'.local/releases/pending.json');let pending;
     if(await exists(pendingPath))pending=await readJSON(pendingPath);
     else{
       const info=await this.info();
-      if(!next&&await exists(this.statePath(info.version))){const state=await this.load();if(!state.steps.published){await this.pinned(state);this.say('Prepared '+info.tag+' already exists; run stage or publish to resume.');return state;}}
+      if(await exists(this.statePath(info.version))){
+        const state=await this.load();
+        if(!state.steps.published){
+          await this.clean();
+          if(notes)assert.equal(await fs.readFile(resolve(this.root,notes),'utf8'),await fs.readFile(join(this.root,state.notes),'utf8'),'Update and commit the existing release notes before refreshing this candidate.');
+          const commit=await this.git('rev-parse','HEAD');
+          if(commit!==state.commit){
+            await this.origin(state);
+            assert.ok(!await this.remote(state),'A GitHub release already exists for this version. Reconcile its unpublished draft before refreshing; published releases are immutable.');
+            assert.equal(await this.git('tag','--list','v'+state.version),'','An existing release tag cannot be refreshed');
+            assert.equal(await this.git('ls-remote','--tags','origin','refs/tags/v'+state.version,'refs/tags/v'+state.version+'^{}'),'','An existing release tag cannot be refreshed');
+            await atomicJSON(join(this.root,'.local/releases',state.version,'attempt-'+Date.now()+'-'+state.commit+'.json'),state);
+            const refreshed={...state,commit,steps:{prepared:{at:new Date().toISOString()}}};
+            await this.save(refreshed);this.say('Refreshed '+info.tag+' at '+commit+'; version unchanged, all checks must run again.');return refreshed;
+          }
+          this.say('Prepared '+info.tag+' already exists; run stage or publish to resume.');return state;
+        }
+      }
       await this.clean();assert.ok(notes,'Provide --notes <Markdown file>; prepare commits those notes with the version bump.');
       const body=await fs.readFile(resolve(this.root,notes),'utf8');assert.ok(body.trim(),'Release notes are empty');
       const to=bumpVersion(this.root,kind,true),base=await this.git('rev-parse','HEAD'),path='docs/releases/'+to.version+'.md';
@@ -194,10 +213,10 @@ export class Release {
   }
 }
 export async function main(root,args=process.argv.slice(2)){
-  const {values,positionals}=parseArgs({args,allowPositionals:true,options:{notes:{type:'string'},kind:{type:'string'},next:{type:'boolean'},platform:{type:'string'},help:{type:'boolean'}}}),command=positionals[0]??'status';
+  const {values,positionals}=parseArgs({args,allowPositionals:true,options:{notes:{type:'string'},kind:{type:'string'},platform:{type:'string'},help:{type:'boolean'}}}),command=positionals[0]??'status';
   assert.equal(positionals.length<=1,true,'Unexpected release arguments');
   const release=new Release(root),platform=values.platform??'all';
-  if(values.help){console.log('release plan | prepare --notes <file> [--kind patch|minor|major] [--next] | stage | publish | status | verify [--platform all|mac|win] | verify-public | unlock');return;}
+  if(values.help){console.log('release plan | prepare --notes <file> [--kind patch|minor|major] | stage | publish | status | verify [--platform all|mac|win] | verify-public | unlock');return;}
   if(command==='plan')return release.plan(values.kind);
   if(command==='status')return release.status();
   if(command==='unlock')return unlock(root);
@@ -208,7 +227,7 @@ export async function main(root,args=process.argv.slice(2)){
   if(command==='ci-plan')return release.ciPlan();
   if(command==='ci-draft')return release.ciDraft();
   assert.ok(['prepare','stage','publish'].includes(command),'Unknown release command: '+command);
-  return releaseLock(root,async onChild=>{release.onChild=onChild;return command==='prepare'?release.prepare({notes:values.notes,kind:values.kind,next:values.next}):release[command]();});
+  return releaseLock(root,async onChild=>{release.onChild=onChild;return command==='prepare'?release.prepare({notes:values.notes,kind:values.kind}):release[command]();});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   main(process.cwd()).catch(error=>{console.error(error.message);process.exitCode=1;});

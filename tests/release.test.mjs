@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import {join,basename} from 'node:path';
 import {parse} from 'yaml';
-import {Release,execute,releaseLock,unlock,retry} from '../scripts/release.mjs';
+import {Release,execute,releaseLock,unlock,retry,main} from '../scripts/release.mjs';
 import {readRelease,describeFiles} from '../scripts/release-artifacts.mjs';
 import {fixture,remote,checkpointFiles,publicRequest} from './release-fixture.mjs';
 
@@ -110,15 +110,28 @@ test('bounded retries recover transient failures and stop without an infinite re
   calls=0;await assert.rejects(retry(()=>{calls++;throw Error('persistent');},{attempts:2,sleep:async()=>{}}),/persistent/);assert.equal(calls,2);
 });
 
-test('prepare recovers after its commit and can explicitly replace an abandoned candidate after a source fix',async t=>{
+test('prepare refreshes unpublished source without another version bump and invalidates old checkpoints',async t=>{
   const {root,git,driver}=await repository(t);const save=driver.save.bind(driver);let failed=false;
   driver.save=state=>{if(!failed){failed=true;throw Error('checkpoint interrupted');}return save(state);};
   await assert.rejects(driver.prepare({notes:'.local/notes.md'}),/checkpoint interrupted/);assert.equal(await git('rev-list','--count','HEAD'),'2');
   const recovered=await driver.prepare();assert.equal(recovered.version,'0.1.27');assert.equal(await git('rev-list','--count','HEAD'),'2');
+  recovered.steps.checks={at:'previous check'};await driver.save(recovered);
   await fs.writeFile(join(root,'fix.md'),'Fixed source');await git('add','fix.md');await git('commit','-m','Fix failed candidate');
-  await assert.rejects(driver.prepare(),/Source changed/);
-  const replacement=await driver.prepare({next:true,notes:'.local/notes.md'});assert.equal(replacement.version,'0.1.271');assert.equal(replacement.buildNumber,3);
-  assert.equal(JSON.parse(await fs.readFile(driver.statePath(recovered.version))).commit,recovered.commit);assert.equal(await git('status','--porcelain'),'');
+  driver.origin=async()=>{};driver.remote=async()=>undefined;const localGit=driver.git.bind(driver);driver.git=(...args)=>args[0]==='ls-remote'?Promise.resolve(''):localGit(...args);
+  assert.deepEqual(await driver.plan(),{version:recovered.version,buildNumber:recovered.buildNumber});
+  const replacement=await driver.prepare({notes:'.local/notes.md'});assert.equal(replacement.version,recovered.version);assert.equal(replacement.buildNumber,2);
+  assert.equal(replacement.commit,await git('rev-parse','HEAD'));assert.deepEqual(Object.keys(replacement.steps),['prepared']);
+  const archive=(await fs.readdir(join(root,'.local/releases',recovered.version))).find(name=>name.startsWith('attempt-'));
+  assert.deepEqual(JSON.parse(await fs.readFile(join(root,'.local/releases',recovered.version,archive))),recovered);
+  assert.equal((await driver.prepare()).commit,replacement.commit);assert.equal((await readRelease(root)).version,'0.1.27');assert.equal(await git('status','--porcelain'),'');
+  await assert.rejects(main(root,['prepare','--next']),/Unknown option/);
+});
+test('refresh refuses remote drafts, published releases and tags without changing the candidate',async t=>{
+  const {root,git,driver}=await repository(t),state=await driver.prepare({notes:'.local/notes.md'});
+  await git('commit','--allow-empty','-m','Source correction');driver.origin=async()=>{};
+  for(const draft of [true,false]){driver.remote=async()=>({draft});await assert.rejects(driver.prepare(),/release already exists/);assert.deepEqual(await driver.load(),state);}
+  driver.remote=async()=>undefined;const localGit=driver.git.bind(driver);driver.git=(...args)=>args[0]==='ls-remote'?Promise.resolve('a'.repeat(40)+'\trefs/tags/v'+state.version):localGit(...args);
+  await assert.rejects(driver.prepare(),/tag cannot be refreshed/);assert.deepEqual(await driver.load(),state);assert.equal((await readRelease(root)).version,state.version);
 });
 test('repository, version ordering and existing tags are checked before release mutations',async t=>{
   const {root,info}=await fixture(t),driver=new Release(root,{say:()=>{},run:async()=> 'git@github.com:example/door.git'});

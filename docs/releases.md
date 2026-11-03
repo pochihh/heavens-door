@@ -19,7 +19,7 @@ Run these commands from the repository root on macOS, with Node.js 24.21+, Git, 
    npm run release -- prepare --notes .local/release-notes.md
    ```
 
-   This increments the displayed version and native build number once, copies the notes to `docs/releases/<version>.md`, and commits those three files. The prepared commit becomes the source for every subsequent checkpoint. Repeating this command resumes an unfinished preparation instead of bumping again. `--kind minor` and `--kind major` start a new Euler series at `.2`.
+   This increments the displayed version and native build number once, copies the notes to `docs/releases/<version>.md`, and commits those three files. The prepared commit becomes the source for every subsequent checkpoint. Keep this version fixed until it is published: retries and source fixes never consume another version. Repeating this command resumes an unfinished preparation. After committing a source fix, repeat `prepare` to refresh the same unpublished candidate; it preserves the previous checkpoint record and invalidates all checks for the new source. Existing remote releases or tags block a refresh rather than being overwritten. `--kind minor` and `--kind major` start a new Euler series at `.2`.
 
 4. Build and stage a private draft:
 
@@ -59,9 +59,9 @@ State and append-only build logs live in `.local/releases/<version>/`. `state.js
 When interrupted, repeat the same command. Completed checkpoints are reused only while the source commit and recorded artifact bytes are unchanged. A partially successful upload resumes with the missing files. An incomplete GitHub `starter` asset can be removed and retried; a different completed asset stops the process for inspection. The workflow never uses upload `--clobber`.
 
 - **Failed version commit:** fix the Git hook or other reported error, then repeat `prepare`. Its pending journal preserves the original and intended files; the version does not increase again. Unrelated edits stop recovery instead of being overwritten or committed.
-- **Failed test/build:** inspect `checks.log`, `sparkle.log`, `mac.log` or `win.log` in the version's checkpoint folder. Fix an environment problem and repeat `stage`. If source code must change, commit the fix and prepare a new candidate with `prepare --next --notes .local/release-notes.md`.
-- **Source changed after preparation:** complete and commit the changes, then use `prepare --next`. Keep the abandoned draft unpublished. The driver deliberately refuses to reuse the old version for different source.
-- **Recorded artifacts changed or were deleted:** restore the exact recorded files from a trusted copy, or prepare a new candidate with `--next`. Do not clear a successful checkpoint just to bypass a mismatch.
+- **Failed test/build:** inspect `checks.log`, `sparkle.log`, `mac.log` or `win.log` in the version's checkpoint folder. Fix an environment problem and repeat `stage`. If source code must change, update the committed release notes if needed, commit the fix and repeat `prepare`. It keeps the same version and native build number and reruns all checks for the new commit.
+- **Source changed after preparation:** complete and commit the changes, then repeat `prepare`. The prior checkpoint is archived and the same unpublished version is pinned to the corrected source with no completed checks. If a GitHub draft or tag already exists, stop and reconcile it before refreshing; never skip a version or overwrite a published release.
+- **Recorded artifacts changed or were deleted:** restore the exact recorded files from a trusted copy, or stop and investigate. Do not consume another version or clear a successful checkpoint just to bypass a mismatch.
 - **Upload/network failure:** repeat `stage`. Correctly uploaded assets are compared and retained.
 - **Publication succeeded but public verification failed:** repeat `publish`. It verifies the already-published release and retries the public endpoints without publishing a second time. You can also run `npm run release -- verify-public` when the current package version is the latest release and its local distribution files are available.
 - **Stopped process left a lock:** run `npm run release -- unlock`, then repeat the command. Unlock refuses while the recorded release process or its build child is still running. Stop that work normally first.
@@ -104,7 +104,7 @@ Use one packaging route for each candidate. The recommended prepare/stage/publis
 
 ## Versions and low-level packaging
 
-`package.json` and its lock file hold the displayed version. Patches append Euler digits: `0.1.2 → 0.1.27 → 0.1.271 → 0.1.2718`. `buildNumber` independently increases and maps to native `N.0.0`, avoiding native installer component limits. Before an Euler patch exceeds JavaScript's safe integer range, start a new minor series. Native build numbers stop at 9999.
+`package.json` and its lock file hold the displayed version. Each published patch appends one Euler digit; unpublished attempts retain their number: `0.1.2 → 0.1.27 → 0.1.271 → 0.1.2718`. `buildNumber` independently increases and maps to native `N.0.0`, avoiding native installer component limits. Before an Euler patch exceeds JavaScript's safe integer range, start a new minor series. Native build numbers stop at 9999.
 
 The lower-level `npm run version:bump -- --dry-run` and `npm run version:bump -- [patch|minor|major]` remain available for maintenance. They synchronize package files and roll back a failed write, but do not record release checkpoints, commit, tag or publish. Use `release prepare` for regular releases; do not manually bump again during a prepared release.
 
