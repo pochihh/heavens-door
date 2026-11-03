@@ -12,8 +12,8 @@ export function newerVersion(candidate:string,current:string){
 }
 export class AppUpdates {
   state:UpdateState;private checking?:Promise<UpdateState>;private downloading?:Promise<UpdateState>;private waiting?:Set<number>;private completedDownload?:{resolve:()=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>};
-  constructor(private updater:AppUpdater,version:string,private native:boolean,private latest:()=>Promise<string|null>,private changed:(state:UpdateState)=>void,private sparkle?:SparkleBridge){
-    this.state={currentVersion:version,status:'idle',canInstall:native};
+  constructor(private updater:AppUpdater,version:string,private native:boolean,private latest:()=>Promise<string|null>,private changed:(state:UpdateState)=>void,private sparkle?:SparkleBridge,private automaticDownloads=false){
+    this.state={currentVersion:version,status:'idle',canInstall:native,automaticDownloads};
     updater.autoDownload=false;updater.autoInstallOnAppQuit=false;updater.allowPrerelease=false;updater.allowDowngrade=false;
     updater.on('update-available',info=>this.set('available',{version:info.version}));
     updater.on('update-not-available',()=>this.set('up-to-date'));
@@ -32,7 +32,8 @@ export class AppUpdates {
       }else if(event.type==='error')this.fail(new Error(event.message??ui.updates.downloadUnavailable));
     });
   }
-  private set(status:UpdateState['status'],detail:Partial<UpdateState>={}){this.state={currentVersion:this.state.currentVersion,canInstall:this.native,status,...detail};this.changed(this.state);return this.state;}
+  private set(status:UpdateState['status'],detail:Partial<UpdateState>={}){this.state={currentVersion:this.state.currentVersion,canInstall:this.native,automaticDownloads:this.automaticDownloads,status,...detail};this.changed(this.state);return this.state;}
+  setAutomaticDownloads(enabled:boolean){this.automaticDownloads=enabled;this.set(this.state.status,{version:this.state.version,progress:this.state.progress,message:this.state.message});if(enabled&&this.native&&this.state.status==='available')void this.download();return this.state;}
   private finishDownload(error?:Error){const pending=this.completedDownload;if(!pending)return;this.completedDownload=undefined;clearTimeout(pending.timer);if(error)pending.reject(error);else pending.resolve();}
   private fail(error:unknown){this.finishDownload(error instanceof Error?error:new Error(String(error)));this.waiting=undefined;return this.set('error',{version:this.state.version,message:error instanceof Error?error.message:String(error)});}
   check(){
@@ -40,6 +41,7 @@ export class AppUpdates {
     this.set('checking');this.checking=(async()=>{
       try{if(this.native&&!this.sparkle){await this.updater.checkForUpdates();if(this.state.status==='checking')this.set('up-to-date');}
         else{const version=await this.latest();this.set(version&&newerVersion(version,this.state.currentVersion)?'available':'up-to-date',{version:version??undefined,message:version?undefined:ui.updates.noRelease});}
+      if(this.automaticDownloads&&this.native&&this.state.status==='available')await this.download();
       }catch(error){this.fail(error);}return this.state;
     })().finally(()=>{this.checking=undefined;});return this.checking;
   }

@@ -1,3 +1,5 @@
+import {NoticeBanner} from './NoticeBanner';
+import {FileProblem} from './FileProblem';
 import {DEFAULT_PALETTE} from '../colors';
 import {Color} from './StyleView';
 import {cardFill,tintColor} from '../colors';
@@ -9,12 +11,12 @@ import {useConfirmation} from './Confirmation';
 import {NoteView} from './DocumentViews';
 import {ViewBlockProvider} from './ViewBlock';
 import {InlineName} from './InlineName';
-import {MenuCheck,DocumentIcon,Tool} from './Icons';
+import {Icon,MenuCheck,DocumentIcon,Tool} from './Icons';
 import {PropertyPopover} from './PropertyValue';
 import {ui} from '../text/ui';
 import {tooltips} from '../text/tooltips';
 
-export function CardPopup({revealAnnotation,documentKey,snapshot,session,onClose,onNavigate,onPreview}:{revealAnnotation?:{id:string;token:number};documentKey:string;snapshot:Snapshot;session:Session;onClose:()=>Promise<void>;onNavigate:(key:string,mode:NavigationMode)=>Promise<void>;onPreview:(key:string,annotation?:string)=>Promise<void>}){
+export function CardPopup({revealAnnotation,documentKey,snapshot,session,onClose,onNavigate,onPreview,onHistory}:{revealAnnotation?:{id:string;token:number};documentKey:string;snapshot:Snapshot;session:Session;onHistory:()=>void;onClose:()=>Promise<void>;onNavigate:(key:string,mode:NavigationMode)=>Promise<void>;onPreview:(key:string,annotation?:string)=>Promise<void>}){
   const confirm=useConfirmation();
   const ref=useRef<HTMLDialogElement>(null),memory=useRef<ViewMemory>({}),pending=useRef(false);
   const [source,setSource]=useState(false),[busy,setBusy]=useState(false),[menu,setMenu]=useState<HTMLElement|null>(null),[error,setError]=useState(''),[colorAnchor,setColorAnchor]=useState<HTMLElement|null>(null);
@@ -35,11 +37,11 @@ export function CardPopup({revealAnnotation,documentKey,snapshot,session,onClose
         <Tool icon="close" label={tooltips.common.closeDialog} disabled={busy} onClick={()=>void perform(onClose)}/>
       </header>
       {card?<ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>void perform(()=>onPreview(key))} onPreview={onPreview} onNavigate={(key,mode)=>void perform(()=>onNavigate(key,mode))}>
-        <NoteView revealAnnotation={revealAnnotation} metadata key={card.id} path={card.path} session={session} snapshot={snapshot} active memory={memory.current} onActivate={()=>void perform(()=>session.select(card.path))} onOpen={key=>void perform(()=>key.startsWith('card:')?onPreview(key):onNavigate(key,'same'))} onViewChange={()=>{}}/>
+        {snapshot.fileErrors?.[card.path]?<FileProblem key={card.path} path={card.path} message={snapshot.fileErrors[card.path]} snapshot={snapshot} session={session} onHistory={onHistory}/>:<NoteView revealAnnotation={revealAnnotation} metadata key={card.id} path={card.path} session={session} snapshot={snapshot} active memory={memory.current} onActivate={()=>void perform(()=>session.select(card.path))} onOpen={key=>void perform(()=>key.startsWith('card:')?onPreview(key):onNavigate(key,'same'))} onViewChange={()=>{}}/>}
       </ViewBlockProvider>:<p className="notice">{ui.errors.fileMissing}</p>}
-      {(error||session.state.error)&&<div className="card-popup-error" role="alert"><span>{error||session.state.error}</span>{session.state.draft?.dirty&&<><button onClick={()=>void perform(()=>session.copyDraft())}>{ui.common.copyDraft}</button><button onClick={()=>void perform(async()=>{if(await confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}))await session.reloadDraft();})}>{ui.common.reloadFromDisk}</button></>}</div>}
+      {(error||session.state.error)&&<NoticeBanner key={error||session.state.error} message={error||session.state.error} document={card?.path} root={snapshot.root} code="CARD_ACTION_FAILED" onDismiss={()=>{setError('');session.update({error:''});}} actions={session.state.draft?.dirty&&<><button type="button" onClick={()=>void perform(()=>session.copyDraft())}>{ui.common.copyDraft}</button><button type="button" className="danger" onClick={()=>void perform(async()=>{if(await confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}))await session.reloadDraft();})}>{ui.common.reloadFromDisk}</button></>}/>}
     </div>
     {colorAnchor&&card&&<PropertyPopover anchor={colorAnchor} align="end" label={ui.style.color} onClose={()=>setColorAnchor(null)}><Color label={ui.style.color} value={cardFill(card)??''} palette={snapshot.preferences?.palette??DEFAULT_PALETTE} onChange={color=>void perform(()=>session.fillCards([card.id],color))}/></PropertyPopover>}
-    {menu&&<PropertyPopover anchor={menu} align="end" label={ui.whiteboard.cardActions} onClose={()=>setMenu(null)}><div className="view-menu-list"><button role="menuitemcheckbox" aria-checked={source} onClick={()=>{void perform(async()=>{await session.run(()=>session.flush());setSource(!source);setMenu(null);});}}><MenuCheck checked={source}/><span>{ui.editorTools.sourceMode}</span></button>{(['same','new','other'] as const).map(mode=><button key={mode} disabled={busy||!card} onClick={()=>{setMenu(null);void perform(()=>onNavigate(documentKey,mode));}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}</div></PropertyPopover>}
+    {menu&&<PropertyPopover anchor={menu} align="end" label={ui.whiteboard.cardActions} onClose={()=>setMenu(null)}><div className="view-menu-list"><button role="menuitemcheckbox" aria-checked={source} onClick={()=>{void perform(async()=>{await session.run(()=>session.flush());setSource(!source);setMenu(null);});}}><MenuCheck checked={source}/><span>{ui.editorTools.sourceMode}</span></button>{(['same','new','other'] as const).map(mode=><button key={mode} disabled={busy||!card} onClick={()=>{setMenu(null);void perform(()=>onNavigate(documentKey,mode));}}>{mode==='same'?ui.common.openInSameTab:mode==='new'?ui.common.openInNewTab:ui.common.openInAnotherTabGroup}</button>)}{card&&<><hr/><button className="danger" disabled={busy} onClick={()=>{setMenu(null);void perform(async()=>{if(!await confirm({title:ui.card.deleteTitle(1),message:ui.card.confirmDelete([card.title??card.name]),accept:ui.card.delete,danger:true}))return;await session.run(()=>session.flush());const saved=session.state.snapshot!.cards.find(item=>item.id===card.id);if(saved){await session.trashCard(saved.path,saved.revision);await onClose();}});}}><Icon name="trash"/><span>{ui.card.delete}</span></button></>}</div></PropertyPopover>}
   </dialog>;
 }

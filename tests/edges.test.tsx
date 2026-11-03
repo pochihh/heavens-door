@@ -307,3 +307,16 @@ test('selected edge endpoints share zoom-aware proximity hints and retain pointe
   await act(async()=>key(document.querySelector('.edge-keyboard-anchor[data-anchor-card="p2"][data-anchor-side="left"]')!));assert.equal(saved.length,2);assert.equal(saved[1].edges[0].to,'p2');assert.equal(saved[1].edges.length,1);
  }finally{await act(async()=>root.unmount());win.close();}
 });
+
+
+test('PDF mentions retain each source note for relative, ID and wiki links without duplicate lines',async t=>{
+ const {withAnnotations}=await import('../src/reading'),{DatabaseSync}=await import('node:sqlite');
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-note-mentions-')),root=join(dir,'notes'),cache=join(dir,'cache');await fs.mkdir(root);let w=await Workspace.open(root,cache);t.after(async()=>{w.close();await fs.rm(dir,{recursive:true,force:true});});
+ await w.createFolder('','Ideas');await w.create('Ideas','Target',500,0);const target=await w.card('Ideas/Target.md'),imported=await w.importReading({name:'Paper',type:'pdf',folder:'Ideas',data:new Uint8Array(Buffer.from('%PDF-1.4\nfixture'))});let asset=await w.card(imported.path);
+ const body=withAnnotations('# Paper\n\n[Direct](Target.md)\n\n[p]: Target.md',[{id:'first',kind:'highlight',page:1,text:'[One](Target.md)\n\n[Again](card:'+target.id+')\n\n[[Target]]'},{id:'second',kind:'highlight',page:2,text:'[[Target]]'},{id:'reference',kind:'highlight',text:'[Defined][p]'},{id:'ignored',kind:'highlight',text:'```md\n[Code](Target.md)\n```'}]);await w.saveCard(asset.path,body,asset.revision);asset=await w.card(asset.path);
+ const mentions=()=>w.boardMentions(w.snapshot().boards.find(b=>b.folder==='Ideas')!.path).filter(m=>m.from===asset.id);
+ const expected=[{from:asset.id,to:target.id},{from:asset.id,to:target.id,fromAnnotation:'first'},{from:asset.id,to:target.id,fromAnnotation:'reference'},{from:asset.id,to:target.id,fromAnnotation:'second'}];assert.deepEqual(mentions(),expected);assert.deepEqual(w.query('backlinks:'+target.id),[{path:asset.path}]);
+ // An old disposable index is rebuilt without changing source documents.
+ w.close();const db=new DatabaseSync(join(cache,'index.sqlite'));db.exec('DROP TABLE links; CREATE TABLE links(source TEXT,target TEXT); PRAGMA user_version=8;');db.close();w=await Workspace.open(root,cache);assert.deepEqual(mentions(),expected);assert.equal((await w.card(asset.path)).body,body);
+ const current=await w.card(asset.path);await w.saveCard(asset.path,withAnnotations('# Paper',[{id:'second',kind:'highlight',text:'No link remains'}]),current.revision);assert.deepEqual(mentions(),[]);
+});

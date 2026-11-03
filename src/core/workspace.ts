@@ -1,4 +1,6 @@
+import {withExtractedTitle} from '../card-title';
 import {boardDropPosition} from '../board-drop';
+import {defaultBoardSize} from '../board-arrangement';
 import {readingAsset,validateImport,readFeeds} from './reading';
 import {annotationView,splitAnnotations,withAnnotations,updateAnnotation} from '../reading';
 import {READLATER_STATUS,DEFAULT_READING_STATUS,legacyReadingStatus,readingMetadata} from '../reading';
@@ -58,14 +60,17 @@ export class Workspace {
   private viewOrderTails=new Map<string,Map<string,string[]>>();
   private boards = new Map<string, Board>();
   private issues = new Map<string, string>();
+  private unreadableCards=new Map<string,CardInfo>();
+  private serviceErrors:Record<string,string>={};
   private scanning = false;
   private renamePending=false;
   // ponytail: retain rename notifications until worker exit; add window acknowledgements if this grows large.
   private pathMoves:{from:string;to:string}[]=[];
   constructor(readonly root: string, readonly cache: string) {
     this.db = new DatabaseSync(join(cache,'index.sqlite'));
-    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 8) {
-      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=8;');
+    try{
+    if (this.db.prepare('PRAGMA user_version').get()?.user_version !== 9) {
+      this.db.exec('DROP TABLE IF EXISTS cards; DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS properties; PRAGMA user_version=9;');
     }
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS cards(path TEXT PRIMARY KEY,id TEXT,name TEXT,body TEXT,revision TEXT,legacy INTEGER,frontmatter TEXT,title TEXT,folder TEXT,titleMarkdown TEXT,searchText TEXT);
@@ -74,7 +79,7 @@ export class Workspace {
       CREATE INDEX IF NOT EXISTS journal_identity ON cards(json_extract(frontmatter,'$.journal.date'),json_extract(frontmatter,'$.journal.period'));
       CREATE TABLE IF NOT EXISTS properties(path TEXT,field TEXT,value TEXT,PRIMARY KEY(path,field));
       CREATE INDEX IF NOT EXISTS property_value ON properties(field,value,path);
-      CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT);
+      CREATE TABLE IF NOT EXISTS links(source TEXT,target TEXT,annotation TEXT);
       CREATE INDEX IF NOT EXISTS backlinks ON links(target);
       CREATE INDEX IF NOT EXISTS outgoing_links ON links(source);
       CREATE TABLE IF NOT EXISTS ui_cache(key TEXT PRIMARY KEY,value TEXT);`);
@@ -84,23 +89,30 @@ export class Workspace {
       const row=this.db.prepare("SELECT value FROM ui_cache WHERE key='edge-style'").get();
       if(row){const style=JSON.parse(String(row.value));validateEdgeStyle(style);this.lastEdgeStyle=edgeStyle(style);}
     } catch { /* A damaged optional UI cache falls back to the default edge style. */ }
+    }catch(error){this.db.close();throw error;}
   }
   static async open(root: string, cache: string) {
     const actual = await fs.realpath(root);
     await fs.mkdir(cache,{recursive:true});
-    const workspace = new Workspace(actual,cache);
+    let workspace:Workspace;
+    try{workspace=new Workspace(actual,cache);}catch(error){
+      const code=(error as {errcode?:number}).errcode;
+      if(code!==11&&code!==26&&!(error instanceof SyntaxError))throw error;
+      const suffix='.unreadable.'+randomUUID();
+      for(const name of ['index.sqlite','index.sqlite-wal','index.sqlite-shm'])await fs.rename(join(cache,name),join(cache,name+suffix)).catch(e=>{if(e.code!=='ENOENT')throw e;});
+      workspace=new Workspace(actual,cache);
+    }
     try {
-      await workspace.recoverFileMove();
-      await workspace.recoverTransfer();
-      await workspace.recover();
-      await workspace.history.initialize();
+      try{await workspace.recoverFileMove();await workspace.recoverTransfer();await workspace.recover();}catch(error){workspace.renamePending=true;workspace.serviceErrors.recovery=String(error);}
+      try{if(!workspace.renamePending)await workspace.history.initialize();}catch(error){workspace.history.available=false;workspace.serviceErrors.history=String(error);}
       await workspace.scan();
-      if (workspace.history.available && !(await workspace.history.list()).length) await workspace.history.checkpoint(ui.history.workspaceOpened);
-      try{await workspace.migrateReadingStatuses();}catch(error){workspace.issues.set('Read later',String(error));}
+      if(workspace.history.available)try{if(!(await workspace.history.list()).length)await workspace.history.checkpoint(ui.history.workspaceOpened);}catch(error){workspace.history.available=false;workspace.serviceErrors.history=String(error);}
+      if(!workspace.renamePending)try{await workspace.migrateReadingStatuses();}catch(error){workspace.serviceErrors.reading=String(error);}
       return workspace;
     } catch(error) { workspace.close(); throw error; }
   }
   close() { this.db.close(); }
+  reportServiceError(service:string,error:unknown){this.serviceErrors[service]=String(error);}
   assertReady(){if(this.renamePending)throw new Error(ui.errors.interruptedRename);}
   private async path(path: string) {
     if (!path || isAbsolute(path) || path.includes('\0') || (!(path==='.heavens-door/trash'||path===systemGuidePath('trash',this.preferences)&&path.startsWith('.heavens-door/trash/')||isTrash(path)&&dirname(path)==='.heavens-door/trash')&&path.split(/[\\/]/).some(p => p === '..' || p.startsWith('.')))) throw new Error(ui.errors.invalidWorkspacePath);
@@ -190,12 +202,14 @@ export class Workspace {
     return {snapshot:this.snapshot(),edits:journal};
   }
   async scan() {
-    this.preferences=await readPreferences(this.root);
+    const settingsIssues:string[]=[];this.preferences=await readPreferences(this.root,message=>settingsIssues.push(message));
     const unseen=new Set((this.db.prepare('SELECT path FROM cards').all() as {path:string}[]).map(row => row.path));
     for(const path of [...this.tags.keys(),...this.boards.keys()])this.search.remove(path);
-    this.boards.clear(); this.issues.clear(); this.folders=new Set(['']); this.tags.clear();
+    this.boards.clear(); this.issues.clear();this.unreadableCards.clear();if(settingsIssues.length)this.issues.set('.heavens-door/settings.json',settingsIssues.join('\n')); this.folders=new Set(['']); this.tags.clear();
     const walk = async (folder: string) => {
-      for (const entry of await fs.readdir(join(this.root,folder),{withFileTypes:true})) {
+      let entries:import('node:fs').Dirent[];
+      try{entries=await fs.readdir(join(this.root,folder),{withFileTypes:true});}catch(error){if(!folder)throw error;this.issues.set(folder,String(error));return;}
+      for (const entry of entries) {
         if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.isSymbolicLink()) continue;
         const path = join(folder,entry.name);
         if(entry.isDirectory()&&/^[a-f0-9-]{36}\.trash$/.test(entry.name)&&await this.raw(join(folder,entry.name.slice(0,-6)+'.json'))!==null)continue;
@@ -213,7 +227,7 @@ export class Workspace {
     } catch(error) { this.db.exec('ROLLBACK'); throw error; }
     finally { this.scanning=false; }
     const mother=basename(this.root)+'.whiteboard';
-    if(await this.raw(mother)===null)await this.write([{path:mother,content:writeBoard(emptyBoard(mother)),expected:null}]);
+    if(!this.renamePending&&await this.raw(mother)===null)await this.write([{path:mother,content:writeBoard(emptyBoard(mother)),expected:null}]);
     await this.reconcile();
     return this.snapshot();
   }
@@ -227,10 +241,11 @@ export class Workspace {
     if(path.startsWith(systemPath('trash',this.preferences)+'/')&&path.split('/').some(part=>/^[a-f0-9-]{36}\.trash$/.test(part)))return;
     if(isTrashNote(path)&&(dirname(path)===systemPath('trash',this.preferences)||await this.raw(path.slice(0,-3)+'.json')!==null)){this.removeIndex(path);return;}
     if (!['.md','.whiteboard','.tag'].includes(extname(path))) return;
-    this.issues.delete(path);
+    this.issues.delete(path);this.unreadableCards.delete(path);
+    const previous=this.db.prepare('SELECT path,id,name,title,revision,legacy FROM cards WHERE path=?').get(path) as unknown as CardInfo|undefined;let source:string|null=null;
     this.boards.delete(path); this.tags.delete(path);if(!path.endsWith('.md'))this.search.remove(path);
     try {
-      const raw = await this.raw(path);
+      const raw = source = await this.raw(path);
       if (raw === null) { this.removeIndex(path); return; }
       let folder=dirname(path);
       while (folder !== '.') { this.folders.add(folder); folder=dirname(folder); }
@@ -241,23 +256,25 @@ export class Workspace {
       if (path.endsWith('.whiteboard')) { const board=readBoard(path,raw);this.boards.set(path,board);this.search.update({path,name:board.name,title:board.name,body:board.folder});return; }
       const cached=this.db.prepare('SELECT revision FROM cards WHERE path=?').get(path);
       // Verify content hashes rather than trusting timestamps or file sizes.
-      if (cached?.revision === revision(raw)) return;
       const card = readCard(path,raw);
+      if (cached?.revision === revision(raw)) return;
       if (!this.scanning) this.db.exec('BEGIN');
       try {
         this.removeIndex(path);
         this.db.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(card.path,card.id,card.name,card.body,card.revision,Number(card.legacy),JSON.stringify(splitNote(raw).front.toJSON() ?? {}),card.title??'',dirname(path)==='.'?'':dirname(path),card.titleMarkdown??'',searchDocument(card.body).text);
         for(const [field,value] of Object.entries(splitNote(raw).front.toJSON()??{}))this.db.prepare('INSERT INTO properties VALUES(?,?,?)').run(card.path,field,JSON.stringify(value));
-        for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,target);}
+        for(const value of Object.values(splitNote(raw).front.toJSON()??{}).flat())if(typeof value==='string'){const target=/^card:[\w-]{1,128}$/.test(value)?value.slice(5):validReferencePath(value)?'file:'+value:null;if(target)this.db.prepare('INSERT INTO links(source,target) VALUES(?,?)').run(path,target);}
         this.search.update({...card,metadata:searchProperties(splitNote(raw).front.toJSON()??{})});
-        const annotations=annotationView(card.body);for(const annotation of annotations.annotations)if(annotation.cardId)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,annotation.cardId);marked.walkTokens(marked.lexer(annotations.content+'\n\n'+annotations.annotations.map(a=>a.text).join('\n\n')), token => {
+        const annotations=annotationView(card.body);for(const annotation of annotations.annotations)if(annotation.cardId)this.db.prepare('INSERT INTO links(source,target) VALUES(?,?)').run(path,annotation.cardId);
+        const definitions=annotations.annotations.length?marked.lexer(annotations.content+'\n\n'+annotations.annotations.map(a=>a.text).join('\n\n')).links:undefined;
+        for(const part of [{text:annotations.content,id:null},...annotations.annotations]){const lexer=new marked.Lexer();if(definitions)lexer.tokens.links=definitions;marked.walkTokens(lexer.lex(part.text),token=>{
           if(token.type!=='link')return;
           const target=token.href.startsWith('card:')?token.href.slice(5):token.href.startsWith('wiki:')?token.href:referencePath(path,token.href);
-          if(target)this.db.prepare('INSERT INTO links VALUES(?,?)').run(path,token.href.startsWith('card:')||token.href.startsWith('wiki:')?target:'file:'+target);
-        });
+          if(target)this.db.prepare('INSERT INTO links VALUES(?,?,?)').run(path,token.href.startsWith('card:')||token.href.startsWith('wiki:')?target:'file:'+target,part.id);
+        });}
         if (!this.scanning) this.db.exec('COMMIT');
       } catch(e) { if (!this.scanning) this.db.exec('ROLLBACK'); throw e; }
-    } catch(e) { this.removeIndex(path); this.issues.set(path,`${path}: ${String(e)}`); }
+    } catch(e) { this.removeIndex(path); this.issues.set(path,`${path}: ${String(e)}`);if(path.endsWith('.md'))this.unreadableCards.set(path,{...(previous??{id:/^---\r?\n([\s\S]*?)\r?\n---/.exec(source??'')?.[1].match(/^card-id:[ \t]*([\w-]{1,128})[ \t]*$/m)?.[1]??revision(path).slice(0,32),legacy:true}),path,name:basename(path,'.md'),revision:revision(source??'')}); }
     finally {if(reconcile&&!this.scanning)await this.reconcile([path]);}
   }
   snapshot(): Snapshot {
@@ -265,13 +282,14 @@ export class Workspace {
     // Bodies are fetched only for visible cards; a large vault never becomes one giant UI document.
     const cards = this.db.prepare(`SELECT path,id,name,title,titleMarkdown,revision,legacy,json_quote(json_extract(frontmatter,'$.tags')) AS tagData,json_extract(frontmatter,'$."card-color"') AS fillColor,json_type(frontmatter,'$."card-color"') AS colorType,json_quote(json_extract(frontmatter,'$.source')) AS sourceData,json_quote(json_extract(frontmatter,'$.reading')) AS readingData,json_quote(json_extract(frontmatter,'$."readlater/status"')) AS statusData FROM cards ORDER BY path`).all() as unknown as (CardInfo&{colorType:string|null;tagData:string;sourceData:string;readingData:string;statusData:string})[];
     const duplicates = this.db.prepare('SELECT id FROM cards GROUP BY id HAVING count(*)>1').all();
-    return { lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map(({colorType,fillColor,tagData,sourceData,readingData,statusData,...c}) => ({...c,...readingMetadata({source:JSON.parse(sourceData),reading:JSON.parse(readingData),[READLATER_STATUS]:JSON.parse(statusData)}),tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
+    return { fileErrors:{...Object.fromEntries(this.issues),...Object.fromEntries(cards.filter(card=>duplicates.some(duplicate=>duplicate.id===card.id)).map(card=>[card.path,ui.errors.duplicateCardId(card.id)]))},serviceErrors:this.serviceErrors,lastEdgeStyle:this.lastEdgeStyle,pathMoves:[...this.pathMoves],root:this.root, name:this.preferences.workspaceName??basename(this.root), cards:cards.map<CardInfo>(({colorType,fillColor,tagData,sourceData,readingData,statusData,...c}) => ({...c,...readingMetadata({source:JSON.parse(sourceData),reading:JSON.parse(readingData),[READLATER_STATUS]:JSON.parse(statusData)}),tags:tagsFrom(JSON.parse(tagData)),legacy:!!c.legacy,...(colorType!==null?{fillColor}: {})})).concat([...this.unreadableCards.values()]), boards:this.allBoards(), issues:[...this.issues.values(),...duplicates.map(c => ui.errors.duplicateCardId(String(c.id)))], historyAvailable:this.history.available, folders:[...this.folders].sort(), tags:[...this.tags.values()], preferences:this.preferences };
   }
 
   private allBoards() {
-    const boards=[...this.boards.values()].filter(b=>this.boardPath(b.folder)===b.path&&!systemFolder(b.folder,this.preferences));
+    const failed=[...this.issues.keys()].filter(path=>path.endsWith('.whiteboard')&&!this.boards.has(path)).map(path=>emptyBoard(path));
+    const boards=[...this.boards.values(),...failed].filter(b=>this.boardPath(b.folder)===b.path&&!systemFolder(b.folder,this.preferences));
     if(!boards.some(b=>!b.folder))boards.unshift(emptyBoard(basename(this.root)+'.whiteboard'));
-    const boardFolders=new Set(boards.map(b=>b.folder)),childrenByFolder=new Map<string,string[]>();
+    const boardFolders=new Set(boards.map(b=>b.folder)),childrenByFolder=new Map<string,string[]>(),size=defaultBoardSize(this.preferences.arrangement);
     for(const folder of boardFolders){
       if(!folder)continue;
       let ancestor=dirname(folder)==='.'?'':dirname(folder);
@@ -283,7 +301,7 @@ export class Workspace {
       const cards=[...board.cards].filter(p=>!p.folder||children.includes(p.folder));
       for (const folder of children) if (!cards.some(p => p.folder === folder)) {
         const i=board.folder?cards.length:cards.filter(p=>p.folder).length;
-        cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*380,y:60+Math.floor(i/4)*220,width:320,height:160});
+        cards.push({id:'folder-'+Buffer.from(folder).toString('hex'),folder,cardId:'',x:60+(i%4)*(size.width+40),y:60+Math.floor(i/4)*(size.height+60),...size});
       }
       const ids=new Set(cards.map(p=>p.id));
       return {...board,name:board.folder ? basename(board.folder) : this.preferences.workspaceName??basename(this.root),cards,edges:board.edges.filter(e=>ids.has(e.from)&&ids.has(e.to))};
@@ -322,6 +340,7 @@ export class Workspace {
     return result;
   }
   async reconcile(paths?:string[]) {
+    if(this.renamePending)return;
     const folders=paths?new Set(paths.filter(p=>p.endsWith('.md')||p.endsWith('.whiteboard')).map(p=>dirname(p)==='.'?'':dirname(p))):undefined;
     const additions=this.automaticPlacements([],folders);
     if(additions.length)await this.write(additions);
@@ -379,7 +398,7 @@ export class Workspace {
     const board=emptyBoard(join(path,name+'.whiteboard'));
     const changes:Write[]=[{path:board.path,content:writeBoard(board),expected:null}];
     if(container&&position){
-      container.cards.push({id:randomUUID(),cardId:'',folder:path,x:position.x,y:position.y,width:320,height:160});
+      container.cards.push({id:randomUUID(),cardId:'',folder:path,x:position.x,y:position.y,...defaultBoardSize(this.preferences.arrangement)});
       changes.push({path:container.path,content:writeBoard(container),expected:container.revision||null});
     }
     return this.write(changes);
@@ -716,7 +735,7 @@ export class Workspace {
   }
   private async pathEdits(from:string,to:string,boardPath=this.boardPath(from),name=basename(to),position?:{x:number;y:number}){
     const edits=await this.linkEdits([{from,to}]);
-    const displayed=this.allBoards(),movingBoard=displayed.find(b=>b.folder===from),tile=displayed.flatMap(b=>b.cards).find(p=>p.folder===from);
+    const displayed=this.allBoards(),movingBoard=displayed.find(b=>b.folder===from),tile=displayed.flatMap(b=>b.cards).find(p=>p.folder===from),size=defaultBoardSize(this.preferences.arrangement);
     let destination=dirname(to)==='.'?'':dirname(to);
     while(destination&&!displayed.some(b=>b.folder===destination&&b.folder!==from&&!b.folder.startsWith(from+'/')))destination=dirname(destination)==='.'?'':dirname(destination);
     const movingCard=this.snapshot().cards.find(c=>c.path===from),home=dirname(from)==='.'?'':dirname(from),cardFolder=dirname(to)==='.'?'':dirname(to),owned=displayed.find(b=>b.folder===home)?.cards.find(p=>p.cardId===movingCard?.id);
@@ -726,7 +745,7 @@ export class Workspace {
       if(movingBoard&&b.folder===destination){
         const existing=cards.find(p=>p.folder===to);
         if(existing){if(position){existing.x=position.x;existing.y=position.y;}}
-        else {const point=position??(dirname(from)===dirname(to)&&tile?tile:boardDropPosition(displayed.find(board=>board.folder===destination),this.snapshot().cards)),id=tile?.id&&!cards.some(p=>p.id===tile.id)?tile.id:randomUUID();cards.push({...tile,id,cardId:'',folder:to,x:point.x,y:point.y,width:tile?.width??320,height:tile?.height??160});}
+        else {const point=position??(dirname(from)===dirname(to)&&tile?tile:boardDropPosition(displayed.find(board=>board.folder===destination),this.snapshot().cards)),id=tile?.id&&!cards.some(p=>p.id===tile.id)?tile.id:randomUUID();cards.push({...tile,id,cardId:'',folder:to,x:point.x,y:point.y,width:tile?.width??size.width,height:tile?.height??size.height});}
       }
       if(movingCard&&b.folder===cardFolder&&cardFolder!==home&&!cards.some(p=>p.cardId===movingCard.id))cards.push({...owned,id:owned?.id??randomUUID(),cardId:movingCard.id,x:position?.x??owned?.x??80,y:position?.y??owned?.y??80,width:owned?.width??340,height:owned?.height??280});
       const ids=new Set(cards.map(p=>p.id)),edges=b.edges.filter(e=>ids.has(e.from)&&ids.has(e.to));
@@ -754,7 +773,7 @@ export class Workspace {
   async fileOperation(operation:import('../shared').FileOperation):Promise<import('../shared').FileMutation>{
     this.assertReady();
     if(operation.position&&(!Number.isFinite(operation.position.x)||!Number.isFinite(operation.position.y)))throw new Error(ui.errors.invalidWorkspacePath);
-    if(operation.action!=='copy'&&operation.path===this.boardPath(''))throw new Error(ui.errors.rootRename);
+    if(operation.action==='move'&&operation.path===this.boardPath(''))throw new Error(ui.errors.rootRename);
     if(operation.action==='move'){
       const from=operation.path,to=operation.destination;if(!to)throw new Error(ui.errors.invalidWorkspacePath);
       const source=await editablePath(this.root,from),target=await editablePath(this.root,to,true);if(source===target||target.startsWith(source+sep))throw new Error(ui.errors.invalidWorkspacePath);await vacant(this.root,to);
@@ -1080,19 +1099,20 @@ export class Workspace {
     return {nodes,links};
   }
   private wikiLinks(){
-    const rows=this.db.prepare("SELECT source,target FROM links WHERE substr(target,1,5)='wiki:'").all();if(!rows.length)return [];
+    const rows=this.db.prepare("SELECT source,target,annotation FROM links WHERE substr(target,1,5)='wiki:'").all();if(!rows.length)return [];
     const targets=this.db.prepare('SELECT id,path,name FROM cards').all().map(c=>({kind:'card' as const,key:'card:'+c.id,path:String(c.path),name:String(c.name)}));
     const match=referenceResolver(targets);
-    return rows.flatMap(row=>{const matches=match(String(row.source),String(row.target));return matches.length===1?[{source:String(row.source),id:matches[0].key.slice(5)}]:[];});
+    return rows.flatMap(row=>{const matches=match(String(row.source),String(row.target));return matches.length===1?[{source:String(row.source),id:matches[0].key.slice(5),...(row.annotation?{fromAnnotation:String(row.annotation)}:{})}]:[];});
   }
   boardMentions(path:string) {
     const board=this.boards.get(path);if(!board)return [];
     const ids=[...new Set(board.cards.filter(p=>!p.folder).map(p=>p.cardId))];
-    const links=this.db.prepare(`SELECT DISTINCT c.id AS "from", target.id AS "to"
+    const links=this.db.prepare(`SELECT DISTINCT c.id AS "from", target.id AS "to", l.annotation
       FROM json_each(?) selected JOIN cards c ON c.id=selected.value JOIN links l ON l.source=c.path JOIN cards target ON l.target=target.id OR (substr(l.target,1,5)='file:' AND target.path=substr(l.target,6))
       WHERE target.id IN (SELECT value FROM json_each(?)) AND c.id<>target.id`).all(JSON.stringify(ids),JSON.stringify(ids));
     const sources=new Map(this.db.prepare('SELECT cards.id,cards.path FROM cards JOIN json_each(?) selected ON cards.id=selected.value').all(JSON.stringify(ids)).map(c=>[String(c.path),String(c.id)]));
-    return [...links,...this.wikiLinks().filter(l=>sources.has(l.source)&&ids.includes(l.id)&&sources.get(l.source)!==l.id).map(l=>({from:sources.get(l.source)!,to:l.id}))];
+    const mentions=[...links.map(l=>({from:String(l.from),to:String(l.to),...(l.annotation?{fromAnnotation:String(l.annotation)}:{})})),...this.wikiLinks().filter(l=>sources.has(l.source)&&ids.includes(l.id)&&sources.get(l.source)!==l.id).map(({fromAnnotation,...l})=>({from:sources.get(l.source)!,to:l.id,...(fromAnnotation?{fromAnnotation}:{})}))];
+    return [...new Map(mentions.map(m=>[JSON.stringify([m.from,m.to,m.fromAnnotation]),m])).values()];
   }
   query(text: string) {
     if (text.startsWith('backlinks:')) {const id=text.slice(10),rows=this.db.prepare("SELECT DISTINCT source AS path FROM links WHERE target=? OR target='file:'||(SELECT path FROM cards WHERE id=?)").all(id,id);return [...new Set([...rows.map(row=>String(row.path)),...this.wikiLinks().filter(l=>l.id===id).map(l=>l.source)])].map(path=>({path}));}
@@ -1125,7 +1145,7 @@ export class Workspace {
     const stem=value.title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Extracted blocks';
     const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),{front}=splitNote(newNote());front.set('card-id',value.id);
     if(source.fillColor!==undefined)front.set('card-color',source.fillColor);
-    const created=`---\n${front.toString()}---\n`+moveCardLinks(value.content,path,destination),body=value.body.replace('](card:'+value.id+')',']('+referenceHref(path,destination)+')');
+    const created=`---\n${front.toString()}---\n`+withExtractedTitle(moveCardLinks(value.content,path,destination),value.title),body=value.body.replace('](card:'+value.id+')',']('+referenceHref(path,destination)+')');
     return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,source,body),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId:value.id,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async extractAssetNote(path:string,expected:string,note:string,folder:string,boardExpected:string,x:number,y:number){
@@ -1140,11 +1160,10 @@ export class Workspace {
     const title=(searchDocument(annotation.text||annotation.quote!).text.split('\n').find(line=>line.trim())??'Asset note').trim().slice(0,80),stem=title.replace(/[<>:"/\\|?*]/g,' ').split('').filter(c=>c.charCodeAt(0)>=32).join('').replace(/^[. ]+|[. ]+$/g,'').slice(0,70)||'Asset note';
     const destination=await this.newCardPath(folder,/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)?'Note '+stem:stem),escape=(text:string)=>text.replace(/[\\`*_{}[\]()#+.!<>~|]/g,'\\$&');
     const text=moveCardLinks(annotation.text,path,destination);
-    // Promote a leading paragraph instead of copying its text into an extra title.
-    const content=marked.lexer(text)[0]?.type==='paragraph'?text.replace(/^([^\n]*)(?:\n+|$)/,'# $1\n\n'):text;
+    const content=withExtractedTitle(text,title);
     const quote=annotation.quote?annotation.quote.split('\n').map(line=>'> '+line).join('\n'):'';
-    const body=[content.trimEnd(),quote,'[Source: '+escape(asset.title||asset.name)+']('+referenceHref(destination,path)+(annotation.kind==='highlight'?'#annotation='+annotation.id:'')+')'].filter(part=>part.trim()).join('\n\n')+'\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
-    const created=`---\n${front.toString()}---\n`+body,cardId=readCard(destination,created).id,updated=updateAnnotation(asset.body,annotation.kind==='highlight'?{...annotation,text:'',cardId}:null,note);
+    const body=[content.trimEnd(),quote].filter(part=>part.trim()).join('\n\n')+'\n',{front}=splitNote(newNote());front.set('card-color',annotation.color??null);
+    const created=`---\n${front.toString()}---\n`+body,cardId=readCard(destination,created).id,updated=updateAnnotation(asset.body,{...annotation,cardId:undefined,text:'['+escape(title)+']('+referenceHref(path,destination)+')'},note);
     return this.write([{path:destination,content:created,expected:null},{path,content:editCard(raw,asset,updated),expected},{path:board.path,content:writeBoard({...board,cards:[...board.cards,{id:randomUUID(),cardId,x,y,width:340,height:280}]}),expected:boardExpected}]);
   }
   async createSlipboxCard(name:string,placement?:{folder:string;expected:string;x:number;y:number}){

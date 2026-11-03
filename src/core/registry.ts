@@ -29,26 +29,26 @@ export class WorkspaceRegistry {
   private queue:Promise<unknown>=Promise.resolve();
   constructor(private file:string){}
   async list(refresh=false):Promise<RegisteredWorkspace[]> {
-    if(!refresh){await this.queue;return Promise.all((await this.read()).map(entry=>inspect(entry,false)));}
+    if(!refresh){await this.queue;return Promise.all((await this.read(false)).map(entry=>inspect(entry,false)));}
     let checked:RegisteredWorkspace[]=[];
-    await this.update(async entries=>{
+    try{await this.update(async entries=>{
       checked=await Promise.all(entries.map(entry=>inspect(entry,true)));
       return checked.map(({root,lastUpdated,name})=>({root,lastUpdated,name}));
-    });
+    });}catch(error){if(error instanceof SyntaxError||String(error).includes(ui.errors.invalidWorkspaceRegistry))return Promise.all((await this.read(false)).map(entry=>inspect(entry,true)));throw error;}
     return checked;
   }
-  private async read():Promise<Registration[]> {
+  private async read(strict=true):Promise<Registration[]> {
     try{
       const value:unknown=JSON.parse(await fs.readFile(this.file,'utf8'));
-      if(!Array.isArray(value))throw new Error(ui.errors.invalidWorkspaceRegistry);
+      if(!Array.isArray(value)){if(strict)throw new Error(ui.errors.invalidWorkspaceRegistry);return [];}
       const entries=value.map(item=>{
         const entry=typeof item==='string'?{root:item,lastUpdated:null}:item;
-        if(!entry||typeof entry.root!=='string'||!isAbsolute(entry.root)||entry.lastUpdated!==null&&(!Number.isFinite(entry.lastUpdated)||entry.lastUpdated<0))throw new Error(ui.errors.invalidWorkspaceRegistry);
-        if(entry.name!==undefined&&(typeof entry.name!=='string'||!entry.name.trim()||entry.name.length>120))throw new Error(ui.errors.invalidWorkspaceRegistry);
+        if(!entry||typeof entry.root!=='string'||!isAbsolute(entry.root)||entry.lastUpdated!==null&&(!Number.isFinite(entry.lastUpdated)||entry.lastUpdated<0)){if(strict)throw new Error(ui.errors.invalidWorkspaceRegistry);return null;}
+        if(entry.name!==undefined&&(typeof entry.name!=='string'||!entry.name.trim()||entry.name.length>120)){if(strict)throw new Error(ui.errors.invalidWorkspaceRegistry);delete entry.name;}
         return {root:entry.root as string,lastUpdated:entry.lastUpdated as number|null,...(entry.name?{name:entry.name as string}:{})};
       });
-      return [...new Map(entries.map(entry=>[entry.root,entry])).values()];
-    }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;}
+      return [...new Map(entries.filter(entry=>entry!==null).map(entry=>[entry.root,entry])).values()];
+    }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT'||!strict&&error instanceof SyntaxError)return [];throw error;}
   }
   async last(){
     try{const root=(await fs.readFile(this.file+'.last','utf8')).trim();return (await this.list()).find(w=>w.root===root&&w.status==='available')?.root;}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}

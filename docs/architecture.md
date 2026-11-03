@@ -28,7 +28,7 @@ The renderer has no Node access. `src/preload.ts` exposes the `Bridge` in `src/s
 | Card content, stable identity and shared fill | `.md`, YAML `card-id` and optional `card-color`; `src/core/format.ts` |
 | Placement identity, geometry, height mode, collapsed state, intake column and edges | `.whiteboard`; `src/core/format.ts` |
 | Tag definitions | `.tag`, indexed by `Workspace` |
-| Theme, color palette, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
+| Theme, accent, enabled CSS snippets, color palette, naming, icons, Side Dock/Main Dock layouts, View navigation, Starred and Recent | `.heavens-door/settings.json`; `src/core/preferences.ts` |
 | Search, backlinks, properties and file revisions | Rebuildable SQLite index under Electron user data; worker-owned MiniSearch text index |
 | Persistent checkpoints and branches | The workspace's app-managed `.git`; `src/core/history.ts` |
 | Registered workspace paths | `workspaces.json` under Electron user data; `src/core/registry.ts` |
@@ -81,6 +81,10 @@ Switching workspaces first flushes the current draft. While opening, the workspa
 
 Git history is separate from session undo. Checkpoints include non-ignored workspace files; automatic checkpoints currently run after five idle minutes. Restore first preserves current work, then creates a branch at the selected checkpoint. Existing unmanaged repositories are not adopted. Staged changes or an unfinished terminal Git operation pause app history. History loads 200 checkpoints initially, with earlier checkpoints available up to 5,000; pruning is disabled. Interface settings are excluded from new commits and preserved across old checkouts through a recovery journal. Trash originals remain tracked. Applying a diverged checkpoint uses Git’s three-way tree merge and creates a new single-parent commit; conflicts never enter live files. History switches are blocked when another window shares the workspace until a cross-window draft-flush barrier exists. See [Search and History](search-and-history.md).
 
+## Recoverable loading
+
+Workspace loading isolates damaged files and optional settings/services. See [recoverable workspace loading](interactions/recoverable-loading.md) for the policy, recovery controls and retained write-safety checks.
+
 ## Working on the code
 
 Run `npm run check` for lint, types, tests and the production build. Run `npm run benchmark` for the disposable 10,000-card indexing/search benchmark. `npm run dev` starts Electron and Vite; restart it after main/worker changes. Renderer reload alone does not replace those processes.
@@ -91,7 +95,7 @@ The workspace SQLite `ui_cache` also keeps the last edited edge style. It is exp
 
 ## Device graphics preferences
 
-`src/app-settings.ts` reads the small app-owned `app-settings.json` synchronously before Electron becomes ready. The default is hardware acceleration enabled; a saved false calls `app.disableHardwareAcceleration()` before creating any windows. Missing files use the default; invalid/unreadable files preserve their bytes and surface a warning in Settings. Writes validate a boolean and atomically replace the preference file. A failed save does not change the in-memory value.
+`src/app-settings.ts` reads the small app-owned `app-settings.json` synchronously before Electron becomes ready. Hardware acceleration and automatic update downloads default on; a saved false calls `app.disableHardwareAcceleration()` before creating any windows. Missing files use the default; invalid/unreadable files preserve their bytes and surface a warning in Settings. Writes validate a boolean, preserve other device fields, and atomically replace the preference file. A failed save does not change the in-memory value.
 
 Main-process IPC validates the sender and owns the shared device preference. Open Settings panels receive a change notification across windows. Restart-required compares the saved preference with the startup preference, not actual GPU availability. Applying it requires a full quit/reopen; renderer Reload only reloads UI. This is app-wide device state outside workspace documents/settings, sync and history.
 

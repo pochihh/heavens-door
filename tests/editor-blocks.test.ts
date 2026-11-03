@@ -81,3 +81,8 @@ test('Turn into converts the whole selection atomically, including nested lists 
   assert.equal(changeEditorBlocks(doc,[[0],[2]],'taskList'),null,'title conversion rejects the whole operation');
   assert.deepEqual(doc.content![1].content!.map(n=>n.content![0].content![0].text),['Parent','Sibling','Last'],'source is not mutated');
 });
+
+test('code blocks can turn back into text or a list without losing their literal contents',async()=>{
+ const {changeEditorBlock}=await import('../src/renderer/editor-blocks'),code:JSONContent={type:'doc',content:[doc.content![0],{type:'codeBlock',attrs:{language:'cpp'},content:[{type:'text',text:'int value = 3;\nreturn value;'}]}]};
+ for(const kind of ['paragraph','bulletList']){const next=changeEditorBlock(code,[1],kind)!;assert.ok(next);const content=kind==='paragraph'?next.content![1]:next.content![1].content![0].content![0];assert.equal(content.content![0].text,'int value = 3;\nreturn value;');}
+});

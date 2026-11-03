@@ -1,3 +1,4 @@
+import {ViewResultCache} from './view-result-cache';
 import {applyBoardStyle,copyBoardStyle,type CopiedBoardStyle} from '../board-style';
 import {splitCardSource} from '../card-source';
 import {remapFilePath} from '../path-remap';
@@ -9,7 +10,7 @@ import { UndoHistory } from './history';
 
 function layout(board: Board) {
   return JSON.stringify([board.name,board.inbox,board.showMentions,board.mentionStyle,board.canvasColor,board.gridColor,
-    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false,p.autoHeight??true,p.object,p.fillColor,p.strokeColor,p.strokeWidth,p.strokeStyle]),
+    board.cards.map(p => [p.id,p.cardId,p.x,p.y,p.width,p.height,p.folder,p.collapsed??false,p.autoHeight??true,p.object,p.fillColor,p.strokeColor,p.strokeWidth,p.strokeStyle,p.pdf]),
     board.edges]);
 }
 
@@ -26,6 +27,7 @@ export class Session {
   // shortcut: styles are shared across boards in this window; use a custom OS clipboard format for cross-window sharing.
   styleClipboard:CopiedBoardStyle|null=null;
   fileClipboard:{root:string;path:string;cut:boolean}|null=null;
+  viewResults=new ViewResultCache();
   viewTabs=new Map<string,string>();
   viewScrolls=new Map<string,{left:number;top:number}>();
   undoHistory = new UndoHistory();
@@ -53,7 +55,7 @@ export class Session {
       this.update({snapshot,status:ui.status.savedLocally});
     });
   }
-  dispose() { clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={};this.newCards.clear(); }
+  dispose() { this.viewResults.clear();clearTimeout(this.saveTimer); clearTimeout(this.checkpointTimer);clearTimeout(this.preferencesTimer);this.pendingPreferences={};this.newCards.clear(); }
   hasPendingPreferences(key:keyof Preferences){return key in this.pendingPreferences;}
   schedulePreferences(patch:Partial<Preferences>,root:string){
     if(root!==this.state.snapshot?.root)return;
@@ -164,7 +166,7 @@ export class Session {
     return this.run(async () => {
       if(id)path=this.state.snapshot?.cards.find(c=>c.id===id)?.path??path;
       if (path && path === this.state.draft?.card.path) return;
-      const card=path ? await this.bridge.request<Card>({kind:'card',path}) : null;
+      const card=path&&!this.state.snapshot?.fileErrors?.[path] ? await this.bridge.request<Card>({kind:'card',path}) : null;
       // Keep accepting edits to the old card while the next card loads, then flush them.
       await this.flush();
       this.update({draft:card ? {card,body:card.body,dirty:false} : null});
@@ -178,7 +180,7 @@ export class Session {
       if (!draft) return;
       const info=snapshot.cards.find(c => c.id === draft.card.id);
       if(draft.dirty){if(info&&info.path!==draft.card.path)this.update({draft:{...draft,card:{...draft.card,path:info.path,name:info.name}}});return;}
-      if (!info) { this.update({draft:null}); return; }
+      if (!info||snapshot.fileErrors?.[info.path]) { this.update({draft:null}); return; }
       if (info.revision !== draft.card.revision || info.path !== draft.card.path) {
         const card=await this.bridge.request<Card>({kind:'card',path:info.path});
         if (!this.state.draft?.dirty) this.update({draft:{card,body:card.body,dirty:false}});

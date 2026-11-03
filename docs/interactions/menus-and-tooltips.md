@@ -1,6 +1,6 @@
 # Menus and tooltips
 
-This is the shared interaction contract for Heaven’s Door. It defines the target behavior; the implementation gaps below still need fixes. Apply it to Explorer menus, View tab menus, Tab Group actions, workspace switching, card/whiteboard actions, and future plugin menus.
+This is the shared interaction contract for Heaven’s Door. It defines the target behavior; the implementation gaps below still need fixes. Apply it to Explorer menus, View tabs actions, Document Tabs actions, workspace switching, card/whiteboard actions, and future plugin menus.
 
 ## Text ownership
 
@@ -9,7 +9,7 @@ Hover wording comes from [`src/text/tooltips.ts`](../../src/text/tooltips.ts); m
 ## Terms and scope
 
 - **Context menu:** actions for the item or View that was right-clicked, or invoked with Shift+F10 / the Menu key. Opening it does not activate an inactive View or execute an action.
-- **Dropdown menu:** actions or choices opened by a button, such as the workspace switcher or Tab Group actions. It follows the same dismissal, focus, row styling, and tooltip rules as a context menu.
+- **Dropdown menu:** actions or choices opened by a button, such as the workspace switcher or Document Tabs actions. It follows the same dismissal, focus, row styling, and tooltip rules as a context menu.
 - **Popover:** a floating interactive surface containing inputs or richer content, such as the card-link picker. It shares Escape and outside-click dismissal, but retains normal form keyboard behavior.
 - **Tooltip:** a short, non-interactive explanation associated with a hovered control. It is not a menu, notification, or replacement for a visible label.
 
@@ -61,7 +61,7 @@ Anchor the tooltip to its owning control’s bounds, not to the right-click loca
 
 Use one shared tooltip per window with `role="tooltip"`, an associated description, and no pointer interception. Use theme tokens, the shared small corner radius, and the existing compact typography. No arrow, bounce, scale effect, or animation that delays interaction is needed. Menu opening and dismissal are immediate; any hover/focus color transitions follow the shared motion tokens and reduced-motion preference.
 
-Menu rows use the same padding, icon column, text alignment, checkmark placement, disabled appearance, separators, and focus treatment everywhere. Labels use established app terms, including **View**, **Tab Group**, **Main Dock**, **Side Dock**, and **Workspace**. Use one shared menu implementation rather than separate behavior for each View.
+Menu rows use the same padding, icon column, text alignment, checkmark placement, disabled appearance, separators, and focus treatment everywhere. Labels use established app terms, including **View**, **split**, **Main area**, **sidebar**, and **Workspace**. Use one shared menu implementation rather than separate behavior for each View.
 
 ## Menu appearance
 
@@ -94,7 +94,7 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, `Workspac
 | Duplicate labels | Only an explicit additional `hint` supplies a menu tooltip. | Detect genuine truncation if full-label tooltips are needed later. |
 | Tooltip position | The shared host places all tips below/above their owner. | Add menu-aware placement outside the menu. |
 | Dismissal and focus | `ActionMenu` handles outside pointer-down in capture (including clicks on the card that opened it), blur, resize, and Escape even after focus leaves the menu. Outside clicks retain their own focus; button and composite dropdown triggers retain toggle behavior. | Finish scrolling and Tab dismissal as above. |
-| Alternate menus | Main Dock “Tab Group actions” and the card-link picker use independent `<details>` surfaces. | Bring their floating-surface dismissal under this contract. The link picker remains a form popover. |
+| Alternate menus | Document Tabs actions now uses the shared dropdown and closes on outside clicks. The card-link picker retains its form behavior. | Keep future menu work on the shared control; the link picker remains a form popover. |
 | Menu lifecycle | Individual components own menu state; there is no shared rule enforcing one open menu or invalidating tooltip timers on menu opening. | Coordinate opening, replacement, closing, and tooltip ownership through the shared interaction layer. |
 
 ## Acceptance checks
@@ -106,13 +106,13 @@ Reviewed against `src/renderer/Overlays.tsx`, `App.tsx`, `Editor.tsx`, `Workspac
 5. Click the same dropdown trigger twice, right-click a different View, and open another dropdown: each leaves the expected single menu or no menu.
 6. Navigate by keyboard, including disabled items, Enter/Space, Tab/Shift+Tab, and Escape. No keyboard or programmatic focus event opens a tooltip.
 7. Repeat with a menu near each viewport edge, in a narrow window, and with long labels. No menu is clipped and no tooltip covers the actionable rows.
-8. Repeat in both themes and with reduced motion. Check Explorer, View tabs, Tab Group actions, workspace switching, and the card-link popover.
+8. Repeat in both themes and with reduced motion. Check Explorer, View tabs, Document Tabs actions, workspace switching, and the card-link popover.
 9. Open View options in Table, List and Kanban, including in a narrow split: the popup stays visually attached to its trigger and contains no oversized empty form area.
 10. Open a long property list near each window edge: its content scrolls internally; scrolling the document dismisses it. Subpanels preserve their original anchor and restore focus on Back.
 
 ## Confirmation dialogs
 
-Use `ConfirmationProvider` / `useConfirmation` for card deletion, history navigation/application, and discarding unsaved drafts. Its native `<dialog>` provides modal focus containment and makes the background inert, while app CSS defines its appearance. The Promise resolves only after the user chooses; mutation callers await it and retain revision checks. Cancel is initially focused. Escape and backdrop click cancel. Card context menus and More menus expose Open in popup, Open in same tab, Open in new tab and Open in another Tab Group, followed by card options and a separated destructive Delete card action. Destructive hover/focus uses the shared `--negative` token, including icons. Nested overlays in a Card popup render within its native dialog so they remain interactive.
+Use `ConfirmationProvider` / `useConfirmation` for card deletion, history navigation/application, and discarding unsaved drafts. Its native `<dialog>` provides modal focus containment and makes the background inert, while app CSS defines its appearance. The Promise resolves only after the user chooses; mutation callers await it and retain revision checks. Cancel is initially focused. Escape and backdrop click cancel. Card context menus and More menus expose Open in popup, Open in same tab, Open in new tab and Open in another split, followed by card options and a separated destructive Delete card action. Destructive hover/focus uses the shared `--negative` token, including icons. Nested overlays in a Card popup render within its native dialog so they remain interactive.
 
 ## Document links
 

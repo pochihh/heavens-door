@@ -19,6 +19,7 @@ export default {
     identity:macSigned?undefined:'-',hardenedRuntime:macSigned,
     entitlements:'build/entitlements.mac.plist',entitlementsInherit:'build/entitlements.mac.plist',
     notarize},
+  linux:{icon:'build/icons'},
   win:{icon:'build/icon.ico',target:['nsis']},
   nsis:{oneClick:false,perMachine:false,allowToChangeInstallationDirectory:true,deleteAppDataOnUninstall:false,
     shortcutName:"Heaven's Door",installerIcon:'build/icon.ico',uninstallerIcon:'build/icon.ico'},

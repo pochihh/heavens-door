@@ -72,7 +72,7 @@ export function changeEditorBlock(document:JSONContent,path:number[],kind:string
   if(kind==='delete'){parent.content!.splice(index,1);for(let depth=path.length-1;depth>0;depth--){const p=path.slice(0,depth),value=at(doc,p);if(!isList(value)||value.content?.length)break;at(doc,p.slice(0,-1)).content!.splice(p.at(-1)!,1);}return doc;}
   if(kind==='duplicate'){parent.content!.splice(index+1,0,structuredClone(node));return doc;}
   const content=isItem(node)?node.content??[]:[node],first=content[0];
-  if(!first||!['paragraph','heading'].includes(first.type??''))return null;
+  if(!first||!['paragraph','heading','codeBlock'].includes(first.type??''))return null;
   const inline=first.content,paragraph:JSONContent={type:'paragraph',content:inline};
   const asList=['bulletList','orderedList','taskList'].includes(kind);
   const convertLists=(value:JSONContent):JSONContent=>isList(value)?{type:kind,content:value.content?.map(child=>({...child,type:kind==='taskList'?'taskItem':'listItem',attrs:kind==='taskList'?{checked:child.attrs?.checked??false}:undefined,content:child.content?.map(convertLists)}))}:value;
@@ -94,7 +94,6 @@ export function extractEditorBlocks(document:JSONContent,sources:number[][],href
   const reference:JSONContent={type:'paragraph',content:[{type:'text',text:title,marks:[{type:'link',attrs:{href}}]}]};
   moving.forEach(({node,parent},i)=>{const index=parent.content!.indexOf(node);parent.content!.splice(index,1,...i?[]:isItem(node)?[{type:node.type,attrs:node.attrs,content:[reference]}]:[reference]);});
   const prune=(node:JSONContent)=>{node.content?.forEach(prune);if(node.content)node.content=node.content.filter(child=>!isList(child)||!!child.content?.length);};prune(doc);
-  if(content[0]?.type==='paragraph')content[0]={...content[0],type:'heading',attrs:{level:1}};
   return {document:doc,content:{type:'doc',content}};
 }
 

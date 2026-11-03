@@ -1,3 +1,4 @@
+import {marked} from 'marked';
 import {dragAssetNote} from './asset-note-drag';
 import {readingText} from '../text/reading';
 import {useContext,useEffect,useLayoutEffect,useRef,useState} from 'react';
@@ -11,13 +12,17 @@ import {Color} from './StyleView';
 import {DEFAULT_PALETTE} from '../colors';
 import {ViewBlockContext} from './ViewBlock';
 import {useConfirmation} from './Confirmation';
+function notePreview(text:string){
+ const first=text.split('\n')[0],tokens=first.startsWith('[')?marked.lexer(first)[0]:undefined,link=tokens?.type==='paragraph'&&tokens.tokens?.length===1&&tokens.tokens[0].type==='link'?tokens.tokens[0]:undefined;
+ return link?(link.tokens?.map(token=>'text' in token?String(token.text):'').join('')??link.text):first.replace(/[#*_`]/g,'');
+}
 export function revealPdfNote(rail:HTMLElement,top:number,height:number){
  const viewport=rail.closest<HTMLElement>('.pdf-reading-layout');if(!viewport)return;
  const box=viewport.getBoundingClientRect(),ratio=box.width/viewport.offsetWidth||1,toolbar=viewport.querySelector('.pdf-reader-toolbar')?.getBoundingClientRect().bottom??box.top;
  const start=Math.max(box.top,toolbar)+12*ratio,end=box.bottom-12*ratio,noteTop=rail.getBoundingClientRect().top+(top-12)*ratio,noteBottom=noteTop+Math.min((height+24)*ratio,end-start);
  if(end<=start)return;const delta=noteTop<start?noteTop-start:noteBottom>end?noteBottom-end:0;if(delta)viewport.scrollTop+=delta/ratio;
 }
-export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages,previewLimit,active=true,singleColumn=false,flow=false,header}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[];previewLimit?:number;active?:boolean;singleColumn?:boolean;flow?:boolean;header?:React.ReactNode}){
+export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJump,onAdd,sourceHash,compact=false,page,pages,previewLimit,active=true,singleColumn=false,flow=false,header,onLayout}:{body:string;path:string;cards:CardInfo[];expanded?:string;onExpanded:(id:string|undefined)=>void;onChange:(value:Annotation|null,id:string)=>void;onJump?:(id:string)=>void;onAdd?:()=>void;sourceHash?:string;compact?:boolean;page?:number;pages?:PdfPageBox[];previewLimit?:number;active?:boolean;singleColumn?:boolean;flow?:boolean;header?:React.ReactNode;onLayout?:()=>void}){
  const cancelDrag=useRef(()=>{}),rail=useRef<HTMLElement>(null),[heights,setHeights]=useState<Record<string,number>>({}),[headerHeight,setHeaderHeight]=useState(0),[colorPicker,setColorPicker]=useState<{id:string;anchor:HTMLButtonElement}>(),[shownPages,setShownPages]=useState<number[]>([]);useEffect(()=>()=>cancelDrag.current(),[]);
  const linkedCards=new Set(cards.map(card=>card.id)),annotations=annotationView(body).annotations.filter(a=>annotationOnPage(a,page)&&(!a.cardId||!linkedCards.has(a.cardId))).sort((a,b)=>flow?(a.page??a.anchors?.[0]?.page??1)-(b.page??b.anchors?.[0]?.page??1):0),context=useContext(ViewBlockContext),palette=context?.snapshot.preferences?.palette??DEFAULT_PALETTE,confirm=useConfirmation();
  const groups=new Map<number,Annotation[]>();for(const a of annotations){const number=page??a.page??a.anchors?.[0]?.page??pages?.[0]?.page??1,items=groups.get(number)??[];items.push(a);groups.set(number,items);}
@@ -39,6 +44,7 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
   });setHeights(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);};
   measure();const observer=new ResizeObserver(measure);root.querySelectorAll('[data-note-id],[data-note-more],.annotation-details>div,.sticky-note-content,.annotation-meta').forEach(el=>observer.observe(el));return()=>observer.disconnect();
  },[body,expanded,visibleIds,!!header]);
+ useLayoutEffect(()=>{onLayout?.();},[heights,expanded,visibleIds,pages,headerHeight]);
  const positions=pages?annotationPositions(items,pages,8,{singleColumn,start:headerHeight,flow}):undefined,shownNote=useRef<string|undefined>(undefined);
  useLayoutEffect(()=>{
   if(!expanded){shownNote.current=undefined;return;}if(!singleColumn||shownNote.current===expanded)return;const position=positions?.get(expanded),height=heights[expanded];if(!position||!height)return;
@@ -47,13 +53,13 @@ export function AnnotationRail({body,path,cards,expanded,onExpanded,onChange,onJ
  const colorNote=annotations.find(a=>a.id===colorPicker?.id&&a.id===expanded);
  const notesHeight=positions?Math.max(headerHeight,...items.map(a=>(positions.get(a.id)?.top??0)+a.height)):undefined;
  const positionStyle=(id:string):React.CSSProperties=>{const position=positions?.get(id);return position?{position:'absolute',top:position.top,left:position.column*228,width:220}:{};};
- return <aside ref={rail} className={'annotation-rail'+(compact?' board-annotation-rail':'')+(pages?' page-aligned-notes':'')+(singleColumn?' single-column-notes':'')} style={pages?{'--annotation-columns':Math.max(1,...[...positions!.values()].map(p=>p.column+1)),...(compact||singleColumn?{height:notesHeight}:{} )} as React.CSSProperties:undefined} aria-label={readingText.annotations} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
+ return <aside ref={rail} className={'annotation-rail'+(compact?' board-annotation-rail':'')+(pages?' page-aligned-notes':'')+(singleColumn?' single-column-notes':'')} style={pages?{'--annotation-columns':Math.max(1,...[...positions!.values()].map(p=>p.column+1)),...(compact||singleColumn?{height:notesHeight}:{} )} as React.CSSProperties:undefined} aria-label={readingText.annotations} onTransitionEnd={()=>onLayout?.()} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
   {header&&<div className="annotation-meta">{header}</div>}
   {!previewLimit&&!pages&&<div className="annotation-heading"><span>{readingText.notes}{annotations.length?' · '+annotations.length:''}</span>{onAdd&&<Tool icon="plus" label={readingText.addGeneralCardNote} onClick={onAdd}/>}</div>}
   {visible.map(a=>{const open=expanded===a.id;
    const drag=(e:React.PointerEvent)=>{if(!context||!a.text.trim()&&!a.quote?.trim())return;cancelDrag.current();cancelDrag.current=dragAssetNote(e,()=>({key:'asset-note:'+a.id,path,note:{id:a.id,expected:context.session.state.snapshot?.cards.find(c=>c.path===path)?.revision??''}}));};
    return <section key={a.id} data-note-id={a.id} className={'sticky-note'+(open?' expanded':'')+(!a.color?' uncolored':'')} style={{'--note-color':a.color??'transparent',...positionStyle(a.id)} as React.CSSProperties} onPointerDown={e=>{if(e.target===e.currentTarget)drag(e);}}>
-    <div className="sticky-note-heading"><div className="sticky-note-content">{open?<AnnotationEditor path={path} text={a.text} onChange={text=>onChange({...a,text},a.id)}/>:<button className="sticky-preview" onPointerDown={drag} aria-expanded={false} aria-label={readingText.openNote+': '+(a.text||a.quote||readingText.emptyNote).split('\n')[0]} onClick={()=>{setColorPicker(undefined);onExpanded(a.id);onJump?.(a.id);}}><span>{(a.text||a.quote||readingText.emptyNote).replace(/[#*_`]/g,'').split('\n')[0]}</span></button>}</div></div>
+    <div className="sticky-note-heading"><div className="sticky-note-content">{open?<AnnotationEditor path={path} text={a.text} onChange={text=>onChange({...a,text},a.id)}/>:<button className="sticky-preview" onPointerDown={drag} aria-expanded={false} aria-label={readingText.openNote+': '+(a.text||a.quote||readingText.emptyNote).split('\n')[0]} onClick={()=>{setColorPicker(undefined);onExpanded(a.id);onJump?.(a.id);}}><span>{notePreview(a.text||a.quote||readingText.emptyNote)}</span></button>}</div></div>
     <AnnotationDetails open={open}>{a.quote&&<blockquote className="sticky-quote">{a.quote}</blockquote>}
       <div className="annotation-color annotation-note-actions"><Tool icon="art" label={readingText.highlightColor} aria-haspopup="dialog" aria-expanded={colorNote?.id===a.id} onClick={e=>setColorPicker(colorNote?.id===a.id?undefined:{id:a.id,anchor:e.currentTarget})}/><span className="toolbar-spacer"/>
        <Tool icon="chevronUp" label={readingText.collapseNote} aria-expanded={true} onClick={e=>{const note=e.currentTarget.closest('.sticky-note');setColorPicker(undefined);onExpanded(undefined);requestAnimationFrame(()=>note?.querySelector<HTMLButtonElement>('.sticky-preview')?.focus({preventScroll:true}));}}/>

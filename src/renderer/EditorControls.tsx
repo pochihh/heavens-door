@@ -62,7 +62,7 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
         const scale=canvas?(editor.view.dom.offsetWidth?area.width/editor.view.dom.offsetWidth:zoom):1;
         const line=target.matches('li')?target.querySelector('p')??target:target,first=line.getBoundingClientRect(),lineHeight=parseFloat(getComputedStyle(line).lineHeight)||24;
         const center=first.top+Math.min(first.height,lineHeight*scale)/2;
-        handle.style.left=Math.max(4,area.left-(canvas?24:46)*scale)+'px';handle.style.top=(center-13*scale)+'px';handle.style.transform=`scale(${scale})`;handle.style.transformOrigin='top left';
+        handle.style.left=Math.max(4,area.left-(handle.offsetWidth+4)*scale)+'px';handle.style.top=(center-13*scale)+'px';handle.style.transform=`scale(${scale})`;handle.style.transformOrigin='top left';
         handle.style.visibility=(!clip||center>=clip.top&&center<clip.bottom)&&(!viewport||center>=viewport.top&&center<viewport.bottom&&area.left>=viewport.left&&area.left<viewport.right)?'visible':'hidden';
       }
       const el=bubble.current,selection=window.getSelection();if(!el||!selection?.rangeCount)return;
@@ -80,8 +80,9 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
     if(!block)return;if(menu){setMenu(null);return;}const r=anchor.getBoundingClientRect();
     const before=editor.state.doc,paths=selectedEditorBlocks(before,editor.state.selection,block).map(b=>b.path);
     const change=(kind:string)=>{if(!editor.state.doc.eq(before))return;const next=changeEditorBlocks(editor.getJSON(),paths,kind);if(next){try{editor.schema.nodeFromJSON(next).check();action(kind==='delete'?'Delete block':kind==='duplicate'?'Duplicate block':'Turn into',()=>{updateEditorContent(editor,next);});}catch{/* Complex structures keep their source. */}}};
-    const node=editor.state.doc.nodeAt(block.from),convertible=node&&(['paragraph','heading'].includes(node.type.name)||block.item);
-    setMenu({anchor,x:r.left,y:r.bottom,label:ui.editorTools.blockOptions,actions:[{label:ui.editorTools.duplicateBlock,icon:'copy',run:()=>change('duplicate')},{label:ui.editorTools.deleteBlock,icon:'trash',danger:true,run:()=>change('delete')},...(convertible?[{label:ui.editorTools.turnInto,icon:'format' as const,submenu:[['paragraph','Text'],['heading1','Heading 1'],['heading2','Heading 2'],['heading3','Heading 3'],['bulletList','Bullet list'],['orderedList','Numbered list'],['taskList','Checklist'],['codeBlock','Code block']].map(([kind,label])=>({label,run:()=>change(kind)}))}]:[]),{label:ui.editor.moveUp,icon:'up',separatorBefore:true,run:()=>move('up')},{label:ui.editor.moveDown,icon:'arrowDown',run:()=>move('down')},...block.item?[{label:ui.editor.indent,icon:'forward' as const,run:()=>move('indent')},{label:ui.editor.outdent,icon:'back' as const,run:()=>move('outdent')}]:[],{label:ui.editorTools.symbolsAndEmoji,icon:'text',run:()=>setPopup({kind:'symbols',anchor})}]});
+    const kinds=selectedEditorBlocks(before,editor.state.selection,block).map(b=>{const n=before.nodeAt(b.from)!;return b.item?before.resolve(b.from).parent.type.name:n.type.name==='heading'?'heading'+n.attrs.level:n.type.name;}),currentKind=kinds.every(k=>k===kinds[0])?kinds[0]:undefined;
+    const node=editor.state.doc.nodeAt(block.from),convertible=node&&(['paragraph','heading','codeBlock'].includes(node.type.name)||block.item);
+    setMenu({anchor,x:r.left,y:r.bottom,label:ui.editorTools.blockOptions,actions:[{label:ui.editorTools.duplicateBlock,icon:'copy',run:()=>change('duplicate')},{label:ui.editorTools.deleteBlock,icon:'trash',danger:true,run:()=>change('delete')},...(convertible?[{label:ui.editorTools.turnInto,icon:'format' as const,submenu:[['paragraph','Text'],['heading1','Heading 1'],['heading2','Heading 2'],['heading3','Heading 3'],['bulletList','Bullet list'],['orderedList','Numbered list'],['taskList','Checklist'],['codeBlock','Code block']].map(([kind,label])=>({label,checked:currentKind===kind,checkType:'radio' as const,run:()=>change(kind)}))}]:[]),{label:ui.editor.moveUp,icon:'up',separatorBefore:true,run:()=>move('up')},{label:ui.editor.moveDown,icon:'arrowDown',run:()=>move('down')},...block.item?[{label:ui.editor.indent,icon:'forward' as const,run:()=>move('indent')},{label:ui.editor.outdent,icon:'back' as const,run:()=>move('outdent')}]:[],{label:ui.editorTools.symbolsAndEmoji,icon:'text',run:()=>setPopup({kind:'symbols',anchor})}]});
   }
   const selection=editor.state.selection,selectedText=!selection.empty&&!(selection instanceof NodeSelection),range={from:selection.from,to:selection.to};
   const format=(apply:()=>void)=>{editor.commands.setTextSelection(range);action(ui.editor.formatting,apply);};
@@ -92,7 +93,7 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
       <Tool hidden={canvas} icon="plus" label={ui.editor.addBlock} onClick={e=>{addAbove.current=e.altKey;const r=e.currentTarget.getBoundingClientRect();setMenu({anchor:e.currentTarget,x:r.left,y:r.bottom,label:ui.editor.addBlock,actions:[
         {label:ui.editor.text,icon:'format',run:()=>add({type:'paragraph'})},
         {label:tooltips.editor.heading,icon:'h1',run:()=>add({type:'heading',attrs:{level:2}})},
-        {label:ui.math.title,icon:'code',run:()=>add({type:'mathBlock',attrs:{latex:''}})},
+        {label:ui.math.title,icon:'math',run:()=>add({type:'mathBlock',attrs:{latex:''}})},
         {label:tooltips.editor.bulletList,icon:'list',run:()=>add({type:'bulletList',content:[{type:'listItem',content:[{type:'paragraph'}]}]})},
         {label:tooltips.editor.checklist,icon:'tasks',run:()=>add({type:'taskList',content:[{type:'taskItem',attrs:{checked:false},content:[{type:'paragraph'}]}]})},
         {label:tooltips.editor.quote,icon:'quote',run:()=>add({type:'blockquote',content:[{type:'paragraph'}]})},
@@ -112,7 +113,7 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
         const pointer=event.pointerId,startX=event.clientX,startY=event.clientY,offsetY=startY-rect.top,offsetX=startX-rect.left;
         const allItems=sources.every(b=>b.item),targets:EditorBlock[]=allItems?blocks:[];
         if(!allItems)before.forEach((node,from,index)=>{if(index)targets.push({path:[index],from,to:from+node.nodeSize,depth:0,item:false});});
-        const info=context?.snapshot.cards.find(card=>card.path===path),id=crypto.randomUUID(),title=(before.nodeAt(sources[0].from)?.textContent??'').trim().slice(0,80)||'Extracted blocks';
+        const info=context?.snapshot.cards.find(card=>card.path===path),id=crypto.randomUUID(),title=(sources.flatMap(block=>{const node=before.nodeAt(block.from);return node?.textBetween(0,node.content.size,'\n','\n').split('\n')??[];}).find(line=>line.trim())??'').trim().slice(0,80)||'Extracted blocks';
         const extracted=info&&!info.source?extractEditorBlocks(editor.getJSON(),paths,'card:'+id,title):null;
         const exportDrag:DocumentDrag|undefined=extracted?{key:'blocks:'+id,path,blocks:{id,title,before:sourceBody??cardMarkdown(editor)+footer,body:cardMarkdown(editor,extracted.document)+footer,content:editor.markdown!.serialize(extracted.content)}}:undefined;
         let exportReady=false;
@@ -160,6 +161,7 @@ export function EditorControls({sourceBody,footer='',onAnnotate,editor,path,onIm
       <Tool icon="italic" label={tooltips.editor.italic} aria-pressed={editor.isActive('italic')} onClick={()=>format(()=>editor.chain().focus().toggleItalic().run())}/>
       <Tool icon="strike" label={ui.editorTools.strikethrough} aria-pressed={editor.isActive('strike')} onClick={()=>format(()=>editor.chain().focus().toggleStrike().run())}/>
       <Tool icon="code" label={ui.editorTools.inlineCode} aria-pressed={editor.isActive('code')} onClick={()=>format(()=>editor.chain().focus().toggleCode().run())}/>
+      <Tool icon="math" label={ui.math.inline} disabled={!selection.$from.sameParent(selection.$to)||!selection.$from.parent.inlineContent||!!selection.$from.parent.type.spec.code||editor.state.doc.textBetween(range.from,range.to).length!==range.to-range.from} onClick={()=>format(()=>editor.chain().focus().insertContentAt(range,{type:'mathInline',attrs:{latex:editor.state.doc.textBetween(range.from,range.to)}}).setNodeSelection(range.from).run())}/>
       <Tool icon="link" label={tooltips.editor.linkToAnotherCard} onClick={e=>{setPopup({kind:'link',anchor:e.currentTarget});}}/>
       <Tool icon="art" label={ui.editor.textColor} onClick={e=>setPopup({kind:'color',anchor:e.currentTarget})}/>
     </div>}

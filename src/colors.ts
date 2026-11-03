@@ -1,6 +1,8 @@
 import type { CardInfo, PaletteColor, Placement } from './shared';
 import { ui } from './text/ui';
 export const DEFAULT_PALETTE:PaletteColor[] = Object.entries({rose:'#c9838a',terracotta:'#c99579',ochre:'#c6ad72',sage:'#91aa8b',teal:'#80aaa6',blue:'#8aa5c5',lavender:'#a699c3',slate:'#8b929e'}).map(([id,color])=>({id,color,name:ui.style.paletteNames[id as keyof typeof ui.style.paletteNames]}));
+export const APP_ACCENT_PALETTE:PaletteColor[]=Object.entries({blue:'#3575f0',violet:'#7854c7',teal:'#007f82',green:'#2f7f57',amber:'#aa6916',rose:'#b84670'}).map(([id,color])=>({id,color,name:ui.style.accentNames[id as keyof typeof ui.style.accentNames]}));
+export const DEFAULT_ACCENT=APP_ACCENT_PALETTE[0].color;
 export const isHexColor=(value:unknown):value is string=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value);
 // A saved Theme choice (null) overrides legacy per-placement fills; absent metadata preserves them.
 export const cardFill=(card:CardInfo|undefined,placement?:Placement)=>card?.fillColor!==undefined?card.fillColor??undefined:placement?.fillColor;

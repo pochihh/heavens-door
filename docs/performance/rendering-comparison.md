@@ -78,3 +78,20 @@ Temporary package: `0.1.2718-test.3`, installed and signature-verified under `.l
 ## Bounded tile follow-up
 
 The [bounded preview experiment](bounded-previews.md) avoids retaining the complete rich DOM and compares separate preview drawing with cached tiles. It adds byte-budget, stale-render, transparency, first-click, saved-cache and repeated-pressure checks. It remains isolated because full interaction, layering, dynamic invalidation and resource gates are incomplete.
+
+
+## October 30: tab drops and board grab surfaces
+
+The Main Dock drop handler used to clear the drag preview before waiting for document I/O, then applied the new order afterward. A native regression blocks the document queue for 500 ms and samples the displayed order every animation frame. The 10,000-element no-PDF fixture reproduced 31 frames at the old order; applying the tab order synchronously produced zero rebound frames. File saves and document selection still run through the serialized session queue.
+
+The same normal-app/worker fixture profiles native card dragging. Before/after runs recorded a 17.6 ms p95 frame interval in both cases. Hit-testing profiler samples fell from 97 to 51 after sharing drop/tab hit tests, batching them once per frame and caching the dragged selection. These samples do not establish an overall latency improvement: p99 was 83.4/50.5 ms, and worst frames including drop/save were 133.3/199.9 ms. Long save/drop frames remain. A later run overlapped the full test suite and is a correctness check, not a comparable performance measurement.
+
+The board-grab regression is separate: a connector from a covered card could receive a press on the board title before the next proximity-hint frame. Native pointer input now verifies dragging from that title, no accidental rename, and undo, in both renderers. Pointer-down routes covered hints to the actual visible placement, while selected edge endpoints keep priority at their own attachment.
+
+Reproduce the real 6,000-placement + 4,000-edge workload in a disposable workspace:
+
+```sh
+node --import tsx scripts/test-retained.mjs interactions --full --no-pdf --dom --interactions
+```
+
+Omit `--no-pdf` to retain the four PDF assets in the mixed fixture. This interaction run focuses on a readable card; it does not claim all 80 PDF pages are in view. The existing full retained/navigation suites cover overview and PDF continuity. The final mixed run confirms 6,000 placements plus 4,000 edges, including four PDF assets, with zero tab rebound frames. Its drag/drop frame intervals were p95 18.7 ms, p99 66.1 ms and maximum 284.1 ms; this again leaves save/drop pauses above the budget. Raw reports and CPU profiles are under `.local/retained-check/interaction-before`, `interaction-after`, `interaction-final` and `interaction-mixed`.

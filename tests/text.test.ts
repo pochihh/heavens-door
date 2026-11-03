@@ -30,3 +30,16 @@ test('renderer labels and menu copy stay in the catalogs, except deferred Settin
   }
   assert.deepEqual(inline,[],`Move UI copy into src/text/ui.ts or src/text/tooltips.ts:\n${inline.join('\n')}`);
 });
+
+
+test('app-authored UI terms follow the approved terminology guide',()=>{
+ const root=new URL('../src/',import.meta.url),legacy=/\b(?:tab groups?|main dock|side docks?|tab strips?|tab bars?|document toolbar|window toolbar|main toolbar|action ribbon|activity bar|mother (?:whiteboard|board)|sub-whiteboard|sub-board|action hub)\b/i,found:string[]=[];
+ function scan(directory:URL){for(const entry of readdirSync(directory,{withFileTypes:true})){const path=new URL(entry.name+(entry.isDirectory()?'/':''),directory);if(entry.isDirectory()){scan(path);continue;}if(!/\.tsx?$/.test(entry.name))continue;const tree=ts.createSourceFile(path.pathname,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,entry.name.endsWith('x')?ts.ScriptKind.TSX:ts.ScriptKind.TS);
+  function visit(node:ts.Node){
+   // Keep old aliases searchable in Settings, without displaying them as UI labels.
+   if(ts.isPropertyAssignment(node)&&node.name.getText(tree)==='keywords')return;
+   const text=ts.isStringLiteralLike(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)?node.text:ts.isJsxText(node)?node.text.trim():'';
+   if(legacy.test(text))found.push(`${path.pathname}:${tree.getLineAndCharacterOfPosition(node.getStart(tree)).line+1}: ${text}`);ts.forEachChild(node,visit);
+  }visit(tree);
+ }}scan(root);assert.deepEqual(found,[],`Use docs/ui-terminology.md for visible wording; preserve internal keys:\n${found.join('\n')}`);
+});

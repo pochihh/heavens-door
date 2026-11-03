@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {act,useState} from 'react';
 import {MainTabs} from '../src/renderer/MainTabs';
-import {documentDropTarget,dropDocumentAt,type DocumentDrop} from '../src/renderer/card-drop';
+import {documentDropTarget,dropDocumentAt,previewDocumentDrop,clearDocumentNavigation,type DocumentDrop} from '../src/renderer/card-drop';
 import {closeTabs,moveTab,navigateTab,panes,removeEmptyPanes,splitPane,pane,tabDocument,validateDocuments,type Pane} from '../src/layout';
 import type {Bridge,Card,Snapshot,Request} from '../src/shared';
 
@@ -21,9 +21,10 @@ function setup(){
 test('overflow tabs reveal selection and resize, scroll and search, retain drag previews and keyboard menus',async()=>{
   const dom=setup(),{createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);let resize=()=>{},selected='',closed='',menu='';
   Object.assign(globalThis,{ResizeObserver:class {constructor(callback:()=>void){resize=callback;} observe(){} disconnect(){}}});
+  const openSearch=async()=>{await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Document Tabs actions"]')!.click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Search tabs')!.click());};
   const initial=['Home','Robot arm planning and prototyping','Project','Journal','Last note'].map((title,i)=>({key:String(i),title,path:'Projects/'+title+'.md',icon:<span aria-hidden="true">◇</span>}));
   let render=()=>{};
-  function Fixture(){const [active,setActive]=useState('0'),[items,setItems]=useState(initial),[dragging,setDragging]=useState(false);render=()=>setDragging(value=>!value);return <MainTabs group="one" items={items} active={active} dragging={dragging} onSelect={key=>{selected=key;setActive(key);}} onClose={key=>{closed=key;setItems(items.filter(item=>item.key!==key));}} onMenu={key=>{menu=key;}} onDrag={()=>{}}><span/></MainTabs>;}
+  function Fixture(){const [active,setActive]=useState('0'),[items,setItems]=useState(initial),[dragging,setDragging]=useState(false);render=()=>setDragging(value=>!value);return <MainTabs group="one" items={items} active={active} dragging={dragging} onSelect={key=>{selected=key;setActive(key);}} onClose={key=>{closed=key;setItems(items.filter(item=>item.key!==key));}} onMenu={key=>{menu=key;}} onDrag={()=>{}} actions={[]}/>;}
   try{
     await act(async()=>root.render(<Fixture/>));
     const list=document.querySelector<HTMLElement>('[role=tablist]')!;let width=200;
@@ -38,14 +39,36 @@ test('overflow tabs reveal selection and resize, scroll and search, retain drag 
     width=120;await act(async()=>resize());assert.equal(list.scrollLeft,280,'a narrower group retains its active tab');
     await act(async()=>render());list.scrollLeft=0;await act(async()=>resize());assert.equal(list.scrollLeft,0,'resize never fights drag edge scrolling');await act(async()=>render());assert.equal(list.scrollLeft,280);
     await act(async()=>last.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Home',bubbles:true})));assert.equal(selected,'0');assert.equal(list.scrollLeft,0);
-    await act(async()=>document.querySelector<HTMLButtonElement>('[data-tab-key="0"] [role=tab]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true})));assert.equal(menu,'0');assert.equal(selected,'0');await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="Search tabs"]')!.click());
+    await act(async()=>document.querySelector<HTMLButtonElement>('[data-tab-key="0"] [role=tab]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true})));assert.equal(menu,'0');assert.equal(selected,'0');await openSearch();
     assert.equal(document.querySelectorAll('.main-tab-picker [role=option]').length,5);assert.match(document.querySelector('.main-tab-picker')!.textContent!,/Robot arm planning and prototyping/);
+    assert.equal(document.querySelectorAll('.main-tab-picker .menu-check,.main-tab-picker input[type=checkbox],.main-tab-picker [role=checkbox]').length,0,'tab search uses highlight instead of check controls');
+    assert.deepEqual([...document.querySelectorAll('.tab-picker-path')].map(el=>el.textContent),initial.map(item=>item.path),'paths are visible secondary information');
+    assert.equal(document.querySelector('.main-tab-picker [aria-selected=true] .tab-picker-title')!.textContent,'Home');
     const input=document.querySelector<HTMLInputElement>('.main-tab-picker input')!;
     await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,'Robot');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(document.querySelectorAll('.main-tab-picker [role=option]').length,1);
     await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})));assert.equal(selected,'1');assert.equal(document.querySelector('.main-tab-picker'),null);
+    await openSearch();assert.equal(document.querySelectorAll('.main-tab-picker [aria-selected=true]').length,1);assert.equal(document.querySelector('.main-tab-picker [aria-selected=true] .tab-picker-title')!.textContent,initial[1].title,'reopening reflects the active tab');
+    const pathInput=document.querySelector<HTMLInputElement>('.main-tab-picker input')!;await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(pathInput,'Projects/Journal.md');pathInput.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.equal(document.querySelectorAll('.main-tab-picker [role=option]').length,1);assert.equal(document.querySelector('.main-tab-picker .tab-picker-path')!.textContent,'Projects/Journal.md','visible paths remain searchable');await act(async()=>pathInput.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(document.querySelector('.main-tab-picker'),null);assert.equal(selected,'1','dismissing path search does not select a result');
     await act(async()=>document.querySelector('[data-tab-key="2"]')!.dispatchEvent(new dom.window.MouseEvent('auxclick',{button:1,bubbles:true,cancelable:true})));assert.equal(closed,'2');
     width=500;list.scrollLeft=0;await act(async()=>resize());assert.equal(document.querySelector('.tab-scroll'),null,'arrow controls stay absent when all tabs fit');
   }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+test('Document Tabs actions dismiss outside and hand off Search tabs without a second toolbar button',async()=>{
+ const dom=setup(),{createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')!);let split=0,outside=0;
+ const render=(empty=false)=>act(async()=>root.render(<><MainTabs group="one" active={empty?'':'note'} items={empty?[]:[{key:'note',title:'Note',path:'Ideas/Note.md',icon:<span/>}]} dragging={false} onSelect={()=>{}} onClose={()=>{}} onMenu={()=>{}} onDrag={()=>{}} actions={[{label:'Split right',run:()=>split++}]}/><button id="outside" onClick={()=>outside++}>Outside</button></>));
+ const toggle=()=>document.querySelector<HTMLButtonElement>('[aria-label="Document Tabs actions"]')!,open=()=>act(async()=>toggle().click());
+ try{
+  await render();assert.ok(!document.querySelector('.tab-picker-toggle'));assert.ok(!document.querySelector('.tab-strip [aria-label="Search tabs"]'));
+  await open();assert.equal(toggle().getAttribute('aria-expanded'),'true');assert.equal(document.querySelectorAll('[role=menu]').length,1);
+  const background=document.getElementById('outside')!;await act(async()=>{background.dispatchEvent(new dom.window.MouseEvent('pointerdown',{bubbles:true}));background.focus();background.click();});assert.ok(!document.querySelector('[role=menu]'));assert.equal(outside,1,'outside click still reaches its target');assert.ok(document.activeElement===background,'outside target keeps focus');
+  await open();await act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.ok(!document.querySelector('[role=menu]'));assert.equal(toggle().getAttribute('aria-expanded'),'false');
+  await open();await open();assert.ok(!document.querySelector('[role=menu]'),'trigger toggles closed once');
+  await open();await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Search tabs')!.click());assert.ok(!document.querySelector('[role=menu]'));assert.ok(document.querySelector('.main-tab-picker'));assert.ok(document.activeElement===document.querySelector('.main-tab-picker input'),'search receives focus after the menu closes; active='+document.activeElement?.tagName);
+  await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.ok(!document.querySelector('.main-tab-picker'));
+  await open();await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Split right')!.click());assert.equal(split,1);assert.ok(!document.querySelector('[role=menu]'),'chosen action closes the menu');
+  await render(true);await open();assert.equal([...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Search tabs')!.disabled,true);
+ }finally{await act(async()=>root.unmount());dom.window.close();}
 });
 
 test('committed closes and moves collapse nested empty splits while retaining a final pane and tab history',()=>{
@@ -107,9 +130,10 @@ test('inactive board tabs accept documents without activating the tab or becomin
       {key:'note-tab',title:'Note',icon:<span/>},
       {key:'visited-tab',title:'Destination',boardFolder:'Boards/Destination',icon:<span/>},
       {key:'home-tab',title:'Home',boardFolder:'',icon:<span/>},
-    ]} dragging={false} onSelect={()=>selected++} onClose={()=>{}} onMenu={()=>{}} onDrag={()=>{}}><span/></MainTabs>));
+    ]} dragging={false} onSelect={()=>selected++} onClose={()=>{}} onMenu={()=>{}} onDrag={()=>{}} actions={[]}/>));
     const board=document.querySelector<HTMLElement>('[data-tab-key="visited-tab"]')!,home=document.querySelector<HTMLElement>('[data-tab-key="home-tab"]')!,note=document.querySelector<HTMLElement>('[data-tab-key="note-tab"]')!;
     let hit=board.querySelector<HTMLElement>('[role=tab]')!;document.elementsFromPoint=()=>[hit];
+    let hitTests=0;document.elementsFromPoint=()=>{hitTests++;return [hit];};assert.equal(previewDocumentDrop({key:'card:c',path:'Slipbox/C.md'},100,20),true);assert.equal(hitTests,1,'preview and tab hover reuse one document hit test');clearDocumentNavigation();
     assert.equal(documentDropTarget({key:'card:c',path:'Slipbox/C.md'},100,20),board);
     assert.equal(dropDocumentAt({key:'card:c',path:'Slipbox/C.md'},100,20),true);assert.equal(drops[0].folder,'Boards/Destination');assert.equal(drops[0].atPointer,false);assert.equal(selected,0);assert.equal(board.querySelector('[role=tab]')!.getAttribute('aria-selected'),'false');
     assert.equal(documentDropTarget({key:'board:Boards/Destination'},100,20),null);assert.equal(documentDropTarget({key:'board:Boards'},100,20),null);

@@ -1,3 +1,5 @@
+import {clampCamera} from '../board-camera';
+import {arrangeBoard,prepareArrangement,fitPlacementSize,DEFAULT_ARRANGEMENT,type ArrangementAction,type ArrangementBox} from '../board-arrangement';
 import {BOARD_PREVIEW_INVALIDATED} from './board-preview-store';
 import {connectorScene} from './connector-proximity';
 import {boardMeasurements,rememberBoardMeasurements,type BoardMeasurement} from './board-measurements';
@@ -80,7 +82,7 @@ const OverviewImage=memo(function OverviewImage({html,path}:{html:string;path:st
   return <div className="board-overview-image" dangerouslySetInnerHTML={{__html:content}}/>;
 });
 interface Props {
-  adaptiveDetail?:boolean;icons?:Preferences['icons'];onRenameBoard?:(folder:string,name:string)=>Promise<void>;
+  arrangement?:Preferences['arrangement'];adaptiveDetail?:boolean;icons?:Preferences['icons'];onRenameBoard?:(folder:string,name:string)=>Promise<void>;
   onAttachPdf?:(files:(File|string)[]|undefined,x:number,y:number)=>Promise<void>;
   keybindings?:Preferences['keybindings'];hasCopiedStyle?:boolean;onCopyStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;onPasteStyle?:(base:Board,placements:string[],edges:string[])=>Promise<void>;
   onConvertTopics?:(base:Board,ids:string[])=>Promise<CardInfo[]>;
@@ -99,7 +101,7 @@ interface Props {
 interface Gesture {
   type: 'pan' | 'move' | 'resize' | 'select'; ids: string[]; x: number; y: number; pointerId: number;
   board: Board; camera: Camera; rect: DOMRect; button:number; additive: boolean; initialSelection: string[]; initialEdges:string[];
-  moved: boolean; manualHeight?:boolean; placements?:Map<string,Placement>; movingEdges?:Edge[]; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
+  moved: boolean; document?:DocumentDrag|null; placements?:Map<string,Placement>; movingEdges?:Edge[]; resizeHeight?:number; editOnClick?: {id:string;focus:EditorFocus};
 }
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,select,[contenteditable="true"]');
 
@@ -107,8 +109,9 @@ const autoHeight=(p:Placement)=>!p.object&&!p.folder&&p.autoHeight!==false;
 const boardTheme=()=>typeof getComputedStyle==='function'?(()=>{const style=getComputedStyle(document.documentElement);return [style.fontFamily,style.fontSize,...['--text','--canvas','--card','--muted','--card-radius','--editor-font-size','--editor-line-height','--whiteboard-font-size-s','--whiteboard-font-size-m','--whiteboard-font-size-l','--whiteboard-font-size-xl'].map(name=>style.getPropertyValue(name))].join(':');})():'';
 const heightKey=(p:Placement)=>p.id+(p.collapsed?':collapsed':':expanded');
 
-export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiveDetail=false,onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
+export const Whiteboard = memo(function Whiteboard({ arrangement=DEFAULT_ARRANGEMENT,icons,onRenameBoard,adaptiveDetail=false,onAttachPdf,keybindings,hasCopiedStyle,onCopyStyle,onPasteStyle,onConvertTopics,addTagActions,reveal,onRevealed,onOpenCard,textDefaults,edgeDefaults, mentions=[], onSelection, onStyle, board, cards, onSave, onOpen, onCreate, onCreateBoard, draft, onTitleDone, onEdit, onFinish, cardDetails, inputMode='auto', onCycleInput, enabled=true, initialCamera, onCamera, boards=[], onOpenFolder, onReference, onRename, onDelete, onPlaceReference,onCreateReference }: Props) {
   const imageImportLive=useRef(true);
+  const [arranging,setArranging]=useState(false);
   const [objectError,setObjectError]=useState(''),[imageDrop,setImageDrop]=useState(false);
   useEffect(()=>{imageImportLive.current=true;return()=>{imageImportLive.current=false;};},[]);
   const viewport = useRef<HTMLDivElement>(null);
@@ -134,7 +137,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
   const dragPoint = useRef({ x: 0, y: 0 });
   const cache = useRef(new Map<string, CardPreview>());
   const [size, setSize] = useState({ width: 1000, height: 800 });
-  const [view, setView] = useState<Camera>(()=>initialCamera??{ x: 20, y: 20, zoom: 0.85 });
+  const [view, setView] = useState<Camera>(()=>initialCamera?clampCamera(initialCamera):{ x: 20, y: 20, zoom: 0.85 });
   const [objectPreview,setObjectPreview]=useState<{id:string;width:number;x?:number}>();
   const [working, setWorking] = useState<Board | null>(null);
   const measurementKey=(window.door?.assetUrl?.('')??'')+board.path;
@@ -152,6 +155,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
   const geometryTop=(item:Placement)=>{const p=placements.get(item.id)??item;return !p.collapsed&&measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]?.top??0:0;};
   const geometryCard=(p:Placement)=>({...p,x:xOf(p),y:p.y+geometryTop(p),width:!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf'?p.width:widthOf(p)});
   const geometryHeight=(item:Placement)=>{const p=placements.get(item.id)??item;return measuredHeight(p)!==undefined?measuredHeights[heightKey(p)]!.pdfHeight??heightOf(p)-geometryTop(p):heightOf(p);};
+  const mentionPoint=(p:Placement,annotation?:string)=>{if(annotation&&!p.collapsed){const saved=placements.get(p.id)??p,note=measuredHeight(saved)!==undefined?measuredHeights[heightKey(saved)]?.notes?.[annotation]:undefined;return note?{x:p.x+note.x,y:p.y+note.y}:undefined;}return {x:p.x+p.width/2,y:p.y+geometryHeight(p)/2};};
   const expandedHeight=(p:Placement)=>naturalHeight(p)?(measuredHeight({...p,collapsed:false})??p.height):p.height;
   const [menu,setMenu]=useState<(MenuState&{placementId?:string})|null>(null);
   const [reference,setReference]=useState<{x:number;y:number;screenX:number;screenY:number}|null>(null),[referenceAnchor,setReferenceAnchor]=useState<HTMLSpanElement|null>(null),[referenceBusy,setReferenceBusy]=useState(false),[referenceError,setReferenceError]=useState('');
@@ -187,14 +191,14 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
   useLayoutEffect(() => {
     const element = viewport.current!;
     const nav = new BoardNavigation(element, world.current!, grid.current!, zoomLabel.current!, camera => {setView(camera);latest.current.onCamera?.(camera);});
-    if(initialCamera) { nav.set(initialCamera); nav.flush(); setView(initialCamera); }
+    if(initialCamera) { nav.set(initialCamera); nav.flush(); setView(nav.current); }
     navigation.current = nav;
     const observer = new ResizeObserver(([entry]) => {
       setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
     observer.observe(element);
     const wheel = (event: WheelEvent) => {
-      if ((event.target as HTMLElement).closest('.canvas-controls,.editor-tools,.card-details')) return;
+      if ((event.target as HTMLElement).closest('.canvas-controls,.board-arrangement-toolbar,.editor-tools,.card-details')) return;
       const reader=(event.target as HTMLElement).closest<HTMLElement>('.annotation-rail');
       if(reader&&!event.ctrlKey&&!event.metaKey&&reader.scrollHeight>reader.clientHeight)return;
       if (gesture.current) { event.preventDefault(); return; }
@@ -287,12 +291,29 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
     else{clearTimeout(hoverPending.current?.timer);hoverPending.current=undefined;}
     return hit;
   }
+  function relayPointer(e:PointerEvent,receiver:Element){
+    e.preventDefault();e.stopPropagation();
+    if(e.button===0&&receiver instanceof HTMLElement)relayed.current={target:receiver,pointer:e.pointerId,x:e.clientX,y:e.clientY};
+    receiver.dispatchEvent(new window.PointerEvent('pointerdown',{bubbles:true,cancelable:true,button:e.button,buttons:e.buttons,pointerId:e.pointerId,clientX:e.clientX,clientY:e.clientY,shiftKey:e.shiftKey,metaKey:e.metaKey,ctrlKey:e.ctrlKey}));
+  }
   function capture(e: PointerEvent) {
+    const handle=(e.target as Element).closest<SVGElement>('.edge-anchor,.edge-keyboard-anchor');
+    if(e.button===0&&handle){
+      if(surface)promoteAt(e.clientX,e.clientY,true);
+      const receiver=viewport.current!.ownerDocument.elementsFromPoint?.(e.clientX,e.clientY).find(node=>node instanceof HTMLElement&&node.closest('[data-placement]'));
+      const placement=receiver?.closest<HTMLElement>('[data-placement]'),edge=handle.dataset.edgeId&&current.edges.find(edge=>edge.id===handle.dataset.edgeId),owner=edge?edge[handle.dataset.edgeEndpoint as 'from'|'to']:handle.dataset.anchorCard;
+      if(receiver&&placement&&(!edge||owner!==placement.dataset.placement)){
+        const rect=placement.getBoundingClientRect();
+        // A cursor hint can be one frame old; covered content wins at the actual press position.
+        if(e.clientX>rect.left+1&&e.clientX<rect.right-1&&e.clientY>rect.top+1&&e.clientY<rect.bottom-1){relayPointer(e,receiver);return;}
+      }
+    }
+
     if(surface&&(e.button===0||e.button===2)&&!spaceDown.current&&e.target===viewport.current){
       const hit=promoteAt(e.clientX,e.clientY,true),rect=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current,edge=hit?undefined:surface.edgeHit((e.clientX-rect.left-camera.x)/camera.zoom,(e.clientY-rect.top-camera.y)/camera.zoom,camera.zoom);
       const target=hit?document.elementFromPoint(e.clientX,e.clientY) as HTMLElement:null,path=edge?viewport.current!.querySelector<SVGElement>('[data-edge="'+edge.id+'"] .edge-hit'):null;
       const receiver=target?.closest('[data-placement]')?target:hit?[...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].find(node=>node.dataset.placement===hit.id):path;
-      if(receiver){e.preventDefault();e.stopPropagation();if(e.button===0&&receiver instanceof HTMLElement)relayed.current={target:receiver,pointer:e.pointerId,x:e.clientX,y:e.clientY};receiver.dispatchEvent(new window.PointerEvent('pointerdown',{bubbles:true,cancelable:true,button:e.button,buttons:e.buttons,pointerId:e.pointerId,clientX:e.clientX,clientY:e.clientY,shiftKey:e.shiftKey,metaKey:e.metaKey,ctrlKey:e.ctrlKey}));if(e.button===2){rightPress.current=true;receiver.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:e.clientX,clientY:e.clientY}));}return;}
+      if(receiver){relayPointer(e,receiver);if(e.button===2){rightPress.current=true;receiver.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:e.clientX,clientY:e.clientY}));}return;}
     }
     const target = e.target as HTMLElement;
     // React portals still bubble through the board; floating editor controls are not canvas presses.
@@ -300,7 +321,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
     rightPress.current=e.button===2;
     if(e.button===1||(e.button===0&&spaceDown.current)){begin(e,'pan');return;}
     if (target.closest('.edge-layer,.edge-handles')) return;
-    if (target.closest('.canvas-controls,.canvas-empty button,.card-editor,.pdf-reader,.annotation-rail') || editable(target)) return;
+    if (target.closest('.canvas-controls,.board-arrangement-toolbar,.canvas-empty button,.card-editor,.pdf-reader,.annotation-rail') || editable(target)) return;
     const card = target.closest<HTMLElement>('[data-placement]');
     if (e.button === 1 || (e.button === 0 && spaceDown.current) || (e.button === 2 && !card)) {
       begin(e, 'pan'); return;
@@ -312,8 +333,8 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
       const id = card.dataset.placement!; if (!selected.includes(id)) {setSelected([id]);setSelectedEdges([]);}
     }
   }
-  function startCard(e: PointerEvent, id: string) {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button,a,input,.card-editor,.annotation-rail') || (e.target as HTMLElement).closest('.pdf-reader')&&!pdfPageDragTarget(e.target)) return;
+  function startCard(e: PointerEvent, id: string, title=false) {
+    if (e.button !== 0 || !title&&(e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a,input,.card-editor,.annotation-rail') || (e.target as HTMLElement).closest('.pdf-reader')&&!pdfPageDragTarget(e.target)) return;
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       onFinish?.();
       setSelected(previous => e.shiftKey ? [...new Set([...previous, id])] : previous.includes(id) ? previous.filter(p => p !== id) : [...previous, id]);
@@ -346,9 +367,10 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
   }
   const externalPhantom=useRef<HTMLElement|null>(null);
   function draggedDocument(g:Gesture):DocumentDrag|null {
-    const items=g.board.cards.filter(p=>g.ids.includes(p.id)),p=items[0];if(g.type!=='move'||!p)return null;
+    if(g.document!==undefined)return g.document;
+    const ids=new Set(g.ids),items=g.board.cards.filter(p=>ids.has(p.id)),p=items[0];if(g.type!=='move'||!p)return g.document=null;
     const left=Math.min(...items.map(p=>p.x)),top=Math.min(...items.map(p=>p.y));
-    return {key:p.folder?'board:'+p.folder:'card:'+p.cardId,path:p.folder??lookup.get(p.cardId)?.path,source:board.folder,placement:p.id,
+    return g.document={key:p.folder?'board:'+p.folder:'card:'+p.cardId,path:p.folder??lookup.get(p.cardId)?.path,source:board.folder,placement:p.id,
       selection:{ids:g.ids,folders:items.flatMap(p=>p.folder?[p.folder]:[]),board:g.board,offset:{x:(g.x-g.rect.left-g.camera.x)/g.camera.zoom-left,y:(g.y-g.rect.top-g.camera.y)/g.camera.zoom-top}}};
   }
   function selectionPhantom(g:Gesture){
@@ -380,13 +402,52 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
     for(const edge of g.movingEdges){const a=moved.get(edge.from)??base.get(edge.from),b=moved.get(edge.to)??base.get(edge.to);if(!a||!b)continue;
       const geometry=edgeGeometry(edge,geometryCard(a),geometryCard(b),geometryHeight),node=viewport.current?.querySelector('[data-edge="'+edge.id+'"]');node?.querySelectorAll('path').forEach(path=>path.setAttribute('d',geometry.path));const label=node?.querySelector('foreignObject');label?.setAttribute('x',String(geometry.midpoint.x-100));label?.setAttribute('y',String(geometry.midpoint.y-18));
     }
-    viewport.current?.querySelectorAll<SVGLineElement>('line[data-mention-from]').forEach(line=>{const a=line.dataset.mentionFrom!,b=line.dataset.mentionTo!;if(!moved.has(a)&&!moved.has(b))return;for(const [id,n] of [[a,1],[b,2]] as const){const item=moved.get(id)??base.get(id);if(!item)continue;const p=geometryCard(item);line.setAttribute('x'+n,String(p.x+p.width/2));line.setAttribute('y'+n,String(p.y+geometryHeight(p)/2));}});
+    viewport.current?.querySelectorAll<SVGLineElement>('line[data-mention-from]').forEach(line=>{const a=line.dataset.mentionFrom!,b=line.dataset.mentionTo!;if(!moved.has(a)&&!moved.has(b))return;for(const [id,n] of [[a,1],[b,2]] as const){const item=moved.get(id)??base.get(id);if(!item)continue;const point=mentionPoint(geometryCard(item),n===1?line.dataset.mentionAnnotation:undefined);if(point){line.setAttribute('x'+n,String(point.x));line.setAttribute('y'+n,String(point.y));}}});
+  }
+  const ordinaryCard=(p:Placement)=>!p.object&&!p.folder&&lookup.get(p.cardId)?.source?.type!=='pdf';
+  const canFitSize=(p:Placement)=>!!p.folder||ordinaryCard(p);
+  function fitSizes(){
+    if(arranging)return;onFinish?.();const base=pendingSave.current??current,ids=new Set(selected);
+    const cards=base.cards.map(p=>ids.has(p.id)&&canFitSize(p)?fitPlacementSize(p,arrangement):p);
+    if(cards.some((p,i)=>p!==base.cards[i]))save({...base,cards},ui.arrangement.fitSizes,base);
+  }
+  async function organize(action:ArrangementAction){
+    if(arranging)return;onFinish?.();setObjectError('');setArranging(true);
+    const base=pendingSave.current??current,ids=[...selected],chosen=new Set(ids),boxes=new Map<string,ArrangementBox>(),measured=new Map<string,number>();
+    const renderedNodes=new Map([...world.current!.querySelectorAll<HTMLElement>('[data-placement]')].map(node=>[node.dataset.placement!,node]));
+    const visiblePreviews=new Map([...renderedNodes].flatMap(([id,node])=>{const preview=node.querySelector<HTMLElement>(':scope>.card-preview[data-ready=true]');return preview?[[id,preview] as const]:[];}));
+    const host=document.createElement('div');host.style.cssText='position:absolute;left:-100000px;top:0;visibility:hidden;pointer-events:none';world.current!.append(host);
+    try{
+      let next={...base,cards:base.cards.map(p=>action==='auto'&&chosen.has(p.id)?prepareArrangement(p,arrangement,ordinaryCard(p)):p)};
+      const cardsToMeasure=action==='auto'?next.cards.filter(p=>chosen.has(p.id)&&!p.object&&!p.folder&&lookup.has(p.cardId)&&lookup.get(p.cardId)?.source?.type!=='pdf'):[];
+      for(let i=0;i<cardsToMeasure.length;i+=8){
+        await Promise.all(cardsToMeasure.slice(i,i+8).map(async p=>{
+          const card=lookup.get(p.cardId)!,rendered=visiblePreviews.get(p.id),cached=cache.current.get(card.path),html=rendered?.innerHTML??(cached?.revision===card.revision?cached.html:preview((await window.door.request<Card>({kind:'card',path:card.path})).body,card.path));
+          const node=document.createElement('article');node.className='board-card auto-height';node.style.cssText='position:relative;flex:none;width:'+p.width+'px;height:auto';const content=document.createElement('div');content.className='prose card-preview';content.innerHTML=html;node.append(content);host.append(node);
+          await Promise.all([...content.querySelectorAll('img')].map(image=>image.decode().catch(()=>undefined)));
+          await document.fonts.ready;measured.set(p.id,node.offsetHeight);node.remove();
+        }));
+        if(!imageImportLive.current)return;
+        await new Promise<void>(resolve=>setTimeout(resolve,0));
+      }
+      next={...next,cards:next.cards.map(p=>measured.has(p.id)?{...p,height:measured.get(p.id)!}:p)};
+      if(action==='auto'&&arrangement.collapseLong)next={...next,cards:next.cards.map(p=>chosen.has(p.id)&&!p.object&&!p.folder&&(measured.get(p.id)??heightOf(p))>arrangement.collapseHeight?{...p,collapsed:true}:p)};
+      const zoom=navigation.current?.current.zoom??view.zoom;
+      for(const p of next.cards){
+        if(!chosen.has(p.id))continue;const original=placements.get(p.id)!;
+        // Measure the displayed boundary; collapsed titles can exceed the fallback height.
+        const rect=p.width===original.width&&!!p.collapsed===!!original.collapsed?renderedNodes.get(p.id)?.getBoundingClientRect():undefined;
+        const height=p.collapsed&&!original.collapsed?placementHeight(p):(!p.collapsed&&measured.get(p.id))||(rect?.height??0)/zoom||heightOf(original);
+        const width=(rect?.width??0)/zoom||(p.object?.type==='text'?widthOf(p):!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf'?measuredHeights[heightKey(original)]?.width??p.width:p.width);
+        boxes.set(p.id,{x:p.x,y:p.y,width,height});
+      }
+      save(arrangeBoard(next,ids,action,boxes,arrangement),action==='auto'?'Automatically arrange selection':'Arrange selection',base);
+    }catch(error){if(imageImportLive.current)setObjectError(String(error));}finally{host.remove();if(imageImportLive.current)setArranging(false);}
   }
   function movedBoard(g: Gesture, x: number, y: number): Board {
     const dx = (x - g.x) / g.camera.zoom, dy = (y - g.y) / g.camera.zoom;
-    g.manualHeight ||= Math.abs(y-g.y)>10;
     return { ...g.board, cards: g.board.cards.map(p => !g.ids.includes(p.id) ? p : g.type === 'move' ?
-      { ...p, x: p.x + dx, y: p.y + dy } : { ...p, ...(!p.folder?{autoHeight:autoHeight(p)&&!g.manualHeight}:{}), width: Math.max(p.object?.type==='image'?40:lookup.get(p.cardId)?.source?.type==='pdf'?120:200, p.width + dx), height: Math.max(120, g.resizeHeight! + dy) }) };
+      { ...p, x: p.x + dx, y: p.y + dy } : { ...p, width: Math.max(p.object?.type==='image'?40:lookup.get(p.cardId)?.source?.type==='pdf'?120:200, p.width + dx), height: p.collapsed?p.height:Math.max(120, g.resizeHeight! + dy) }) };
   }
   function move(e: Pick<globalThis.PointerEvent, 'clientX' | 'clientY' | 'pointerId'>) {
     const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
@@ -395,17 +456,22 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
     if (g.type === 'pan') navigation.current!.set({ ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy });
     else if (g.type === 'select') { if (g.moved) selectRegion(g, e.clientX, e.clientY); }
     else if(g.moved) {
-      const drag=draggedDocument(g),source=viewport.current?.querySelector<HTMLElement>('[data-placement="'+g.ids[0]+'"]');
-      if(drag&&source){
-        previewDocumentDrop(drag,e.clientX,e.clientY,source);
-        const r=viewport.current!.getBoundingClientRect(),outside=r.width>0&&r.height>0&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom);
-        if(outside&&!externalPhantom.current)externalPhantom.current=selectionPhantom(g);
-        if(externalPhantom.current){const offset=drag.selection!.offset;externalPhantom.current.style.visibility=outside?'visible':'hidden';externalPhantom.current.style.left=e.clientX-offset.x*g.camera.zoom+'px';externalPhantom.current.style.top=e.clientY-offset.y*g.camera.zoom+'px';}
-      }
       dragPoint.current = { x: e.clientX, y: e.clientY };
       if (dragFrame.current === null) dragFrame.current = viewport.current!.ownerDocument.defaultView!.requestAnimationFrame(() => {
         dragFrame.current = null;
-        if (gesture.current === g) {if(g.type==='move')previewMove(g,dragPoint.current.x,dragPoint.current.y);else setWorking(movedBoard(g,dragPoint.current.x,dragPoint.current.y));}
+        if (gesture.current === g) {
+          if(g.type==='move'){
+            const point=dragPoint.current;
+            const drag=draggedDocument(g),source=viewport.current?.querySelector<HTMLElement>('[data-placement="'+g.ids[0]+'"]');
+            if(drag&&source){
+              previewDocumentDrop(drag,point.x,point.y,source);
+              const r=viewport.current!.getBoundingClientRect(),outside=r.width>0&&r.height>0&&(point.x<r.left||point.x>r.right||point.y<r.top||point.y>r.bottom);
+              if(outside&&!externalPhantom.current)externalPhantom.current=selectionPhantom(g);
+              if(externalPhantom.current){const offset=drag.selection!.offset;externalPhantom.current.style.visibility=outside?'visible':'hidden';externalPhantom.current.style.left=point.x-offset.x*g.camera.zoom+'px';externalPhantom.current.style.top=point.y-offset.y*g.camera.zoom+'px';}
+            }
+            previewMove(g,point.x,point.y);
+          }else setWorking(movedBoard(g,dragPoint.current.x,dragPoint.current.y));
+        }
       });
     }
   }
@@ -417,6 +483,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
     } else if (g.type === 'select') {
       if (moved) selectRegion(g, e.clientX, e.clientY); else if (!g.additive) {setSelected([]);setSelectedEdges([]);}
     } else if (moved) {
+      suppressClick.current=true;setTimeout(()=>{suppressClick.current=false;},0);
       // The last pointer event may arrive before React renders the last move.
       const next=movedBoard(g,e.clientX,e.clientY);
       if(g.type==='move')next.cards=[...next.cards.filter(p=>!g.ids.includes(p.id)),...next.cards.filter(p=>g.ids.includes(p.id))];
@@ -512,7 +579,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
     if(p.object){setMenu({anchor,placementId:p.id,label:readingText.objectActions,x,y,actions:[...styles,...(p.object.type==='text'?[{label:topicText.edit,icon:'edit' as const,run:()=>editText(p.id)},{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(onConvertTopics?[{label:topicText.convert,icon:'note' as const,separatorBefore:true,run:()=>{void convertTopics([p.id]);}}]:[])]:[]),{label:readingText.duplicate,icon:'copy',run:()=>save({...current,cards:[...current.cards,{...p,id:crypto.randomUUID(),x:p.x+24,y:p.y+24}]},'Duplicate object')},{label:readingText.delete,icon:'trash',danger:true,run:()=>{void deleteSelection([p.id],[]);}}]});return;}
     setMenu({anchor,placementId:p.id,label:p.folder?ui.whiteboard.whiteboardActions:ui.whiteboard.cardActions,x,y,actions:p.folder?
       [...styles,{label:ui.whiteboard.openWhiteboard,icon:'map',run:()=>onOpenFolder?.(p.folder!)},{label:ui.common.openInNewTab,icon:'external',run:()=>onOpenFolder?.(p.folder!,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>onOpenFolder?.(p.folder!,'other')},...(onDelete?[{label:ui.whiteboard.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]:
-      [...styles,{label:topicText.child,hint:topicText.childKey,icon:'branch' as const,run:()=>addRelatedTopic(p.id,'child')},{label:topicText.sibling,hint:topicText.siblingKey,icon:'plus' as const,run:()=>addRelatedTopic(p.id,'sibling')},...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,submenu:addTagActions(lookup.get(p.cardId)!)}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'popup' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
+      [...styles,...(lookup.has(p.cardId)&&addTagActions?[{label:ui.tags.add,icon:'tag' as const,submenu:addTagActions(lookup.get(p.cardId)!)}]:[]),...(lookup.has(p.cardId)&&onOpenCard?[{label:ui.common.openInPopup,icon:'popup' as const,run:()=>onOpenCard(p.cardId,'popup')},{label:ui.common.openInSameTab,icon:'external' as const,run:()=>onOpenCard(p.cardId,'same')},{label:ui.common.openInNewTab,icon:'window' as const,run:()=>onOpenCard(p.cardId,'new')},{label:ui.common.openInAnotherTabGroup,icon:'splitRight' as const,run:()=>onOpenCard(p.cardId,'other')}]:[]),{label:ui.whiteboard.autoHeight,separatorBefore:!!onOpenCard,checked:autoHeight(p),checkType:'checkbox',run:()=>{
         save({...current,cards:current.cards.map(card=>card.id===p.id?{...card,autoHeight:!autoHeight(p),height:expandedHeight(p)}:card)},autoHeight(p)?ui.history.useFixedCardHeight:ui.history.useAutoCardHeight);
       }},...(!lookup.has(p.cardId)||parent(lookup.get(p.cardId)!.path)!==portable(board.folder)?[{label:ui.whiteboard.removeReference,danger:true,run:()=>removeReference(p)}]:[]),
       ...(lookup.has(p.cardId)&&onDelete?[{label:ui.card.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>{void deleteSelection([p.id],[]);}}]:[])]});
@@ -623,6 +690,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
   const simpleDetail=view.zoom<.08;
   const sceneEntries=useMemo(()=>new WeakMap<Placement,SceneEntry>(),[cards,boards,measuredHeights,objectPreview,theme,simpleDetail]);
   const scene=useMemo(()=>current.cards.map(p=>{const cached=sceneEntries.get(p);if(cached)return cached;const entry={id:p.id,simple:simpleDetail&&(p.object?.type==='text'||!!p.folder||!p.object&&lookup.get(p.cardId)?.source?.type!=='pdf'&&!autoHeight(p)),measured:!naturalHeight(p)||!!measuredHeight(p)||!!p.collapsed,x:xOf(p),y:p.y,width:!p.collapsed&&lookup.get(p.cardId)?.source?.type==='pdf'?measuredHeights[heightKey(p)]?.width??p.width:widthOf(p),height:heightOf(p),placement:p,fill:p.object||p.folder?p.fillColor:cardFill(lookup.get(p.cardId),p),title:p.object?.type==='text'?p.object.text:p.folder?boardLookup.get(p.folder)?.name??p.folder:lookup.get(p.cardId)?.title??lookup.get(p.cardId)?.name??'',revision:theme+':'+JSON.stringify({...p,x:undefined,y:undefined,pdf:p.pdf?.expanded?{...p.pdf,page:undefined}:p.pdf})+':'+(lookup.get(p.cardId)?.revision??'')+':'+(p.folder?boardLookup.get(p.folder)?.revision:'')+':'+widthOf(p)+':'+heightOf(p)} satisfies SceneEntry;sceneEntries.set(p,entry);return entry;}),[current,sceneEntries]);
+  const placementsOrder=useMemo(()=>new Map(current.cards.map((p,i)=>[p.id,i])),[current.cards]);
   const sceneIndex=useMemo(()=>new SceneIndex(scene),[scene]);
   const geometryCache=useRef(new WeakMap<SceneEntry,Placement>());
   const geometries=useMemo(()=>scene.map(entry=>{let value=geometryCache.current.get(entry);if(!value){value=geometryCard(entry.placement);geometryCache.current.set(entry,value);}return value;}),[scene]);
@@ -669,7 +737,8 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
         const image=node.classList.contains('board-image')?node.querySelector('img'):null;if(image&&!image.complete)continue;
         const frame=node.querySelector<HTMLElement>('.board-pdf-selection'),top=frame?.offsetTop??0,pdfHeight=frame?.offsetHeight;
         const id=node.dataset.heightKey!,height=(node.classList.contains('board-image')?node.querySelector<HTMLElement>('.image-media')??node:node).offsetHeight,width=node.offsetWidth,signature=node.dataset.heightSignature!;
-        if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top||pdfHeight!==previous[id]?.pdfHeight)){if(next===previous)next={...previous};next[id]={height,width,top,pdfHeight,signature};}
+        const notes:BoardMeasurement['notes']={};if(node.querySelector('.sticky-note')){const box=node.getBoundingClientRect(),scale=box.width/width||1;for(const note of node.querySelectorAll<HTMLElement>('.sticky-note')){const rect=note.getBoundingClientRect();notes[note.dataset.noteId!]={x:(rect.left+rect.width/2-box.left)/scale,y:(rect.top+rect.height/2-box.top)/scale-top};}}
+        if(height>0&&(height!==previous[id]?.height||width!==previous[id]?.width||signature!==previous[id]?.signature||top!==previous[id]?.top||pdfHeight!==previous[id]?.pdfHeight||JSON.stringify(notes)!==JSON.stringify(previous[id]?.notes??{}))){if(next===previous)next={...previous};next[id]={height,width,top,pdfHeight,notes,signature};}
       }
       return next;
     });
@@ -710,7 +779,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
         }
       }}>
       <div className="canvas-grid" ref={grid}/>
-      <MentionLinks board={{...current,cards:geometries}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view}/>
+      <MentionLinks pointOf={mentionPoint} board={{...current,cards:geometries}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view}/>
       {surface&&<RetainedCanvas surface={surface} viewport={viewport} camera={()=>navigation.current?.current??view}/> }
         {/* Measured text widths are for edge geometry; keep stored placement sizes on save. */}
         <Edges geometry={retainedEdges} connectors={connectors} onCreateTopic={addTopic} edgeDefaults={edgeDefaults} drawn={surface?liveEdges:undefined} board={{...current,cards:geometries}} mentions={mentions} heightOf={geometryHeight} camera={()=>navigation.current?.current??view} viewport={viewport} enabled={enabled}
@@ -722,12 +791,12 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
           const childBoard = p.folder ? boardLookup.get(p.folder) : undefined;
           const nestedCount = childBoard?.cards.filter(child => child.folder).length ?? 0;
           const cardCount = (childBoard?.cards.length ?? 0)-nestedCount;
-          // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24px inset and 90px header.
-          const previewCount=Math.max(1,Math.floor((p.width-38)/100))*Math.max(0,Math.ceil((p.height-116)/42));
+          // Match the CSS grid: 88×34 tiles, 12/8 gaps, 24/12px insets, 80px header and 1px frame.
+          const previewCount=Math.max(0,Math.floor((p.width-26)/100))*Math.max(0,Math.floor((p.height-86)/42));
           const text=p.object?.type==='text',pdf=card?.source?.type==='pdf',media=p.object?.type==='image'||pdf||text;
           const lowDetail=adaptiveDetail&&view.zoom<.08&&!selected.includes(p.id)&&active?.id!==p.id&&!p.collapsed&&!text&&!pdf&&!p.folder&&(!!card||p.object?.type==='image')&&(!naturalHeight(p)||measuredHeight(p)!==undefined);
-          return <article key={p.id} data-retained-warming={warming.has(p.id)||undefined} data-retained-preparing={preparingIds.has(p.id)||undefined} data-overview={lowDetail||undefined} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${pdf?'board-pdf-placement':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${menu?.placementId===p.id?'menu-open':''}`}
-            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ left: xOf(p), top: p.y, width: text?undefined:pdf?'max-content':objectPreview?.id===p.id?objectPreview.width:p.width,height:lowDetail?heightOf(p):p.collapsed||naturalHeight(p)?'auto':p.height, background:pdf&&p.collapsed?tintColor(cardFill(savedCard,p))??'var(--card)':media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
+          return <article key={p.id} data-retained-warming={warming.has(p.id)||undefined} data-retained-preparing={preparingIds.has(p.id)||undefined} data-overview={lowDetail||undefined} data-drop-folder={p.folder} data-drop-kind="board" data-drop-name={childBoard?.name??p.folder?.split('/').at(-1)} data-placement={p.id} className={`board-placement ${media?'board-media': 'board-card'} ${p.object?.type==='image'?'board-image':''} ${text?'board-text':''} ${pdf?'board-pdf-placement':''} ${selected.includes(p.id) ? 'selected' : ''} ${!card && !p.folder && !p.object ? 'missing' : ''} ${p.object?'board-object':''} ${p.object?.type==='text'?'object-shape-'+p.object.shape:''} ${active?.id === p.id ? 'editing' : ''} ${p.collapsed?'collapsed':''} ${naturalHeight(p)?'auto-height':''} ${p.folder?'board-tile':''} ${dragged.includes(p.id)?'dragging':''} ${dragged.includes(p.id)&&gesture.current?.type==='resize'?'resizing':''} ${menu?.placementId===p.id?'menu-open':''}`}
+            data-height-key={heightKey(p)} data-height-signature={heightSignature(p)} data-text-grow-left={text&&branchEnds.get(p.id)==='right'||undefined} style={{ zIndex:dragged.includes(p.id)?current.cards.length+1:placementsOrder.get(p.id),isolation:'isolate',left: xOf(p), top: p.y, width: text?undefined:pdf?'max-content':objectPreview?.id===p.id?objectPreview.width:p.width,height:lowDetail?heightOf(p):gesture.current?.type==='resize'&&dragged.includes(p.id)&&autoHeight(p)&&!pdf&&!p.collapsed?p.height:p.collapsed||naturalHeight(p)?'auto':p.height, background:pdf&&p.collapsed?tintColor(cardFill(savedCard,p))??'var(--card)':media?'transparent':tintColor(p.folder||p.object?p.fillColor:cardFill(savedCard,p)),...(p.object?.type==='text'?{'--object-border-color':p.strokeColor??'var(--muted)','--object-border-width':(p.strokeWidth??2)+'px','--object-border-style':p.strokeStyle??'solid'}:{}) } as React.CSSProperties}
             onContextMenu={e=>{e.preventDefault();e.stopPropagation();onFinish?.();if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);}openMenu(p,e.currentTarget,e.clientX,e.clientY);}} onPointerDown={e => startCard(e, p.id)} onDoubleClick={e=>{
               if((e.target as HTMLElement).closest('button,input,.card-top-row,.pdf-reader,.annotation-rail'))return;
               if(p.object?.type==='text'){e.stopPropagation();editText(p.id);}
@@ -735,7 +804,7 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
               else if(p.collapsed){e.stopPropagation();toggleCollapsed(p);}
             }}>
             {lowDetail?(p.object?.type==='image'?<OverviewImage html={p.object.html} path={board.path}/>:<TitleContent data-ready className="prose card-preview" path={card!.path} html={titlePreview(card!)}/>):<>
-            {!p.folder&&!media&&<div className="card-drag-strip" data-tooltip={tooltips.whiteboard.dragCard}/>}
+            {!media&&<div className="card-drag-strip" data-tooltip={tooltips.whiteboard.dragCard}/>}
             {!media&&<div className="card-top-row">
               {!p.folder&&card&&<InlineName name={card.name} suffix=".md" tooltip={card.path} onRename={onRename?stem=>onRename(card.id,stem):undefined} onStart={()=>{setSelected([p.id]);onFinish?.();}}/>}
               <Tool icon="more" className="card-more" label={p.folder?tooltips.whiteboard.whiteboardActions:tooltips.whiteboard.cardActions} aria-haspopup="menu" aria-expanded={menu?.placementId===p.id}
@@ -745,11 +814,11 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
               }}/>
             </div>}
             {!media&&!p.folder&&!p.object && <div className="card-actions">{card&&onOpenCard&&<Tool icon="popup" label={ui.common.openInPopup} onClick={()=>{onFinish?.();onOpenCard(card.id,'popup');}}/>}<Tool icon={p.collapsed?'down':'chevronUp'} label={p.collapsed?tooltips.whiteboard.expandCard:tooltips.whiteboard.collapseCard} aria-expanded={!p.collapsed} onClick={()=>toggleCollapsed(p)}/></div>}
-            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf?<BoardPdf active={selected.includes(p.id)} collapsed={p.collapsed} onResize={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}} onLayout={contentReady} onSelect={()=>{if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);onFinish?.();}}} card={card!} width={p.width} settings={p.pdf} zoom={view.zoom} onRevealPage={page=>{const nav=navigation.current!,rect=page.getBoundingClientRect(),viewportRect=viewport.current!.getBoundingClientRect();nav.set({...nav.current,y:nav.current.y+viewportRect.top+48-rect.top});nav.flush();}} onPage={page=>{if(!preparingIds.has(p.id))setPdf(p.id,{page});}} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
+            {p.object?<BoardObject selected={selected.includes(p.id)} onParent={object=>navigateText(p.id,'parent',object)} onRelated={(mode,object)=>addRelatedTopic(p.id,mode,object)} onResizePreview={width=>previewObject(p,width)} initialText={textReplacement} editing={editingObject===p.id} onDone={finishTextEdit} onDelete={()=>{void deleteSelection([p.id],[]);}} placement={text?{...p,width:widthOf(p),height:heightOf(p)}:p} path={board.path} onChange={(object,width)=>{const base=pendingSave.current??latest.current.board,original=base.cards.find(item=>item.id===p.id);if(!original)return;const next={...editedText(original,object),...(width?{width}:{})};if(JSON.stringify(next)!==JSON.stringify(original))save({...base,cards:base.cards.map(item=>item.id===p.id?next:item)},'Edit whiteboard object',base);}}/>:pdf?<BoardPdf active={selected.includes(p.id)} collapsed={p.collapsed} onResize={e=>{if(e.button===0){onFinish?.();setSelected([p.id]);begin(e,'resize',[p.id]);}}} onLayout={contentReady} onSelect={event=>{if('shiftKey' in event&&(event.shiftKey||'metaKey' in event&&event.metaKey||'ctrlKey' in event&&event.ctrlKey))return;if(!selected.includes(p.id)){setSelected([p.id]);setSelectedEdges([]);onFinish?.();}}} card={card!} width={p.width} settings={p.pdf} zoom={view.zoom} onRevealPage={page=>{const nav=navigation.current!,rect=page.getBoundingClientRect(),viewportRect=viewport.current!.getBoundingClientRect();nav.set({...nav.current,y:nav.current.y+viewportRect.top+48-rect.top});nav.flush();}} onPage={page=>{if(!preparingIds.has(p.id))setPdf(p.id,{page});}} onShowNotes={()=>setPdf(p.id,{notes:true})} onMore={anchor=>{const r=anchor.getBoundingClientRect();openMenu(p,anchor,r.right,r.bottom+4);}} onCollapse={()=>toggleCollapsed(p)} onOpen={onOpenCard?()=>{onFinish?.();onOpenCard(card!.id,'popup');}:undefined}/>:p.collapsed ? (card?<Preview card={card} collapsed onOpen={openReference} cache={cache.current} onReady={contentReady}/>:<div className="missing-card">{ui.whiteboard.missingCard}</div>) : <>
               {!p.folder && card && folder!==portable(board.folder) && <span className="card-reference" data-tooltip={tooltips.whiteboard.cardReference} aria-label={ui.whiteboard.cardReference}><Icon name="external" size={12}/></span>}
               {p.folder ? <div className="board-tile-body">
                 <div className="board-tile-heading">
-                  <div className="board-tile-title"><DocumentIcon value={icons?.['board:'+portable(p.folder)]} fallback="map" size={18}/><InlineName name={p.folder.split(/[\\/]/).at(-1)!} tooltip={p.folder} onStart={onFinish} onRename={onRenameBoard?name=>onRenameBoard(p.folder!,name):undefined}/></div>
+                  <div className="board-tile-title"><DocumentIcon value={icons?.['board:'+portable(p.folder)]} fallback="map" size={18}/><InlineName name={p.folder.split(/[\\/]/).at(-1)!} tooltip={p.folder} onPointerDown={e=>startCard(e,p.id,true)} onStart={onFinish} onRename={onRenameBoard?name=>onRenameBoard(p.folder!,name):undefined}/></div>
                   <small>{childBoard ? ui.whiteboard.contentsCount(cardCount,nestedCount) : ui.whiteboard.missingWhiteboard}</small>
                 </div>
                 <div className="board-tile-contents" aria-label={ui.whiteboard.whiteboardContentsPreview}>
@@ -759,8 +828,9 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
                 <CardEditor id={draft.card.id} onTitleDone={onTitleDone} canvas zoom={view.zoom} path={draft.card.path} body={draft.body} cards={cards} onEdit={onEdit!} autofocus focusPoint={focusPoint}/>
                 {cardDetails}
               </div> : card ? <Preview card={card} onOpen={openReference} cache={cache.current} onReady={contentReady}/> : <div className="missing-card">{ui.whiteboard.missingCard}<br/><small>{p.cardId.slice(0, 12)}</small></div>}
-              <button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>
+
             </>}
+              {!media&&<button className="resize-handle" data-tooltip={p.folder?tooltips.whiteboard.resizeWhiteboard:tooltips.whiteboard.resizeCard} aria-label={ui.whiteboard.resize(p.folder?.split(/[\\/]/).at(-1) ?? card?.name ?? ui.whiteboard.card)} onPointerDown={e => { if (e.button === 0) { onFinish?.(); setSelected([p.id]); begin(e, 'resize', [p.id]); } }}/>}
             </>}
             {selected.includes(p.id)&&selected.length===1&&savedCard?.source?.type==='web'&&!p.collapsed&&view.zoom>=.65&&<BoardAnnotations card={savedCard}/>}
           </article>;
@@ -768,7 +838,14 @@ export const Whiteboard = memo(function Whiteboard({ icons,onRenameBoard,adaptiv
       </div>
       <div className="selection-box" ref={selectionBox}/>
       {!board.cards.length && <div className="canvas-empty"><button className="primary" data-tooltip={tooltips.common.newCard} onClick={e=>{const button=e.currentTarget.getBoundingClientRect(),r=viewport.current!.getBoundingClientRect(),camera=navigation.current!.current;onCreate((button.left+button.width/2-r.left-camera.x)/camera.zoom-170,(button.top+button.height/2-r.top-camera.y)/camera.zoom-60);}}>{ui.whiteboard.addCard}</button></div>}
-      {surface&&<span className="retained-status" role="status">{ui.developer.retainedStatus}{candidates.length?ui.developer.preparingPreviews:''}</span>}
+      {surface&&candidates.length>0&&<span className="retained-status" role="status">{ui.developer.preparingPreviews}</span>}
+      {selected.length+selectedEdges.length>1&&<div className="board-arrangement-toolbar" role="toolbar" aria-label={ui.arrangement.title} onPointerDown={e=>e.stopPropagation()}>
+        <span>{ui.arrangement.selected(selected.length+selectedEdges.length)}</span>
+        {([['left','imageLeft',ui.arrangement.left],['right','imageRight',ui.arrangement.right],['top','alignTop',ui.arrangement.top],['bottom','alignBottom',ui.arrangement.bottom],['horizontal','imageBetween',ui.arrangement.horizontal],['vertical','spaceVertical',ui.arrangement.vertical]] as const).map(([action,icon,label])=><Tool key={action} icon={icon} label={label} disabled={arranging||selected.length<2||action==='horizontal'&&selected.length<3||action==='vertical'&&selected.length<3} onClick={()=>{void organize(action);}}/>)}
+        <Tool icon="expand" label={ui.arrangement.fitSizes} disabled={arranging||!selected.some(id=>{const p=placements.get(id);return p&&canFitSize(p);})} onClick={fitSizes}/>
+        <Tool icon="autoInput" label={ui.arrangement.automatic} disabled={arranging||selected.length<2} onClick={()=>{void organize('auto');}}/>
+        {arranging&&<span role="status">{ui.arrangement.busy}</span>}
+      </div>}
       <div className="canvas-controls">
         <Tool icon="art" label={tooltips.edges.showStyle} onClick={()=>onStyle?.()}/>
         <Tool icon="minus" label={tooltips.whiteboard.zoomOut} onClick={() => navigation.current!.zoomTo(navigation.current!.current.zoom * 0.9)}/>

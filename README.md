@@ -1,5 +1,7 @@
 # Heaven’s Door
 
+UI names follow the [canonical terminology guide](docs/ui-terminology.md), agreed on 2026-11-02. Older examples may retain legacy names.
+
 An early desktop workspace for local Markdown cards and whiteboards.
 
 ## Install and release
@@ -67,8 +69,8 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 - Open Search with the top-right button or **⌘K / Ctrl+K**. Search filenames, titles and content with English typo tolerance and Traditional/Simplified Chinese matching. Results keep the original text. Arrow keys select results; Enter opens one; ⌘Enter / Ctrl+Enter opens it beside the current Tab Group. Search is also a Side Dock View. `backlinks:<card-id>` lists incoming mentions.
 - ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z undo or redo card and board changes in one chronological session history. Typing close together is grouped.
 - ⌘S / Ctrl+S saves a workspace Git checkpoint. The app also checkpoints after five idle minutes. Single-click a checkpoint card in **History** to inspect its changed files. Double-click or use **Go to checkpoint** in its context menu to navigate after confirmation. Current work is saved first; tabs, layout and later checkpoints remain. Drag a checkpoint onto a diverged branch checkpoint to apply its changes as a new child; the original stays recoverable. Conflicts stop without changing live notes. Close other windows for this workspace before history navigation. See [Search and History](docs/search-and-history.md).
-- Every card reserves a leading H1 in the app. Empty titles show the gray **A new card** prompt; click and type to replace it directly. The prompt is never saved into Markdown. **Settings → Workspace → Empty card title** customizes it. Cards without a leading H1 retain their existing body until you edit.
-- Change the default `untitled` filename base in **Settings → Workspace**. Headings and filenames are independent.
+- Every card reserves a leading H1 in the app. Empty titles show the gray **A new card** prompt; click and type to replace it directly. The prompt is never saved into Markdown. **Settings → Editor → Card → Empty card title** customizes it. Cards without a leading H1 retain their existing body until you edit.
+- Change the default `untitled` filename base in **Settings → Editor → Card**. Headings and filenames are independent.
 - Explorer, Starred and Recent open files in the active Main Dock Tab Group. Reopening a file selects its existing tab. Use the group dropdown (**Tab Group actions**) to split right or down; the same file may be open in several Tab Groups, with independent scroll/zoom positions and shared edits. Drag tabs between groups. Open tabs, splits and view positions are saved in the workspace and restored when it reopens. Existing windows keep independent Main Dock Tab Groups.
 - **File → New window** opens another workspace; **New window for this workspace** shares the current one. Workspace windows share one index/write queue; conflicting concurrent drafts remain recoverable. Appearance, default filenames, starred/recent entries and icons are stored in that workspace's `.heavens-door/settings.json`. Change an icon from the document breadcrumb. Root migration requires other windows for that workspace to be closed.
 
@@ -76,7 +78,7 @@ Only `dist/` is removed. Your workspace notes, `.heavens-door` settings, and Git
 
 The **Main Dock** holds Whiteboard View, Card View and other content views in tabs and splits. **Left Side Dock** and **Right Side Dock** hold supporting Views. A **Workspace** is the local folder together with its settings and saved interface layout. See the [terminology guide](docs/ui-terminology.md) for definitions.
 
-The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Settings → Navigation → Reset layout** restores defaults.
+The **Action Ribbon** on the far left contains actions. Its View actions reveal Views wherever they are placed in the Side Docks. Both Side Docks can collapse, contain vertically stacked Tab Groups, and host several tabs per group. Drag a Side Dock tab onto another Tab Strip to rearrange Views. Drag around a Tab Group’s vertical midpoint to preview a horizontal divider and create a new group below. Right-click a tab for close/move/split/merge actions without dragging. Resize between groups with the horizontal splitter. Dock arrangements are workspace-owned and shared across that workspace's windows. **Settings → Interface → Reset layout** restores defaults.
 
 The status bar contains workspace switching on the left and sync/save/checkpoint status on the right. Undo and redo remain keyboard actions.
 
@@ -127,7 +129,7 @@ Navigation code adapted from the user’s MIT-licensed Obsidian whiteboard plugi
 
 ### Performance and Developer settings
 
-Open the Action Ribbon’s **Settings** button. **Performance → Hardware acceleration** is On by default and applies to all windows and workspaces on this computer. Turn it off to troubleshoot graphics/driver issues. After changing it, fully quit and reopen the app; **View → Reload** cannot apply graphics startup changes. Returning the switch to its startup value cancels the restart notice.
+Open the Action Ribbon’s **Settings** button. **System → Advanced → Hardware acceleration** is On by default and applies to all windows and workspaces on this computer. Turn it off to troubleshoot graphics/driver issues. After changing it, fully quit and reopen the app; **View → Reload** cannot apply graphics startup changes. Returning the switch to its startup value cancels the restart notice.
 
 This device preference is stored in `app-settings.json` in Electron’s application user-data directory, outside every workspace and its Git history. Workspace appearance and layout remain in `.heavens-door/settings.json`.
 
@@ -148,10 +150,12 @@ The card editor supports source mode, contextual block moves and styling, config
 
 Boards also support standalone images, plain text and simple text shapes. They share selection, movement, connectors, undo and transfers. See [Attachments, annotations and reading](docs/attachments-and-reading.md) for controls, storage and testing limits, and [Chrome capture setup](extensions/chrome/README.md).
 
-Whiteboard Text supports compact in-place editing, connected creation from an unfinished arrow, Tab/Enter child/sibling creation directly while editing, Alt+Enter line breaks, and conversion into ordinary Markdown cards. Defaults live under Settings → Whiteboard → Text. See [Text interactions](docs/interactions/topics.md).
+Whiteboard Text supports compact in-place editing, connected creation from an unfinished arrow, Tab/Enter child/sibling creation directly while editing, Alt+Enter line breaks, and conversion into ordinary Markdown cards. Defaults live under Settings → Editor → Whiteboard → Text. See [Text interactions](docs/interactions/topics.md).
 
 ### Card progress blocks
 
 Insert **Progress bar** with the editor block menu or slash menu, or type a fenced `sp-bar` block. Its text is the editable label. Like the Simple Progress Bar Obsidian plugin, it counts tasks in the surrounding heading section; a bar under the card title counts the entire card. Nested tasks count individually, and code examples and other cards never count. Checkbox changes update the bar immediately. The file keeps ordinary `sp-bar` Markdown fences.
+
+`npm test` includes hidden Electron geometry checks for scrollbar stability and matching edge-label preview/edit wrapping. They use a temporary app profile; headless Linux needs `xvfb-run` and runs only this local fixture with Chromium’s sandbox disabled. Interactive native acceptance runs should follow the standard tests sequentially so their windows cannot compete for focus.
 
 `npm run test:reader` runs native Electron checks in a synthetic 20-page PDF workspace, including raster visibility, dragging, middle-button pan, code geometry, empty tasks, progress, language selection, block extraction, zoom and tab switching. Reports live in `.local/reader-check/`; personal workspaces and stable releases are untouched.

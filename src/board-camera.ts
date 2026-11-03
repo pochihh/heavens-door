@@ -1,3 +1,5 @@
 // A numeric safety floor, not a navigation-scale limit (0.01%).
 export const MIN_ZOOM = 0.0001;
 export const MAX_ZOOM = 3;
+
+export function clampCamera(camera:{x:number;y:number;zoom:number}){return {...camera,zoom:Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,camera.zoom))};}

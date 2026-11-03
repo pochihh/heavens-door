@@ -28,7 +28,8 @@
     "release:verify": "node scripts/release.mjs verify",
     "test:release": "node --test tests/release*.test.mjs tests/version.test.mjs",
     "benchmark:reader": "node scripts/benchmark-reader.mjs",
-    "test:retained": "node --import tsx scripts/test-retained.mjs"
+    "test:retained": "node --import tsx scripts/test-retained.mjs",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

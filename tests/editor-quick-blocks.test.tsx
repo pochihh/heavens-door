@@ -2,7 +2,7 @@ import {after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {Editor} from '@tiptap/core';
-import {act} from 'react';
+import {act,useState} from 'react';
 import {NodeSelection} from '@tiptap/pm/state';
 const windows:JSDOM[]=[];after(()=>windows.forEach(w=>w.window.close()));
 function setup(){
@@ -30,6 +30,67 @@ test('code language picker updates the fence and syntax colors without altering 
 test('a fresh equation opens its focused editor immediately and saves normal LaTeX',async()=>{
  const dom=setup(),{createRoot}=await import('react-dom/client'),{CardEditor}=await import('../src/renderer/Editor'),root=createRoot(document.getElementById('root')!),edits:string[]=[];
  try{await act(async()=>root.render(<CardEditor path="Math.md" body="# Math\n\nType here" cards={[]} onEdit={body=>edits.push(body)}/>));const el=document.querySelector('.tiptap') as HTMLElement&{editor:Editor},editor=el.editor;await act(async()=>{editor.commands.setContent(empty);editor.commands.setTextSelection(editor.state.doc.content.size-1);type(editor,'$$ ');});const input=document.querySelector<HTMLTextAreaElement>('[aria-label="LaTeX equation"]')!;assert.ok(input,'Space opens the equation editor without another click');assert.equal(document.activeElement,input);
-  await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'x^2 + y^2');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});await act(async()=>document.querySelector('.math-popover form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));assert.equal(document.querySelector('.math-popover'),null);assert.equal(editor.state.doc.child(1).attrs.latex,'x^2 + y^2');assert.match(edits.at(-1)!,/\$\$\nx\^2 \+ y\^2\n\$\$/);assert.ok(document.querySelector('.katex'));assert.equal(editor.state.selection.$from.parent.type.name,'paragraph');await act(async()=>type(editor,'After the equation'));assert.equal(editor.state.doc.child(1).attrs.latex,'x^2 + y^2');assert.equal(editor.state.doc.lastChild!.textContent,'After the equation');
+  await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'x^2 + y^2');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});assert.match(document.querySelector('.editor-math.is-editing .math-render')!.textContent!,/x2.*y2/);assert.equal(editor.state.doc.child(1).attrs.latex,'','preview does not save early');assert.equal(document.querySelector('.math-popover .katex'),null,'the source panel does not duplicate the preview');await act(async()=>document.querySelector('.math-popover form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));assert.equal(document.querySelector('.math-popover'),null);assert.equal(editor.state.doc.child(1).attrs.latex,'x^2 + y^2');assert.match(edits.at(-1)!,/\$\$\nx\^2 \+ y\^2\n\$\$/);assert.ok(document.querySelector('.katex'));assert.equal(editor.state.selection.$from.parent.type.name,'paragraph');await act(async()=>type(editor,'After the equation'));assert.equal(editor.state.doc.child(1).attrs.latex,'x^2 + y^2');assert.equal(editor.state.doc.lastChild!.textContent,'After the equation');
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('the floating formatting toolbar converts selected text to inline math with in-place preview and keyboard save',async()=>{
+ const dom=setup(),{createRoot}=await import('react-dom/client'),{CardEditor}=await import('../src/renderer/Editor'),{cardMarkdown}=await import('../src/renderer/editor-schema'),root=createRoot(document.getElementById('root')!);
+ try{
+  await act(async()=>root.render(<CardEditor path="Math.md" body={"# Math\n\nBefore x^2 after."} cards={[]} onEdit={()=>{}}/>));
+  const editor=(document.querySelector('.tiptap') as HTMLElement&{editor:Editor}).editor;
+  await act(async()=>{const from=editor.state.doc.firstChild!.nodeSize+1+'Before '.length;editor.commands.setTextSelection({from,to:from+3});editor.view.focus();});
+  const action=document.querySelector<HTMLButtonElement>('.editor-selection-tools [aria-label="Inline equation"]')!;assert.ok(action);assert.equal(action.disabled,false);
+  await act(async()=>action.click());
+  const input=document.querySelector<HTMLTextAreaElement>('.math-popover textarea')!;assert.equal(input.value,'x^2');assert.equal(document.activeElement,input);assert.ok(document.querySelector('.editor-math.is-inline.is-editing'));
+  await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'y^2');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+  assert.match(document.querySelector('.editor-math .math-render')!.textContent!,/y/);assert.match(cardMarkdown(editor),/Before \$x\^2\$ after/);
+  await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true,cancelable:true})));assert.ok(document.querySelector('.math-popover'),'Shift+Enter keeps the editor open');
+  await act(async()=>input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));assert.equal(document.querySelector('.math-popover'),null);assert.match(cardMarkdown(editor),/Before \$y\^2\$ after/);assert.equal(editor.state.selection.empty,true);
+  await act(async()=>{editor.commands.setTextSelection({from:editor.state.doc.firstChild!.nodeSize+1,to:editor.state.doc.content.size-1});editor.view.focus();});assert.equal(document.querySelector<HTMLButtonElement>('.editor-selection-tools [aria-label="Inline equation"]')!.disabled,true,'conversion must not discard existing equation atoms');
+  await act(async()=>document.querySelector<HTMLElement>('.math-render')!.click());const reopened=document.querySelector<HTMLTextAreaElement>('.math-popover textarea')!;
+  await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(reopened,'discard me');reopened.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
+  await act(async()=>reopened.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));assert.equal(document.querySelector('.math-popover'),null);assert.match(cardMarkdown(editor),/Before \$y\^2\$ after/);assert.doesNotMatch(document.querySelector('.math-render')!.textContent!,/discard/);
+  await act(async()=>{editor.commands.setContent('# Math\n\nFirst\n\nSecond',{contentType:'markdown'});editor.commands.setTextSelection({from:editor.state.doc.firstChild!.nodeSize+1,to:editor.state.doc.content.size-1});editor.view.focus();});
+  assert.equal(document.querySelector<HTMLButtonElement>('.editor-selection-tools [aria-label="Inline equation"]')!.disabled,true,'cross-block selections must not silently lose their structure');
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('typing a heading-like prefix in a nested bullet survives each saved-content echo without crashing',async()=>{
+  const dom=setup(),{createRoot}=await import('react-dom/client'),{CardEditor}=await import('../src/renderer/Editor');
+  const errors:unknown[]=[],saved:string[]=[];const root=createRoot(document.getElementById('root')!,{onUncaughtError:error=>errors.push(error)});
+  function Fixture(){const [body,setBody]=useState('# Card\n\n- Parent\n  - seed');return <CardEditor path="Nested.md" body={body} cards={[]} onEdit={next=>{saved.push(next);setBody(next);}}/>;}
+  try{
+    await act(async()=>root.render(<Fixture/>));const element=document.querySelector('.tiptap') as HTMLElement&{editor:Editor},editor=element.editor;let pos=0;editor.state.doc.descendants((node,at)=>{if(node.isText&&node.text==='seed')pos=at;});
+    await act(async()=>editor.commands.setTextSelection({from:pos,to:pos+4}));
+    for(const char of '# Test nested list')await act(async()=>type(editor,char));
+    assert.deepEqual(errors,[]);assert.equal(document.querySelector('.tiptap'),element);editor.state.doc.check();assert.match(editor.state.doc.textContent,/# Test nested list/);assert.match(saved.at(-1)!,/\\# Test nested list/);
+    const reopened=editor.schema.nodeFromJSON(editor.markdown!.parse(saved.at(-1)!));reopened.check();assert.match(reopened.textContent,/# Test nested list/);
+  }finally{await act(async()=>root.unmount());dom.window.close();}
+});
+
+test('Turn into checks the selected block type and leaves mixed selections unchecked',async()=>{
+ const dom=setup(),{createRoot}=await import('react-dom/client'),{CardEditor}=await import('../src/renderer/Editor'),root=createRoot(document.getElementById('root')!);
+ try{
+  await act(async()=>root.render(<CardEditor path="Types.md" body={"# Types\n\n## Heading\n\nParagraph\n\n- Item"} cards={[]} onEdit={()=>{}}/>));const editor=(document.querySelector('.tiptap') as HTMLElement&{editor:Editor}).editor;
+  const open=async()=>{await act(async()=>document.querySelector<HTMLButtonElement>('.editor-block-grip')!.click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Turn into…')!.click());};
+  await act(async()=>{editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize+1);});await open();assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]')?.textContent,'Heading 2');
+  await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]')].find(b=>b.textContent==='Heading 3')!.click());assert.equal(editor.state.doc.child(1).attrs.level,3);
+  await act(async()=>{editor.commands.setTextSelection({from:editor.state.doc.firstChild!.nodeSize+1,to:editor.state.doc.child(0).nodeSize+editor.state.doc.child(1).nodeSize+2});});await open();assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]'),null);
+  await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+  await act(async()=>{editor.commands.setTextSelection(editor.state.doc.content.size-3);});await open();assert.equal(document.querySelector('[role=menuitemradio][aria-checked=true]')?.textContent,'Bullet list');
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('slash commands search custom aliases and stop intercepting input when disabled',async()=>{
+ const dom=setup();dom.window.HTMLElement.prototype.scrollIntoView=function(){};
+ const {createRoot}=await import('react-dom/client'),{CardEditor}=await import('../src/renderer/Editor'),{ViewBlockProvider}=await import('../src/renderer/ViewBlock'),{DEFAULT_EDITOR_SETTINGS}=await import('../src/editor-settings'),root=createRoot(document.getElementById('root')!);
+ const settings={...DEFAULT_EDITOR_SETTINGS,commands:[{id:'custom',name:'Snippet',enabled:true,aliases:['insert'],template:'Hello {{cursor}}'}]},snapshot={root:'/notes',name:'Notes',cards:[],boards:[],tags:[],issues:[],historyAvailable:false,preferences:{theme:'dark' as const,stem:'untitled',starred:[],recent:[],icons:{},editor:settings}};
+ const render=(enabled:boolean)=><ViewBlockProvider snapshot={{...snapshot,preferences:{...snapshot.preferences,editor:{...settings,slashEnabled:enabled}}}} session={{} as import('../src/renderer/session').Session} onOpen={()=>{}}><CardEditor path="Slash.md" body="# Slash\n\n" cards={[]} onEdit={()=>{}}/></ViewBlockProvider>;
+ try{
+  await act(async()=>root.render(render(true)));const editor=(document.querySelector('.tiptap') as HTMLElement&{editor:Editor}).editor;
+  await act(async()=>{editor.commands.setContent(empty);editor.view.dom.focus();editor.commands.setTextSelection(editor.state.doc.content.size-1);type(editor,'/insert');});assert.equal(document.querySelector('.editor-command-menu [role=option]')?.textContent,'Snippet');
+  await act(async()=>editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));assert.match(editor.state.doc.textContent,/Hello/);assert.doesNotMatch(editor.state.doc.textContent,/insert/);
+  await act(async()=>root.render(render(false)));await act(async()=>{editor.commands.setContent(empty);editor.view.dom.focus();editor.commands.setTextSelection(editor.state.doc.content.size-1);type(editor,'/insert');});assert.equal(document.querySelector('.editor-command-menu'),null);assert.match(editor.state.doc.textContent,/insert/);
  }finally{await act(async()=>root.unmount());}
 });

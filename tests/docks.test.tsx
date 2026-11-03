@@ -56,17 +56,17 @@ test('module layouts keep every module once, persist per workspace, and registra
   const registry=new WorkspaceRegistry(join(root,'registered.json'));await registry.register(one);await registry.register(two);await registry.unregister(await fs.realpath(two));assert.equal((await registry.list()).length,1);assert.equal((await fs.stat(two)).isDirectory(),true);
 });
 
-test('deep board zoom persists with the same bounds as navigation',async t=>{
+test('saved board cameras accept positive zooms independently of navigation limits',async t=>{
   const root=await fs.mkdtemp(join(tmpdir(),'heavens-camera-'));
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const tree=pane('board:'),key=tree.id+':board:';
   const documents=(zoom:number)=>({tree,active:tree.id,formatting:[],views:{[key]:{camera:{x:-12345,y:6789,zoom}}}});
-  for(const zoom of [.1,.01,.001,MIN_ZOOM,MAX_ZOOM]){
+  for(const zoom of [.1,.01,.001,MIN_ZOOM,MAX_ZOOM,MIN_ZOOM/2,MAX_ZOOM+1]){
     await writePreferences(root,defaultPreferences(),{documents:documents(zoom)});
     assert.deepEqual((await readPreferences(root)).documents,documents(zoom));
   }
   const before=await fs.readFile(join(root,'.heavens-door/settings.json'),'utf8');
-  for(const zoom of [0,-1,MIN_ZOOM/2,MAX_ZOOM+1,NaN,Infinity]){
+  for(const zoom of [0,-1,NaN,Infinity]){
     await assert.rejects(()=>writePreferences(root,defaultPreferences(),{documents:documents(zoom)}),/Invalid document view/);
   }
   assert.equal(await fs.readFile(join(root,'.heavens-door/settings.json'),'utf8'),before);
@@ -116,7 +116,7 @@ test('tab pointer drags preserve empty sources until commit, respect dock famili
     await pointer(document,'pointermove',100,180);
     assert.equal(document.querySelectorAll('.drag-phantom').length,1);assert.ok(document.querySelector('.tab-phantom.selected .module-tab-label'));
     assert.equal(tab('files').getAttribute('aria-selected'),'true','next source tab becomes active');
-    assert.equal(writes,0);assert.ok(document.querySelector('[aria-label="Right Side Dock drop target"]'));
+    assert.equal(writes,0);assert.ok(document.querySelector('[aria-label="Right sidebar drop target"]'));
     await pointer(document,'pointermove',440,50);assert.equal(document.querySelector('.tab-drop-preview'),null,'Side Dock tabs cannot enter Main Dock');
     await pointer(document,'pointerup',440,50);assert.equal(writes,0);assert.equal(tab('whiteboards').getAttribute('aria-selected'),'true');
 
@@ -127,7 +127,7 @@ test('tab pointer drags preserve empty sources until commit, respect dock famili
     await pointer(document,'pointerup',850,50);assert.equal(findModule(current,'whiteboards').side,'right');assert.equal(findModule(current,'files').group.active,'files');assert.equal(writes,1);assert.deepEqual(validateDocks(current),current);
 
     await pointer(tab('bookmarks'),'pointerdown',30,250);await pointer(document,'pointermove',200,180);
-    assert.ok(document.querySelector('[data-group="saved"] [aria-label="Empty Tab Group"]'),'sole-tab source stays open');
+    assert.ok(document.querySelector('[data-group="saved"] [aria-label="No open tabs"]'),'sole-tab source stays open');
     await pointer(document,'pointermove',30,250);assert.ok(document.querySelector('[data-group="saved"] .tab-drop-preview'));
     assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden','returning to the source restores an empty insertion slot');
     await pointer(document,'pointerup',30,250);assert.equal(findModule(current,'bookmarks').group.id,'saved');assert.equal(writes,1,'dropping back is a no-op');
@@ -136,7 +136,7 @@ test('tab pointer drags preserve empty sources until commit, respect dock famili
     assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.width,'80px','a full-width lone tab fits beside the target tabs');
     assert.equal((document.querySelector('.tab-drop-preview') as HTMLElement).style.width,'80px');
     assert.equal(getComputedStyle(document.querySelector('.tab-drop-preview')!).visibility,'hidden');
-    assert.ok(document.querySelector('[data-group="saved"] [aria-label="Empty Tab Group"]'));
+    assert.ok(document.querySelector('[data-group="saved"] [aria-label="No open tabs"]'));
     await pointer(document,'pointermove',30,250);assert.equal((document.querySelector('.tab-phantom') as HTMLElement).style.width,'320px','returning restores the original width');
     await escape();
 
@@ -173,9 +173,9 @@ test('tab pointer drags preserve empty sources until commit, respect dock famili
     assert.equal(tab('tags').getAttribute('aria-selected'),'false','cancel restores the inactive tab');
     assert.equal(tab('files').getAttribute('aria-selected'),'true');
     await act(async()=>{tab('tags').focus();tab('tags').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));});
-    assert.ok(document.querySelector('[role=menu][aria-label="Tab Group actions"]'));
+    assert.ok(document.querySelector('[role=menu][aria-label="View tabs actions"]'));
     assert.equal(tab('files').getAttribute('aria-selected'),'true','opening an inactive tab menu does not select it');
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(e=>e.textContent==='Move View to Right Side Dock')!.click());
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(e=>e.textContent==='Move View to Right sidebar')!.click());
     assert.equal(findModule(current,'tags').side,'right','context commands target the clicked tab');
     assert.equal(findModule(current,'files').side,'left');
 

@@ -101,10 +101,11 @@ test('dragged cards keep their latest position through delayed saves, consecutiv
     const up=async (x:number) => act(async () => {pointer(canvas,'pointerup',x);});
     await down();await up(185);
     assert.equal(visualLeft(),100,'dropping must not flash back while saving');
-    await down();
+    await down();let hitTests=0;document.elementsFromPoint=()=>{hitTests++;return [];};
     await act(async () => {for (let x=101;x<=270;x++) pointer(canvas,'pointermove',x);});
+    assert.equal(hitTests,0,'pointer events do not synchronously hit-test the full document');
     assert.equal(frames.size,1,'pointer movement is painted at most once per frame');
-    await frame();assert.equal(visualLeft(),300);
+    await frame();assert.equal(visualLeft(),300);assert.equal(hitTests,1,'drop preview and tab hover share one hit test per frame');
     await act(async () => saves[0].finish());
     assert.equal(visualLeft(),300,'an earlier save cannot reset an ongoing drag');
     await up(270);
@@ -210,7 +211,7 @@ test('collapsed cards use cached titles without loading bodies and expand withou
     assert.equal(document.querySelector('[data-placement="p1"] .card-title')?.textContent,'');
     assert.ok(document.querySelector('[data-placement="p1"] .card-title.is-empty'),'a missing H1 shows a visual prompt, not the filename');
     const summary=first.querySelector('.card-title')!.innerHTML,chevron=first.querySelector('[aria-label="Expand card"]');
-    assert.equal(first.querySelector('.resize-handle'),null);
+    assert.ok(first.querySelector('.resize-handle'),'collapsed cards retain width resizing');
     await act(async()=>first.querySelector<HTMLButtonElement>('[aria-label="Expand card"]')!.click());
     assert.equal(reads,1);assert.equal(first.style.height,'auto');assert.ok(first.querySelector('.card-preview p'),'expansion mounts the body');
     assert.equal(first.querySelector('.card-title')!.innerHTML,summary,'heading formatting stays identical');
@@ -240,6 +241,8 @@ test('whiteboard tiles preview indexed members without body reads and share card
   const root=createRoot(document.getElementById('root')!);
   const pointer=(target:Element,type:string,x:number,y=100)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
   try{
+    await act(async()=>root.render(<Whiteboard board={{...board,cards:board.cards.map(p=>({...p,width:340,height:170}))}} boards={[child]} cards={cards} onOpen={()=>undefined} onCreate={()=>undefined} onSave={()=>undefined}/>));
+    assert.equal(document.querySelectorAll('.board-tile-item').length,6,'default M tiles show six complete previews');
     await act(async()=>root.render(<Fixture/>));
     const tile=document.querySelector<HTMLElement>('.board-tile')!,body=tile.querySelector('.board-tile-body')!;
     assert.equal(tile.querySelector('.card-grip'),null);
@@ -254,7 +257,8 @@ test('whiteboard tiles preview indexed members without body reads and share card
     assert.equal(latest.cards[0].x,100);assert.equal(tile.classList.contains('dragging'),false);assert.equal(opened.length,0,'a drag does not navigate');
     await act(async()=>{pointer(tile.querySelector('.resize-handle')!,'pointerdown',100);pointer(tile,'pointerup',185,142.5);});
     assert.equal(latest.cards[0].width,440);assert.equal(latest.cards[0].height,330);
-    assert.equal(tile.querySelectorAll('.board-tile-item').length,24,'resizing reveals more indexed titles');
+    const title=tile.querySelector<HTMLButtonElement>('.board-tile-title .card-filename>button')!;assert.equal(title.disabled,true,'a title without a rename callback is disabled');
+    assert.equal(tile.querySelectorAll('.board-tile-item').length,20,'resizing reveals more complete rows of indexed titles');
     Object.assign(globalThis,{innerWidth:1200,innerHeight:800});
     await act(async()=>tile.querySelector<HTMLButtonElement>('[aria-label="Whiteboard actions"]')!.click());
     await act(async()=>{document.querySelector<HTMLButtonElement>('[role=menuitem]')!.click();body.dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));});
@@ -265,7 +269,7 @@ test('whiteboard tiles preview indexed members without body reads and share card
 });
 
 
-test('card auto height defaults on, toggles at its measured height, and manual resizing fixes that height',async()=>{
+test('card auto height changes only through its toggle and restores natural height after resizing',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
   let measuredHeight=560;
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,innerWidth:1200,innerHeight:800,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
@@ -307,7 +311,8 @@ test('card auto height defaults on, toggles at its measured height, and manual r
     assert.equal(card.style.height,'560px');
     measuredHeight=720;await open();await toggle();
     await act(async()=>{pointer(card.querySelector('.resize-handle')!,'pointerdown',340,720);pointer(card,'pointerup',425,762.5);});
-    assert.equal(latest.cards[0].autoHeight,false);assert.equal(latest.cards[0].height,770,'resizing starts from measured content height');assert.equal(latest.cards[0].width,440);
+    assert.equal(latest.cards[0].autoHeight,true);assert.equal(card.style.height,'auto');assert.equal(latest.cards[0].height,770,'resizing starts from measured content height');assert.equal(latest.cards[0].width,440);
+    await open();await toggle();await act(async()=>{pointer(card.querySelector('.resize-handle')!,'pointerdown',440,770);pointer(card,'pointerup',525,812.5);});assert.equal(latest.cards[0].autoHeight,false);assert.equal(card.style.height,'770px','fixed-height mode stays fixed after resizing');
   }finally{await act(async()=>root.unmount());}
 });
 
@@ -421,7 +426,7 @@ test('search reveal expands and selects a card without editing or zooming, and c
     await act(async()=>cardElement.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100})));
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in same tab')!.click());assert.deepEqual(opened,['c:same']);
     await act(async()=>cardElement.querySelector<HTMLButtonElement>('.card-more')!.click());
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another Tab Group')!.click());assert.deepEqual(opened,['c:same','c:other']);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another split')!.click());assert.deepEqual(opened,['c:same','c:other']);
   }finally{await act(async()=>root.unmount());}
 });
 
@@ -446,5 +451,55 @@ test('adaptive overview preserves bounds and image content, promotes selection, 
   assert.ok(document.querySelector('[data-placement=img] .image-toolbar'));assert.equal(document.querySelector('.edge-stroke')!.getAttribute('d'),edge,'promotion preserves image anchor bounds');
   await act(async()=>{document.querySelector<HTMLElement>('.canvas')!.focus();document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{bubbles:true,key:'0',metaKey:true}));await new Promise(r=>setTimeout(r,140));});
   assert.equal(document.querySelectorAll('[data-overview]').length,0);assert.match(document.querySelector('[data-placement=p]')!.textContent!,/Full body/);
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('spacing toolbar uses rendered boundaries of unequal collapsed cards at fractional zoom',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+ const heights:Record<string,number>={a:70,b:184.5,c:94.25},zoom=.5,rect=dom.window.HTMLElement.prototype.getBoundingClientRect;
+ Object.defineProperty(dom.window.HTMLElement.prototype,'offsetHeight',{get(){return Math.round(heights[this.dataset.placement]??0);}});
+ Object.defineProperty(dom.window.HTMLElement.prototype,'offsetWidth',{get(){return parseFloat(this.style.width)||0;}});
+ dom.window.HTMLElement.prototype.getBoundingClientRect=function(){if(!this.dataset.placement)return rect.call(this);const x=parseFloat(this.style.left)*zoom,y=parseFloat(this.style.top)*zoom,width=parseFloat(this.style.width)*zoom,height=heights[this.dataset.placement]*zoom;return {x,y,left:x,top:y,right:x+width,bottom:y+height,width,height,toJSON(){}};};
+ const {Whiteboard}=await import('../src/renderer/Board'),cards=['a','b','c'].map(id=>({id,path:id+'.md',name:id,revision:'r',legacy:false,title:id}));window.door={request:async()=>assert.fail('collapsed titles need no body load')} as unknown as typeof window.door;
+ const board:Board={path:'spacing.whiteboard',folder:'',name:'Spacing',revision:'r',edges:[],cards:cards.map((card,i)=>({id:card.id,cardId:card.id,x:[0,400,900][i],y:[0,300,700][i],width:[240,320,280][i],height:280,collapsed:true}))},saved:Board[]=[];const root=createRoot(document.getElementById('root')!);
+ try{
+  await act(async()=>root.render(<Whiteboard board={board} cards={cards} initialCamera={{x:0,y:0,zoom}} onSave={next=>{saved.push(next);}} onOpen={()=>{}} onCreate={()=>{}}/>));
+  for(const id of ['a','b','c'])await act(async()=>{const target=document.querySelector('[data-placement="'+id+'"] .card-drag-strip')!;for(const type of ['pointerdown','pointerup'])target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,shiftKey:true,clientX:10,clientY:10}));});
+  for(const [axis,size,label] of [['x','width','Space evenly horizontally'],['y','height','Space evenly vertically']] as const){await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="'+label+'"]')!.click());const next=saved.at(-1)!.cards,gaps=next.slice(1).map((p,i)=>p[axis]-next[i][axis]-(size==='height'?heights[next[i].id]:next[i].width));assert.ok(Math.abs(gaps[0]-gaps[1])<1e-8,label+' must use equal visible gaps');assert.equal(next[0][axis],board.cards[0][axis]);assert.equal(next.at(-1)![axis],board.cards.at(-1)![axis]);}
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('size toolbar fits card widths and both board dimensions while preserving their other properties',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});
+ const {Whiteboard}=await import('../src/renderer/Board'),{DEFAULT_ARRANGEMENT}=await import('../src/board-arrangement'),{useState}=await import('react');
+ const cards=['a','b','outside'].map(id=>({id,path:id+'.md',name:id,revision:'r',legacy:false,title:id}));window.door={request:async()=>assert.fail('width fitting must not load collapsed bodies')} as unknown as typeof window.door;
+ const board:Board={path:'fit-widths.whiteboard',folder:'',name:'Widths',revision:'r',edges:[{id:'edge',from:'a',to:'b'}],cards:[...cards.map((c,i)=>({id:c.id,cardId:c.id,x:i*400,y:i*90,width:[300,500,355][i],height:400+i*20,collapsed:true,autoHeight:i===1})),...['text1','text2'].map((id,i)=>({id,cardId:'',x:20,y:400+i*60,width:410,height:30,object:{type:'text' as const,shape:'none' as const,text:id}})),...['board1','board2'].map((id,i)=>({id,cardId:'',folder:id,x:50+i*450,y:550,width:[360,720][i],height:180+i*20}))]},saved:Board[]=[];const root=createRoot(document.getElementById('root')!);
+ const select=async(id:string,add=true)=>act(async()=>{const node=document.querySelector<HTMLElement>('[data-placement="'+id+'"]')!,target=node.querySelector('.card-drag-strip')??node;for(const type of ['pointerdown','pointerup'])target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,shiftKey:add,metaKey:!add,clientX:10,clientY:10}));});
+ function Fixture(){const [value,setValue]=useState(board);return <Whiteboard board={value} cards={cards} arrangement={{...DEFAULT_ARRANGEMENT,widths:[220,360,520,760],boardHeights:[140,210,300,420],resizeCards:false}} onSave={next=>{saved.push(next);setValue(next);}} onOpen={()=>{}} onCreate={()=>{}}/>;}
+ try{
+  await act(async()=>root.render(<Fixture/>));
+  for(const id of ['a','b','text1','text2','board1','board2'])await select(id);
+  const button=document.querySelector<HTMLButtonElement>('[aria-label="Fit cards and boards to presets"]')!;assert.equal(button.disabled,false);await act(async()=>button.click());assert.equal(saved.length,1);const next=saved[0];assert.equal(next.cards[0].width,360);assert.equal(next.cards[1].width,520);assert.equal(next.cards[5].width,360);assert.equal(next.cards[5].height,210);assert.equal(next.cards[6].width,760);assert.equal(next.cards[6].height,420);assert.equal(next.edges,board.edges);
+  for(const [i,p] of next.cards.entries())assert.deepEqual({...p,width:board.cards[i].width,height:p.folder?board.cards[i].height:p.height},board.cards[i],'fitting changed more than the permitted dimensions');for(const i of [2,3,4])assert.equal(next.cards[i],board.cards[i]);
+  for(const id of ['a','b','text1','text2'])await select(id,false);assert.equal(button.disabled,false,'board-only selection can fit widths');await act(async()=>button.click());assert.equal(saved.length,1,'already fitted boards do not create another save');for(const id of ['text1','text2'])await select(id);for(const id of ['board1','board2'])await select(id,false);assert.equal(button.disabled,true,'Text-only selection cannot fit widths');await act(async()=>button.click());assert.equal(saved.length,1);
+ }finally{await act(async()=>root.unmount());}
+});
+
+test('a stale connector hint yields to the visible board body, with selected edge endpoint priority preserved',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class {observe(){} disconnect(){}}});Object.defineProperty(dom.window,'PointerEvent',{value:dom.window.MouseEvent});
+ dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
+ Object.assign(dom.window.HTMLElement.prototype,{attachEvent(){},detachEvent(){}});
+ const {Whiteboard}=await import('../src/renderer/Board'),{useState}=await import('react');
+ const board:Board={path:'Layers.whiteboard',folder:'',name:'Layers',revision:'r',cards:[{id:'back',cardId:'missing',x:0,y:0,width:340,height:280},{id:'tile',cardId:'',folder:'Child',x:50,y:50,width:340,height:180}],edges:[{id:'edge',from:'back',to:'tile'}]},saved:Board[]=[],renamed:string[][]=[];
+ function Fixture(){const [value,setValue]=useState(board);return <Whiteboard board={value} initialCamera={{x:0,y:0,zoom:1}} cards={[]} onSave={next=>{saved.push(next);setValue(next);}} onOpen={()=>{}} onCreate={()=>{}} onRenameBoard={async(folder,name)=>{renamed.push([folder,name]);}}/>;}
+ const root=createRoot(document.getElementById('root')!);
+ try{
+  await act(async()=>root.render(<Fixture/>));const tile=document.querySelector<HTMLElement>('[data-placement=tile]')!,title=tile.querySelector<HTMLButtonElement>('.board-tile-title button')!,handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.classList.add('edge-anchor');handle.dataset.anchorCard='back';document.querySelector('.edge-handles')!.append(handle);
+  tile.getBoundingClientRect=()=>({x:20,y:20,left:20,top:20,right:360,bottom:300,width:340,height:280,toJSON(){}});document.elementsFromPoint=()=>[handle,tile.querySelector('.board-tile-body')!,tile];
+  const pointer=(target:EventTarget,type:string,x=100,y=100)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));
+  await act(async()=>pointer(handle,'pointerdown'));assert.equal(tile.classList.contains('dragging'),true,'covered board receives the press immediately, without waiting for a cursor frame');await act(async()=>pointer(document,'pointerup',140,120));assert.deepEqual([saved[0].cards[1].x,saved[0].cards[1].y],[90,70]);assert.equal(saved[0].cards[0],board.cards[0]);assert.equal(saved[0].edges,board.edges);
+  await act(async()=>{pointer(title,'pointerdown');pointer(title,'pointerup');title.click();});assert.equal(tile.classList.contains('dragging'),false,'a quiet release ends the pending title drag');const input=tile.querySelector<HTMLInputElement>('.card-filename input')!;assert.ok(input);assert.equal(document.activeElement,input);assert.deepEqual(renamed,[]);assert.equal(saved.length,1,'renaming does not save placement geometry');
+  delete handle.dataset.anchorCard;handle.dataset.edgeId='edge';handle.dataset.edgeEndpoint='to';await act(async()=>pointer(handle,'pointerdown'));assert.equal(tile.classList.contains('dragging'),false,'its selected edge endpoint retains priority');assert.equal(saved.length,1);
  }finally{await act(async()=>root.unmount());}
 });

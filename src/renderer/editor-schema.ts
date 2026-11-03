@@ -9,10 +9,23 @@ import CodeBlock from '@tiptap/extension-code-block-lowlight';
 import {codeHighlight} from './code-highlight';
 import StarterKit from '@tiptap/starter-kit';
 import {wikiToken} from '../document-links';
-const CardKit=StarterKit.extend({addExtensions(){return (this.parent?.()??[]).map(extension=>extension.name==='link'?extension.extend({markdownTokenizer:{name:'wikiLink',level:'inline',start:(source:string)=>source.indexOf('[['),tokenize:wikiToken},renderMarkdown(node:JSONContent,helpers:MarkdownRendererHelpers){
-  const href=String(node.attrs?.href??'');if(!href.startsWith('wiki:')){const text=helpers.renderChildren(node),title=node.attrs?.title;return title?`[${text}](${href} "${title}")`:`[${text}](${href})`;}
-  const target=decodeURIComponent(href.slice(5)),text=helpers.renderChildren(node);return '[['+target+(text===target?'':'|'+text)+']]';
-}}):extension);}});
+const CardKit=StarterKit.extend({addExtensions(){return (this.parent?.()??[]).map(extension=>{
+  if(extension.name==='paragraph'){const render=extension.config.renderMarkdown!;return extension.extend({renderMarkdown(node,helpers,context){
+    const text=render.call({},node,helpers,context);
+    // Paragraph text must not become block syntax when Markdown is read back.
+    return text.replace(/^( {0,3})(#{1,6}(?=[ \t]|$)|[-+](?=[ \t])|\d{1,9}[.)](?=[ \t])|[-=]{2,}[ \t]*$)/gm,(_line:string,space:string,marker:string)=>space+(/^\d/.test(marker)?marker.slice(0,-1)+'\\'+marker.at(-1):'\\'+marker));
+  }});}
+  if(extension.name==='listItem'){const parse=extension.config.parseMarkdown!;return extension.extend({parseMarkdown(token,helpers){
+    const node=parse.call({},token,helpers);
+    // Markdown permits a heading/list first; the editor requires a leading paragraph.
+    if(node&&!Array.isArray(node)&&node.content?.length&&node.content[0].type!=='paragraph')node.content.unshift({type:'paragraph'});
+    return node;
+  }});}
+  return extension.name==='link'?extension.extend({markdownTokenizer:{name:'wikiLink',level:'inline',start:(source:string)=>source.indexOf('[['),tokenize:wikiToken},renderMarkdown(node:JSONContent,helpers:MarkdownRendererHelpers){
+    const href=String(node.attrs?.href??'');if(!href.startsWith('wiki:')){const text=helpers.renderChildren(node),title=node.attrs?.title;return title?`[${text}](${href} "${title}")`:`[${text}](${href})`;}
+    const target=decodeURIComponent(href.slice(5)),text=helpers.renderChildren(node);return '[['+target+(text===target?'':'|'+text)+']]';
+  }}):extension;
+});}});
 
 import { Markdown,MarkdownManager } from '@tiptap/markdown';
 import Image from '@tiptap/extension-image';

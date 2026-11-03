@@ -52,7 +52,7 @@ export function useBookmarkDrag(target:RefObject<HTMLElement|null>,commit:(key:s
     const animations=new Map<HTMLElement,Animation>();
     const duplicate=[...list.querySelectorAll<HTMLElement>('[data-file-key]')].find(el=>el!==source&&el.dataset.fileKey===key);
     const area=groups.length?root:list.closest<HTMLElement>('[data-bookmark-target]')??list;
-    const scroller=vertical?(list.closest<HTMLElement>(reorderOnly?'.editor-body,.card-preview,.tag-view,.file-tree':'.nav-bottom')??list):list;
+    const scroller=vertical?(list.closest<HTMLElement>(reorderOnly?'.editor-body,.card-preview,.tag-view,.file-tree,.settings-content':'.nav-bottom')??list):list;
     const destination=()=>groups.length?[...groups].reverse().find(group=>{if(canDrop&&!canDrop(key,group.dataset.sortGroup??''))return false;const r=(group.closest('[data-sort-area]')??group).getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;}):list;
     const inside=()=>{const r=area.getBoundingClientRect(),clip=scroller.getBoundingClientRect();return !!destination()&&x>=r.left&&x<=r.right&&y>=Math.max(r.top,clip.top)&&y<=Math.min(r.bottom,clip.bottom);};
     const rows=()=>[...list.querySelectorAll<HTMLElement>(':scope > [data-file-key]')].filter(el=>el!==source&&el.dataset.fileKey!==key);

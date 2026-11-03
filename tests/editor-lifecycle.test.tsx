@@ -145,6 +145,7 @@ test('row toolbox edits portable layout and editor controls follow canvas transf
   const dom=new JSDOM('<!doctype html><div class="canvas"><div class="board-world"><div id="root"></div></div></div>',{pretendToBeVisual:true});windows.push(dom);
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  Object.defineProperty(dom.window.HTMLElement.prototype,'offsetWidth',{configurable:true,get(){return this.classList.contains('editor-block-controls')?22:0;}});
   window.door={assetUrl:path=>`heavens-asset://vault/${path}`} as typeof window.door;
   const {CardEditor}=await import('../src/renderer/Editor'),{imageHtml,imageLayout,row}=await import('../src/renderer/image-layout');
   const content=row([{kind:'single',src:'circle.png',width:'240px',alignment:'left',crop:{shape:'circle',imgWidth:400,height:240,offsetX:0,offsetY:0}},{kind:'single',src:'rectangle.png',width:'200px',alignment:'left'}]);
@@ -160,7 +161,7 @@ test('row toolbox edits portable layout and editor controls follow canvas transf
     const imageRow=document.querySelector<HTMLElement>('.editor-image-layout')!;imageRow.getBoundingClientRect=()=>rect(x,y+60*scale,500*scale,300*scale);
     const last=element.lastElementChild!;last.getBoundingClientRect=()=>rect(x,y+400*scale,500*scale,26*scale);
     await act(async()=>editor.commands.setTextSelection(editor.state.doc.content.size-1));
-    const grip=document.querySelector<HTMLElement>('.editor-block-controls')!,before={left:parseFloat(grip.style.left),top:parseFloat(grip.style.top)};
+    const grip=document.querySelector<HTMLElement>('.editor-block-controls')!;const before={left:parseFloat(grip.style.left),top:parseFloat(grip.style.top)};
     await act(async()=>document.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:150,clientY:180})));
     const toolbar=document.querySelector<HTMLElement>('.image-row-toolbar')!;assert.ok(toolbar);
     const toolLeft=parseFloat(toolbar.style.left),toolTop=parseFloat(toolbar.style.top);
@@ -168,7 +169,7 @@ test('row toolbox edits portable layout and editor controls follow canvas transf
     await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform='translate(80px,40px)';await Promise.resolve();});
     assert.equal(parseFloat(grip.style.left),before.left+80);assert.equal(parseFloat(grip.style.top),before.top+40);
     assert.equal(parseFloat(toolbar.style.left),toolLeft+80);assert.equal(parseFloat(toolbar.style.top),toolTop+40);
-    for(scale of [.25,1.8]){await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform=`translate(80px,40px) scale(${scale})`;await Promise.resolve();});assert.equal(grip.style.transform,`scale(${scale})`);assert.equal(grip.style.visibility,'visible');assert.equal(parseFloat(grip.style.left),x-24*scale);assert.equal(grip.querySelector<HTMLButtonElement>('[aria-label="Add block"]')!.hidden,true);}
+    for(scale of [.25,1.8]){await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform=`translate(80px,40px) scale(${scale})`;await Promise.resolve();});assert.equal(grip.style.transform,`scale(${scale})`);assert.equal(grip.style.visibility,'visible');assert.equal(parseFloat(grip.style.left),x-26*scale,'the measured 22px handle keeps a 4px gap outside the text');assert.equal(grip.querySelector<HTMLButtonElement>('[aria-label="Add block"]')!.hidden,true);}
     scale=1;await act(async()=>{document.querySelector<HTMLElement>('.board-world')!.style.transform='translate(80px,40px) scale(1)';await Promise.resolve();});
     assert.equal(edits.length,0,'navigation never writes card content');
     await act(async()=>toolbar.querySelector<HTMLButtonElement>('[aria-label="Justify: space between"]')!.click());
@@ -341,7 +342,7 @@ test('leaving an edited card keeps its latest text visible while the saved previ
  }finally{await act(async()=>root.unmount());}
 });
 
-test('width resizing preserves automatic card height until vertical travel is deliberate at any zoom',async()=>{
+test('resizing preserves the saved auto-height mode even after deliberate vertical travel at any zoom',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),IS_REACT_ACT_ENVIRONMENT:true,ResizeObserver:class{observe(){}disconnect(){}}});
  Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});document.elementFromPoint=()=>null;dom.window.HTMLElement.prototype.setPointerCapture=()=>{};dom.window.HTMLElement.prototype.hasPointerCapture=()=>false;
@@ -352,8 +353,8 @@ test('width resizing preserves automatic card height until vertical travel is de
  try{
   await act(async()=>root.render(<Whiteboard board={board} cards={[card]} initialCamera={{x:0,y:0,zoom:.25}} onSave={next=>{saved=next as typeof board;}} onOpen={()=>{}} onCreate={()=>{}}/>));
   await act(async()=>{pointer(document.querySelector('.resize-handle')!,'pointerdown',100,100);pointer(document,'pointermove',125,105);pointer(document,'pointerup',125,105);});
-  assert.equal((saved.cards[0] as import('../src/shared').Placement).autoHeight,true);assert.equal(saved.cards[0].width,440);
+  assert.equal((saved.cards[0] as import('../src/shared').Placement).autoHeight,undefined);assert.equal(saved.cards[0].width,440);
   await act(async()=>{pointer(document.querySelector('.resize-handle')!,'pointerdown',100,100);pointer(document,'pointermove',125,120);pointer(document,'pointerup',125,120);});
-  assert.equal((saved.cards[0] as import('../src/shared').Placement).autoHeight,false);
+  assert.equal((saved.cards[0] as import('../src/shared').Placement).autoHeight,undefined);
  }finally{await act(async()=>root.unmount());}
 });

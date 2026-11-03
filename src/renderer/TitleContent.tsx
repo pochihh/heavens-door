@@ -8,7 +8,7 @@ export function TitleContent({html,afterTitle,path,...props}:{html:string;path?:
   const links=useDocumentLinks(path??'');
   // YAML changes update the existing portals, not the surrounding rendered document.
   const content=useMemo(()=>{const template=document.createElement('template');template.innerHTML=html;
-    const sources=[...template.content.querySelectorAll<HTMLPreElement>("pre:has(> code.language-view-block)")].map(pre=>{const source=pre.textContent??'';pre.hidden=true;pre.firstElementChild!.textContent='';return source;});
+    const sources=[...template.content.querySelectorAll<HTMLPreElement>("pre:has(> code.language-view-block)")].map(pre=>{const source=pre.textContent??'';pre.closest('.editor-code-block')?.replaceWith(pre);pre.hidden=true;pre.firstElementChild!.textContent='';return source;});
     return {html:template.innerHTML,sources};
   },[html]);
   const ref=useRef<HTMLDivElement>(null),[slot]=useState(titleSlot),[slots,setSlots]=useState<HTMLElement[]>([]);

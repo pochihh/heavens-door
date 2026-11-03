@@ -35,13 +35,15 @@ test('unsigned/development builds check public releases and always retain the we
 });
 test('update settings show manual fallback, download progress, install control and failures',async()=>{
   const dom=new JSDOM('<div id="root"></div>');Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
-  let state:UpdateState={currentVersion:'0.1.2',canInstall:false,status:'idle'},changed=(value:UpdateState)=>{state=value;},website=0,install=0,stopped=false;
-  window.door={updateState:async()=>state,onUpdateChange:callback=>{changed=callback;return()=>{stopped=true;};},checkUpdates:async()=>{changed({...state,status:'available',version:'0.1.27'});return state;},openDownloadPage:async()=>{website++;},installUpdate:async()=>{install++;}} as Bridge;
+  let state:UpdateState={currentVersion:'0.1.2',canInstall:false,status:'idle'},changed=(value:UpdateState)=>{state=value;},website=0,install=0,downloads=0,stopped=false;
+  window.door={appLogo:async()=>({image:'',custom:false}),onAppSettingsChange:()=>()=>{},setAutomaticDownloads:async(enabled:boolean)=>{state={...state,automaticDownloads:enabled};changed(state);return state;},updateState:async()=>state,onUpdateChange:(callback:(state:UpdateState)=>void)=>{changed=callback;return()=>{stopped=true;};},checkUpdates:async()=>{state={...state,status:'available',version:'0.1.27'};changed(state);return state;},downloadUpdate:async()=>{downloads++;state={...state,status:'downloading',progress:0};changed(state);return state;},openDownloadPage:async()=>{website++;},installUpdate:async()=>{install++;}} as unknown as Bridge;
   const root=createRoot(document.getElementById('root')!),click=async(text:string)=>act(async()=>[...document.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent===text)!.click());
-  try{await act(async()=>root.render(<UpdateSettings/>));assert.match(document.body.textContent!,/Version 0.1.2/);await click('Check for updates');assert.match(document.body.textContent!,/0.1.27 is available/);assert.ok(![...document.querySelectorAll('button')].some(button=>button.textContent==='Download update'));await click('Open download page');assert.equal(website,1);
-    await act(async()=>changed({...state,canInstall:true,status:'downloading',progress:55}));assert.equal(document.querySelector('progress')!.value,55);
+  try{await act(async()=>root.render(<UpdateSettings/>));assert.match(document.body.textContent!,/Version 0.1.2/);await click('Check for updates');assert.match(document.body.textContent!,/Manual installation required/);assert.ok([...document.querySelectorAll('button')].some(button=>button.textContent==='Download installer')); assert.ok(![...document.querySelectorAll('button')].some(button=>button.textContent==='Download update'));assert.equal(document.querySelector<HTMLInputElement>('[role=switch]')!.checked,true);await act(async()=>document.querySelector<HTMLInputElement>('[role=switch]')!.click());assert.equal(state.automaticDownloads,false);await click('Release notes');assert.equal(website,1);
+    await act(async()=>changed({...state,canInstall:true,status:'available',automaticDownloads:false}));await click('Download update');assert.equal(downloads,1);assert.equal(document.querySelector('progress')!.value,0);
+    await act(async()=>changed({...state,canInstall:true,status:'checking'}));assert.equal([...document.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='Check for updates')!.disabled,true);
+    await act(async()=>changed({...state,canInstall:true,status:'downloading',progress:55,automaticDownloads:true}));assert.equal(document.querySelector('progress')!.value,55);assert.match(document.body.textContent!,/55%/);
     await act(async()=>changed({...state,canInstall:true,status:'ready'}));await click('Restart and install');assert.equal(install,1);
-    await act(async()=>changed({...state,status:'error',message:'Signature mismatch'}));assert.match(document.querySelector('[role=alert]')!.textContent!,/Signature/);await click('Open download page');assert.equal(website,2);
+    await act(async()=>changed({...state,status:'error',message:'Signature mismatch'}));assert.match(document.querySelector('[role=alert]')!.textContent!,/Signature/);await click('Release notes');assert.equal(website,2);await act(async()=>changed({...state,status:'up-to-date',message:undefined}));assert.match(document.body.textContent!,/You’re up to date/);assert.equal(document.querySelector('progress'),null);assert.equal([...document.querySelectorAll('button')].some(button=>button.textContent==='Restart and install'),false);
   }finally{await act(async()=>root.unmount());dom.window.close();}assert.equal(stopped,true);
 });
 
@@ -64,4 +66,15 @@ test('Sparkle rejects download failures and malformed versions without installin
   const sparkle=new FakeSparkle(),updates=new AppUpdates(new FakeUpdater() as unknown as AppUpdater,'0.1.2',true,async()=>'0.1.27',()=>{},sparkle);
   await updates.check();let download=updates.download();sparkle.emit({type:'error',message:'Invalid EdDSA signature'});await download;assert.equal(updates.state.status,'error');assert.match(updates.state.message!,/signature/);assert.equal(sparkle.installs,0);
   await updates.check();download=updates.download();sparkle.emit({type:'update-downloaded',version:'invalid'});await download;assert.equal(updates.state.status,'error');assert.equal(sparkle.installs,0);
+});
+
+test('automatic downloads can be disabled or enabled without ever installing automatically',async()=>{
+ const fake=new FakeUpdater(),updates=new AppUpdates(fake as unknown as AppUpdater,'0.1.2',true,async()=>null,()=>{},undefined,true);
+ await Promise.all([updates.check(),updates.check()]);assert.equal(fake.downloads,1);assert.equal(updates.state.status,'ready');assert.equal(fake.installs,0);assert.equal(updates.state.automaticDownloads,true);
+ const manual=new AppUpdates(new FakeUpdater() as unknown as AppUpdater,'0.1.2',true,async()=>null,()=>{},undefined,true);manual.setAutomaticDownloads(false);await manual.check();assert.equal(manual.state.status,'available');manual.setAutomaticDownloads(true);await manual.download();assert.equal(manual.state.status,'ready');
+ const fallback=new AppUpdates(new FakeUpdater() as unknown as AppUpdater,'0.1.2',false,async()=>'0.1.27',()=>{},undefined,true);assert.equal((await fallback.check()).status,'available');assert.equal(fallback.state.canInstall,false);
+ const failed=new FakeUpdater();failed.failure=true;const error=new AppUpdates(failed as unknown as AppUpdater,'0.1.2',true,async()=>null,()=>{},undefined,true);await error.check();assert.equal(error.state.status,'error');assert.match(error.state.message!,/Download failed/);assert.equal(failed.installs,0);
+});
+test('automatic Sparkle downloads still wait for the native completed event',async()=>{
+ const sparkle=new FakeSparkle(),updates=new AppUpdates(new FakeUpdater() as unknown as AppUpdater,'0.1.2',true,async()=>'0.1.27',()=>{},sparkle,true),check=updates.check();await new Promise(resolve=>setImmediate(resolve));assert.equal(sparkle.checks,1);assert.equal(updates.state.status,'downloading');sparkle.emit({type:'update-downloaded',version:'0.1.27'});await check;assert.equal(updates.state.status,'ready');assert.equal(sparkle.installs,0);
 });

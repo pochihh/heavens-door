@@ -47,6 +47,24 @@ test('cards, boards, shared undo and external edits preserve file identity and c
   await assert.rejects(() => undo.travel(false,changes => w.write(changes)),/External changes/);
   assert.equal(undo.past.at(-1)?.label,'Write');
 });
+test('new whiteboards use the M preset without resizing existing placements',async t=>{
+  const f=await fixture();let w=await Workspace.open(f.root,f.cache);
+  t.after(async()=>{w.close();await fs.rm(f.folder,{recursive:true,force:true});});
+  const home=()=>w.snapshot().boards.find(b=>!b.folder)!,tile=(folder:string)=>home().cards.find(p=>p.folder===folder)!;
+  await w.createFolder('','Default',{x:30,y:40});
+  assert.deepEqual([tile('Default').width,tile('Default').height],[340,170]);
+  assert.deepEqual(readBoard(home().path,await w.read(home().path)).cards.find(p=>p.folder==='Default'),tile('Default'),'positioned creation persists its preset size');
+  const {DEFAULT_ARRANGEMENT}=await import('../src/board-arrangement');
+  await w.setPreferences({arrangement:{...DEFAULT_ARRANGEMENT,widths:[220,360,520,760],boardHeights:[140,210,300,420]}});
+  assert.deepEqual([tile('Default').width,tile('Default').height],[340,170],'changing the chart leaves saved geometry intact');
+  await w.createFolder('','Custom',{x:500,y:40});await w.createFolder('','Discovered');
+  for(const folder of ['Custom','Discovered'])assert.deepEqual([tile(folder).width,tile(folder).height],[360,210]);
+  await w.setPreferences({arrangement:{...DEFAULT_ARRANGEMENT,widths:[220,360,520,760],boardHeights:undefined}});
+  await w.createFolder('','Legacy',{x:1000,y:40});assert.deepEqual([tile('Legacy').width,tile('Legacy').height],[360,170],'older settings retain the M height fallback');
+  w.close();w=await Workspace.open(f.root,f.cache);
+  assert.deepEqual([tile('Default').width,tile('Default').height],[340,170]);assert.deepEqual([tile('Custom').width,tile('Custom').height],[360,210]);
+});
+
 test('metadata survives edits and backlinks ignore fenced examples',async t => {
   const f=await fixture(); const w=await Workspace.open(f.root,f.cache);
   t.after(async () => { w.close(); await fs.rm(f.folder,{recursive:true,force:true}); });

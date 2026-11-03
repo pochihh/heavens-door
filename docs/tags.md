@@ -85,7 +85,7 @@ Drag a property label to reorder that card’s fields, with the shared vertical 
 
 Drag pills horizontally with the shared phantom/empty slot, or use Alt+Left/Right. Drop saves the ordered `tags` array in that card’s frontmatter through shared undo; fields, values, comments and body remain unchanged. Escape or dropping outside cancels. A valid drop activates the dragged tag and opens its properties, including a drop back into its original slot; cancelled drags preserve the previous active tag. Alt+Left/Right also activates the reordered tag.
 
-The tag page Color swatches and Settings → Tag colors assign a literal six-digit hex color to each tag, shared by its pills throughout the workspace. The `tagColors` mapping lives in `.heavens-door/settings.json`, outside content history. Reset removes the mapping; theme colors then apply. The existing workspace palette/custom hex picker is reused. Editing a palette swatch does not recolor tags already assigned its old hex value; assigning a new tag color intentionally updates all its pills. Theme blending controls surface appearance.
+The tag page Color swatches and Settings → Tags → Tag colors assign a literal six-digit hex color to each tag, shared by its pills throughout the workspace. The `tagColors` mapping lives in `.heavens-door/settings.json`, outside content history. Reset removes the mapping; theme colors then apply. The existing workspace palette/custom hex picker is reused. Editing a palette swatch does not recolor tags already assigned its old hex value; assigning a new tag color intentionally updates all its pills. Theme blending controls surface appearance.
 
 
 ## Indexed reads and write boundaries

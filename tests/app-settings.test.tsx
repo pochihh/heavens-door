@@ -6,23 +6,23 @@ import {tmpdir} from 'node:os';
 import {JSDOM} from 'jsdom';
 import {act} from 'react';
 import {createRoot} from 'react-dom/client';
-import {readAppSettings,writeHardwareAcceleration} from '../src/app-settings';
+import {readAppSettings,writeHardwareAcceleration,writeAutomaticDownloads} from '../src/app-settings';
 import {PerformanceSettings} from '../src/renderer/PerformanceSettings';
 import type {AppSettings,Bridge} from '../src/shared';
 
 test('hardware acceleration defaults on, persists false, and rejects invalid or failed writes',async t=>{
   const dir=await fs.mkdtemp(join(tmpdir(),'heavens-app-settings-')),file=join(dir,'app-settings.json');
   t.after(()=>fs.rm(dir,{recursive:true,force:true}));
-  assert.deepEqual(readAppSettings(file),{hardwareAcceleration:true});
+  assert.deepEqual(readAppSettings(file),{hardwareAcceleration:true,automaticDownloads:true});
   assert.equal(writeHardwareAcceleration(file,false),false);
-  assert.deepEqual(readAppSettings(file),{hardwareAcceleration:false});
+  assert.deepEqual(readAppSettings(file),{hardwareAcceleration:false,automaticDownloads:true});
   const saved=await fs.readFile(file,'utf8');
   assert.throws(()=>writeHardwareAcceleration(file,'false'),/on or off/);
   assert.equal(await fs.readFile(file,'utf8'),saved);
   await fs.writeFile(file,'{broken');
   const fallback=readAppSettings(file);assert.equal(fallback.hardwareAcceleration,true);assert.match(fallback.warning??'',/could not be read/);
   assert.equal(await fs.readFile(file,'utf8'),'{broken','a failed read does not rewrite user data');
-  writeHardwareAcceleration(file,true);assert.deepEqual(readAppSettings(file),{hardwareAcceleration:true});
+  writeHardwareAcceleration(file,true);assert.deepEqual(readAppSettings(file),{hardwareAcceleration:true,automaticDownloads:true});
   const occupied=join(dir,'directory');await fs.mkdir(occupied);
   assert.throws(()=>writeHardwareAcceleration(occupied,false));
   assert.ok((await fs.stat(occupied)).isDirectory());
@@ -56,9 +56,17 @@ test('Performance saves device preferences, receives other-window changes, and l
     fail=false;await act(async()=>{settings={hardwareAcceleration:false,restartRequired:true};changed();});
     assert.equal(toggle().checked,false,'other windows share the same device preference');
     assert.equal(diagnosticReads,0,'preference changes do not request graphics diagnostics');
-    await act(async()=>{document.querySelector('details')!.open=true;await new Promise(resolve=>setTimeout(resolve,0));});
+    assert.equal(document.querySelector('details'),null,'Developer settings are visible without a disclosure');
+    await act(async()=>document.querySelector<HTMLButtonElement>('.developer-settings button')!.click());
     assert.equal(diagnosticReads,1);assert.match(document.querySelector('dl')?.textContent??'',/Hardware acceleration in this sessionOn/,'runtime status is separate from the pending preference');
-    await act(async()=>document.querySelector<HTMLButtonElement>('details button')!.click());assert.equal(diagnosticReads,2);
+    await act(async()=>document.querySelector<HTMLButtonElement>('.developer-settings button')!.click());assert.equal(diagnosticReads,2);
   } finally {await act(async()=>root.unmount());dom.window.close();}
   assert.equal(unsubscribed,true);
+});
+
+test('automatic downloads default on for legacy settings and writes preserve the other device preferences',async t=>{
+ const dir=await fs.mkdtemp(join(tmpdir(),'heavens-update-setting-')),file=join(dir,'app-settings.json');t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ await fs.writeFile(file,JSON.stringify({hardwareAcceleration:false,futureSetting:'kept'}));assert.equal(readAppSettings(file).automaticDownloads,true);
+ writeAutomaticDownloads(file,false);assert.deepEqual(readAppSettings(file),{hardwareAcceleration:false,automaticDownloads:false});writeHardwareAcceleration(file,true);assert.equal(readAppSettings(file).automaticDownloads,false);assert.equal(JSON.parse(await fs.readFile(file,'utf8')).futureSetting,'kept');
+ assert.throws(()=>writeAutomaticDownloads(file,1));writeAutomaticDownloads(file,true);assert.equal(readAppSettings(file).automaticDownloads,true);
 });

@@ -10,11 +10,12 @@ export function PerformanceSettings({section}:{section?:'performance'|'developer
   const [settings,setSettings]=useState<AppSettings>(),[saving,setSaving]=useState(false),[error,setError]=useState('');
   const [diagnostics,setDiagnostics]=useState<GraphicsDiagnostics>(),[loading,setLoading]=useState(false),[diagnosticError,setDiagnosticError]=useState('');
   useEffect(()=>{
+    if(section==='developer')return;
     let mounted=true;
     const refresh=()=>{void window.door.appSettings().then(value=>{if(mounted)setSettings(value);}).catch(e=>{if(mounted)setError(String(e));});};
     const unsubscribe=window.door.onAppSettingsChange(refresh);refresh();
     return()=>{mounted=false;unsubscribe();};
-  },[]);
+  },[section]);
   async function change(enabled:boolean) {
     setSaving(true);setError('');
     try {setSettings(await window.door.setHardwareAcceleration(enabled));}
@@ -29,8 +30,7 @@ export function PerformanceSettings({section}:{section?:'performance'|'developer
   }
   return <>
     {section!=='developer'&&<section className="settings-section" aria-label={ui.settings.performance}>
-      <h3>{ui.settings.performance}</h3>
-      <small>{ui.settings.deviceScope}</small>
+      {!section&&<><h3>{ui.settings.performance}</h3><small>{ui.settings.deviceScope}</small></>}
       {settings?<>
         <label className="settings-toggle"><span>{ui.settings.hardwareAcceleration}</span><input type="checkbox" role="switch" checked={settings.hardwareAcceleration} disabled={saving} aria-describedby="hardware-acceleration-help" data-tooltip={tooltips.settings.hardwareAcceleration} onChange={e=>{void change(e.target.checked);}}/></label>
         <small id="hardware-acceleration-help">{ui.settings.accelerationHelp}</small>
@@ -39,10 +39,10 @@ export function PerformanceSettings({section}:{section?:'performance'|'developer
       </>:<small>{ui.settings.loading}</small>}
       {error&&<p role="alert">{error}</p>}
     </section>}
-    {section!=='performance'&&<details className="settings-section developer-settings" onToggle={e=>{if(e.currentTarget.open&&!diagnostics&&!loading)void refreshDiagnostics();}}>
-      <summary data-tooltip={tooltips.settings.developer}>{ui.developer.title}</summary>
+    {section!=='performance'&&<section className="settings-section developer-settings" aria-label={section?undefined:ui.developer.title}>
+      {!section&&<h3>{ui.developer.title}</h3>}
       <section aria-label={ui.developer.graphics}>
-        <h3>{ui.developer.graphics}</h3>
+        <h4>{ui.developer.graphics}</h4>
         {TEST_BUILD&&<><label className="settings-toggle"><span>{ui.developer.retainedRenderer}</span><input type="checkbox" role="switch" checked={retained} onChange={e=>setRetainedEnabled(e.target.checked)}/></label><small>{ui.developer.retainedHelp}</small></>}
         <button disabled={loading} data-tooltip={tooltips.settings.refreshGraphics} onClick={()=>{void refreshDiagnostics();}}>{ui.developer.refresh}</button>
         {loading&&<small role="status">{ui.developer.loading}</small>}
@@ -57,6 +57,6 @@ export function PerformanceSettings({section}:{section?:'performance'|'developer
         </>}
         {diagnosticError&&<p role="alert">{diagnosticError}</p>}
       </section>
-    </details>}
+    </section>}
   </>;
 }

@@ -1,12 +1,14 @@
+import {useDocumentLinks} from './DocumentLink';
 import {updateEditorContent} from './editor-content';
 import {useEffect,useMemo} from 'react';
 import {EditorContent,useEditor} from '@tiptap/react';
 import {extensions} from './editor-schema';
 import {readingText} from '../text/reading';
 export function AnnotationEditor({path,text,onChange}:{path:string;text:string;onChange:(text:string)=>void}){
+ const links=useDocumentLinks(path);
  const schema=useMemo(()=>extensions(path).filter(e=>!['cardTitle','cardKeyboard'].includes(e.name)),[path]);
  const editor=useEditor({extensions:schema,content:text,contentType:'markdown',editorProps:{attributes:{'aria-label':readingText.comment,spellcheck:'true'},handleDrop:()=>true,handleScrollToSelection:view=>!!view.dom.closest('.board-pdf')},onUpdate:({editor})=>onChange(editor.markdown!.serialize(editor.getJSON()))});
  useEffect(()=>{if(editor)editor.commands.focus('start',{scrollIntoView:false});},[editor]);
  useEffect(()=>{if(editor&&!editor.isDestroyed&&editor.markdown!.serialize(editor.getJSON())!==text)updateEditorContent(editor,text,false);},[editor,text]);
- return <EditorContent editor={editor} className="annotation-editor prose"/>;
+ return <><EditorContent editor={editor} className="annotation-editor prose" onClick={links.click} onContextMenu={links.onContextMenu}/>{links.picker}</>;
 }

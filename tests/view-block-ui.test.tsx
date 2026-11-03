@@ -144,7 +144,7 @@ test('Kanban drops keep preview and editor views mounted while saves and refresh
   const session=new Session({assetUrl:(s:string)=>s,request:async()=>{requests++;return requests===1?structuredClone(results):new Promise<ViewResults>(resolve=>{finishRefresh=resolve;});}} as unknown as Bridge);window.door=session.bridge;session.state.snapshot=snapshot;
   const render=()=>{const body='# Board\n\n```view-block\n'+source+'```\n\nAn unchanged paragraph.';root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}>{editable?<CardEditor path="owner.md" body={body} cards={snapshot.cards} onEdit={()=>{writes++;}}/>:<TitleContent path="owner.md" html={preview(body,'owner.md')}/>}</ViewBlockProvider>);};
   session.moveViewCard=async()=>{await new Promise<void>((resolve,reject)=>{finishSave=resolve;failSave=reject;});definition.views[0].order={Todo:['b','a']};source=writeViewBlock(source,definition);snapshot={...snapshot,cards:snapshot.cards.map(c=>c.id==='owner'?{...c,revision:'r2'}:c)};session.state.snapshot=snapshot;render();return {snapshot,edits:[]};};
-  await act(async()=>render());await settle();const view=document.querySelector('.view-block'),board=document.querySelector<HTMLElement>('.view-kanban')!,other=document.querySelector('[data-card-id=b]'),heading=document.querySelector('h1');board.scrollLeft=52;board.dispatchEvent(new dom.window.Event('scroll',{bubbles:true}));
+  await act(async()=>render());await settle();assert.equal(document.querySelector('.view-block')?.closest('.editor-code-block'),null,'view blocks never inherit the code block shell');const view=document.querySelector('.view-block'),board=document.querySelector<HTMLElement>('.view-kanban')!,other=document.querySelector('[data-card-id=b]'),heading=document.querySelector('h1');board.scrollLeft=52;board.dispatchEvent(new dom.window.Event('scroll',{bubbles:true}));
   const ids=()=>[...document.querySelectorAll('[data-tag-column=Todo] [data-card-id]')].map(el=>(el as HTMLElement).dataset.cardId);
   const rect=(left:number,top:number,width:number,height:number)=>({left,right:left+width,top,bottom:top+height,width,height,x:left,y:top,toJSON(){}});
   const drag=async(toDone=false)=>{board.getBoundingClientRect=()=>rect(0,0,420,500);const page=board.closest<HTMLElement>('.editor-body');if(page)page.getBoundingClientRect=()=>rect(0,0,420,500);document.querySelectorAll<HTMLElement>('[data-tag-column]').forEach((el,i)=>el.getBoundingClientRect=()=>rect(i*220,0,200,500));document.querySelectorAll<HTMLElement>('[data-card-id]').forEach(el=>el.getBoundingClientRect=()=>rect(0,el.dataset.cardId==='a'?40:130,200,70));const card=document.querySelector('[data-card-id=a]')!;const event=(target:Element|Document,type:string,x:number,y:number)=>target.dispatchEvent(new dom.window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));await act(async()=>{event(card,'pointerdown',20,60);event(document,'pointermove',toDone?260:20,toDone?60:225);event(document,'pointerup',toDone?260:20,toDone?60:225);});};
@@ -223,4 +223,49 @@ test('a Todo-only binding shows no Read later columns or options even when the c
   const done=[...document.querySelectorAll<HTMLButtonElement>('.property-choices [role=option]')].find(node=>node.textContent==='Done')!;await act(async()=>done.click());
   assert.deepEqual(saved,['todo/Status']);assert.equal(row.properties['readlater/status'],'Reading');assert.equal(parseViewBlock(source).query.where&&JSON.stringify(parseViewBlock(source).query.where).includes('todo'),true);
  }finally{await act(async()=>root.unmount());session.dispose();}
+});
+
+test('editor and preview handoffs reuse populated pages and refresh after real query or data changes',async()=>{
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,Element:dom.window.Element,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),innerWidth:1200,innerHeight:900,matchMedia:()=>({matches:true}),IS_REACT_ACT_ENVIRONMENT:true});
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ const {createRoot}=await import('react-dom/client'),{ViewBlockProvider}=await import('../src/renderer/ViewBlock'),{TitleContent}=await import('../src/renderer/TitleContent'),{CardEditor}=await import('../src/renderer/Editor'),{preview}=await import('../src/renderer/markdown');
+ let snapshot:Snapshot={root:'/test',name:'Test',cards:['owner','a','b'].map(id=>({id,path:id+'.md',name:id,revision:'r1',legacy:false})),boards:[],issues:[],historyAvailable:false,tags:[]},queries=0,writes=0;
+ const session=new Session({assetUrl:(s:string)=>s,request:async(request:Parameters<Bridge['request']>[0])=>{assert.equal(request.kind,'viewCards');queries++;const offset=request.kind==='viewCards'?request.offset??0:0;return {rows:[{card:snapshot.cards[offset+1],properties:{}}],total:2,...offset?{}:{nextOffset:1}};}} as unknown as Bridge);window.door=session.bridge;session.state.snapshot=snapshot;
+ const definition=newViewBlock(),root=createRoot(document.getElementById('root')!);let source=writeViewBlock('',definition);
+ const render=(editor:boolean)=>{const body='# Dashboard\n\n```view-block\n'+source+'```\n';root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}>{editor?<CardEditor path="owner.md" body={body} cards={snapshot.cards} onEdit={()=>{writes++;}}/>:<TitleContent path="owner.md" className="editor-body" html={preview(body,'owner.md')}/>}</ViewBlockProvider>);};
+ const settle=()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,130));}),names=()=>[...document.querySelectorAll('.view-card-title')].map(el=>el.textContent);
+ try{
+  await act(async()=>render(true));await settle();assert.deepEqual(names(),['a']);
+  await act(async()=>document.querySelector<HTMLButtonElement>('.view-result-footer button')!.click());assert.deepEqual(names(),['a','b']);assert.equal(queries,2);
+  const scroller=document.querySelector<HTMLElement>('.view-records')!;scroller.scrollLeft=42;scroller.dispatchEvent(new dom.window.Event('scroll'));
+  for(const editor of [false,true,false,true]){await act(async()=>render(editor));assert.deepEqual(names(),['a','b'],'already loaded rows stay visible immediately');assert.equal(document.querySelector<HTMLElement>('.view-records')!.scrollLeft,42);assert.doesNotMatch(document.querySelector('.view-result-footer')!.textContent!,/Loading/);}
+  await settle();assert.equal(queries,2,'focus-only handoffs issue no new queries');assert.equal(writes,0);
+  snapshot={...snapshot,cards:snapshot.cards.map(card=>card.id==='a'?{...card,name:'Updated a',revision:'r2'}:card)};session.state.snapshot=snapshot;
+  await act(async()=>render(false));assert.deepEqual(names(),['a','b'],'a data-changing handoff retains rows while the refreshed query is pending');await settle();assert.deepEqual(names(),['Updated a']);assert.equal(queries,3,'a real card revision refreshes the query');
+  definition.views[0].filter={field:'file.name',op:'contains',value:'Updated'};source=writeViewBlock('',definition);await act(async()=>render(true));await settle();assert.equal(queries,4,'filter changes cannot reuse another query');
+  snapshot={...snapshot,preferences:{theme:'dark',stem:'untitled',starred:[],recent:[],icons:{},query:{mergeProperties:false,caseSensitive:false}}};session.state.snapshot=snapshot;await act(async()=>render(true));await settle();assert.equal(queries,5,'query settings are part of result validity');
+  snapshot={...snapshot,fileErrors:{'a.md':'Unreadable metadata'}};session.state.snapshot=snapshot;await act(async()=>render(true));await settle();assert.equal(queries,6,'unreadable-file changes cannot keep a previously valid result cached');
+  session.dispose();assert.equal(session.viewResults.size,0,'workspace disposal releases retained results');
+ }finally{await act(async()=>root.unmount());session.dispose();}
+});
+
+test('responsive actions attach when a previously disabled View block appears',async()=>{
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{pretendToBeVisual:true});windows.push(dom);
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,HTMLInputElement:dom.window.HTMLInputElement,getComputedStyle:dom.window.getComputedStyle,innerWidth:1200,innerHeight:900,IS_REACT_ACT_ENVIRONMENT:true});
+ dom.window.HTMLElement.prototype.showPopover=function(){this.setAttribute('data-open','true');};
+ let width=280;const observers=new Map<Element,()=>void>(),previous=globalThis.ResizeObserver;
+ Object.defineProperty(dom.window.HTMLElement.prototype,'clientWidth',{get(){return this.classList.contains('view-block')?width:0;}});
+ globalThis.ResizeObserver=class {callback:()=>void;constructor(callback:()=>void){this.callback=callback;}observe(element:Element){observers.set(element,this.callback);}disconnect(){for(const [element,callback] of observers)if(callback===this.callback)observers.delete(element);}} as unknown as typeof ResizeObserver;
+ const {createRoot}=await import('react-dom/client'),{ViewBlock,ViewBlockProvider}=await import('../src/renderer/ViewBlock');
+ let snapshot:Snapshot={root:'/test',name:'Test',cards:[],boards:[],issues:[],historyAvailable:false,preferences:{theme:'dark',stem:'untitled',starred:[],recent:[],icons:{},features:{views:false}}};const bridge={request:async()=>({rows:[],total:0})} as unknown as Bridge,session=new Session(bridge);window.door=bridge;
+ const root=createRoot(document.getElementById('root')!),source=writeViewBlock('',newViewBlock());let writes=0;
+ const render=()=>root.render(<ViewBlockProvider snapshot={snapshot} session={session} onOpen={()=>{}}><ViewBlock source={source} onChange={()=>{writes++;}}/></ViewBlockProvider>);
+ try{
+  await act(async()=>render());assert.equal(document.querySelector('.view-block'),null);assert.equal(observers.size,0);
+  snapshot={...snapshot,preferences:{...snapshot.preferences!,features:{views:true}}};await act(async()=>render());assert.equal(observers.size,1);assert.equal(document.querySelector('.view-actions [aria-label=Filter]'),null);assert.equal(document.querySelector('.view-actions [aria-label=Sort]'),null);
+  await act(async()=>document.querySelector<HTMLButtonElement>('[aria-label="View options"]')!.click());assert.ok([...document.querySelectorAll('.view-menu-list button')].some(b=>b.textContent==='Filter'));assert.ok([...document.querySelectorAll('.view-menu-list button')].some(b=>b.textContent==='Sort'));
+  width=620;await act(async()=>{for(const measure of observers.values())measure();});assert.ok(document.querySelector('.view-actions [aria-label=Filter]'));assert.ok(document.querySelector('.view-actions [aria-label=Sort]'));assert.equal(writes,0);
+ }finally{await act(async()=>root.unmount());session.dispose();globalThis.ResizeObserver=previous;}
+ assert.equal(observers.size,0);
 });

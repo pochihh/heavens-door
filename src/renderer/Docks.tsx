@@ -30,7 +30,7 @@ export function SideDock({side,docks,drag,onTabDrag,onChange,onPreview,renderMod
     {dock.groups.map((group,index)=>{const active=(moving?.group===group.id?activeAfterRemoval(group.tabs,group.active,moving.key):group.active) as ModuleId|'';
       const openMenu=(target:Element,x:number,y:number)=>{
         const module=(target.closest<HTMLElement>('[data-tab-key]')?.dataset.tabKey??group.active) as ModuleId,other=side==='left'?'right':'left';
-        setMenu({label:ui.layout.tabGroupActions,x,y,actions:[
+        setMenu({label:ui.layout.viewTabActions,x,y,actions:[
             {label:ui.common.closeViewTab,icon:'close',run:()=>onChange(closeModule(docks,module))},
             {separatorBefore:true,label:ui.layout.moveView(ui.layout.sideDock[other]),icon:other,run:()=>onChange(moveModule(docks,{module},{side:other,position:'after'}))},
             {label:ui.layout.moveTabGroup(ui.layout.sideDock[other]),icon:other,run:()=>onChange(moveModule(docks,{group:group.id},{side:other,position:'after'}))},

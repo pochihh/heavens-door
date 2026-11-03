@@ -7,8 +7,8 @@ let highlighted:HTMLElement|null=null;
 let hoverTab:HTMLElement|null=null,hoverTimer:ReturnType<typeof setTimeout>|undefined,navigated=false;
 export function documentDragNavigated(){return navigated;}
 export function clearDocumentNavigation(){clearTimeout(hoverTimer);hoverTimer=undefined;hoverTab=null;navigated=false;}
-function hoverDocumentTab(x:number,y:number){
-  const tab=document.elementsFromPoint?.(x,y).map(el=>el.closest<HTMLElement>('[data-tab-family="main"] [data-tab-key]')).find(Boolean)??null;
+function hoverDocumentTab(hits:Element[]){
+  const tab=hits.map(el=>el.closest<HTMLElement>('[data-tab-family="main"] [data-tab-key]')).find(Boolean)??null;
   if(tab===hoverTab)return;clearTimeout(hoverTimer);hoverTimer=undefined;hoverTab=tab;
   if(tab&&!tab.classList.contains('active-tab'))hoverTimer=setTimeout(()=>{
     if(!tab.isConnected)return;navigated=true;
@@ -21,11 +21,11 @@ export function documentDrag(source:HTMLElement,key=source.dataset.fileKey):Docu
   const value=source.dataset.dragKey??key;
   return value&&/^(card:|board:|file:)/.test(value)?{key:value,path:source.dataset.dragPath,source:source.dataset.sourceBoard,placement:source.dataset.placement}:null;
 }
-export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:HTMLElement):HTMLElement|null {
+export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:HTMLElement,hits?:Element[]):HTMLElement|null {
   if(!document.elementsFromPoint)return null;
   const board=drag.key.startsWith('board:'),path=board?drag.key.slice(6):drag.path??(drag.key.startsWith('file:')?drag.key.slice(5):undefined);
   if(board&&!path)return null;
-  const targets=[...new Set(document.elementsFromPoint(x,y).filter(hit=>!exclude?.contains(hit)&&!hit.closest('.drag-phantom,.board-placement.dragging')).map(hit=>hit.closest<HTMLElement>('[data-drop-folder]')).filter((target):target is HTMLElement=>!!target&&!exclude?.contains(target)))];
+  const targets=[...new Set((hits??document.elementsFromPoint(x,y)).filter(hit=>!exclude?.contains(hit)&&!hit.closest('.drag-phantom,.board-placement.dragging')).map(hit=>hit.closest<HTMLElement>('[data-drop-folder]')).filter((target):target is HTMLElement=>!!target&&!exclude?.contains(target)))];
   // A modal asset reader covers the board during note extraction; hit-test the board beneath it.
   if(drag.note)for(const target of document.querySelectorAll<HTMLElement>('.canvas[data-drop-folder],.board-tile[data-drop-folder]')){const r=target.getBoundingClientRect(),clip=target.closest('.canvas')?.getBoundingClientRect();if(clip&&(x<clip.left||x>clip.right||y<clip.top||y>clip.bottom))continue;if(r.width&&r.height&&x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom&&!targets.includes(target))targets.push(target);}
   // The containing canvas must not win over a child board underneath the dragged item.
@@ -44,8 +44,8 @@ export function documentDropTarget(drag:DocumentDrag,x:number,y:number,exclude?:
   return null;
 }
 export function previewDocumentDrop(drag:DocumentDrag,x:number,y:number,exclude?:HTMLElement){
-  hoverDocumentTab(x,y);
-  const target=documentDropTarget(drag,x,y,exclude);
+  const hits=document.elementsFromPoint?.(x,y)??[];hoverDocumentTab(hits);
+  const target=documentDropTarget(drag,x,y,exclude,hits);
   if(target!==highlighted){clearDocumentDrop();highlighted=target;target?.classList.add('document-drop-target');}
   return !!target;
 }

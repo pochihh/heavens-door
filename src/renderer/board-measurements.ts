@@ -1,4 +1,4 @@
-export interface BoardMeasurement {height:number;width:number;top:number;pdfHeight?:number;signature:string}
+export interface BoardMeasurement {height:number;width:number;top:number;pdfHeight?:number;notes?:Record<string,{x:number;y:number}>;signature:string}
 // Session-only geometry survives tab unmounts; signatures still validate each measurement.
 const entries=new Map<string,BoardMeasurement>(),LIMIT=20_000;
 export function boardMeasurements(board:string,ids:string[]){const result:Record<string,BoardMeasurement>={};for(const id of ids){const key=board+'\n'+id,value=entries.get(key);if(value){entries.delete(key);entries.set(key,value);result[id]=value;}}return result;}

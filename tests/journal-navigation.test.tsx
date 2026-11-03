@@ -23,7 +23,7 @@ test('journal split keeps one reusable tab through history, closing, moves, rena
   tree=updatePane(tree,first.id,p=>mapPaneDocuments(p,key=>key==='card:reopened'?'card:renamed':key));tree=openJournalTab(tree,id,'card:latest').tree;assert.equal(panes(tree)[0].active,moved.journalTab);assert.equal(tabDocument(panes(tree)[0]),'card:latest');assert.deepEqual(tabHistory(panes(tree)[0]).entries,['card:renamed','card:latest']);assert.deepEqual(restoreLayout(JSON.stringify(tree)),tree);
   tree=removePane(tree,first.id)!;tree=openJournalTab(tree,id,'card:new-split').tree;assert.equal(panes(tree).length,2);assert.notEqual(panes(tree)[1].id,id);
   const broken=pane('board:');broken.journalTab='missing';assert.equal(panes(restoreLayout(JSON.stringify(broken)))[0].journalTab,undefined);
-  let full:Layout=first;for(let i=1;i<MAX_PANES;i++)full=splitPane(full,first.id,'row',pane('card:'+i));assert.throws(()=>openJournalTab(full,first.id,'card:limit'),/Tab Group/);
+  let full:Layout=first;for(let i=1;i<MAX_PANES;i++)full=splitPane(full,first.id,'row',pane('card:'+i));assert.throws(()=>openJournalTab(full,first.id,'card:limit'),/split/);
   const fullSlot=pane();fullSlot.journalTab='';fullSlot.tabs=Array.from({length:MAX_TABS},(_,i)=>'card:'+i);fullSlot.active=fullSlot.tabs[0];assert.throws(()=>openJournalTab(fullSlot,fullSlot.id,'card:limit'),/tab/);
 });
 
@@ -50,7 +50,7 @@ test('Journal setting routes Calendar and ordinary opens to one split and its br
       default:throw new Error('Unexpected '+request.kind);
     }
   };
-  window.door={onUpdateChange:()=>()=>{},updateState:async()=>({currentVersion:'0.1.27',status:'idle',canInstall:false}),platform:'linux',assetUrl:(path:string)=>path,currentWorkspace:async()=>snapshot,onChange:()=>()=>{},onClosing:()=>()=>{},finishClosing:()=>{},cancelClosing:()=>{},request} as unknown as Bridge;
+  window.door={appLogo:async()=>({image:'',custom:false}),appSettings:async()=>({hardwareAcceleration:true}),onAppSettingsChange:()=>()=>{},cssSnippets:async()=>[],onCssSnippetsChange:()=>()=>{},onUpdateChange:()=>()=>{},updateState:async()=>({currentVersion:'0.1.27',status:'idle',canInstall:false}),platform:'linux',assetUrl:(path:string)=>path,currentWorkspace:async()=>snapshot,onChange:()=>()=>{},onClosing:()=>()=>{},finishClosing:()=>{},cancelClosing:()=>{},request} as unknown as Bridge;
   const {App,session}=await import('../src/renderer/App');
   const settle=()=>act(async()=>{await session.run(async()=>{});await new Promise(resolve=>setTimeout(resolve,40));});
   const click=async(selector:string)=>{const el=document.querySelector<HTMLButtonElement>(selector);assert.ok(el,selector);await act(async()=>el.click());await settle();};

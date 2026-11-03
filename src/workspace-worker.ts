@@ -2,7 +2,7 @@ import { ui } from './text/ui';
 import { parentPort } from 'node:worker_threads';
 import { relative, sep } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
-import {listFiles,inspectFile} from './core/files';
+import {fileStamp,editablePath,listFiles,inspectFile} from './core/files';
 import { Workspace } from './core/workspace';
 import type { Request } from './shared';
 
@@ -46,16 +46,16 @@ async function dispatch(request: Request) {
         }).catch(error => parentPort!.postMessage({event:'error',error:String(error)}));
       },100);
     });
-    watcher.on('error',error => parentPort!.postMessage({event:'error',error:String(error)}));
-    await new Promise<void>((resolve,reject)=>{
+    watcher.on('error',error => {workspace!.reportServiceError('watcher',error);parentPort!.postMessage({event:'change'});});
+    await new Promise<void>(resolve=>{
       const ready=()=>{watcher!.off('error',failed);resolve();};
-      const failed=(error:unknown)=>{watcher!.off('ready',ready);reject(error);};
+      const failed=(error:unknown)=>{watcher!.off('ready',ready);workspace!.reportServiceError('watcher',error);void watcher!.close().catch(error=>workspace!.reportServiceError('watcher',error));resolve();};
       watcher!.once('ready',ready).once('error',failed);
     });
     return workspace.snapshot();
   }
   if (!workspace) throw new Error(ui.errors.openAWorkspaceFirst);
-  workspace.assertReady();
+  if(!['snapshot','card','listFiles','inspectFile','fileStamp','history','checkpointChanges','query','viewCards','tagCards','cardProperties','boardMentions','journalEntries','readingFeeds','templatePlan','trashEntries'].includes(request.kind))workspace.assertReady();
   switch (request.kind) {
     case 'importReading': return workspace.importReading(request.value);
     case 'relinkPdfSource':string(request.path);string(request.expected);return workspace.relinkPdfSource(request.path,request.expected,request.value);
@@ -79,6 +79,7 @@ async function dispatch(request: Request) {
     case 'listFiles': string(request.path);return listFiles(workspace.root,request.path);
     case 'prepareBoardTrash':string(request.folder);return workspace.prepareBoardTrash(request.folder);
     case 'fileOperation': string(request.operation?.path);if(request.operation.destination!==undefined)string(request.operation.destination);if(request.operation.expected!==undefined)string(request.operation.expected);return workspace.fileOperation(request.operation);
+    case 'fileStamp':string(request.path);await editablePath(workspace.root,request.path);return fileStamp(workspace.root,request.path);
     case 'inspectFile': string(request.path);return inspectFile(workspace.root,request.path);
     case 'snapshot': return workspace.snapshot();
     case 'trashEntries': return workspace.trashEntries();

@@ -1,4 +1,8 @@
+import {NoticeBanner} from './NoticeBanner';
+import {useWorkspaceAppearance} from './WorkspaceAppearance';
+import {FileProblem} from './FileProblem';
 import {boardDropPosition} from '../board-drop';
+import {defaultBoardSize} from '../board-arrangement';
 import {ActionHub} from './ActionHub';
 import {hubModule,type HubCommand} from '../action-hub';
 import {matchesBinding} from '../keybindings';
@@ -61,8 +65,8 @@ function Application() {
   return <><TooltipHost/>{state.snapshot?<WorkspaceShell key={state.snapshot.root} snapshot={state.snapshot}/>:
     <div className={'app welcome-shell platform-'+window.door.platform} inert={opening}><div className="welcome-drag"/><div className="welcome">
       <section className="workspace-start-manager" aria-label={ui.workspace.manage}><h1>{ui.workspace.manage}</h1><WorkspaceManager snapshot={null} session={session}/></section>
-      {state.error&&<p role="alert">{state.error}</p>}
-    </div></div>}{opening&&<div className="workspace-loading" role="status" aria-live="polite" aria-busy="true"><div className="welcome-drag"/><div className="loading-message"><span className="loading-spinner" aria-hidden="true"/><strong>{ui.status.openingWorkspace}</strong><span>{ui.search.preparing}</span></div></div>}</>;
+
+    </div>{state.error&&<NoticeBanner key={state.error} message={state.error} onDismiss={()=>session.update({error:''})}/>}</div>}{opening&&<div className="workspace-loading" role="status" aria-live="polite" aria-busy="true"><div className="welcome-drag"/><div className="loading-message"><span className="loading-spinner" aria-hidden="true"/><strong>{ui.status.openingWorkspace}</strong><span>{ui.search.preparing}</span></div></div>}</>;
 }
 function Divider({axis='row',value,onChange,label}:{axis?:'row'|'column';value:number;onChange:(value:number)=>void;label:string}) {
   const drag=useRef<{coordinate:number;value:number}|null>(null);
@@ -88,6 +92,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   const [docks,setDocks]=useState<Docks>(()=>prefs.docks??defaultDocks());
   const enabledModule=(module:ModuleId)=>moduleEnabled(module,prefs);
   const left=!docks.left.collapsed&&docks.left.groups.some(g=>g.tabs.some(enabledModule)),right=!docks.right.collapsed&&docks.right.groups.some(g=>g.tabs.some(enabledModule));
+  const modalRef=useRef<HTMLDialogElement>(null);
   const [modal,setModal]=useState<'settings'|'icon'|'migration'|'workspaces'|null>(null);
   const [settingsPage,setSettingsPage]=useState('general');
   const [iconKey,setIconKey]=useState(''),[customIcon,setCustomIcon]=useState('');
@@ -144,11 +149,11 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   },[snapshot.pathMoves]);
   const active=panes(layout).find(p=>p.id===activeId)??panes(layout)[0];
   const rootCards=snapshot.cards.filter(c=>!parent(c.path));
-  useEffect(()=>{
+  useLayoutEffect(()=>{
     if(!modal)return;
-    const dialog=document.querySelector<HTMLElement>('[role=dialog]')!,previous=document.activeElement;
+    const dialog=modalRef.current!,previous=document.activeElement;dialog.showModal();
     (dialog.querySelector<HTMLElement>('[autofocus]')??dialog.querySelector<HTMLElement>('input,button'))?.focus();
-    return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
+    return()=>{dialog.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus({preventScroll:true});};
   },[modal]);
   const documentState=useRef<()=>DocumentsLayout>(()=>({tree:layout,active:active.id,views:{},formatting:[]}));
   documentState.current=()=>{
@@ -174,10 +179,11 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       const destination=panes(layout).find(p=>p.id===target.group);
       if(!destination||source.group!==target.group&&destination.tabs.length>=MAX_TABS)return;
       attempt((async()=>{
-        const sourcePane=panes(layout).find(p=>p.id===source.group)!;const documentKey=tabDocument(sourcePane,source.key);const info=documentInfo(documentKey,snapshot);await session.select(info.kind==='card'?info.path:null);
+        const sourcePane=panes(layout).find(p=>p.id===source.group)!;const documentKey=tabDocument(sourcePane,source.key);const info=documentInfo(documentKey,snapshot);
         const memory=memories.current.get(source.group+':'+documentKey);
         if(memory&&!destination.tabs.includes(source.key))memories.current.set(target.group+':'+documentKey,{...memory});
         setLayout(current=>moveTab(current,source.group,target.group,source.key,target.before));setActiveId(target.group);
+        await session.select(info.kind==='card'?info.path:null);
       })());
     }
   });
@@ -191,6 +197,7 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     const apply=()=>{document.documentElement.dataset.theme=prefs.theme==='system'?(query.matches?'dark':'light'):prefs.theme;};
     apply();query.addEventListener('change',apply);return()=>query.removeEventListener('change',apply);
   },[prefs.theme]);
+  useWorkspaceAppearance(snapshot?.root,prefs);
   useEffect(()=>{
     if(historyVisible)attempt(session.history());
   },[historyVisible]);
@@ -231,14 +238,13 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
   }
   function split(p:Pane,axis:'row'|'column'){
     if(panes(layout).length>=MAX_PANES)return;
-    document.querySelectorAll('details.pane-menu[open]').forEach(el=>el.removeAttribute('open'));
     const next=pane(tabDocument(p));setLayout(current=>splitPane(current,p.id,axis,next));setActiveId(next.id);
   }
   function createFolder(folder:string,position?:{x:number;y:number},paneId=activeId){
     // Toolbar and Explorer creation use the visible parent canvas when available.
     const visible=panes(layout).find(p=>p.id===paneId&&tabDocument(p)==='board:'+folder);
     const canvas=visible&&[...document.querySelectorAll<HTMLElement>('.note-pane')].find(el=>el.dataset.pane===paneId)?.querySelector('.canvas');
-    if(!position&&canvas){const r=canvas.getBoundingClientRect(),camera=memories.current.get(paneId+':board:'+folder)?.camera??{x:20,y:20,zoom:.85};position={x:(r.width/2-camera.x)/camera.zoom-160,y:(r.height/2-camera.y)/camera.zoom-80};}
+    if(!position&&canvas){const r=canvas.getBoundingClientRect(),camera=memories.current.get(paneId+':board:'+folder)?.camera??{x:20,y:20,zoom:.85},size=defaultBoardSize(prefs.arrangement);position={x:(r.width/2-camera.x)/camera.zoom-size.width/2,y:(r.height/2-camera.y)/camera.zoom-size.height/2};}
     const placement=position;
     attempt(session.run(async()=>{
       await session.flush();
@@ -310,9 +316,19 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     window.addEventListener('door:document-hover-tab',hover);return()=>window.removeEventListener('door:document-hover-tab',hover);
   },[popup]);
   function selectTab(p:Pane,key:string){attempt((async()=>{const info=documentInfo(tabDocument(p,key),session.state.snapshot!);await session.select(info.kind==='card'&&info.exists?info.path:null);setLayout(current=>updatePane(current,p.id,g=>({...g,active:key})));setActiveId(p.id);})());}
+  async function deleteCard(id:string){
+    const card=session.state.snapshot!.cards.find(card=>card.id===id);if(!card)return;
+    if(!await confirm({title:ui.card.deleteTitle(1),message:ui.card.confirmDelete([card.title??card.name]),accept:ui.card.delete,danger:true}))return;
+    await session.run(()=>session.flush());const saved=session.state.snapshot!.cards.find(card=>card.id===id);
+    if(saved)await session.trashCard(saved.path,saved.revision);
+  }
+  const noticeOwner=useRef<{message:string;pane:string;path?:string}|undefined>(undefined);
+  if(!state.error)noticeOwner.current=undefined;
+  else if(noticeOwner.current?.message!==state.error)noticeOwner.current={message:state.error,pane:activeId,path:documentInfo(tabDocument(active),snapshot).path};
+  const noticePane=panes(layout).some(p=>p.id===noticeOwner.current?.pane)?noticeOwner.current?.pane:activeId;
   function renderPane(original:Pane):ReactNode {
     const p=tabs.drag?.family==='main'&&tabs.drag.group===original.id?{...original,active:activeAfterRemoval(original.tabs,original.active,tabs.drag.key)}:original;
-    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:ui.layout.viewTabActions,x,y,actions:[
+    const showTabMenu=(key:string,x:number,y:number)=>setTabMenu({label:ui.layout.tabGroupActions,x,y,actions:[
       ...(tabDocument(p,key)==='graph:'?[{label:ui.graph.moveSide,icon:'right' as const,run:()=>graphToSide(p,key)}]:[]),
       {label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(tabDocument(p,key),p.id,'other');}},
       {label:ui.layout.closeTab,icon:'close',separatorBefore:true,run:()=>close(p,key)},
@@ -326,32 +342,40 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
     const memoryKey=p.id+':'+documentKey;
     let memory=memories.current.get(memoryKey);if(!memory){memory={};memories.current.set(memoryKey,memory);}
     const board=info?.kind==='board'?snapshot.boards.find(b=>b.folder===info.id):undefined;
+    const problemPath=info?.kind==='board'?(board?.path??info.path):info?.path;
+    const problem=problemPath?snapshot.fileErrors?.[problemPath]:undefined;
     const tag=info?.kind==='tag'?snapshot.tags?.find(t=>t.path===info.id):undefined;
     return <section className={'note-pane '+(focused?'active-pane':'')} style={{'--document-fill':info?.kind==='card'?tintColor(cardFill(snapshot.cards.find(c=>c.id===info.id))):undefined} as CSSProperties} data-pane={p.id} data-active={focused&&!popup} aria-label={ui.layout.mainDockTabGroup} onPointerDownCapture={e=>{if(!focused&&!(e.target as HTMLElement).closest('[data-tab-strip]'))focusPane(p);}}>
-      <MainTabs group={p.id} active={p.active} items={p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return {key,title:info.title,path:info.path,boardFolder:info.kind==='board'?info.id:undefined,icon:docIcon(tabDocument(p,key))};})} dragging={!!tabs.drag} onSelect={key=>selectTab(p,key)} onClose={key=>close(p,key)} onMenu={showTabMenu} onDrag={(e,key)=>tabs.begin(e,{family:'main',group:p.id,key,document:tabDocument(p,key)})}>
-        <details className="menu pane-menu"><summary data-tooltip={tooltips.layout.tabGroupActions} aria-label={ui.layout.tabGroupActions}><Icon name="down" size={12}/></summary><div className="menu-content">
-          <button data-tooltip={tooltips.layout.splitRight} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'row')}><Icon name="splitRight"/>{ui.layout.splitRight}</button>
-          <button data-tooltip={tooltips.layout.splitDown} disabled={panes(layout).length>=MAX_PANES} onClick={()=>split(p,'column')}><Icon name="splitDown"/>{ui.layout.splitDown}</button>
-          <button data-tooltip={tooltips.layout.closeTabGroup} disabled={panes(layout).length===1} onClick={()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())}><Icon name="close"/>{ui.layout.closeTabGroup}</button>
-        </div></details>
-      </MainTabs>
+      <MainTabs group={p.id} active={p.active} items={p.tabs.map(key=>{const info=documentInfo(tabDocument(p,key),snapshot);return {key,title:info.title,path:info.path,boardFolder:info.kind==='board'?info.id:undefined,icon:docIcon(tabDocument(p,key))};})} dragging={!!tabs.drag} onSelect={key=>selectTab(p,key)} onClose={key=>close(p,key)} onMenu={showTabMenu} onDrag={(e,key)=>tabs.begin(e,{family:'main',group:p.id,key,document:tabDocument(p,key)})} actions={[
+        {label:ui.layout.splitRight,icon:'splitRight',separatorBefore:true,disabled:panes(layout).length>=MAX_PANES,run:()=>split(p,'row')},
+        {label:ui.layout.splitDown,icon:'splitDown',disabled:panes(layout).length>=MAX_PANES,run:()=>split(p,'column')},
+        {label:ui.layout.closeTabGroup,icon:'close',separatorBefore:true,disabled:panes(layout).length===1,run:()=>attempt((async()=>{await session.select(null);const next=removePane(layout,p.id);if(next){setLayout(next);setActiveId(panes(next)[0].id);}})())},
+      ]}/>
       {info&&<div className="document-toolbar">
         <Breadcrumbs key={documentKey} documentKey={documentKey} snapshot={snapshot} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onIcon={()=>editIcon(documentKey)} onRename={async(key,name)=>{const info=documentInfo(key,session.state.snapshot!);if(info.kind==='card')await session.renameCard(info.id,name);else if(info.id)await session.renameBoard(info.id,name);else if(await confirm({title:ui.workspace.rename,message:ui.workspace.renameHome(session.state.snapshot!.name,name),accept:ui.workspace.rename})){await session.run(async()=>{await session.flush();await window.door.renameWorkspace(session.state.snapshot!.root,name);});await session.refresh();}}}/>
         <div className="tab-navigation"><Tool icon="back" label={tooltips.navigation.back} disabled={history.index===0} onClick={()=>travel(p,-1)}/><Tool icon="forward" label={tooltips.navigation.forward} disabled={history.index>=history.entries.length-1} onClick={()=>travel(p,1)}/></div>
         <div className="toolbar-spacer"/>
-        {info.kind==='board'&&<><Tool icon="folder" label={tooltips.common.newWhiteboard} onClick={()=>createFolder(info.id,undefined,p.id)}/><Tool icon="plus" label={tooltips.common.newCard} onClick={()=>createCard(info.id,80,80,p.id)}/></>}
-        {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.editorTools.sourceMode,icon:'source',checked:!!memory.source,checkType:'checkbox',run:()=>{attempt(session.run(async()=>{await session.flush();memory.source=!memory.source;rememberViews();setLayout(current=>({...current}));setTabMenu(null);if(!focused)focusPane(p);}));}},{label:ui.common.openInPopup,icon:'popup',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}}]});}}/>}
+        {info.kind==='card'&&<Tool icon="more" label={tooltips.whiteboard.cardActions} onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.left,y:r.bottom,actions:[{label:ui.editorTools.sourceMode,icon:'source',checked:!!memory.source,checkType:'checkbox',run:()=>{attempt(session.run(async()=>{await session.flush();memory.source=!memory.source;rememberViews();setLayout(current=>({...current}));setTabMenu(null);if(!focused)focusPane(p);}));}},{label:ui.common.openInPopup,icon:'popup',run:()=>{void previewCard(documentKey,p.id);}},{label:ui.common.openInNewTab,icon:'external',run:()=>{void navigate(documentKey,p.id,'new');}},{label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}},{label:ui.card.delete,icon:'trash',danger:true,separatorBefore:true,run:()=>attempt(deleteCard(info.id))}]});}}/>}
         <Tool icon="star" className={prefs.starred.includes(documentKey)?'is-starred':''} label={prefs.starred.includes(documentKey)?tooltips.common.removeFromStarred:tooltips.common.addToStarred} onClick={()=>star(documentKey)}/>
+        {info.kind==='board'&&<Tool icon="more" label={tooltips.whiteboard.whiteboardActions} aria-haspopup="menu" onClick={e=>{const anchor=e.currentTarget,r=anchor.getBoundingClientRect();setTabMenu({anchor,x:r.right,y:r.bottom,actions:[
+          {label:ui.common.newCard,icon:'note',run:()=>createCard(info.id,80,80,p.id)},
+          {label:ui.common.newWhiteboard,icon:'map',run:()=>createFolder(info.id,undefined,p.id)},
+          {label:ui.common.openInNewTab,icon:'external',separatorBefore:true,run:()=>{void navigate(documentKey,p.id,'new');}},
+          {label:ui.common.openInAnotherTabGroup,icon:'splitRight',run:()=>{void navigate(documentKey,p.id,'other');}},
+          {label:ui.icons.changeIcon,icon:'art',run:()=>editIcon(documentKey)},
+          ...(info.id?[{label:ui.whiteboard.delete,icon:'trash' as const,danger:true,separatorBefore:true,run:()=>attempt(session.deleteBoard(info.id,names=>confirm({title:ui.whiteboard.deleteTitle,message:ui.whiteboard.confirmDelete(names),accept:ui.whiteboard.delete,danger:true})))}]:[])
+        ]});}}/>}
 
       </div>}
       <div className="document-content"><ViewBlockProvider snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id)} onPreview={(key,annotation)=>previewCard(key,p.id,annotation)} onNavigate={(key,mode)=>navigate(key,p.id,mode)}>
         {!info?(tabs.drag?.family==='main'&&tabs.drag.group===p.id?<div className="empty-pane" aria-label={ui.layout.emptyTabGroup}/>:<div className="empty-pane"><button data-tooltip={tooltips.whiteboard.openRoot} onClick={()=>open('board:',p.id)}><Icon name="map"/>{ui.whiteboard.openWhiteboard}</button></div>):
-          !info.exists?<p className="notice">{info.kind==='system'||info.kind==='graph'?ui.system.disabled:ui.errors.fileMissing}</p>:
+          problem&&problemPath?<FileProblem key={problemPath} path={problemPath} message={problem} snapshot={snapshot} session={session} onHistory={()=>changeDocks(revealModule(docks,'history'))}/>:!info.exists?<p className="notice">{info.kind==='system'||info.kind==='graph'?ui.system.disabled:ui.errors.fileMissing}</p>:
           info.kind==='graph'?<GraphView key={documentKey} snapshot={snapshot} onOpen={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onMode={graphMode=>changePrefs(()=>({graphMode}))}/>:info.kind==='system'?<SystemView key={documentKey} id={info.id as SystemEntry} snapshot={snapshot} session={session} onOpen={key=>navigate(key,p.id,'new')} onJournalOpen={key=>open(key,p.id,true)} onPreview={key=>previewCard(key,p.id)} onTemplate={path=>{setTemplatePath(path);setTemplateOpen(true);}}/>:
           board?<BoardView key={documentKey} reveal={reveal?.pane===p.id&&reveal.path===board.path?reveal:undefined} onRevealed={()=>setReveal(undefined)} board={board} onSelection={setBoardSelection} onStyle={()=>changeDocks(revealModule(docks,'style'))} snapshot={snapshot} session={session} active={focused&&!popup} memory={memory} onActivate={()=>setActiveId(p.id)} onOpen={key=>open(key,p.id)} onPreview={key=>previewCard(key,p.id)} onNavigate={(key,mode)=>navigate(key,p.id,mode)} onCreate={(x,y)=>createCard(info.id,x,y,p.id)} onCreateBoard={(x,y)=>createFolder(info.id,{x,y},p.id)} onViewChange={rememberViews} onCycleInput={()=>changePrefs(p=>({whiteboardInput:({auto:'mouse',mouse:'trackpad',trackpad:'auto'} as const)[p.whiteboardInput??'auto']}))}/>:
           tag&&!featureEnabled(prefs,'tags')?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:tag?<TagView key={documentKey} onPreview={key=>previewCard(key,p.id)} tag={tag} snapshot={snapshot} session={session} onOpen={key=>open(key,p.id)} memory={memory} onViewChange={rememberViews}/>:
           info.kind==='file'?<FileView key={documentKey} path={info.path} snapshot={snapshot} memory={memory} onViewChange={rememberViews}/>:<NoteView revealAnnotation={annotationReveal?.pane===p.id&&annotationReveal.key===documentKey?annotationReveal:undefined} suspended={!!popup} key={documentKey} path={info.path} session={session} snapshot={snapshot} active={focused&&!popup} memory={memory} onActivate={()=>{setActiveId(p.id);attempt(session.select(info.path));}} onOpen={key=>navigate(key,p.id)} onViewChange={rememberViews}/>}
       </ViewBlockProvider></div>
+      {state.error&&!popup&&!modal&&p.id===noticePane&&<NoticeBanner key={state.error} message={state.error} root={snapshot.root} document={noticeOwner.current?.path} onDismiss={()=>session.update({error:''})} actions={state.draft?.dirty&&<><button type="button" onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button type="button" className="danger" onClick={()=>{void confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}).then(ok=>{if(ok)attempt(session.reloadDraft());});}}>{ui.common.reloadFromDisk}</button></>}/>}
       {focused&&<div className="pane-focus-flash" key={pulse}/>}
     </section>;
   }
@@ -405,19 +429,20 @@ function WorkspaceShell({snapshot}:{snapshot:Snapshot}) {
       <span data-tooltip={tooltips.status.syncOff}><Icon name="sync" size={13}/>{ui.status.syncOff}</span>
       <span role="status" data-tooltip={state.error||state.status}>{state.status===ui.status.savedLocally?ui.status.saved:state.status}</span>
     </footer>
-    {popup&&<CardPopup revealAnnotation={popup.annotation} documentKey={popup.key} snapshot={snapshot} session={session} onClose={closePopup} onNavigate={transferPopup} onPreview={(key,annotation)=>previewCard(key,popup.pane,annotation)}/>}
+    {popup&&<CardPopup onHistory={()=>{void transferPopup(popup.key,'same').then(()=>changeDocks(revealModule(docks,'history'))).catch(error=>session.update({error:String(error)}));}} revealAnnotation={popup.annotation} documentKey={popup.key} snapshot={snapshot} session={session} onClose={closePopup} onNavigate={transferPopup} onPreview={(key,annotation)=>previewCard(key,popup.pane,annotation)}/>}
     {templateOpen&&featureEnabled(prefs,'templates')&&<TemplateDialog initialTemplate={templatePath} snapshot={snapshot} session={session} onOpen={open} onClose={()=>setTemplateOpen(false)}/>}
     {searchOpen&&<SearchDialog session={session} snapshot={snapshot} onReveal={showOnBoard} onOpen={open} onSplit={openBeside} onClose={()=>setSearchOpen(false)}/>}
     {tabMenu&&<ActionMenu menu={tabMenu} onClose={dismissTabMenu}/>}
-    {(state.error||snapshot.issues.length>0)&&<div className="error-banner" role="alert"><span>{state.error||snapshot.issues[0]}</span>{state.draft?.dirty&&<><button data-tooltip={tooltips.recovery.copyDraft} onClick={()=>attempt(session.copyDraft())}>{ui.common.copyDraft}</button><button data-tooltip={tooltips.recovery.reloadFromDisk} onClick={()=>{void confirm({title:ui.common.reloadFromDisk,message:ui.recovery.confirmDiscard,accept:ui.common.reloadFromDisk,danger:true}).then(ok=>{if(ok)attempt(session.reloadDraft());});}}>{ui.common.reloadFromDisk}</button></>}<Tool icon="close" label={tooltips.recovery.dismissError} onClick={()=>session.update({error:''})}/></div>}
-    {modal&&<div className="modal-shade" onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className={"settings "+(modal==='settings'?'settings-window':modal==='workspaces'?'workspace-manager-window':'')} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();setModal(null);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary')].filter(el=>el.getClientRects().length),first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}} role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>
+
+    {modal&&<dialog ref={modalRef} className="modal-shade settings-modal" aria-label={modal==='settings'?ui.settings.title:undefined} onCancel={e=>{e.preventDefault();setModal(null);}} onPointerDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className={"settings "+(modal==='settings'?'settings-window':modal==='workspaces'?'workspace-manager-window':'')} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();setModal(null);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary')].filter(el=>el.getClientRects().length),first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}} role="dialog" aria-modal="true" aria-label={modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='icon'?ui.icons.changeIcon:ui.migration.title}>
       <div className="panel-title"><strong>{modal==='workspaces'?ui.workspace.manage:modal==='settings'?ui.settings.title:modal==='icon'?ui.icons.changeIcon:ui.migration.title}</strong><Tool icon="close" label={tooltips.common.closeDialog} onClick={()=>setModal(null)}/></div>
       {modal==='workspaces'?<WorkspaceManager snapshot={snapshot} session={session}/>:modal==='settings'?<SettingsPanel initialPage={settingsPage} snapshot={snapshot} prefs={prefs} onCreateFolder={path=>session.run(async()=>{await session.flushPreferences();const snapshot=await session.bridge.request<Snapshot>({kind:'ensureFolder',path});session.update({snapshot,error:''});})} onCreateTemplate={period=>session.createTemplate(period)} onChange={patch=>changePrefs(()=>patch)} onResetDocks={()=>changeDocks(defaultDocks())} rootCards={rootCards.length} onMigrate={()=>setModal('migration')}/>:
       modal==='icon'?<form className="settings-body" onSubmit={e=>{e.preventDefault();changePrefs(p=>({icons:{...p.icons,[iconKey]:customIcon}}));setModal(null);}}>
         <div className="icon-selection"><DocumentIcon value={customIcon} fallback={documentInfo(iconKey,snapshot).icon}/><span>{customIcon?ui.icons.selectedIcon:ui.icons.defaultIcon}</span></div>
         <Suspense fallback={<small>{ui.icons.loading}</small>}><IconPicker onSelect={setCustomIcon}/></Suspense><div className="dialog-actions"><button type="button" data-tooltip={tooltips.icons.restoreDefault} onClick={()=>setCustomIcon('')}>{ui.common.default}</button><button className="primary" data-tooltip={tooltips.icons.save}>{ui.common.save}</button></div>
       </form>:<div className="settings-body"><p>{ui.migration.description(rootCards.length)}</p><p>{ui.migration.preservedData}</p><button className="primary" data-tooltip={tooltips.migration.moveCards} onClick={()=>attempt(session.run(async()=>{await session.flush();const result=await window.door.request<Snapshot>({kind:'migrateRoot'});session.undoHistory.clear();session.update({snapshot:result,draft:null,error:''});setModal(null);}))}>{ui.migration.moveCards}</button></div>}
-    </section></div>}
+    {modal==='settings'&&state.error&&<NoticeBanner key={state.error} message={state.error} root={snapshot.root} document={ui.settings.title} onDismiss={()=>session.update({error:''})}/>}
+    </section></dialog>}
   </div></DateDisplayContext>;
 }
 function SplitDivider({node,onResize}:{node:Extract<Layout,{type:'split'}>;onResize:(ratio:number)=>void}) {

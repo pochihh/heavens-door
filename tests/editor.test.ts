@@ -285,7 +285,7 @@ test('lists after complete HTML blocks are editable Markdown without changing fe
  for(const html of ['<div/>','<div>HTML block</div>','<div data-better-edit-image="placeholder">Add an image</div>']){
   const body='# Test\n\n'+html+'\n- First\n- Second';const normalized=markdownSource(body);assert.ok(normalized.includes(html+'\n\n- First'));
   const editor=new Editor({extensions:extensions('list.md'),content:normalized,contentType:'markdown'});
-  try{assert.equal(editor.state.doc.lastChild?.type.name,'bulletList');assert.equal(editor.state.doc.lastChild?.childCount,2);assert.match(preview(body,'list.md'),/<li>First<\/li>/);assert.ok(cardMarkdown(editor).includes('First'));}finally{editor.destroy();}
+  try{assert.equal(editor.state.doc.lastChild?.type.name,'bulletList');assert.equal(editor.state.doc.lastChild?.childCount,2);const shown=document.createElement('div');shown.innerHTML=preview(body,'list.md');assert.deepEqual([...shown.querySelectorAll('li')].map(item=>item.textContent),['First','Second']);assert.ok(cardMarkdown(editor).includes('First'));}finally{editor.destroy();}
  }
  const example='# Code\n\n```html\n<div/>\n- literal text\n```';assert.equal(markdownSource(example),example);
 });
@@ -322,5 +322,36 @@ test('equivalent refreshes keep the selection, small updates preserve caret and 
     editor.commands.selectAll();editor.commands.deleteSelection();assert.equal(editor.state.doc.textContent,'','intentional select-all/delete still works');
     const comment=new Editor({extensions:extensions('note.md').filter(e=>!['cardTitle','cardKeyboard'].includes(e.name)),content:'Comment',contentType:'markdown'});
     try{assert.equal(updateEditorContent(comment,'',false),true);comment.state.doc.check();assert.equal(comment.state.doc.textContent,'');assert.equal(updateEditorContent(comment,'',false),false);}finally{comment.destroy();}
+  }finally{editor.destroy();}
+});
+
+test('literal block prefixes typed in lists survive saving and refresh without creating invalid list items',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  const {extensions,cardMarkdown}=await import('../src/renderer/editor-schema'),{updateEditorContent}=await import('../src/renderer/editor-content'),{indentEditorLines}=await import('../src/renderer/editor-keyboard');
+  for(const list of ['- seed','1. seed','- [ ] seed','- Parent\n  - seed'])for(const text of ['# Test nested list','## Nested heading','- Literal bullet','+ Literal bullet','1. Literal number','---']){
+    const editor=new Editor({extensions:extensions('test.md'),content:'# Title\n\n'+list,contentType:'markdown'});
+    try{
+      let pos=0;editor.state.doc.descendants((node,at)=>{if(node.isText&&node.text==='seed')pos=at;});editor.commands.setTextSelection({from:pos,to:pos+4});editor.commands.insertContent({type:'text',text});editor.state.doc.check();
+      const before=editor.state.doc.textContent,markdown=cardMarkdown(editor),parsed=editor.schema.nodeFromJSON(editor.markdown!.parse(markdown));parsed.check();assert.equal(parsed.textContent,before,markdown);
+      updateEditorContent(editor,markdown+'\n',false);editor.state.doc.check();assert.equal(editor.state.doc.textContent,before);
+      assert.doesNotThrow(()=>indentEditorLines(editor,1));editor.state.doc.check();
+    }finally{editor.destroy();}
+  }
+  for(const markdown of ['# Title\n\n- # Test nested list','# Title\n\n- Parent\n  - ## Child','# Title\n\n- - Nested']){
+    const editor=new Editor({extensions:extensions('test.md'),content:markdown,contentType:'markdown'});try{editor.state.doc.check();updateEditorContent(editor,markdown,false);editor.state.doc.check();assert.match(editor.state.doc.textContent,/Test nested list|Child|Nested/);}finally{editor.destroy();}
+  }
+});
+
+
+test('preview gives nested list text the same blocks and explicit breaks as the editor',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body></body></html>');windows.push(dom);
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,Node:dom.window.Node,HTMLElement:dom.window.HTMLElement,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+  const {preview}=await import('../src/renderer/markdown'),{extensions}=await import('../src/renderer/editor-schema');
+  const source='# Wrapping\n\n- Parent\n  - Long **nested** text\n  - First  \n    second\n\nSoft\nline with  repeated spaces.',shown=document.createElement('div');shown.innerHTML=preview(source,'Wrap.md');
+  const editor=new Editor({extensions:extensions('Wrap.md'),content:source,contentType:'markdown'});
+  try{
+    const items=[...shown.querySelectorAll('li')];assert.equal(items.length,3);assert.ok(items.every(item=>item.firstElementChild?.tagName==='P'));assert.equal(items[0].querySelector(':scope > p')!.textContent,'Parent');assert.equal(items[1].querySelector(':scope > p')!.textContent,'Long nested text');assert.equal(items[2].querySelector(':scope > p')!.innerHTML,'First<br>second');
+    assert.equal(shown.lastElementChild!.textContent,editor.state.doc.lastChild!.textContent);assert.equal(shown.querySelector('strong')!.textContent,'nested');assert.equal(shown.querySelectorAll('br').length,1);
   }finally{editor.destroy();}
 });

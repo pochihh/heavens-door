@@ -46,9 +46,40 @@ module.exports=async({win,js,pause,folder})=>{
  await run(()=>[...document.querySelectorAll('dialog.confirmation-dialog[open] button')].find(b=>b.textContent.trim()==='Cancel').click());
  await wait('!document.querySelector(\'dialog.confirmation-dialog[open]\')','cancel Home rename');assert.equal(await run(()=>window.__readerTestSession.state.snapshot.name),workspaceName);result.homeRenameWarning=true;
 
+ const titleBefore=await run(()=>{const el=document.querySelector('.board-tile-title [aria-label="Rename Other"]'),r=el.getBoundingClientRect(),s=getComputedStyle(el);return {left:r.left,top:r.top,font:s.font};});
  await click('.board-tile-title [aria-label="Rename Other"]');await wait('!!document.querySelector(".board-tile-title input")','inline board rename');
+ const titleDuring=await run(()=>{const el=document.querySelector('.board-tile-title input'),r=el.getBoundingClientRect(),s=getComputedStyle(el),box=getComputedStyle(el.parentElement);return {left:r.left,top:r.top,font:s.font,outline:s.outlineStyle,boxOutline:box.outlineStyle,background:box.backgroundColor};});
+ assert.ok(Math.abs(titleBefore.left-titleDuring.left)<.5&&Math.abs(titleBefore.top-titleDuring.top)<.5,'board title moved when editing');assert.equal(titleDuring.font,titleBefore.font);assert.equal(titleDuring.outline,'none');assert.equal(titleDuring.boxOutline,'none');assert.equal(titleDuring.background,'rgba(0, 0, 0, 0)');result.boardTitleInPlace=true;
+ fs.writeFileSync(path.join(folder,'feedback-board-title.png'),(await win.capturePage()).toPNG());
  await run(()=>{const input=document.querySelector('.board-tile-title input');input.focus();input.select();});await win.webContents.insertText('Renamed');await wait('document.querySelector(".board-tile-title input")?.value==="Renamed"','board rename text');await run(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
  await wait('window.__readerTestSession.state.snapshot.boards.some(b=>b.folder==="Renamed")','renamed board');await run(()=>window.__readerTestSession.undo());await wait('!!document.querySelector(\'.board-tile-title [aria-label="Rename Other"]\')','undo inline board rename');result.renameBoard=true;fs.writeFileSync(path.join(folder,'feedback-home.png'),(await win.capturePage()).toPNG());
+ // Exercise both equation styles in the same canvas editor used by ordinary cards.
+ await run(async id=>{const s=window.__readerTestSession;await s.select(s.state.snapshot.cards.find(c=>c.id===id).path);s.edit('# Equation checks\n\nInline x^2 in this sentence.\n\n$$\n\\int_0^1 x^2 dx\n$$\n\nAfter equation.');await s.select(null);const b=s.state.snapshot.boards.find(b=>b.folder==='');await s.board({...b,cards:b.cards.map(p=>p.cardId===id?{...p,x:60,y:60,width:700,autoHeight:true,collapsed:false}:p)},'Equation UI fixture');const nav=window.__readerTestNavigation;nav.set({x:30,y:30,zoom:1});nav.flush();},id);
+ await wait('!!document.querySelector(".card-preview[data-ready=true] .math-block")','equation preview');
+ const equationBefore=await run(()=>{const el=document.querySelector('.card-preview .math-block'),r=el.getBoundingClientRect(),parent=el.parentElement,top=parent.getBoundingClientRect().top+parseFloat(getComputedStyle(parent).paddingTop);return {top:r.top-top,height:r.height,after:el.nextElementSibling.getBoundingClientRect().top-top};});
+ await run(async id=>{const s=window.__readerTestSession;await s.select(s.state.snapshot.cards.find(c=>c.id===id).path);},id);
+ await wait('!!document.querySelector(".editor-math.is-block")','block equation editor');
+ const equationDuring=await run(()=>{const el=document.querySelector('.editor-math.is-block'),r=el.getBoundingClientRect(),parent=el.closest('.tiptap').getBoundingClientRect(),block=el.closest('.react-renderer')??el;return {top:r.top-parent.top,height:r.height,after:block.nextElementSibling.getBoundingClientRect().top-parent.top};});
+ for(const key of ['top','height','after'])assert.ok(Math.abs(equationBefore[key]-equationDuring[key])<.5,'block equation changed '+key+' on focus: '+JSON.stringify({equationBefore,equationDuring}));result.equationGeometry={preview:equationBefore,editor:equationDuring};
+ const equationCamera=await run(()=>document.querySelector('.board-world').style.transform);
+ win.focus();win.webContents.focus();await pause(80);
+ await run(()=>{const e=document.querySelector('.tiptap').editor;let from;e.state.doc.descendants((node,pos)=>{if(node.isText&&node.text.includes('Inline x^2'))from=pos+node.text.indexOf('x^2');});e.view.focus();e.commands.setTextSelection({from,to:from+3});});
+ await wait('!!document.querySelector(\'.editor-selection-tools [aria-label="Inline equation"]\')','inline equation toolbar action');
+ await click('.editor-selection-tools [aria-label="Inline equation"]');await wait('!!document.querySelector(".editor-math.is-inline.is-editing")&&document.activeElement?.matches(".math-popover textarea")','inline equation input focus');
+ await run(()=>document.querySelector('.math-popover textarea').select());await win.webContents.insertText('x^3');
+ await wait('document.querySelector(".editor-math.is-inline annotation")?.textContent==="x^3"','inline draft preview');
+ assert.ok(await run(()=>window.__readerTestSession.state.draft.body.includes('$x^2$')),'a draft saved before Done');
+ await pause(80);fs.writeFileSync(path.join(folder,'feedback-inline-equation.png'),(await win.capturePage()).toPNG());
+ win.webContents.sendInputEvent({type:'keyDown',keyCode:'Enter'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Enter'});
+ await wait('!document.querySelector(".math-popover")&&window.__readerTestSession.state.draft.body.includes("$x^3$")','Enter saves inline equation');
+ await click('.editor-math.is-block .math-render');await wait('document.activeElement?.matches(".math-popover textarea")','block equation input focus');
+ const panel=await run(()=>{const el=document.querySelector('.math-popover'),input=el.querySelector('textarea'),style=getComputedStyle(input);return {width:el.getBoundingClientRect().width,buttons:[...el.querySelectorAll('button')].map(b=>b.textContent.trim()),inputBorder:style.borderTopWidth,duplicatePreview:!!el.querySelector('.katex'),highlight:getComputedStyle(document.querySelector('.editor-math.is-block .math-render')).backgroundColor};});
+ assert.equal(panel.width,402);assert.deepEqual(panel.buttons,['Done↵']);assert.equal(panel.inputBorder,'0px');assert.equal(panel.duplicatePreview,false);assert.notEqual(panel.highlight,'rgba(0, 0, 0, 0)');
+ await run(()=>document.querySelector('.math-popover textarea').select());await win.webContents.insertText('\\frac{a}{b}');
+ await wait('document.querySelector(".editor-math.is-block annotation")?.textContent==="\\\\frac{a}{b}"','block draft preview');
+ await pause(80);fs.writeFileSync(path.join(folder,'feedback-block-equation.png'),(await win.capturePage()).toPNG());
+ await click('.math-done');await wait('!document.querySelector(".math-popover")','Done saves block equation');
+ assert.equal(await run(()=>document.querySelector('.board-world').style.transform),equationCamera,'equation editing moved the canvas');result.equations={inline:true,block:true,livePreview:true,keyboardSave:true,cameraStable:true};await run(()=>window.__readerTestSession.select(null));
  // Compare actual captured pixels on a cached card below 30% zoom.
  await run(async id=>{const s=window.__readerTestSession;await s.create('','Mention target',0,0,true);const target=s.state.draft.card.id;await s.select(null);await s.select(s.state.snapshot.cards.find(c=>c.id===id).path);s.edit('# Home card\n\n[Target](card:'+target+')');await s.select(null);const b=s.state.snapshot.boards.find(b=>b.folder==='');await s.board({...b,mentionStyle:{strokeColor:'#ff0000',strokeWidth:8},cards:b.cards.map(p=>p.cardId===id?{...p,x:20,y:500,width:340,collapsed:true,fillColor:'#335533'}:p.cardId===target?{...p,x:800,y:500,width:340,collapsed:true,fillColor:'#335533'}:p)},'Mention layer fixture');window.__readerTestNavigation.set({x:30,y:30,zoom:1});window.__readerTestNavigation.flush();},id);
  await wait('!!document.querySelector(".mention-link")','mention line');await run(()=>{document.querySelector('.mention-layer').style.cssText='--mention-width:8;--mention-color:red;--mention-opacity:1';});await pause(250);
@@ -63,7 +94,7 @@ module.exports=async({win,js,pause,folder})=>{
  await run(()=>[...document.querySelectorAll('.view-menu-list button')].find(b=>b.textContent.trim()==='Graph').click());await wait('!!document.querySelector(".graph-canvas")','side graph');await pause(350);
  await click('.graph-toolbar [aria-label="Fit graph"]');
  const bounds=()=>{const c=document.querySelector('.graph-canvas'),r=c.getBoundingClientRect(),data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let left=c.width,right=0;for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++)if(data[(y*c.width+x)*4+3]){left=Math.min(left,x);right=Math.max(right,x);}return {width:r.width,height:r.height,spread:(right-left)/(c.width/r.width)};};
- const side=await run(bounds);await click('.graph-toolbar [aria-label="Open in main dock"]');await wait('!!document.querySelector(".document-content .graph-canvas")','main graph');await pause(350);const main=await run(bounds);
+ const side=await run(bounds);await click('.graph-toolbar [aria-label="Open in Main area"]');await wait('!!document.querySelector(".document-content .graph-canvas")','main graph');await pause(350);const main=await run(bounds);
  assert.ok(main.width>side.width*2,'graph canvas did not expand into the main dock');assert.ok(main.spread>side.spread*1.5,'graph content stayed small in the main dock');result.graph={side,main};
  fs.writeFileSync(path.join(folder,'feedback-graph-main.png'),(await win.capturePage()).toPNG());return result;
 };

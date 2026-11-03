@@ -79,7 +79,7 @@ export function HistoryPanel({session}:{session:Session}) {
   }
   const graph=useMemo(()=>historyGraph(items),[items]);
   return <section className="history-view" aria-label={ui.history.graph}>
-    {!snapshot?.historyAvailable&&<p className="notice">{ui.history.unavailable}</p>}
+    {!snapshot?.historyAvailable&&<p className="notice">{snapshot?.serviceErrors?.history??ui.history.unavailable}</p>}
     <div className="history-list"><div className="history-graph" style={{paddingLeft:graph.width}}>
       <svg className="history-lines" width={graph.width} height={graph.height} aria-hidden="true">
         {graph.lines.map(line=><path key={line.id} d={line.d} style={{stroke:laneColor(line.color)}}/>)}

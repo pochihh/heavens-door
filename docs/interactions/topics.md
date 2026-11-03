@@ -17,7 +17,7 @@ Facing edge curves stay within the gap between their anchors, so lower siblings 
 
 Plain text connectors leave an eight-pixel gap from the compact text bounds on all sides. Cards, images and shaped objects keep their existing attachment points.
 
-**Settings → Whiteboard → Text** contains defaults for the font size and text color, using the shared theme/palette controls, plus a shortcut reference. Defaults apply to newly created text only; existing text keeps its saved appearance.
+**Settings → Editor → Whiteboard → Text** contains defaults for the font size and text color, using the shared theme/palette controls, plus a shortcut reference. Defaults apply to newly created text only; existing text keeps its saved appearance.
 
 Branch relationships are explicit `kind: branch` edges between placement IDs. A child has one parent and branches cannot form cycles. Ordinary connectors remain independent and may have arbitrary cross-links. Structure does not change file ownership. Either arrow endpoint can reconnect to text, cards, images, shapes or boards. A valid branch reconnection retains the parent/child relationship. If it would give an item two parents or introduce a cycle, that arrow becomes an ordinary connector instead of rejecting the drop; its ID and style stay intact. Reconnecting or deleting an arrow never removes its former text endpoint. Standalone text without arrows is valid. Existing moves/transfers preserve the edge metadata.
 

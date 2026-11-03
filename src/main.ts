@@ -1,3 +1,15 @@
+import {cssSnippets,importCssSnippets,snippetsFolder} from './core/css-snippets';
+import regularWindowsPng from '../build/icon-windows.png';
+import regularLinuxPng from '../build/icon-linux.png';
+import testWindowsPng from '../build/test-icon-windows.png';
+import testLinuxPng from '../build/test-icon-linux.png';
+import {iconStyles,type IconStyle} from './icon-style';
+import regularLogo from '../assets/branding/logo.svg';
+import testLogo from '../assets/branding/logo_test.svg';
+import regularLogoPng from '../build/icon.png';
+import testLogoPng from '../build/test-icon.png';
+import {AppBranding,MAX_LOGO_BYTES} from './app-branding';
+import {renderLogo} from './desktop-logo';
 import {extractArticle} from './core/article';
 import {captureServer} from './core/capture';
 import {boundedDownload,readFeeds,feedArticles,webAddress,MAX_READING_BYTES,validateImport,localArticleImage,readPdfFile} from './core/reading';
@@ -13,11 +25,11 @@ import { Worker } from 'node:worker_threads';
 import {loadSparkleBridgeForApp} from 'electron-sparkle-updater';
 import {autoUpdater} from 'electron-updater';
 import {AppUpdates,APP_ID,DOWNLOAD_PAGE,RELEASE_API} from './updates';
-import { join, resolve, sep, extname } from 'node:path';
+import { join, resolve, sep, extname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
-import {readAppSettings,writeHardwareAcceleration} from './app-settings';
+import {readAppSettings,writeHardwareAcceleration,writeAutomaticDownloads} from './app-settings';
 import {WorkspaceRegistry} from './core/registry';
 import {importImage,resolveImage,MAX_IMAGE_BYTES} from './core/images';
 import {workspacePath} from './core/files';
@@ -27,6 +39,19 @@ import type { Request, Snapshot, Mutation, Card, WindowAction, AppSettings, Grap
 if(process.platform!=='win32')process.setFdLimit(16384);
 app.setName(ui.common.appName);
 if(process.platform==='win32')app.setAppUserModelId(APP_ID);
+const branding=new AppBranding(join(app.getPath('userData'),'branding'));
+let logoPath='',logoState:import('./shared').AppLogoState={image:'',custom:false};
+async function applyLogo(){
+ const active=await branding.active();let image=nativeImage.createFromPath(active.path);
+ if(image.isEmpty()&&active.custom){active.path=join(branding.folder,'default.png');active.custom=false;active.warning=ui.branding.unreadable;image=nativeImage.createFromPath(active.path);}
+ if(image.isEmpty())throw Error(ui.branding.unreadable);
+ logoPath=active.path;logoState={image:image.resize({width:128,height:128}).toDataURL(),custom:active.custom,style:active.style,warning:active.warning};
+ if(process.platform==='darwin')app.dock?.setIcon(image);
+ else for(const d of desktops.values())if(!d.window.isDestroyed())d.window.setIcon(image);
+ app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion(),iconPath:logoPath});
+ for(const d of desktops.values())if(!d.window.isDestroyed())d.window.webContents.send('app:settings-change');
+ return logoState;
+}
 const appSettingsFile=join(app.getPath('userData'),'app-settings.json');
 const initialAppSettings=readAppSettings(appSettingsFile);
 let hardwareAcceleration=initialAppSettings.hardwareAcceleration,settingsWarning=initialAppSettings.warning,gpuReady=false;
@@ -39,6 +64,7 @@ interface Desktop { window:BrowserWindow; opening?:Promise<Snapshot>; host?:Host
 let captureToken='',captureError='';const capturePort=TEST_BUILD?27319:27318;
 let registry:WorkspaceRegistry;
 let updates:AppUpdates;
+const logoDrafts=new Map<number,{token:string;data:Buffer;format:'png'|'svg';preview:Buffer}>();
 const desktops=new Map<number,Desktop>(), hosts=new Map<string,Promise<Host>>(), assets=new Map<string,Host>();
 // One worker owns a workspace's index and write queue, shared by all its windows.
 // ponytail: retain opened workers until quit; evict idle hosts if many workspaces become common.
@@ -95,7 +121,7 @@ async function snapshot(d:Desktop) {
   if(!d.host)return null;
   return {...await d.host.call<Snapshot>({kind:'snapshot'}),assetKey:d.host.key};
 }
-async function open(d:Desktop,folder:string){const host=await getHost(folder);await registry.register(host.root);const value=await host.call<Snapshot>({kind:'snapshot'});await registry.remember(host.root);d.host=host;return {...value,assetKey:host.key};}
+async function open(d:Desktop,folder:string){const host=await getHost(folder);const value=await host.call<Snapshot>({kind:'snapshot'});try{await registry.register(host.root);await registry.remember(host.root);}catch(error){value.serviceErrors={...value.serviceErrors,registry:String(error)};}d.host=host;return {...value,assetKey:host.key};}
 function trusted(event:Electron.IpcMainInvokeEvent|Electron.IpcMainEvent) {
   const d=[...desktops.values()].find(d=>d.window.webContents===event.sender);
   if(!d||event.senderFrame!==d.window.webContents.mainFrame)throw new Error(ui.errors.untrustedSender);return d;
@@ -116,6 +142,7 @@ async function promptUpdate(state:UpdateState,manual=false){
     const result=await dialog.showMessageBox(d.window,{type:'info',message:ui.updates.available(state.version!),detail:state.canInstall?ui.updates.status.available:ui.updates.manualHelp,buttons,cancelId:1,defaultId:0});
     if(result.response===(state.canInstall?2:0)){await shell.openExternal(DOWNLOAD_PAGE);return;}
     if(state.canInstall&&result.response===0){const downloaded=await updates.download();if(downloaded.status==='ready'){const choice=await dialog.showMessageBox(d.window,{type:'info',message:ui.updates.status.ready,buttons:[ui.updates.install,ui.updates.later],cancelId:1});if(choice.response===0)installUpdate();}else await promptUpdate(downloaded,true);}
+  }else if(manual&&state.status==='ready'){const choice=await dialog.showMessageBox(d.window,{type:'info',message:ui.updates.status.ready,buttons:[ui.updates.install,ui.updates.later],cancelId:1});if(choice.response===0)installUpdate();
   }else if(manual){const result=await dialog.showMessageBox(d.window,{type:state.status==='error'?'warning':'info',message:ui.updates.status[state.status],detail:state.message,buttons:[ui.updates.close,ui.updates.website],cancelId:0});if(result.response===1)await shell.openExternal(DOWNLOAD_PAGE);}
 }
 async function initializeSparkle(){
@@ -148,7 +175,7 @@ function prepareAction(d:Desktop,action:WindowAction) {
 function focused(){const win=BrowserWindow.getFocusedWindow();return win?desktops.get(win.id):undefined;}
 async function createWindow(folder?:string){
   const win=new BrowserWindow({
-    width:1440,height:940,minWidth:760,minHeight:500,icon:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),TEST_BUILD?'build/test-icon.png':'build/icon.png'),backgroundColor:'#f3f3f3',title:ui.common.appName,
+    width:1440,height:940,minWidth:760,minHeight:500,icon:logoPath||(app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),TEST_BUILD?'build/test-icon.png':'build/icon.png')),backgroundColor:'#f3f3f3',title:ui.common.appName,
     titleBarStyle:'hidden',trafficLightPosition:{x:8,y:13},
     ...(process.platform!=='darwin'?{titleBarOverlay:{color:'#f3f3f3',symbolColor:'#555555',height:42}}:{}),
     webPreferences:{preload:join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true},
@@ -157,16 +184,35 @@ async function createWindow(folder?:string){
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',event=>event.preventDefault());
   win.on('close',event=>{if(!d.closing){event.preventDefault();prepareAction(d,'close');}});
-  win.on('closed',()=>{if(d.action==='update')cancelUpdate();clearAction(d);desktops.delete(win.id);});
+  win.on('closed',()=>{logoDrafts.delete(win.id);if(d.action==='update')cancelUpdate();clearAction(d);desktops.delete(win.id);});
   // Load the shell while the worker opens/indexes the workspace, so startup has feedback.
   if(folder){d.opening=open(d,folder);void d.opening.catch(()=>undefined);}
   if(process.env.HEAVENS_DOOR_DEV_URL)await win.loadURL(process.env.HEAVENS_DOOR_DEV_URL);
   else await win.loadFile(join(__dirname,'renderer/index.html'));
 }
 void app.whenReady().then(async()=>{
-  app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion(),iconPath:app.isPackaged?join(process.resourcesPath,'icon.png'):join(app.getAppPath(),TEST_BUILD?'build/test-icon.png':'build/icon.png')});
+  try{await branding.initialize(TEST_BUILD?testLogo:regularLogo,Buffer.from(process.platform==='darwin'?(TEST_BUILD?testLogoPng:regularLogoPng):process.platform==='win32'?(TEST_BUILD?testWindowsPng:regularWindowsPng):(TEST_BUILD?testLinuxPng:regularLinuxPng),'base64'));await applyLogo();}
+  catch(error){logoState.warning=String(error);app.setAboutPanelOptions({applicationName:ui.common.appName,applicationVersion:app.getVersion()});}
+  ipcMain.handle('app:logo',event=>{trusted(event);return logoState;});
+  ipcMain.handle('app:import-logo',async event=>{
+    const d=trusted(event),chosen=await dialog.showOpenDialog(d.window,{title:ui.branding.choose,properties:['openFile'],filters:[{name:ui.branding.formats,extensions:['png','svg']}]});
+    if(chosen.canceled||!chosen.filePaths.length)return null;
+    const file=chosen.filePaths[0],format=extname(file).slice(1).toLowerCase();if(format!=='png'&&format!=='svg')throw Error(ui.branding.formats);
+    const handle=await fs.open(file,'r');let data:Buffer;try{const stat=await handle.stat();if(!stat.isFile()||stat.size>MAX_LOGO_BYTES)throw Error(ui.branding.size);const chunks:Buffer[]=[];for await(const chunk of handle.createReadStream({autoClose:false,end:MAX_LOGO_BYTES}))chunks.push(Buffer.from(chunk));data=Buffer.concat(chunks);}finally{await handle.close();}
+    const preview=await renderLogo(data,format),token=randomBytes(16).toString('hex');if(d.window.isDestroyed())throw Error('The import window was closed.');logoDrafts.set(d.window.id,{token,data,format,preview});
+    return {token,image:'data:image/png;base64,'+preview.toString('base64'),name:basename(file)};
+  });
+  ipcMain.handle('app:apply-logo',async(event,token:unknown,style:unknown)=>{
+    const d=trusted(event),draft=logoDrafts.get(d.window.id);if(!draft||draft.token!==token||!iconStyles.includes(style as IconStyle))throw Error('Choose an image and a valid icon style first.');
+    const png=await renderLogo(draft.preview,'png',style as IconStyle);if(logoDrafts.get(d.window.id)!==draft)throw Error('The logo selection changed. Please try again.');
+    await branding.import(draft.data,draft.format,png,style as IconStyle);if(logoDrafts.get(d.window.id)===draft)logoDrafts.delete(d.window.id);return applyLogo();
+  });
+  ipcMain.handle('app:cancel-logo',(event,token:unknown)=>{const d=trusted(event);if(logoDrafts.get(d.window.id)?.token===token)logoDrafts.delete(d.window.id);});
+  ipcMain.handle('app:reset-logo',async event=>{trusted(event);await branding.reset();return applyLogo();});
+  ipcMain.handle('app:reveal-branding',async event=>{trusted(event);const error=await shell.openPath(branding.folder);if(error)throw Error(error);});
   const sparkle=await initializeSparkle();
-  updates=new AppUpdates(autoUpdater,app.getVersion(),!TEST_BUILD&&app.isPackaged&&(process.platform==='win32'||!!sparkle),TEST_BUILD?async()=>null:latestRelease,state=>{for(const d of desktops.values()){if(state.status==='error'){d.closing=false;if(d.action==='update')clearAction(d);}if(!d.window.isDestroyed())d.window.webContents.send('app:update-change',state);}},sparkle);
+  updates=new AppUpdates(autoUpdater,app.getVersion(),!TEST_BUILD&&app.isPackaged&&(process.platform==='win32'||!!sparkle),TEST_BUILD?async()=>null:latestRelease,state=>{for(const d of desktops.values()){if(state.status==='error'){d.closing=false;if(d.action==='update')clearAction(d);}if(!d.window.isDestroyed())d.window.webContents.send('app:update-change',state);}},sparkle,initialAppSettings.automaticDownloads);
+  ipcMain.handle('app:automatic-downloads',(event,enabled:unknown)=>{trusted(event);const value=writeAutomaticDownloads(appSettingsFile,enabled);settingsWarning=undefined;return updates.setAutomaticDownloads(value);});
   ipcMain.handle('app:update-state',event=>{trusted(event);return updates.state;});
   ipcMain.handle('app:check-updates',event=>{trusted(event);return updates.check();});
   ipcMain.handle('app:download-update',event=>{trusted(event);return updates.download();});
@@ -185,6 +231,10 @@ void app.whenReady().then(async()=>{
     trusted(event);
     return {hardwareAcceleration:gpuReady?app.isHardwareAccelerationEnabled():null,features:gpuReady?{...app.getGPUFeatureStatus()}:null,electron:process.versions.electron,chromium:process.versions.chrome};
   });
+  const snippetsChanged=(host:Host)=>{for(const d of desktops.values())if(d.host===host&&!d.window.isDestroyed())d.window.webContents.send('workspace:css-snippets-change');};
+  ipcMain.handle('workspace:css-snippets',async(event,refresh:unknown)=>{const d=trusted(event);if(!d.host)throw Error('Open a workspace.');if(refresh!==undefined&&typeof refresh!=='boolean')throw Error('Invalid refresh request.');const result=await cssSnippets(d.host.root);if(refresh)snippetsChanged(d.host);return result;});
+  ipcMain.handle('workspace:import-css-snippets',async event=>{const d=trusted(event);if(!d.host)throw Error('Open a workspace.');const host=d.host,chosen=await dialog.showOpenDialog(d.window,{title:'Import CSS snippets',defaultPath:host.root,properties:['openFile','multiSelections'],filters:[{name:'CSS',extensions:['css']}]});if(chosen.canceled)return;await importCssSnippets(host.root,chosen.filePaths);snippetsChanged(host);});
+  ipcMain.handle('workspace:reveal-css-snippets',async event=>{const d=trusted(event);if(!d.host)throw Error('Open a workspace.');const error=await shell.openPath(await snippetsFolder(d.host.root,true));if(error)throw Error(error);});
   ipcMain.handle('workspace:list',(event,refresh:unknown)=>{trusted(event);if(refresh!==undefined&&typeof refresh!=='boolean')throw new Error(ui.errors.invalidWorkspaceRegistry);return registry.list(refresh===true);});
   ipcMain.handle('workspace:reorder',(event,roots:unknown)=>{trusted(event);if(!Array.isArray(roots)||roots.some(root=>typeof root!=='string'))throw new Error(ui.errors.invalidWorkspaceRegistry);return registry.reorder(roots);});
   ipcMain.handle('workspace:rename',async(event,root:unknown,name:unknown)=>{

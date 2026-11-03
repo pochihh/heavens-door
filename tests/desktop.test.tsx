@@ -17,7 +17,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
   const prefs:Preferences={actionHub:['whiteboards','files','bookmarks','tags','search','agent','history','style','calendar','graph'].map(command=>({command:command as import('../src/action-hub').HubCommand})),theme:'light',stem:'untitled',starred:[],recent:[],icons:{}};
   let snapshot:Snapshot={root:'/test/workspace',name:'Workspace',cards:[card,{id:'loose',path:'loose.md',name:'loose',revision:'r',legacy:false}],boards:[{path:'Workspace.whiteboard',folder:'',name:'Workspace',revision:'b1',cards:[{id:'ideas',cardId:'',folder:'Ideas',x:20,y:20,width:340,height:280}],edges:[]},{path:'Ideas/Ideas.whiteboard',folder:'Ideas',name:'Ideas',revision:'b2',cards:[{id:'p',cardId:'a',x:0,y:0,width:340,height:280}],edges:[]}],folders:['','Ideas'],tags:[],preferences:prefs,issues:[],historyAvailable:false};
   const requests:string[]=[];let rejectSave=false;
-  window.door={importPdfFile:async()=>{throw new Error('Unexpected PDF attachment');},relinkPdfSource:async()=>null,chooseReadingFiles:async()=>({imports:[],errors:[]}),importReading:async()=>{throw new Error('Unexpected reading import');},capturePage:async()=>{throw new Error('Unexpected capture');},capturePairing:async()=>{throw new Error('Unexpected pairing');},refreshFeed:async()=>({imported:0}),attachmentData:async()=>new Uint8Array(),updateState:async()=>({currentVersion:'0.1.2',status:'idle',canInstall:false}),checkUpdates:async()=>({currentVersion:'0.1.2',status:'up-to-date',canInstall:false}),downloadUpdate:async()=>({currentVersion:'0.1.2',status:'idle',canInstall:false}),installUpdate:async()=>undefined,openDownloadPage:async()=>undefined,openExternal:async()=>undefined,onUpdateChange:()=>()=>undefined,resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),reorderWorkspaces:async()=>[],renameWorkspace:async()=>[],relinkWorkspace:async()=>[],unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
+  window.door={setAutomaticDownloads:async enabled=>({currentVersion:'test',status:'idle',canInstall:false,automaticDownloads:enabled}),cssSnippets:async()=>[],importCssSnippets:async()=>{},revealCssSnippets:async()=>{},onCssSnippetsChange:()=>()=>{},importPdfFile:async()=>{throw new Error('Unexpected PDF attachment');},relinkPdfSource:async()=>null,chooseReadingFiles:async()=>({imports:[],errors:[]}),importReading:async()=>{throw new Error('Unexpected reading import');},capturePage:async()=>{throw new Error('Unexpected capture');},capturePairing:async()=>{throw new Error('Unexpected pairing');},refreshFeed:async()=>({imported:0}),attachmentData:async()=>new Uint8Array(),updateState:async()=>({currentVersion:'0.1.2',status:'idle',canInstall:false}),checkUpdates:async()=>({currentVersion:'0.1.2',status:'up-to-date',canInstall:false}),downloadUpdate:async()=>({currentVersion:'0.1.2',status:'idle',canInstall:false}),installUpdate:async()=>undefined,openDownloadPage:async()=>undefined,openExternal:async()=>undefined,onUpdateChange:()=>()=>undefined,resolveImage:async()=>[],importImageLink:async()=>({src:'',alt:''}),importImage:async()=>({src:"_assets/test.png",alt:"Test"}),imageData:async()=>new Uint8Array(),copyImage:async()=>undefined,appLogo:async()=>({image:'',custom:false}),importAppLogo:async()=>null,applyAppLogo:async()=>({image:'',custom:false}),cancelAppLogo:async()=>undefined,resetAppLogo:async()=>({image:'',custom:false}),revealBranding:async()=>undefined,appSettings:async()=>({hardwareAcceleration:true,restartRequired:false}),setHardwareAcceleration:async enabled=>({hardwareAcceleration:enabled,restartRequired:!enabled}),onAppSettingsChange:()=>()=>undefined,graphicsDiagnostics:async()=>({hardwareAcceleration:true,features:{},electron:'test',chromium:'test'}),reorderWorkspaces:async()=>[],renameWorkspace:async()=>[],relinkWorkspace:async()=>[],unregisterWorkspace:async()=>[],listWorkspaces:async()=>[{root:snapshot.root,name:snapshot.name,status:'available',lastUpdated:1700000000000},{root:'/missing/test',name:'Missing workspace',status:'missing',lastUpdated:null}],openWorkspace:async()=>snapshot,revealFile:async()=>undefined,chooseWorkspace:async()=>snapshot,demo:async()=>snapshot,onClosing:()=>()=>undefined,finishClosing:()=>undefined,cancelClosing:()=>undefined,reload:()=>undefined,newWindow:async()=>undefined,platform:'darwin',assetUrl:p=>p,currentWorkspace:async()=>snapshot,onChange:()=>()=>undefined,request:async request=>{
     requests.push(request.kind);
     switch(request.kind){
       case 'listFiles':return request.path===''?[{name:'Ideas',path:'Ideas',kind:'folder'},{name:'assets',path:'assets',kind:'folder'}]:request.path==='assets'?[{name:'photo.jpg',path:'assets/photo.jpg',kind:'file'}]:[{name:'A.md',path:'Ideas/A.md',kind:'file'}];
@@ -57,15 +57,18 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>{session.update({snapshot});root.render(<App/>);});await settle();
     await click('[aria-label="Settings"]');
     assert.ok(document.querySelector('[role=dialog][aria-label="Settings"] [role=tablist][aria-label="Settings features"]'));
+    await act(async()=>session.update({error:'Error: Could not save settings'}));
+    assert.equal(document.querySelectorAll('.context-banner').length,1);assert.ok(document.querySelector('.settings-window>.context-banner'),'Settings failures remain inside the active modal');
+    await click('.settings-window [aria-label="Dismiss notice"]');
     await click('#settings-files');
     const folderInput=document.querySelector<HTMLInputElement>('[aria-label="Slipbox folder"]')!;
     await act(async()=>folderInput.focus());assert.ok(document.querySelector('[aria-label="Settings"] .settings-path-options'),'Folder suggestions remain inside the modal');
     await act(async()=>folderInput.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
     assert.ok(document.querySelector('[aria-label="Settings"]'),'Escape cancels the picker before closing Settings');assert.equal(document.querySelector('.settings-path-options'),null);
-    await click('#settings-whiteboard');
+    await click('#settings-editor');
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="New whiteboard name"]')?.value,'A new board');
     assert.ok(document.querySelector('[aria-label="Navigation device"]'));
-    await click('#settings-views');
+    await click('#settings-tags');
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Merge properties across tags"]')?.checked,true);
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Case-sensitive property names"]')?.checked,false);
     await click('[aria-label="Case-sensitive property names"]');
@@ -73,11 +76,10 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('[aria-label="Merge properties across tags"]');
     assert.deepEqual(snapshot.preferences?.query,{mergeProperties:false,caseSensitive:true});
     assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Case-sensitive property names"]')?.disabled,true);
-    await click('#settings-performance');
+    await click('#settings-system');await settle();
     assert.ok(document.querySelector('[aria-label="Performance"] input[type=checkbox]'));
-    assert.equal(document.querySelector('.developer-settings'),null,'Diagnostics are in their own feature tab');
-    await click('#settings-developer');
-    assert.equal(document.querySelector('.developer-settings')?.hasAttribute('open'),false,'Developer diagnostics start closed');
+    assert.ok(document.querySelector('.developer-settings'),'Diagnostics share the advanced section');
+    assert.equal(document.querySelector('.settings-advanced details'),null,'Advanced and Developer controls are visible');
     await click('[aria-label="Close dialog"]');
     await click('[aria-label="Navigation device: Auto"]');
     assert.equal(snapshot.preferences?.whiteboardInput,'mouse');
@@ -125,9 +127,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.ok(document.querySelector('.workspace-manager')?.textContent?.includes('Last updated: Unknown'));
     assert.equal(document.querySelector('[aria-label^="Unregister Missing workspace"]')?.hasAttribute('disabled'),false);
     await click('[aria-label="Close dialog"]');
-    await click('[aria-label="Add in Ideas"]');
-    assert.deepEqual([...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent),['New whiteboard','New card']);
-    await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+    assert.equal(document.querySelector('[data-module=whiteboards] [aria-label="Add in Ideas"]'),null);
     await click('[aria-label="More actions for Ideas"]');
     const labels=[...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent);
     await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
@@ -136,7 +136,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>document.querySelector('[role=menu]')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
     await click('.activity-bar [aria-label="File explorer"]');
     await click('[data-tooltip="Expand assets"]');
-    assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active Tab Group"]'));
+    assert.ok(document.querySelector('[data-tooltip="Open assets/photo.jpg in the active Document Tabs"]'));
     await act(async()=>document.querySelector('#tab-files')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:150,clientY:70})));
     await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Close View tab')!.click());await settle();
     assert.equal(document.querySelector('#tab-files'),null);assert.equal(document.querySelector('.activity-bar [aria-label="File explorer"]')?.getAttribute('aria-pressed'),'false');
@@ -157,8 +157,8 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelector('.file-tree [data-file-key="card:a"]'),null,'Whiteboard explorer omits note rows');
     await click('.activity-bar [aria-label="File explorer"]');
     await click('[data-tooltip="Expand Ideas"]');
-    await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
-    await click('[data-tooltip="Open Ideas/A.md in the active Tab Group"]');
+    await click('[data-tooltip="Open Ideas/A.md in the active Document Tabs"]');
+    await click('[data-tooltip="Open Ideas/A.md in the active Document Tabs"]');
     assert.equal(document.querySelectorAll('.workspace [role=tab]').length,2,'reopening a card reuses its tab');
     assert.equal(document.querySelectorAll('.tiptap').length,1);
     await act(async()=>document.querySelector('.tiptap')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:' ',code:'Space',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true})));
@@ -173,7 +173,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('[role=menuitemcheckbox]');
     assert.equal(document.querySelector('[aria-label="Markdown source"]'),null);
     assert.equal(requests.filter(kind=>kind==='saveCard').length,savesBeforeMode,'changing editor mode alone never rewrites the file');
-    await click('[data-tooltip="Open the current file beside this Tab Group"]');
+    await click('.active-pane [aria-label="Document Tabs actions"]');await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Split right')!.click());
     assert.equal(document.querySelectorAll('.note-pane').length,2);
     assert.equal(document.querySelectorAll('.workspace [role=tab][aria-selected=true]').length,2);
     assert.equal(document.querySelectorAll('.tiptap').length,1,'one focused editor, shared card content');
@@ -199,13 +199,13 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await click('.activity-bar [aria-label="Agent console"]');
     assert.ok(document.querySelector('.right-dock [aria-label="Agent console"][role=tabpanel]'));
     await act(async()=>document.querySelector('#tab-agent')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:900,clientY:70})));
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Move View to Left Side Dock')!.click());await settle();
-    await click('[aria-label="Collapse Left Side Dock"]');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Move View to Left sidebar')!.click());await settle();
+    await click('[aria-label="Collapse Left sidebar"]');
     await click('.activity-bar [aria-label="Agent console"]');
     assert.ok(document.querySelector('.left-dock [aria-label="Agent console"][role=tabpanel]'),'activity buttons reveal a module in its chosen location');
     await click('.activity-bar [aria-label="Whiteboard explorer"]');
     await click('.file-tree [data-file-key="board:Ideas"] .file-button');
-    await click('.file-tree [aria-label="Add in Ideas"]');
+    await click('.file-tree [aria-label="More actions for Ideas"]');
     const newNote=[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='New card')!;
     await act(async()=>newNote.click());await settle();
     assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')?.textContent,'untitled.md','Explorer creation opens the note even when its board is active');
@@ -227,8 +227,8 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     assert.equal(document.querySelectorAll('.note-pane').length,2,'new-tab action does not change the split layout');
     assert.equal(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source,'new tab stays in the current Tab Group');
     assert.equal(document.querySelector('.active-pane [role=tab][aria-selected=true]')!.textContent,'Workspace');
-    await click('.active-pane [aria-label="Whiteboard actions"]');
-    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another Tab Group')!.click());await settle();
+    await click('.active-pane .board-tile [aria-label="Whiteboard actions"]');
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(b=>b.textContent==='Open in another split')!.click());await settle();
     assert.equal(document.querySelectorAll('.note-pane').length,2,'other-group command reuses the existing split');
     assert.notEqual(document.querySelector<HTMLElement>('.active-pane')!.dataset.pane,source);
     await click('.active-pane .document-breadcrumb [aria-label="Rename Ideas"]');
@@ -256,7 +256,7 @@ test('desktop shell reuses tabs, splits the same card, shares edits and restores
     await act(async()=>session.edit('# First card\n\nPopup draft'));
     await click('.card-popup [aria-label="Close dialog"]');
     assert.ok(document.querySelector('dialog.card-popup[open]'),'failed save cannot dismiss the editor');
-    assert.match(document.querySelector('.card-popup-error')?.textContent??'',/External edit conflict/);assert.ok(session.state.draft?.dirty);
+    assert.match(document.querySelector('.card-popup .context-banner')?.textContent??'',/External edit conflict/);assert.ok(session.state.draft?.dirty);
     rejectSave=false;
     await act(async()=>document.querySelector('.card-popup .tiptap')!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
     await settle();assert.equal(document.querySelector('.card-popup'),null);assert.match(card.body,/Popup draft/);

@@ -22,8 +22,10 @@ User filenames, paths, note bodies, tags, property names, saved checkpoint label
 
 ## Copy rules
 
+Read [UI terminology](ui-terminology.md) before writing or reviewing copy. That guide owns product terminology; these catalogs own the literal UI strings. Legacy strings do not override the guide.
+
 - Name an action or state directly. Avoid “Click to…”, “Hover to…” and “Click to switch…”.
-- Use **card**, **whiteboard**, **Workspace**, **Action Ribbon**, **Main Dock**, **Left/Right Side Dock**, **View** and **Tab Group** consistently. Nesting does not change “New whiteboard” into “New sub-whiteboard”.
+- Use **card**, **whiteboard**, **Workspace**, **Title toolbar**, **Document Tabs**, **Document bar**, **Document tools**, **Action bar**, **Left sidebar / Right sidebar**, **Main area**, **View** and contextual **tabs / View tabs** consistently. Nesting does not change “New whiteboard” into “New sub-whiteboard”.
 - Use sentence case for actions; retain capitalization for established interface names.
 - Explain an unfamiliar gesture, disabled action, destructive consequence or shortcut when it helps. Do not repeat a fully visible menu label in a tooltip.
 - Keep development milestones and implementation plans out of hover help.
@@ -33,6 +35,8 @@ User filenames, paths, note bodies, tags, property names, saved checkpoint label
 Tooltip timing, dismissal and positioning still belong to the [menu and tooltip interaction contract](interactions/menus-and-tooltips.md). This migration changes wording and where it is stored; it does not change overlay behavior.
 
 ## Migration review
+
+The table below records an earlier copy pass. Its historical names are superseded by the terminology guide; do not copy them into new UI.
 
 The first review covered renderer controls, menu hints, native application menus, dialogs, status/recovery messages, validation errors exposed to the UI and new history labels. It made these wording corrections:
 
@@ -51,3 +55,10 @@ The first review covered renderer controls, menu hints, native application menus
 Settings labels, Settings help, Settings validation copy and configurable defaults are intentionally deferred. The settings action/title remains unchanged. Sample note contents, third-party Emoji Mart text and OS-provided role-menu labels also remain with their original owners. No new user setting or localization framework was added.
 
 `tests/text.test.ts` checks the usual renderer entry points for stray inline labels and menu copy, with an explicit Settings exception. It supplements the interaction tests; it is not a complete natural-language detector. Review dynamic expressions and new main-process/worker messages when changing those areas.
+
+
+## Approved terminology pass — 2026-11-02
+
+Runtime copy now follows `ui-terminology.md`: Document Tabs / View tabs, Document bar, Title toolbar, Main area, Left sidebar / Right sidebar, Action bar, Breadcrumbs and Home. Actions use Document Tabs actions / View tabs actions, Open in another split and Close split. The review includes catalog strings, inline Settings labels, Graph commands, accessible region names, tooltips and visible validation errors. Stored identifiers and user-authored content are unchanged. Old labels remain only as non-visible Settings search aliases and in explicitly historical documentation.
+
+The source terminology regression in `tests/text.test.ts` scans app-authored string/template text and JSX across `src/`, excluding Settings search keywords. Menu and native acceptance regressions cover dismissal, one menu at a time, search handoff/focus and canonical names. The earlier table remains a historical record, not the current naming guide.

@@ -2,6 +2,7 @@
 docs/local
 /.local/
 /.codex/
+/.vscode/
 
 node_modules/
 dist/
@@ -13,3 +14,7 @@ coverage/
 *.log
 
 public/pdf-assets/
+
+# Regenerated icon cache and staging folders.
+/build/.icons.json
+/build/.icons-*

@@ -1,5 +1,6 @@
 // Contextual editor controls and migration settings.
 export const editorText = {
+  slashEnable:'Enable slash commands',slashEdit:'Edit slash command',slashReset:'Reset commands',aliases:'Aliases',aliasesInput:'Command aliases',aliasesHelp:'Separate with commas',
   searchCodeLanguages: 'Search code languages',searchLanguages: 'Search languages…',noMatchingLanguages: 'No matching languages',progressBar: 'Progress bar',taskProgress: 'Task progress',noCheckboxes: 'No checkboxes',
   codeLanguage: "Code language",
   plainText: "Plain text",

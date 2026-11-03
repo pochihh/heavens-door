@@ -14,7 +14,7 @@ test('moving blocks creates one linked card, rebases assets and undoes or redoes
  const w=await setup(t),source=await w.card('From/Original.md'),before=structuredClone(w.snapshot()),value:ExtractedBlocks={id:'created-blocks',title:'Selected',before:source.body,content:'## Selected\n\n![Figure](image.png)',body:'# Original\n\nBefore\n\n[Selected](card:created-blocks)\n\nAfter\n'};
  const session=new Session({request:async request=>{switch(request.kind){case 'card':return w.card(request.path);case 'extractCardBlocks':return w.extractCardBlocks(request.path,request.expected,request.value,request.folder,request.boardExpected,request.x,request.y);case 'write':return w.write(request.changes);default:throw Error(request.kind);}}} as Bridge);t.after(async()=>session.dispose());session.update({snapshot:before,draft:{card:source,body:source.body,dirty:false}});
  await session.extractCardBlocks(source.path,value,'To',900,400);const created=await w.card('To/Selected.md'),updated=await w.card(source.path);
- assert.equal(created.id,value.id);assert.match(created.body,/!\[Figure\]\(\.\.\/From\/image.png\)/);assert.match(updated.body,/\[Selected\]\(\.\.\/To\/Selected.md\)/);assert.match(updated.body,/Before[\s\S]*After/);assert.equal((updated.body.match(/Selected/g)??[]).length,2);assert.doesNotMatch(updated.body,/!\[Figure\]/);assert.equal(session.state.draft!.body,updated.body);
+ assert.equal(created.id,value.id);assert.equal(created.title,'Selected');assert.match(created.body,/^# Selected\n/);assert.match(created.body,/!\[Figure\]\(\.\.\/From\/image.png\)/);assert.match(updated.body,/\[Selected\]\(\.\.\/To\/Selected.md\)/);assert.match(updated.body,/Before[\s\S]*After/);assert.equal((updated.body.match(/Selected/g)??[]).length,2);assert.doesNotMatch(updated.body,/!\[Figure\]/);assert.equal(session.state.draft!.body,updated.body);
  const placement=w.snapshot().boards.find(b=>b.folder==='To')!.cards.find(p=>p.cardId===created.id)!;assert.deepEqual([placement.x,placement.y],[900,400]);assert.equal(session.undoHistory.past.length,1);
  await session.undo();assert.equal((await w.card(source.path)).body,source.body);assert.equal(w.snapshot().cards.some(c=>c.id===created.id),false);assert.deepEqual(w.snapshot().boards.find(b=>b.folder==='To')!.cards,before.boards.find(b=>b.folder==='To')!.cards);
  await session.undo(true);assert.equal((await w.card('To/Selected.md')).id,created.id);assert.equal((await w.card(source.path)).body,updated.body);
@@ -39,4 +39,19 @@ test('typing while extraction is pending stays recoverable instead of being over
  const pending=session.extractCardBlocks(source.path,value,'To',10,20);await ready;session.edit(source.body+'\nTyped during the drop.');release();await assert.rejects(pending,/conflict|chang|another/i);
  assert.match(session.state.draft!.body,/Typed during the drop/);assert.equal(session.state.draft!.dirty,true);assert.equal(session.state.draft!.card.revision,source.revision);assert.match((await w.card(source.path)).body,/\[Selected\]\(\.\.\/To\/Selected.md\)/);assert.ok(w.snapshot().cards.some(c=>c.id==='pending-blocks'));
  await assert.rejects(()=>session.flush(),/conflict|chang|another/i);assert.match(session.state.draft!.body,/Typed during the drop/);
+});
+
+
+test('extracted cards promote text and headings, and title structured blocks without losing their content',async()=>{
+ const {withExtractedTitle,leadingTitle}=await import('../src/card-title');
+ const cases=[
+  ['First line\nSecond line','First line','# First line\n\nSecond line'],
+  ['\n\n**First line**\nSecond line','First line','# **First line**\n\nSecond line'],
+  ['## Existing heading\n\nBody','Existing heading','# Existing heading\n\nBody'],
+  ['Existing heading\n---\n\nBody','Existing heading','# Existing heading\n\nBody'],
+  ['- First item\n- Second item','First item','# First item\n\n- First item\n- Second item'],
+  ['```cpp\nint value = 1;\n```','int value = 1;','# int value = 1;\n\n```cpp\nint value = 1;\n```'],
+  ['![Figure](figure.png)','Figure [1]','# Figure \\[1\\]\n\n![Figure](figure.png)']
+ ];
+ for(const [body,title,expected] of cases){const result=withExtractedTitle(body,title);assert.equal(result,expected);assert.ok(leadingTitle(result));}
 });

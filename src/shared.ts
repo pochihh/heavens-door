@@ -1,3 +1,5 @@
+import type {IconStyle} from './icon-style';
+export type {IconStyle} from './icon-style';
 import type {FontSize} from './font-size';
 import type {TemplateValues} from './templates';
 import type {CoreFeature,BoardNavigation} from './features';
@@ -17,7 +19,7 @@ export type EdgeStyle = Pick<Edge,'strokeColor'|'strokeWidth'|'strokeStyle'|'fro
 export function edgeStyle(edge:EdgeStyle):EdgeStyle {
   return {strokeColor:edge.strokeColor,strokeWidth:edge.strokeWidth??2,strokeStyle:edge.strokeStyle==='none'?'solid':edge.strokeStyle??'solid',fromArrowhead:edge.fromArrowhead??'none',toArrowhead:edge.toArrowhead??'none',labelSize:edge.labelSize??'s'};
 }
-export interface Mention { from:string; to:string }
+export interface Mention { from:string; to:string; fromAnnotation?:string }
 export interface Board { path: string; folder: string; name: string; revision: string; cards: Placement[]; edges: Edge[]; showMentions?:boolean; mentionStyle?:Stroke; canvasColor?:string; gridColor?:string; inbox?:{x:number;y:number} }
 export type PropertyValue = string | number | boolean | null;
 export interface CardQuery {
@@ -38,7 +40,7 @@ export interface RegisteredWorkspace {root:string;name:string;status:'available'
 export type WhiteboardInput = 'auto' | 'mouse' | 'trackpad';
 export interface PaletteColor {id:string;name:string;color:string}
 export interface DateDisplay {format:'full'|'short'|'mdy'|'dmy'|'ymd';timeFormat:'12'|'24';timeZone:string}
-export interface Preferences { whiteboardText?:{fontSize?:FontSize;textColor?:string}; reading?:import('./reading').ReadingSettings; actionHub?:import('./action-hub').HubButton[]; keybindings?:import('./keybindings').Keybindings; graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
+export interface Preferences { accentColor?:string; cssSnippets?:string[]; arrangement?:import('./board-arrangement').ArrangementSettings; whiteboardText?:{fontSize?:FontSize;textColor?:string}; reading?:import('./reading').ReadingSettings; actionHub?:import('./action-hub').HubButton[]; keybindings?:import('./keybindings').Keybindings; graphMode?:import('./graph').GraphMode; features?:Partial<Record<CoreFeature,boolean>>; boardNavigation?:BoardNavigation; workspaceName?:string; journal?:JournalSettings; templates?:TemplateSettings; whiteboardName?:string; editor?:EditorSettings; cardFolder?:string; tagsFolder?:string; trashFolder?:string; query?:QueryPreferences; dateDisplay?:DateDisplay; tagColors?:Record<string,string>; palette?:PaletteColor[]; whiteboardInput?:WhiteboardInput; newSplitDirection?:'row'|'column'; docks?:Docks; documents?:DocumentsLayout; navigation?:Partial<Record<ModuleId,NavigationMemory>>; explorerMode?:'whiteboards'|'files'; theme: 'light' | 'dark' | 'system'; titlePlaceholder?:string; stem: string; starred: string[]; recent: string[]; icons: Record<string,string> }
 export const TAG_FIELD_TYPES=['text','number','boolean','date','select','status','link'] as const;
 // Read old definitions without rewriting them just because they were opened.
 export const LEGACY_TAG_FIELD_TYPES=['multi-select','url','email','phone'] as const;
@@ -53,7 +55,7 @@ export interface CardProperties {revision:string;properties:Record<string,unknow
 export interface ViewResults {scopeTags?:string[];rows:TagResult[];total:number;columns?:{value:string;ids:string[];total:number}[];nextOffset?:number}
 export interface ViewCardMove {owner:{path:string;expected:string;block:number;source:string};view:string;card:{path:string;expected:string};from:string;to:string;before?:string;after?:string;date?:TagValue}
 export interface TagResult { previewImage?:string;snippet?:string; card: CardInfo; properties: Record<string,unknown> }
-export interface Snapshot { lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
+export interface Snapshot { fileErrors?:Record<string,string>; serviceErrors?:Record<string,string>; lastEdgeStyle?:EdgeStyle; pathMoves?:BoardMove[]; assetKey?: string; root: string; name: string; cards: CardInfo[]; boards: Board[]; issues: string[]; historyAvailable: boolean; folders?: string[]; tags?: TagInfo[]; preferences?: Preferences }
 export interface Edit { path: string; before: string | null; after: string | null }
 export interface BoardMove { from:string; to:string }
 export interface Deletion {changes:Write[]; nonEmpty:string[]}
@@ -89,6 +91,7 @@ export type Request =
   | {kind:'prepareBoardTrash';folder:string}
   | { kind: 'listFiles'; path:string }
   | { kind: 'inspectFile'; path:string }
+  | {kind:'fileStamp';path:string}
   | { kind: 'preferences'; patch: Partial<Preferences>; compact?:true }
   | {kind:'ensureFolder';path:string}
   | {kind:'createEntry';folder:string;name:string;type:'file'|'folder'}
@@ -134,9 +137,11 @@ export type Request =
   | { kind: 'card'; path: string }
   | { kind: 'prepareDeletion'; path:string; placements:string[]; edges:string[]; expected:string }
   | { kind: 'write'; changes: Write[] };
+export interface AppLogoState {image:string;custom:boolean;style?:IconStyle;warning?:string}
+export interface AppLogoDraft {token:string;image:string;name:string}
 export interface AppSettings {hardwareAcceleration:boolean;restartRequired:boolean;warning?:string}
 export interface GraphicsDiagnostics {hardwareAcceleration:boolean|null;features:Record<string,string>|null;electron:string;chromium:string}
-export interface UpdateState {currentVersion:string;status:'idle'|'checking'|'up-to-date'|'available'|'downloading'|'ready'|'installing'|'error';canInstall:boolean;version?:string;progress?:number;message?:string}
+export interface UpdateState {currentVersion:string;status:'idle'|'checking'|'up-to-date'|'available'|'downloading'|'ready'|'installing'|'error';canInstall:boolean;version?:string;progress?:number;message?:string;automaticDownloads?:boolean}
 export type WindowAction = 'close' | 'reload' | 'update';
 export interface Bridge {
   openExternal(url:string):Promise<void>;
@@ -148,6 +153,11 @@ export interface Bridge {
   refreshFeed(url:string,limit:number):Promise<{imported:number}>;
   attachmentData(path:string):Promise<Uint8Array>;
   relinkPdfSource(path:string,expected:string):Promise<Mutation|null>;
+  setAutomaticDownloads(enabled:boolean):Promise<UpdateState>;
+  cssSnippets(refresh?:boolean):Promise<{name:string;css:string;error?:string}[]>;
+  importCssSnippets():Promise<void>;
+  revealCssSnippets():Promise<void>;
+  onCssSnippetsChange(callback:()=>void):()=>void;
   updateState():Promise<UpdateState>;
   checkUpdates():Promise<UpdateState>;
   downloadUpdate():Promise<UpdateState>;
@@ -159,6 +169,12 @@ export interface Bridge {
   importImage(notePath:string,name:string,type:string,data:Uint8Array):Promise<{src:string;alt:string}>;
   imageData(path:string):Promise<Uint8Array>;
   copyImage(png:Uint8Array):Promise<void>;
+  appLogo():Promise<AppLogoState>;
+  importAppLogo():Promise<AppLogoDraft|null>;
+  applyAppLogo(token:string,style:IconStyle):Promise<AppLogoState>;
+  cancelAppLogo(token:string):Promise<void>;
+  resetAppLogo():Promise<AppLogoState>;
+  revealBranding():Promise<void>;
   appSettings():Promise<AppSettings>;
   setHardwareAcceleration(enabled:boolean):Promise<AppSettings>;
   onAppSettingsChange(callback:()=>void):()=>void;

@@ -1,5 +1,5 @@
 import type { WhiteboardInput } from '../shared';
-import { MIN_ZOOM, MAX_ZOOM } from '../board-camera';
+import { clampCamera,MIN_ZOOM, MAX_ZOOM } from '../board-camera';
 export { MIN_ZOOM, MAX_ZOOM } from '../board-camera';
 // Navigation adapted from Toby's obsidian-whiteboard (MIT); see THIRD_PARTY_NOTICES.md.
 export const BOARD_CAMERA_EVENT='board-camera-change';
@@ -130,7 +130,7 @@ export class BoardNavigation {
     clearTimeout(this.sampleTimer); this.sampleTimer = undefined;
     this.samples = []; this.wheelMode = null; this.wheelLast = -Infinity;
   }
-  set(camera: Camera) { this.stopWheel(); this.pending = null; this.current = camera; this.requestFrame(); }
+  set(camera: Camera) { this.stopWheel(); this.pending = null; this.current = clampCamera(camera); this.requestFrame(); }
   zoomTo(zoom: number) {
     this.stopWheel(); this.flush();
     this.set(zoomAt(this.current, this.viewport.clientWidth / 2, this.viewport.clientHeight / 2, zoom));

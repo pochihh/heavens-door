@@ -128,10 +128,28 @@ export function Edges(props:Props) {
   </>;
 }
 
-export function MentionLinks({board,mentions,heightOf,camera}:Pick<Props,'board'|'mentions'|'heightOf'|'camera'>){
+export function MentionLinks({board,mentions,heightOf,camera,pointOf}:Pick<Props,'board'|'mentions'|'heightOf'|'camera'>&{pointOf?:(p:Placement,annotation?:string)=>Point|undefined}){
+  const svg=useRef<SVGSVGElement>(null),latest=useRef(camera);latest.current=camera;
+  const draw=()=>{
+    const root=svg.current?.parentElement;if(!root)return;const box=root.getBoundingClientRect(),view=latest.current(),points=new Map<string,Point>();
+    for(const line of svg.current!.querySelectorAll<SVGLineElement>('[data-mention-annotation]')){
+      const key=line.dataset.mentionFrom+':'+line.dataset.mentionAnnotation;let point=points.get(key);
+      if(!point){const note=root.querySelector<HTMLElement>(`[data-placement="${line.dataset.mentionFrom}"] [data-note-id="${line.dataset.mentionAnnotation}"]`);if(!note)continue;const rect=note.getBoundingClientRect();point={x:(rect.left+rect.width/2-box.left-view.x)/view.zoom,y:(rect.top+rect.height/2-box.top-view.y)/view.zoom};points.set(key,point);}
+      line.setAttribute('x1',String(point.x));line.setAttribute('y1',String(point.y));
+    }
+  };
+  const redraw=useRef(draw);redraw.current=draw;
+  useLayoutEffect(()=>{draw();});
+  useEffect(()=>{
+    const root=svg.current!.parentElement!,win=root.ownerDocument.defaultView!;let frame=0,until=0;
+    const tick=()=>{frame=0;redraw.current();if(performance.now()<until)frame=win.requestAnimationFrame(tick);};
+    const animate=(event:Event)=>{if(!(event.target as Element).closest('.sticky-note'))return;until=performance.now()+400;if(!frame)frame=win.requestAnimationFrame(tick);};
+    root.addEventListener('transitionrun',animate,true);return()=>{root.removeEventListener('transitionrun',animate,true);win.cancelAnimationFrame(frame);};
+  },[]);
+  const point=(p:Placement,annotation?:string)=>pointOf?pointOf(p,annotation):{x:p.x+p.width/2,y:p.y+heightOf(p)/2};
   const byCard=new Map<string,Placement[]>();for(const p of board.cards){const list=byCard.get(p.cardId)??[];list.push(p);byCard.set(p.cardId,list);}
   const view=camera();
-  return <svg className="mention-layer" aria-hidden="true"><g className="edge-camera" transform={`translate(${view.x} ${view.y}) scale(${view.zoom})`}>
-      {board.showMentions!==false&&mentions.flatMap(m=>(byCard.get(m.from)??[]).flatMap(a=>(byCard.get(m.to)??[]).map(b=><line className="mention-link" data-mention-from={a.id} data-mention-to={b.id} key={`${a.id}:${b.id}`} x1={a.x+a.width/2} y1={a.y+heightOf(a)/2} x2={b.x+b.width/2} y2={b.y+heightOf(b)/2} strokeLinecap="round"/>)))}
+  return <svg ref={svg} className="mention-layer" aria-hidden="true"><g className="edge-camera" transform={`translate(${view.x} ${view.y}) scale(${view.zoom})`}>
+      {board.showMentions!==false&&mentions.flatMap(m=>(byCard.get(m.from)??[]).flatMap(a=>(byCard.get(m.to)??[]).flatMap(b=>{const start=point(a,m.fromAnnotation),end=point(b);return start&&end?[<line className="mention-link" data-mention-from={a.id} data-mention-to={b.id} data-mention-annotation={!a.collapsed?m.fromAnnotation:undefined} key={`${a.id}:${m.fromAnnotation??''}:${b.id}`} x1={start.x} y1={start.y} x2={end.x} y2={end.y} strokeLinecap="round"/>]:[];})))}
   </g></svg>;
 }

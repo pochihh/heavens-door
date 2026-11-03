@@ -4,7 +4,7 @@ import {isHexColor} from '../colors';
 import {annotationView,annotationReferences} from '../reading';
 import '../document-links';
 import {mathHtml,mathToken} from './math';
-marked.use({extensions:([{name:'mathBlock',level:'block'},{name:'mathInline',level:'inline'}] as const).map(({name,level})=>({name,level,start:(source:string)=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenizer:(source:string)=>mathToken(source,name==='mathBlock'),renderer:(token)=>mathHtml(token.text,name==='mathBlock')}))});
+marked.use({extensions:([{name:'mathBlock',level:'block'},{name:'mathInline',level:'inline'}] as const).map(({name,level})=>({name,level,start:(source:string)=>source.indexOf(name==='mathBlock'?'$$':'$'),tokenizer:(source:string)=>mathToken(source,name==='mathBlock'),renderer:(token)=>name==='mathBlock'?'<div class="math-block">'+mathHtml(token.text,true)+'</div>':mathHtml(token.text)}))});
 import {parseImageLayout,imageHtml,imagePlaceholderIcon} from './image-layout';
 import { ui } from '../text/ui';
 import { marked, type Token } from 'marked';
@@ -88,6 +88,17 @@ function renderPreview(html:string,path:string,reservedTitle=true) {
       content.prepend(paragraph);
     }
     item.replaceChildren(label,content);
+  }
+  // Marked adds a formatting newline after an explicit break; it is not a second break.
+  for(const br of template.content.querySelectorAll('br'))if(br.nextSibling?.nodeType===3)br.nextSibling.textContent=br.nextSibling.textContent!.replace(/^\n/,'');
+  // Tight Markdown lists need the same text blocks as their editable counterparts.
+  for(const item of template.content.querySelectorAll('li:not([data-checked])')){
+    if(item.firstElementChild?.tagName==='P')continue;
+    const paragraph=document.createElement('p');
+    while(item.firstChild&&!(item.firstChild.nodeType===1&&/^(P|UL|OL|DIV|H[1-6]|BLOCKQUOTE|PRE|TABLE|HR)$/.test((item.firstChild as Element).tagName)))paragraph.append(item.firstChild);
+    if(!paragraph.childNodes.length)continue;
+    for(const edge of [paragraph.firstChild,paragraph.lastChild])if(edge?.nodeType===3)edge.textContent=edge.textContent!.replace(/^\n+|\n+$/g,'');
+    if(paragraph.textContent||paragraph.children.length)item.prepend(paragraph);
   }
   updateCardProgress(template.content);
   // Image previews share the editor's block spacing and wrapping captions.
