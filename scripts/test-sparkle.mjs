@@ -51,6 +51,7 @@ app.whenReady().then(async()=>{
     const js=(win,code)=>win.webContents.executeJavaScript(code,true);
     const ready=win=>testWait(()=>js(win,'!!window.__sparkleTestSession?.state.snapshot'),'renderer');
     await ready(first.window);
+    await js(first.window,'window.door.setAutomaticDownloads(false)');
     const check=await js(first.window,'window.door.checkUpdates()');
     if(check.status!=='available'||!check.canInstall)throw Error('Sparkle not available '+JSON.stringify(check));
     const download=await js(first.window,'window.door.downloadUpdate()');

@@ -88,7 +88,7 @@ npm run release -- verify-public
 # Requires all nine local distribution files; does not change any files.
 ```
 
-The tests exercise failed preparation commits, checkpoint reuse, changed source/artifacts, concurrent command protection, interrupted uploads, wrong/missing signing metadata, tampered feed/archive bytes, incorrect packaged app identity, exact-SHA CI gating, publication recovery and the GitHub preflight. `stage` additionally runs `npm run test:sparkle` on every new candidate: this uses temporary notes and a loopback update feed, leaving personal workspaces and public releases untouched.
+The tests exercise failed preparation commits, checkpoint reuse, changed source/artifacts, concurrent command protection, interrupted uploads, wrong/missing signing metadata, tampered feed/archive bytes, incorrect packaged app identity, exact-SHA CI gating, publication recovery and the GitHub preflight. `stage` additionally runs `npm run test:sparkle` on every new candidate: this uses temporary notes and a loopback update feed, leaving personal workspaces and public releases untouched. Its explicit-download scenarios disable automatic downloads in that disposable profile before checking; automatic-download state transitions are covered by the updater tests.
 
 Local verification cannot establish first-install Gatekeeper or SmartScreen behavior on another machine. It also does not replace testing new UI behavior in the Test app or testing the Windows installer on Windows.
 
